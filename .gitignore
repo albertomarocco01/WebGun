@@ -1,0 +1,7 @@
+# Specchio delle skill per Claude Code: `.claude/skills/<agente>` è una junction
+# verso `agenti/<agente>`. La fonte di verità è `agenti/` — qui i file sarebbero
+# gli stessi committati due volte.
+.claude/skills/
+
+# Banco di prova del collaudo: progetto Supabase usa e getta, si rigenera.
+banco-prova/
