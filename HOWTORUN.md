@@ -1,4 +1,6 @@
 # WEB GUN — Pipeline Agenti & How To Run
+> Panoramica del progetto e stato agenti → [README.md](README.md)
+
 Ordine operativo pensato per un progetto reale (es. e-commerce da zero).
 
 **Legenda:**  
