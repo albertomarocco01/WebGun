@@ -68,5 +68,6 @@ Dopo **ogni fase di costruzione**:
 
 1. Lanciare `code-maniac scan` (batteria deterministica: lint, tipi, complessità, codice morto, duplicati, segreti).
 2. Sui punti critici (auth, pagamenti, dati utente, deploy) lanciare `/code-inquisition --scope diff`.
+3. **Nei progetti con database**, lanciare anche `node agenti/schema-forge/scripts/verify.mjs` dalla radice del progetto generato: applica le migrazioni su un database pulito reale e ci passa sopra la batteria (db lint, audit RLS, pgTAP, tipi). Il gate deve essere **verde** prima dell'handoff. Uno strumento assente vale `MANCANTE`, non `PASS`: un gate rosso per verifiche mancanti resta rosso.
 
-**Nessun handoff è valido** senza scan pulito **oppure** residuo documentato (nel file di handoff e in `docs/DEBITO-TECNICO.md`).
+**Nessun handoff è valido** senza scan pulito **oppure** residuo documentato (nel file di handoff e in `docs/DEBITO-TECNICO.md`). Vale anche per il gate di `verify.mjs`.

@@ -38,7 +38,7 @@ Ci lavora un team: ogni agente ha un proprietario che lo sviluppa e lo mantiene.
 
 ### FASE 3 — Costruzione (dati → interfaccia → funzioni)
 
-7. 🔵 **Schema Forge**
+7. 🟢 **Schema Forge**
    Progetta lo schema del database: tabelle, relazioni, RLS e data seeding. Si parte da qui perché in un e-commerce i dati (prodotti, ordini, utenti) sono le fondamenta.
 8. 🔴 **Fly UI**
    Libreria di componenti e interfacce utente veloci. Costruisce le pagine sopra lo schema dati già definito, senza reinventare i componenti ogni volta.
@@ -89,26 +89,28 @@ Ci lavora un team: ogni agente ha un proprietario che lo sviluppa e lo mantiene.
 
 ## Natura degli agenti
 
-| Nome | Categoria | Stato | Repo di origine |
-|---|---|---|---|
-| code-maniac | Skill Claude Code | 🟢 | https://github.com/finzidev/code-maniac |
-| code-inquisition | Skill Claude Code | 🟢 | esterno (finzidev, URL non noto) |
-| schema-forge | Skill Claude Code | 🔵 | questo repo |
-| site-doctor | Skill Claude Code | 🔵 | questo repo |
-| brief-smith | Skill Claude Code | 🔵 | questo repo |
-| preventivo-smith | Skill Claude Code | 🔵 | questo repo |
-| gestionale-crafter | Skill Claude Code | 🔵 | questo repo |
-| sanity-creator | Skill Claude Code | 🔵 | questo repo |
-| ai-specialist | Skill Claude Code | 🔵 | questo repo |
-| speed-demon | Skill Claude Code | 🔵 | questo repo |
-| flow-sentinel | Skill Claude Code | 🔵 | questo repo |
-| cyber-shield | Skill Claude Code | 🔵 | questo repo |
-| launchpad | Skill Claude Code | 🔵 | questo repo |
-| prompt-smith | Skill Claude Code | 🔴 | esterno (in arrivo) |
-| bugbay | Prodotto/Strumento | 🟢 | https://github.com/finzidev/bugbay |
-| demoniac | Prodotto/Strumento | 🟢 | esterno |
-| fly-ui | Libreria | 🔴 | esterno (in arrivo) |
-| sites-effects | Libreria | 🟢 | esterno |
+| Nome | Categoria | Stato | Proprietario | Repo di origine |
+|---|---|---|---|---|
+| code-maniac | Skill Claude Code | 🟢 | finzidev | https://github.com/finzidev/code-maniac |
+| code-inquisition | Skill Claude Code | 🟢 | finzidev | esterno (finzidev, URL non noto) |
+| schema-forge | Skill Claude Code | 🟢 | Alberto | questo repo |
+| site-doctor | Skill Claude Code | 🔵 | — | questo repo |
+| brief-smith | Skill Claude Code | 🔵 | — | questo repo |
+| preventivo-smith | Skill Claude Code | 🔵 | — | questo repo |
+| gestionale-crafter | Skill Claude Code | 🔵 | — | questo repo |
+| sanity-creator | Skill Claude Code | 🔵 | — | questo repo |
+| ai-specialist | Skill Claude Code | 🔵 | — | questo repo |
+| speed-demon | Skill Claude Code | 🔵 | — | questo repo |
+| flow-sentinel | Skill Claude Code | 🔵 | — | questo repo |
+| cyber-shield | Skill Claude Code | 🔵 | — | questo repo |
+| launchpad | Skill Claude Code | 🔵 | — | questo repo |
+| prompt-smith | Skill Claude Code | 🔴 | — | esterno (in arrivo) |
+| bugbay | Prodotto/Strumento | 🟢 | finzidev | https://github.com/finzidev/bugbay |
+| demoniac | Prodotto/Strumento | 🟢 | — | esterno |
+| fly-ui | Libreria | 🔴 | — | esterno (in arrivo) |
+| sites-effects | Libreria | 🟢 | — | esterno |
+
+Il proprietario è chi sviluppa e mantiene l'agente; `—` significa non ancora assegnato. Ogni agente lo ripete nel proprio `agenti/<nome>/STATO.md`.
 
 ## Fonte di verità
 
