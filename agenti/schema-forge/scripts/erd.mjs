@@ -45,8 +45,12 @@ function query(dbUrl, sql) {
     console.error(`psql ha fallito: ${(res.stderr || "").trim()}`);
     process.exit(2);
   }
-  return res.stdout.split("\n").filter(Boolean).map((r) => r.split(SEP));
+  // split su \r?\n: su Windows psql chiude le righe con CRLF (vedi rls-audit.mjs).
+  return res.stdout.split(/\r?\n/).filter(Boolean).map((r) => r.split(SEP));
 }
+
+// psql rende i boolean come 'true'/'false' col cast ::text, 't'/'f' senza.
+const vero = (v) => v === "true" || v === "t";
 
 function build({ dbUrl, schemas }) {
   const list = schemas.map((s) => `'${s}'`).join(",");
@@ -90,15 +94,15 @@ function build({ dbUrl, schemas }) {
       lines.push(`    ${table} {`);
       currentTable = table;
     }
-    const key = isPk === "t" ? " PK" : isFk === "t" ? " FK" : "";
-    const req = notNull === "t" ? ' "obbligatorio"' : "";
+    const key = vero(isPk) ? " PK" : vero(isFk) ? " FK" : "";
+    const req = vero(notNull) ? ' "obbligatorio"' : "";
     lines.push(`        ${type.replace(/[^a-zA-Z0-9_]/g, "_")} ${column}${key}${req}`);
   }
   if (currentTable !== null) lines.push("    }");
 
   for (const [source, target, name, required] of relations) {
     // il figlio con FK obbligatoria appartiene sempre a un padre: ||--o{
-    const cardinality = required === "t" ? "||--o{" : "|o--o{";
+    const cardinality = vero(required) ? "||--o{" : "|o--o{";
     lines.push(`    ${target} ${cardinality} ${source} : "${name}"`);
   }
 

@@ -52,11 +52,17 @@ function query(dbUrl, sql) {
     console.error(`psql ha fallito: ${(res.stderr || "").trim()}`);
     process.exit(2);
   }
+  // split su \r?\n: su Windows psql chiude le righe con CRLF e il \r finirebbe
+  // dentro l'ultimo campo, falsando confronti e nomi degli oggetti.
   return res.stdout
-    .split("\n")
+    .split(/\r?\n/)
     .filter((r) => r.length > 0)
     .map((r) => r.split(SEP));
 }
+
+// psql rende i boolean come 'true'/'false' quando la query ha il cast ::text,
+// come 't'/'f' senza cast: un controllo di sicurezza li accetta entrambi.
+const vero = (v) => v === "true" || v === "t";
 
 // ------------------------------------------------------------------ regole
 function audit({ dbUrl, schemas }) {
@@ -77,7 +83,7 @@ function audit({ dbUrl, schemas }) {
   );
   for (const [schema, table, rls, policyCount] of tables) {
     const obj = `${schema}.${table}`;
-    if (rls !== "t") {
+    if (!vero(rls)) {
       add("block", obj, "RLS non attiva su una tabella esposta",
         `alter table ${obj} enable row level security;`);
     } else if (policyCount === "0") {
