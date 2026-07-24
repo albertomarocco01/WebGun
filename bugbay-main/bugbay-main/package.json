@@ -1,0 +1,30 @@
+{
+  "name": "bugbay",
+  "version": "0.5.0",
+  "description": "Debugging agentico in locale, agganciabile a qualsiasi webapp: widget di segnalazione + console di triage + motore di fix con agenti.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "bugbay": "bin/bugbay.mjs"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "files": [
+    "bin",
+    "src/cli",
+    "web",
+    "supabase-schema.sql",
+    "README.md"
+  ],
+  "scripts": {
+    "bugbay": "node bin/bugbay.mjs"
+  },
+  "keywords": [
+    "debugging",
+    "ai-agent",
+    "bug-tracker",
+    "devtools",
+    "sidecar"
+  ]
+}

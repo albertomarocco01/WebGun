@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" role="img" aria-label="BugBay - baia piena di insetti">
+  <!-- Acqua della baia -->
+  <rect x="3" y="3" width="42" height="42" rx="9" fill="#e0f2fe"/>
+  <!-- Coste che delimitano la baia -->
+  <path fill="#7dd3fc" d="M3 12 C3 7 7 3 12 3 H22 C16 9 10 13 3 19 Z"/>
+  <path fill="#7dd3fc" d="M45 36 C45 41 41 45 36 45 H29 C35 40 40 35 45 27 Z"/>
+  <!-- Sciame di insetti che riempie la baia -->
+  <g fill="#0f172a">
+    <g transform="translate(16 19)">
+      <g fill="none" stroke="#0f172a" stroke-width="0.9" stroke-linecap="round">
+        <path d="M-1 -4.5 L-2.4 -6.4 M1 -4.5 L2.4 -6.4"/>
+        <path d="M-2.6 -1.5 L-5 -2.6 M-2.9 0.4 L-5.3 0.4 M-2.6 2.3 L-5 3.4 M2.6 -1.5 L5 -2.6 M2.9 0.4 L5.3 0.4 M2.6 2.3 L5 3.4"/>
+      </g>
+      <circle cx="0" cy="-3.3" r="1.5"/>
+      <ellipse cx="0" cy="0.6" rx="2.7" ry="3.6"/>
+    </g>
+    <g transform="translate(30 16) rotate(18) scale(0.8)">
+      <g fill="none" stroke="#0f172a" stroke-width="0.9" stroke-linecap="round">
+        <path d="M-1 -4.5 L-2.4 -6.4 M1 -4.5 L2.4 -6.4"/>
+        <path d="M-2.6 -1.5 L-5 -2.6 M-2.9 0.4 L-5.3 0.4 M-2.6 2.3 L-5 3.4 M2.6 -1.5 L5 -2.6 M2.9 0.4 L5.3 0.4 M2.6 2.3 L5 3.4"/>
+      </g>
+      <circle cx="0" cy="-3.3" r="1.5"/>
+      <ellipse cx="0" cy="0.6" rx="2.7" ry="3.6"/>
+    </g>
+    <g transform="translate(31 31) rotate(-12) scale(0.8)">
+      <g fill="none" stroke="#0f172a" stroke-width="0.9" stroke-linecap="round">
+        <path d="M-1 -4.5 L-2.4 -6.4 M1 -4.5 L2.4 -6.4"/>
+        <path d="M-2.6 -1.5 L-5 -2.6 M-2.9 0.4 L-5.3 0.4 M-2.6 2.3 L-5 3.4 M2.6 -1.5 L5 -2.6 M2.9 0.4 L5.3 0.4 M2.6 2.3 L5 3.4"/>
+      </g>
+      <circle cx="0" cy="-3.3" r="1.5"/>
+      <ellipse cx="0" cy="0.6" rx="2.7" ry="3.6"/>
+    </g>
+    <g transform="translate(19 32) rotate(10) scale(0.82)">
+      <g fill="none" stroke="#0f172a" stroke-width="0.9" stroke-linecap="round">
+        <path d="M-1 -4.5 L-2.4 -6.4 M1 -4.5 L2.4 -6.4"/>
+        <path d="M-2.6 -1.5 L-5 -2.6 M-2.9 0.4 L-5.3 0.4 M-2.6 2.3 L-5 3.4 M2.6 -1.5 L5 -2.6 M2.9 0.4 L5.3 0.4 M2.6 2.3 L5 3.4"/>
+      </g>
+      <circle cx="0" cy="-3.3" r="1.5"/>
+      <ellipse cx="0" cy="0.6" rx="2.7" ry="3.6"/>
+    </g>
+  </g>
+</svg>

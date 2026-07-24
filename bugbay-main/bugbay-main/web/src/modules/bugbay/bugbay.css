@@ -1,0 +1,56 @@
+/**
+ * BUG BAY — design tokens e stile del modulo console.
+ *
+ * Tutto è scoped sotto `.bugbay`: il modulo ha font e accenti propri
+ * (indipendenti dal design system del gestionale) ottenuti sovrascrivendo le
+ * CSS variable dei font Tailwind e definendo la palette "hazard" del brand.
+ * I colori semantici della pipeline (rosso=aperte, sky=lavorazione,
+ * violet=verifica, green=chiuse) restano quelli dei componenti.
+ */
+
+.bugbay {
+  /* Font del modulo (caricati con next/font nel layout di /debugging) */
+  --font-display: var(--bugbay-display);
+  --font-body: var(--bugbay-body);
+  --font-mono: var(--bugbay-mono);
+
+  /* Palette hazard/steel del brand */
+  --bb-amber: #ffb020;
+  --bb-amber-strong: #ff9a00;
+  --bb-amber-dim: rgba(255, 176, 32, 0.14);
+  --bb-steel: #0b0d10;
+  --bb-panel: #11141a;
+
+  font-family: var(--font-body), system-ui, sans-serif;
+  background-color: var(--bb-steel);
+}
+
+/* Wordmark: tracking largo e taglio industriale */
+.bugbay .bb-wordmark {
+  font-family: var(--font-display), system-ui, sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Barra hazard: strisce diagonali ambra/nero, firma visiva del modulo */
+.bugbay .bb-hazard {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--bb-amber) 0 12px,
+    transparent 12px 24px
+  );
+}
+
+/* Accenti ambra riusabili nel chrome del modulo */
+.bugbay .bb-accent { color: var(--bb-amber); }
+.bugbay .bb-accent-bg { background-color: var(--bb-amber); color: #0b0d10; }
+.bugbay .bb-accent-bg:hover { background-color: var(--bb-amber-strong); }
+.bugbay .bb-accent-border { border-color: rgba(255, 176, 32, 0.35); }
+.bugbay .bb-accent-dim { background-color: var(--bb-amber-dim); }
+
+/* Selezione testo e scrollbar in tinta */
+.bugbay ::selection { background: var(--bb-amber); color: #0b0d10; }
+.bugbay ::-webkit-scrollbar { width: 10px; height: 10px; }
+.bugbay ::-webkit-scrollbar-thumb { background: #2a2f38; border-radius: 5px; }
+.bugbay ::-webkit-scrollbar-thumb:hover { background: #3a414d; }
+.bugbay ::-webkit-scrollbar-track { background: transparent; }

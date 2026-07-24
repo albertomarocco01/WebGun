@@ -1,0 +1,27 @@
+# ── Dipendenze / build ──────────────────────────────────────────
+node_modules/
+dist/
+.next/
+*.tsbuildinfo
+bugbay-uploads/
+
+# ── Ambiente / segreti (mai committare) ─────────────────────────
+.env
+.env.*
+
+# ── BugBay: stato locale del daemon ─────────────────────────────
+.bugbay/
+
+# ── Dev-tool / editor / pacchetto ───────────────────────────────
+.claude/
+.vscode/
+.idea/
+*.tgz
+
+# ── OS ──────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.log
+
+# BugBay local DB (stato runtime, mai versionato)
+.bugbay-local-db/

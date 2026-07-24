@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "server": { "port": 7331, "hub": true },
+  "storage": { "driver": "supabase", "dir": ".bugbay" }
+}

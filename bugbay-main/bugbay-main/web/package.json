@@ -1,0 +1,39 @@
+{
+  "name": "bugbay-web",
+  "version": "0.2.0",
+  "private": true,
+  "description": "App Next del daemon BugBay: console di triage + API + motore di fix agentico.",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.47.10",
+    "croner": "^9.1.0",
+    "date-fns": "^4.4.0",
+    "gray-matter": "^4.0.3",
+    "lucide-react": "^0.469.0",
+    "next": "^15.1.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "recharts": "^2.15.4",
+    "semver": "^7.8.5",
+    "sonner": "^2.0.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@types/semver": "^7.7.1",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "tailwindcss-animate": "^1.0.7",
+    "typescript": "^5.7.2"
+  }
+}
