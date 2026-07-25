@@ -38,10 +38,10 @@ In pipeline lo Specchio non sparisce: viene **scritto** in `docs/handoff/07-sche
 | Comando | Cosa fa | Dettaglio |
 |---|---|---|
 | `model` | Deriva entità, relazioni, cardinalità e regole di accesso dal brief; produce l'ERD Mermaid e **lo Specchio del dominio** | Flusso 1 · `references/modellazione.md` |
-| `forge` | Genera la migrazione: DDL + vincoli + indici + trigger `updated_at` + RLS della prima ora | `references/modellazione.md` |
+| `forge` | Genera la migrazione: DDL + vincoli + indici + trigger `updated_at` + RLS della prima ora; **copia `.sqlfluff` e `squawk.toml` nella radice del progetto** | `references/modellazione.md` · `resources/config/` |
 | `rls` | Genera o audita le policy RLS (per ruolo, per operazione), con gli indici che le reggono | `scripts/rls-audit.mjs` · `references/rls-supabase.md` |
 | `seed` | Genera dati di seed **idempotenti e deterministici** (UUID fissi, `on conflict do nothing`) | `references/modellazione.md` §Seed |
-| `verify` | **Il gate**: applica su DB pulito reale + batteria deterministica + audit RLS; riporta solo il residuo | `scripts/verify.mjs` |
+| `verify` | **Il gate**: applica su DB pulito reale + batteria deterministica + audit RLS; riporta solo il residuo | `scripts/verify.mjs` · `resources/config/` |
 | `types` | Rigenera i tipi TypeScript dallo schema (`supabase gen types`) — è l'output che consuma Fly UI | §Contratto d'uscita |
 | `evolve` | Modifica di uno schema esistente in expand-contract, con analisi di impatto sui consumatori | `references/migrazioni.md` |
 | `handoff` | Scrive `docs/handoff/07-schema-forge.md` secondo il contratto del `CLAUDE.md` | §Contratto d'uscita |
@@ -49,10 +49,10 @@ In pipeline lo Specchio non sparisce: viene **scritto** in `docs/handoff/07-sche
 ## Comando → procedura (cosa eseguo, in concreto)
 
 - **`model`** → leggo brief e handoff precedenti (`docs/handoff/`), estraggo i **sostantivi del dominio** e li classifico (entità · attributo · relazione · lookup), definisco cardinalità e proprietà dei dati (*chi possiede questa riga?* — è la domanda che genera le policy dopo), genero l'ERD con `node <skill>/scripts/erd.mjs --from-model` e **STOP allo Specchio**.
-- **`forge`** → una migrazione per aggregato coerente in `supabase/migrations/<timestamp>_<nome>.sql`, nell'ordine: tipi/lookup → tabelle → vincoli → indici → trigger → RLS. Ogni tabella nasce **già** con `enable row level security`: non esiste una finestra temporale in cui è nuda.
+- **`forge`** → una migrazione per aggregato coerente in `supabase/migrations/<timestamp>_<nome>.sql`, nell'ordine: tipi/lookup → tabelle → vincoli → indici → trigger → RLS. Ogni tabella nasce **già** con `enable row level security` (e `force row level security`): non esiste una finestra temporale in cui è nuda. Copio anche `resources/config/.sqlfluff` e `resources/config/squawk.toml` nella radice del progetto, così il gate si riproduce anche senza la skill.
 - **`rls`** → derivo le policy dalla mappa di proprietà dello step `model` (owner-based / tenant-based / role-based / public-read), una policy **per operazione e per ruolo**, con `(select auth.uid())` e l'indice sulla colonna di ownership. Poi `node <skill>/scripts/rls-audit.mjs`.
 - **`seed`** → `supabase/seed.sql` idempotente: UUID costanti scritti a mano (mai `gen_random_uuid()` nel seed, o i test non sono riproducibili), `on conflict do nothing`, quantità minime ma sufficienti a far vedere ogni stato dell'interfaccia (lista vuota, lista lunga, caso limite).
-- **`verify`** → `node <skill>/scripts/verify.mjs [--json]`: reset su DB locale pulito → `supabase db lint` → `squawk` sulle migrazioni → `sqlfluff` → `rls-audit` → `supabase test db` (pgTAP, se presente). All'utente riporto **solo il residuo** e l'elenco delle **verifiche mancanti**, mai i log grezzi.
+- **`verify`** → `node <skill>/scripts/verify.mjs [--json]`: reset su DB locale pulito → `supabase db lint` → `squawk` sulle migrazioni → `sqlfluff` → `rls-audit` → `supabase test db` (pgTAP, se presente). `sqlfluff` e `squawk` girano con le configurazioni della skill (`resources/config/`, percorsi risolti sulla cartella della skill, non sul progetto): le regole disattivate sono poche e ognuna motivata nel file. Il `db reset` — e **solo** lui — ha un ritentativo dopo ~10 secondi, perché è saltuariamente instabile; se riesce al secondo colpo il passo è `pass` ma il dettaglio lo **dichiara**. All'utente riporto **solo il residuo** e l'elenco delle **verifiche mancanti**, mai i log grezzi.
 - **`types`** → `supabase gen types typescript --local > src/lib/database.types.ts`. Rigenerati **a ogni migrazione**: tipi disallineati sono il modo n°1 in cui Fly UI costruisce sul falso.
 - **`evolve`** → prima l'**analisi di impatto** (chi legge questa colonna? grep + tipi + handoff a valle), poi il piano expand-contract in migrazioni separate, poi STOP se c'è un distruttivo.
 - **`handoff`** → scrivo il file di handoff con: entità e relazioni finali, decisioni e deroghe, modello di accesso (chi vede cosa), path dei tipi generati, problemi noti e residui di `verify`.
@@ -90,6 +90,7 @@ supabase/migrations/*.sql     migrazioni applicabili in ordine su DB pulito
 supabase/seed.sql             seed idempotente
 supabase/tests/*.sql          test pgTAP delle policy (se presenti)
 src/lib/database.types.ts     tipi TypeScript rigenerati
+.sqlfluff · squawk.toml       configurazioni del gate, copiate da `forge`
 docs/handoff/07-schema-forge.md   modello, decisioni, accessi, residui
 docs/schema/ERD.md            diagramma Mermaid rigenerabile (scripts/erd.mjs)
 ```
@@ -107,3 +108,19 @@ docs/schema/ERD.md            diagramma Mermaid rigenerabile (scripts/erd.mjs)
 - `references/migrazioni.md` — immutabilità, expand-contract, operazioni pericolose e lock
 - `references/verifica-deterministica.md` — la batteria di strumenti, l'ordine, cosa blocca
 - `references/pattern-ecommerce.md` — modello di riferimento e-commerce (il caso d'uso n°1 di Web Gun)
+
+## Script e risorse
+
+| File | Cosa |
+|---|---|
+| `scripts/verify.mjs` | il gate (§Gate di chiusura) — esporta `conRitentativo` e `dettaglioReset` |
+| `scripts/rls-audit.mjs` | guscio di I/O: legge il catalogo con `psql` e stampa |
+| `scripts/audit-lib.mjs` | **le regole** dell'audit, funzioni pure senza I/O |
+| `scripts/erd.mjs` | guscio di I/O del diagramma |
+| `scripts/erd-lib.mjs` | **la costruzione** del Mermaid, funzione pura |
+| `scripts/*.test.mjs` | test degli script — `node --test "scripts/**/*.test.mjs"` dalla cartella della skill |
+| `resources/config/.sqlfluff` | configurazione sqlfluff del gate, ogni esenzione motivata |
+| `resources/config/squawk.toml` | configurazione squawk del gate, ogni esenzione motivata |
+| `resources/templates/handoff-schema-forge.md` | modello del file di handoff |
+
+Le regole stanno nelle `*-lib.mjs` e non nei gusci per un motivo preciso: due bug (CRLF di psql su Windows, cast booleano `'true'` vs `'t'`) hanno tenuto spente due regole su sei senza che nulla lo segnalasse, perché non c'era modo di eseguire le regole senza un database. **Una regola nuova si aggiunge nella lib, col suo test.**

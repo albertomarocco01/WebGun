@@ -9,7 +9,7 @@ Il caso d'uso n°1 di Web Gun. **Non è un template da copiare**: è la mappa de
 ```
 categories        albero (parent_id nullable) o tag piatti — decidere PRIMA: cambiarlo dopo è una migrazione dolorosa
 products          il concetto commerciale: nome, descrizione, slug unico, is_published
-product_variants  ciò che si compra davvero: taglia/colore, SKU unico, price_cents, barcode
+product_variants  ciò che si compra davvero: taglia/colore, SKU unico, price_cents (bigint), barcode
 product_images    ordinate (position), con alt_text obbligatorio (serve a Site Doctor per l'accessibilità)
 ```
 
@@ -35,11 +35,14 @@ Supabase possiede l'identità in `auth.users`: `profiles` la estende, non la dup
 ### Ordini — dove si sbaglia di più
 
 ```
-orders       user_id (on delete restrict!), status, totali, indirizzi COPIATI, created_at
+orders       user_id (on delete restrict!), status, total_cents (bigint),
+             indirizzi COPIATI, created_at
 order_items  order_id, variant_id (on delete restrict), quantity,
-             unit_price_cents, product_name, variant_name, tax_rate   ← snapshot
-payments     order_id, provider, provider_reference, amount_cents, status
+             unit_price_cents (bigint), product_name, variant_name, tax_rate   ← snapshot
+payments     order_id, provider, provider_reference, amount_cents (bigint), status
 ```
+
+**Ogni `*_cents` è `bigint`**, mai `integer`: in centesimi `integer` si ferma a 21.474.836,47 € e il totale di un anno lo supera. Vedi `modellazione.md`, riga *Denaro*.
 
 **Regola d'oro: l'ordine è uno snapshot, non una vista sul catalogo.** Prezzo, nome prodotto, nome variante e aliquota si **copiano** dentro `order_items` al momento dell'acquisto, e l'indirizzo di spedizione si copia dentro `orders`. Se leggi questi dati per riferimento, quando il cliente cambia listino o l'utente modifica l'indirizzo **cambi retroattivamente gli ordini passati**: fatture sbagliate, contabilità sbagliata, contestazioni. È l'unica denormalizzazione obbligatoria del modello.
 

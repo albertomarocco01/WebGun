@@ -6,9 +6,10 @@ Su Supabase ogni tabella dello schema `public` è **esposta via PostgREST** con 
 
 ```sql
 alter table public.orders enable row level security;
--- opzionale ma consigliato: vale anche per il proprietario della tabella
+-- consigliato: vale anche per il proprietario della tabella
 alter table public.orders force row level security;
 ```
+`enable` non protegge dal **proprietario** della tabella: una funzione o un job che gira come owner legge e scrive tutto scavalcando le policy. `force` chiude anche quella porta. `scripts/rls-audit.mjs` lo verifica: una tabella con RLS attiva ma senza `force` produce un finding di gravità **`warn`** (non blocca il gate, ma resta scritto). Una tabella senza RLS ha già il suo `block` e non riceve anche il warn.
 RLS attiva **senza policy** = nessuno legge nulla (tranne `service_role`). È lo stato sicuro di partenza: si aprono i permessi uno alla volta, non si chiudono a posteriori.
 
 ## I quattro pattern che coprono il 95% dei casi

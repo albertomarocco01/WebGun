@@ -16,7 +16,7 @@ Il vincolo sta nel database, non nell'applicazione. Il codice cambia, gli agenti
 |---|---|---|
 | Chiave primaria | `uuid primary key default gen_random_uuid()` | non enumerabile dall'esterno, generabile lato client, coerente con `auth.users.id` |
 | Riferimento all'utente | `references auth.users(id) on delete cascade` | Supabase possiede l'identità: non duplicare le credenziali |
-| Denaro | `integer` in **centesimi** (o `numeric(12,2)`) | mai `float`: gli arrotondamenti diventano contestazioni |
+| Denaro | `bigint` in **centesimi** (o `numeric(12,2)`) | mai `float`: gli arrotondamenti diventano contestazioni. **`bigint`, non `integer`**: `integer` in centesimi si ferma a 21.474.836,47 € — un totale annuo, non un caso limite — e allargarlo dopo è proprio l'`alter column type` che `migrazioni.md` classifica come pericoloso (riscrittura della tabella sotto lock esclusivo). Il tipo largo costa 4 byte per riga; cambiarlo in produzione costa un fermo |
 | Data/ora | `timestamptz` **sempre** | `timestamp` senza fuso è un bug che si manifesta a marzo e a ottobre |
 | Enumerazioni | `check (status in (...))` o tabella di lookup | i tipi `enum` di Postgres sono scomodi da far evolvere: un valore non si rimuove |
 | Testo | `text` + `check (length(...) <= n)` | `varchar(n)` non dà vantaggi in Postgres |
@@ -46,6 +46,7 @@ updated_at  timestamptz not null default now()
 - Ogni colonna usata in una **policy RLS** vuole un indice: la policy gira su ogni riga di ogni query
 - Indice sulle colonne di filtro e ordinamento delle liste (`created_at desc`, `status`)
 - Indici parziali per i casi frequenti (`where deleted_at is null`)
+- **Sulle colonne booleane si valuta l'indice parziale, non quello pieno**: due valori distinti non selezionano quasi nulla, e l'indice pieno rallenta ogni scrittura per niente. Se le query cercano sempre lo stesso lato (`where is_published`), l'indice utile è `create index ... on tabella (colonna) where colonna`, o meglio ancora un indice parziale sulla colonna che *filtra davvero*. Per questo l'audit RLS **non** segnala una colonna booleana di policy come "non indicizzata"
 - Non indicizzare "per sicurezza": ogni indice rallenta le scritture. Si aggiunge quando la query esiste
 
 ## Normalizzazione e le sue due eccezioni
