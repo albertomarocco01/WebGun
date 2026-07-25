@@ -235,3 +235,53 @@ test("regressione CRLF: il \\r non deve nemmeno far mancare l'indice esistente",
 test("regressione CRLF: il \\r nella resa booleana non spegne la regola 1", () => {
   assert.deepEqual(regolaTabelle([["public", "orders", "true\r", "2"]]), []);
 });
+
+// ─── force row level security (references/rls-supabase.md) ───────────────────
+// `enable` non vale per il proprietario della tabella ne' per chi ha BYPASSRLS:
+// senza `force`, una funzione che gira come proprietario legge tutto.
+// La riga porta il campo in coda: [schema, tabella, rls, numeroPolicy, force].
+
+test("force RLS assente su una tabella con RLS attiva → warn", () => {
+  const findings = regolaTabelle([["public", "orders", "true", "2", "false"]]);
+  assert.deepEqual(gravita(findings), ["warn"]);
+  assert.equal(findings[0].object, "public.orders");
+  assert.match(findings[0].hint, /force row level security/);
+});
+
+test("force RLS attiva → nessun finding", () => {
+  assert.deepEqual(regolaTabelle([["public", "orders", "true", "2", "true"]]), []);
+});
+
+test("force RLS non si giudica su una tabella che gia' e' un block", () => {
+  // Una tabella senza RLS ha gia' il suo block: aggiungere il warn e' rumore.
+  const findings = regolaTabelle([["public", "nuda", "false", "0", "false"]]);
+  assert.deepEqual(gravita(findings), ["block"]);
+});
+
+// ─── regola 6, esenzione dei booleani ────────────────────────────────────────
+// Su un booleano a bassa cardinalita' l'indice pieno e' quasi inutile, e
+// references/modellazione.md dice di non indicizzare "per sicurezza".
+// La riga delle colonne porta il tipo in coda: [schema, tabella, colonna, tipo].
+
+test("regola 6: colonna booleana di policy non indicizzata → nessun finding", () => {
+  const findings = regolaColonneDiPolicy({
+    policy: [["public", "products", "catalogo pubblico", "SELECT", "{anon}", "(is_published)", ""]],
+    colonne: [
+      ["public", "products", "id", "uuid"],
+      ["public", "products", "is_published", "boolean"],
+    ],
+    indicizzate: [],
+  });
+  assert.deepEqual(findings, []);
+});
+
+test("regola 6: sulle colonne non booleane il suggerimento propone anche l'indice parziale", () => {
+  const findings = regolaColonneDiPolicy({
+    policy: [["public", "documenti", "p", "SELECT", "{authenticated}", "((select auth.uid()) = owner_id)", ""]],
+    colonne: [["public", "documenti", "owner_id", "uuid"]],
+    indicizzate: [],
+  });
+  assert.deepEqual(gravita(findings), ["warn"]);
+  assert.match(findings[0].hint, /create index on public\.documenti \(owner_id\);/);
+  assert.match(findings[0].hint, /where/); // l'indice parziale, dove ha senso
+});

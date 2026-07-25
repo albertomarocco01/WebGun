@@ -92,6 +92,49 @@ test("regressione cast booleano: la resa 't'/'f' vale quanto 'true'/'false'", ()
 
 // ─── REGRESSIONE — CRLF di psql su Windows (bug n°1 del collaudo) ────────────
 
+// ─── cardinalita' 1:1 ────────────────────────────────────────────────────────
+// Una FK il cui insieme di colonne e' anche unico (o chiave primaria) non puo'
+// ripetersi: e' un 1:1, non un 1:N. La riga porta il campo in coda:
+// [origine, destinazione, nomeVincolo, obbligatoria, schemaDestinazione, esclusiva]
+
+test("FK anche unica → cardinalita' ||--|| (1:1)", () => {
+  const erd = costruisciErd({
+    colonne: [],
+    relazioni: [["dettagli", "prodotti", "dettagli_id_fkey", "true", "public", "true"]],
+  });
+  assert.match(erd, /^ {4}prodotti \|\|--\|\| dettagli : "dettagli_id_fkey"$/m);
+});
+
+test("FK non unica resta 1:N anche se obbligatoria", () => {
+  const erd = costruisciErd({
+    colonne: [],
+    relazioni: [["order_items", "orders", "order_items_order_id_fkey", "true", "public", "false"]],
+  });
+  assert.match(erd, /^ {4}orders \|\|--o\{ order_items : "order_items_order_id_fkey"$/m);
+});
+
+// ─── entita' di uno schema non richiesto ─────────────────────────────────────
+// Senza qualificazione, `auth.users` e un'ipotetica `public.users` diventano la
+// stessa entita' nel diagramma.
+
+test("entita' di uno schema non richiesto → nome qualificato", () => {
+  const erd = costruisciErd({
+    colonne: [],
+    relazioni: [["orders", "users", "orders_user_id_fkey", "true", "auth", "false"]],
+    schemi: ["public"],
+  });
+  assert.match(erd, /^ {4}auth_users \|\|--o\{ orders : "orders_user_id_fkey"$/m);
+});
+
+test("il caso reale: profiles e' 1:1 verso auth_users", () => {
+  const erd = costruisciErd({
+    colonne: [],
+    relazioni: [["profiles", "users", "profiles_id_fkey", "true", "auth", "true"]],
+    schemi: ["public"],
+  });
+  assert.equal(erd, 'erDiagram\n    auth_users ||--|| profiles : "profiles_id_fkey"');
+});
+
 test("regressione CRLF: il \\r non entra nel diagramma", () => {
   const erd = costruisciErd({
     colonne: [["orders", "id", "uuid", "true\r", "true", "false"]],
