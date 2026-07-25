@@ -22,6 +22,12 @@ Il vincolo sta nel database, non nell'applicazione. Il codice cambia, gli agenti
 | Testo | `text` + `check (length(...) <= n)` | `varchar(n)` non dà vantaggi in Postgres |
 | Semi-strutturato | `jsonb` **solo** per ciò che è davvero variabile | un campo che interroghi sempre è una colonna, non una chiave JSON |
 
+### Regola della casa: interi a `bigint` per default
+
+Non vale solo per il denaro. Il tipo largo costa **4 byte per riga** — spesso zero, per via dell'allineamento — mentre allargarlo dopo è un `alter column type` con **riscrittura della tabella sotto lock esclusivo**. `integer` si usa solo dove il limite è **strutturale e dimostrabile**, e si motiva.
+
+Strutturale significa che il valore non può crescere per come è fatto il dominio, non che oggi è piccolo: una quantità d'ordine, una giacenza o un contatore sono `bigint`, anche se il cliente è convinto che non supereranno mai il centinaio. Le previsioni commerciali cambiano proprio quando l'azienda va bene, e il ripensamento si paga con un fermo del sito.
+
 ## Colonne di servizio (su ogni tabella)
 
 ```sql
