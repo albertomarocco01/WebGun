@@ -17,6 +17,10 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SKILL_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
+// Le configurazioni dei linter viaggiano con la SKILL, non col progetto: il
+// gate deve dare lo stesso esito ovunque giri, anche se il progetto non le ha
+// (ancora) ricevute da `forge`. Ogni regola disattivata e' motivata nei file.
+const CONFIG_DIR = join(SKILL_DIR, "resources", "config");
 const PROJECT = process.cwd();
 const MIGRATIONS_DIR = join(PROJECT, "supabase", "migrations");
 const TYPES_PATH = join(PROJECT, "src", "lib", "database.types.ts");
@@ -83,7 +87,8 @@ function main() {
 
   // 1. formato SQL — sqlfluff (opzionale)
   if (has("sqlfluff")) {
-    const res = run("sqlfluff", ["lint", "--dialect", "postgres", MIGRATIONS_DIR]);
+    const res = run("sqlfluff",
+      ["lint", "--dialect", "postgres", "--config", join(CONFIG_DIR, ".sqlfluff"), MIGRATIONS_DIR]);
     record("sqlfluff (formato SQL)", res.status === 0 ? "pass" : "fail",
       res.status === 0 ? "" : (res.stdout || res.stderr || "").trim().split("\n").slice(0, 20).join("\n"));
   } else {
@@ -92,7 +97,10 @@ function main() {
 
   // 2. sicurezza delle migrazioni — squawk (opzionale)
   if (has("squawk")) {
-    const res = run("squawk", migrations.map((f) => join(MIGRATIONS_DIR, f)));
+    const res = run("squawk", [
+      "-c", join(CONFIG_DIR, "squawk.toml"),
+      ...migrations.map((f) => join(MIGRATIONS_DIR, f)),
+    ]);
     record("squawk (operazioni pericolose)", res.status === 0 ? "pass" : "fail",
       res.status === 0 ? "" : (res.stdout || res.stderr || "").trim().split("\n").slice(0, 30).join("\n"));
   } else {
