@@ -64,3 +64,29 @@ Due dettagli che costano tempo se non si sanno:
 Su una macchina senza junction (o su un checkout Linux/macOS) il piano B resta valido: copia + script di riallineamento.
 
 - **Stato:** presa — da replicare per ogni nuovo agente che diventa skill.
+
+## Decisioni prese durante l'irrobustimento di Schema Forge (2026-07-25)
+
+### 8. I linter si configurano, il gate non si declassa
+
+Il collaudo del 2026-07-24 aveva lasciato il gate `verify` rosso su `sqlfluff` (8 rilievi) e `squawk` (27 rilievi), tutti da regole di default in conflitto con convenzioni **scritte** della skill. Le due strade erano: rendere quei due passi non bloccanti, oppure dare alla skill la propria configurazione.
+
+Scelta: **la configurazione**, in `agenti/schema-forge/resources/config/` (`.sqlfluff` e `squawk.toml`), passata agli strumenti da `verify.mjs` con percorsi risolti sulla cartella della skill, e copiata nel progetto generato dal comando `forge`.
+
+Motivo: un passo non bloccante è un passo che nessuno guarda. Un rosso che tutti imparano a ignorare non è più un controllo, è rumore — e il giorno in cui segnala una cosa vera nessuno se ne accorge. La configurazione, invece, costringe a **scrivere la motivazione** di ogni esenzione: nel file, sulla riga sopra la regola disattivata. Le esenzioni sono tre e nessuna nasconde un difetto reale:
+
+- `PG01` / `require-concurrent-index-creation` — `create index concurrently` non può stare nella transazione con cui il CLI Supabase applica una migrazione: la regola chiede una cosa impossibile in questo contesto;
+- `RF04` limitata a `name` e `label` — parole chiave **non riservate** in Postgres, legali senza virgolette, e sono i nomi imposti da `references/pattern-ecommerce.md`. La regola resta attiva su tutto il resto;
+- `prefer-robust-stmts` — `if not exists` su una migrazione versionata non la rende robusta: le fa ignorare in silenzio una deriva fra ambienti che deve invece farla fallire.
+
+- **Stato:** presa — il gate resta bloccante su tutti e sette i passi.
+
+### 9. Il denaro sta in `bigint` di centesimi, non in `integer`
+
+`squawk` segnalava `prefer-bigint-over-int` sui `*_cents`, e `references/modellazione.md` prescriveva `integer`. **Aveva ragione lo strumento**: la regola non è stata disattivata, è stata corretta la reference.
+
+Motivo: in centesimi, `integer` si ferma a 21.474.836,47 € — un fatturato annuo, non un caso di laboratorio. E allargarlo dopo è esattamente l'`alter column type` che `references/migrazioni.md` classifica come pericoloso: riscrittura completa della tabella sotto lock esclusivo, cioè un fermo del sito deciso da un risparmio di 4 byte per riga.
+
+Aggiornati `references/modellazione.md` (riga *Denaro*) e `references/pattern-ecommerce.md` (tutti i `*_cents`). Il banco di prova è stato riportato a `bigint` e il gate è tornato verde su 7 passi su 7 senza toccare la regola.
+
+- **Stato:** presa.
