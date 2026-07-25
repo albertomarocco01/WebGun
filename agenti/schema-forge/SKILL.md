@@ -23,6 +23,7 @@ Stack di riferimento: **Postgres su Supabase** (vedi `CLAUDE.md` del repo). Dero
 - **Niente distruttivo di default.** `drop column`, `drop table`, restringimento di tipo, `rename` → si passa da **expand-contract** (aggiungi, popola, sposta le letture, poi togli in una migrazione successiva). Vedi `references/migrazioni.md`.
 - **Ogni distruttivo è un checkpoint umano**, anche in modalità pipeline: l'orchestratore non ha l'autorità di autorizzare una perdita di dati.
 - **Un file di migrazione = un motivo.** Reversibile a mano o documentato come irreversibile.
+- **Un distruttivo autorizzato si dichiara al gate**, con `-- squawk-ignore <regola>` da solo sulla sua riga sopra lo statement e la motivazione nelle righe precedenti. Senza, un `evolve` legittimo lascia il progetto rosso per sempre; senza autorizzazione umana, la riga non si scrive. Vedi `references/migrazioni.md` §Il distruttivo autorizzato e il gate.
 
 ## Modalità: interattiva vs pipeline
 
@@ -32,6 +33,14 @@ Stack di riferimento: **Postgres su Supabase** (vedi `CLAUDE.md` del repo). Dero
 | **Pipeline** (Web Gun automatico) | l'orchestratore (Prompt Smith), sulla base del brief | **sempre l'umano** |
 
 In pipeline lo Specchio non sparisce: viene **scritto** in `docs/handoff/07-schema-forge.md` come "modello assunto", così l'errore di comprensione resta tracciabile invece di essere silenzioso. Vedi `DECISIONI.md` §1 del repo.
+
+**Le domande a cui il brief non risponde** (in pipeline sono la maggioranza) non si girano all'orchestratore come se lui sapesse: confermerebbe un'assunzione che nessuno ha preso, e la conferma coprirebbe l'assunzione invece di segnalarla. La procedura è:
+
+1. Ogni domanda senza risposta diventa un'**assunzione esplicita** nel modello assunto, con il default scelto e la conseguenza scritta (*«carrello lato client: cambiando dispositivo l'utente perde il carrello»*).
+2. Se l'assunzione è **strutturale**, la pipeline si **ferma** e la domanda va all'umano. Sono strutturali le scelte che dopo si cambiano solo riscrivendo lo schema e i suoi consumatori: carrello persistito o no · categorie ad albero o piatte · multi-tenant o singolo cliente · listino unico o differenziato · identità di chi possiede le righe.
+3. Tutte le altre proseguono col default, e l'elenco delle assunzioni è la prima sezione dell'handoff.
+
+Una lista di assunzioni dichiarate è recuperabile in mezz'ora. Un'assunzione confermata da chi non poteva saperlo si scopre a tre agenti di distanza.
 
 ## Comandi
 
@@ -48,13 +57,13 @@ In pipeline lo Specchio non sparisce: viene **scritto** in `docs/handoff/07-sche
 
 ## Comando → procedura (cosa eseguo, in concreto)
 
-- **`model`** → leggo brief e handoff precedenti (`docs/handoff/`), estraggo i **sostantivi del dominio** e li classifico (entità · attributo · relazione · lookup), definisco cardinalità e proprietà dei dati (*chi possiede questa riga?* — è la domanda che genera le policy dopo), genero l'ERD con `node <skill>/scripts/erd.mjs --from-model` e **STOP allo Specchio**.
+- **`model`** → leggo brief e handoff precedenti (`docs/handoff/`), estraggo i **sostantivi del dominio** e li classifico (entità · attributo · relazione · lookup), definisco cardinalità e proprietà dei dati (*chi possiede questa riga?* — è la domanda che genera le policy dopo), disegno l'ERD dello Specchio **a mano** (qui il database non esiste ancora: è una *proposta* da correggere, non una fotografia — l'ERD generato arriva dopo `forge`, con `erd.mjs`) e **STOP allo Specchio**.
 - **`forge`** → una migrazione per aggregato coerente in `supabase/migrations/<timestamp>_<nome>.sql`, nell'ordine: tipi/lookup → tabelle → vincoli → indici → trigger → RLS. Ogni tabella nasce **già** con `enable row level security` (e `force row level security`): non esiste una finestra temporale in cui è nuda. Copio anche `resources/config/.sqlfluff` e `resources/config/squawk.toml` nella radice del progetto, così il gate si riproduce anche senza la skill.
 - **`rls`** → derivo le policy dalla mappa di proprietà dello step `model` (owner-based / tenant-based / role-based / public-read), una policy **per operazione e per ruolo**, con `(select auth.uid())` e l'indice sulla colonna di ownership. Poi `node <skill>/scripts/rls-audit.mjs`.
 - **`seed`** → `supabase/seed.sql` idempotente: UUID costanti scritti a mano (mai `gen_random_uuid()` nel seed, o i test non sono riproducibili), `on conflict do nothing`, quantità minime ma sufficienti a far vedere ogni stato dell'interfaccia (lista vuota, lista lunga, caso limite).
-- **`verify`** → `node <skill>/scripts/verify.mjs [--json]`: reset su DB locale pulito → `supabase db lint` → `squawk` sulle migrazioni → `sqlfluff` → `rls-audit` → `supabase test db` (pgTAP, se presente). `sqlfluff` e `squawk` girano con le configurazioni della skill (`resources/config/`, percorsi risolti sulla cartella della skill, non sul progetto): le regole disattivate sono poche e ognuna motivata nel file. Il `db reset` — e **solo** lui — ha un ritentativo dopo ~10 secondi, perché è saltuariamente instabile; se riesce al secondo colpo il passo è `pass` ma il dettaglio lo **dichiara**. All'utente riporto **solo il residuo** e l'elenco delle **verifiche mancanti**, mai i log grezzi.
+- **`verify`** → `node <skill>/scripts/verify.mjs [--json]`: reset su DB locale pulito → `supabase db lint` → `squawk` sulle migrazioni → `sqlfluff` → `rls-audit` → `supabase test db` (pgTAP, se presente) → tipi → **contratto d'uscita**. `sqlfluff` e `squawk` girano con le configurazioni della skill (`resources/config/`, percorsi risolti sulla cartella della skill, non sul progetto): le regole disattivate sono poche e ognuna motivata nel file. L'audit RLS gira sul **database del progetto** (porta da `supabase/config.toml`, non quella di default: con due stack accesi il gate auditerebbe un altro progetto) e su **tutti** gli schemi di `[api].schemas`, non solo `public`. Il `db reset` — e **solo** lui — ha un ritentativo dopo ~10 secondi, perché è saltuariamente instabile; se riesce al secondo colpo il passo è `pass` ma il dettaglio lo **dichiara**. All'utente riporto **solo il residuo** e l'elenco delle **verifiche mancanti**, mai i log grezzi.
 - **`types`** → `supabase gen types typescript --local > src/lib/database.types.ts`. Rigenerati **a ogni migrazione**: tipi disallineati sono il modo n°1 in cui Fly UI costruisce sul falso.
-- **`evolve`** → prima l'**analisi di impatto** (chi legge questa colonna? grep + tipi + handoff a valle), poi il piano expand-contract in migrazioni separate, poi STOP se c'è un distruttivo.
+- **`evolve`** → prima l'**analisi di impatto** (chi legge questa colonna? grep + tipi + handoff a valle + **quante righe hanno davvero un valore**), poi il piano expand-contract in migrazioni separate, poi STOP se c'è un distruttivo. Se i dati contraddicono la richiesta, la contraddizione si riporta **prima**, coi numeri. Dopo l'autorizzazione: export dei dati in `docs/export/`, percorso citato nella migrazione, `-- squawk-ignore` sulla riga sopra il distruttivo. Alla fine **si riallinea `seed.sql`**, o il `db reset` successivo fallisce.
 - **`handoff`** → scrivo il file di handoff con: entità e relazioni finali, decisioni e deroghe, modello di accesso (chi vede cosa), path dei tipi generati, problemi noti e residui di `verify`.
 
 ## Flusso 1 — Nuovo schema (dal brief alla migrazione verificata)
@@ -63,22 +72,27 @@ In pipeline lo Specchio non sparisce: viene **scritto** in `docs/handoff/07-sche
 2. **Estrai il dominio** — entità, attributi, relazioni, cardinalità, cicli di vita (uno stato che cambia = una macchina a stati da vincolare, non un campo libero).
 3. **Mappa la proprietà dei dati** — per ogni tabella: *chi può leggerla, chi può scriverla, in base a cosa*. Questa mappa **è** la specifica delle policy RLS: se non sai rispondere, non sai ancora modellare.
 4. **Specchio del dominio → STOP.** Riformuli entità, relazioni e regole d'accesso in linguaggio semplice + ERD. Non scrivi SQL prima del "sì" (o della conferma dell'orchestratore in pipeline).
+   **Ogni punto in cui il brief contraddice un pattern di riferimento diventa una domanda dello Specchio, non una decisione dell'agente.** «Gli ordini si modificano finché non spediamo» contro lo snapshot in sola lettura di `pattern-ecommerce.md` non è un conflitto da sciogliere in silenzio scegliendo il più autorevole dei due: è esattamente la cosa che l'umano deve vedere. Il pattern dice cosa costa cedere, il committente decide.
 5. **Forgia** — migrazione(i) nell'ordine canonico, RLS inclusa alla nascita.
 6. **Seed** — idempotente e deterministico.
-7. **Verifica** — `verify` su DB pulito. Finché il gate è rosso, lo schema non esiste.
-8. **Tipi + handoff** — `types` poi `handoff`. Il passaggio a valle non è valido senza entrambi.
+7. **Tipi** — `types`. Prima del gate: senza, il passo dei tipi è rosso per forza e il primo gate di ogni progetto nascerebbe rosso per un motivo che non è un difetto dello schema. Un rosso strutturale insegna a ignorare il rosso.
+8. **Handoff** — `handoff`. Anche questo prima del gate: `verify` controlla il **contratto d'uscita** (configurazioni copiate da `forge`, handoff scritto e senza segnaposto), quindi scriverlo dopo significherebbe chiudere con un gate rosso.
+9. **Verifica** — `verify` è l'**ultimo** passo. Finché il gate è rosso, lo schema non esiste. Il residuo si riporta nell'handoff e si rilancia finché non è verde: l'handoff è un documento e si aggiorna, le migrazioni no.
 
 ## Gate di chiusura (riporta OGNI voce come PASS / FAIL / MANCANTE)
 
 - [ ] `supabase db reset` eseguito **davvero** su DB pulito: tutte le migrazioni applicate in ordine senza errori
 - [ ] Seed eseguito, idempotente (due reset di fila = stesso stato)
-- [ ] **RLS attiva su ogni tabella** degli schemi esposti · nessuna tabella con RLS ma zero policy · nessuna `using (true)` non documentata
+- [ ] **RLS attiva su ogni tabella** di **tutti** gli schemi esposti (`[api].schemas`, non solo `public`) · nessuna tabella con RLS ma zero policy · nessuna `using (true)` non documentata
+- [ ] Nessun dato riservato in una **colonna** di una tabella leggibile: la policy filtra righe, non campi
 - [ ] Viste esposte con `security_invoker = on` · funzioni `security definer` con `set search_path = ''`
 - [ ] Ogni chiave esterna e ogni colonna usata nelle policy hanno un indice
 - [ ] Vincoli di integrità nel database (not null, check, unique, `on delete` esplicito su ogni FK) — non solo nell'applicazione
 - [ ] `squawk` senza operazioni pericolose non motivate · `db lint` pulito · `sqlfluff` pulito
+- [ ] Ogni distruttivo è **autorizzato dall'umano**, motivato nel file e dichiarato con `-- squawk-ignore`; i dati cancellati sono stati esportati e il percorso è citato nella migrazione
 - [ ] Tipi TypeScript rigenerati e allineati allo schema
-- [ ] `docs/handoff/07-schema-forge.md` scritto, con deroghe e residui
+- [ ] `.sqlfluff` e `squawk.toml` copiati nella radice del progetto: il gate si riproduce senza la skill
+- [ ] `docs/handoff/07-schema-forge.md` scritto, con deroghe e residui, senza segnaposto `{{...}}`
 - [ ] Nessuna verifica dichiarata "ok" senza averla eseguita (strumento assente = **MANCANTE**, non PASS)
 
 Se una sola casella è vuota, lo schema **non è consegnabile**.
@@ -93,13 +107,16 @@ src/lib/database.types.ts     tipi TypeScript rigenerati
 .sqlfluff · squawk.toml       configurazioni del gate, copiate da `forge`
 docs/handoff/07-schema-forge.md   modello, decisioni, accessi, residui
 docs/schema/ERD.md            diagramma Mermaid rigenerabile (scripts/erd.mjs)
+docs/export/*.csv             dati esportati prima di un distruttivo autorizzato
 ```
+
+Le tre righe in grassetto del contratto — `.sqlfluff`, `squawk.toml`, l'handoff — **le verifica `verify`**, ultimo passo del Flusso 1. Erano obblighi scritti che nessuno strumento controllava: il gate restava verde identico se l'agente se ne dimenticava, perché le configurazioni le passa la skill e l'handoff non lo legge nessun linter. Chi viene dopo, invece, ha solo quelli.
 
 ## Come parla Schema Forge
 
 - **Lo Specchio del dominio è in italiano semplice**, non in SQL: l'umano deve poter dire "no, un ordine può avere più indirizzi" senza leggere DDL.
 - **Il residuo di `verify` è compresso**: lista di problemi per gravità, mai i log degli strumenti.
-- Il diagramma non lo disegna l'LLM: lo stampa `scripts/erd.mjs` dallo schema reale.
+- **Due diagrammi, due statuti.** Quello dello Specchio lo disegna l'agente: è una *proposta* fatta per essere corretta, e a quel punto il database non esiste. Quello che finisce in `docs/schema/ERD.md` lo stampa `scripts/erd.mjs` **dallo schema reale**: è una fotografia, e non si scrive a mano. Se i due divergono, ha ragione il secondo.
 
 ## Indice references
 
@@ -113,9 +130,9 @@ docs/schema/ERD.md            diagramma Mermaid rigenerabile (scripts/erd.mjs)
 
 | File | Cosa |
 |---|---|
-| `scripts/verify.mjs` | il gate (§Gate di chiusura) — esporta `conRitentativo` e `dettaglioReset` |
+| `scripts/verify.mjs` | il gate (§Gate di chiusura) — esporta `conRitentativo`, `dettaglioReset`, `schemiEsposti`, `urlDbProgetto`, `contrattoUscita` |
 | `scripts/rls-audit.mjs` | guscio di I/O: legge il catalogo con `psql` e stampa |
-| `scripts/audit-lib.mjs` | **le regole** dell'audit, funzioni pure senza I/O |
+| `scripts/audit-lib.mjs` | **le regole** dell'audit, funzioni pure senza I/O — più `righeDaPsql` |
 | `scripts/erd.mjs` | guscio di I/O del diagramma |
 | `scripts/erd-lib.mjs` | **la costruzione** del Mermaid, funzione pura |
 | `scripts/*.test.mjs` | test degli script — `node --test "scripts/**/*.test.mjs"` dalla cartella della skill |
@@ -123,4 +140,4 @@ docs/schema/ERD.md            diagramma Mermaid rigenerabile (scripts/erd.mjs)
 | `resources/config/squawk.toml` | configurazione squawk del gate, ogni esenzione motivata |
 | `resources/templates/handoff-schema-forge.md` | modello del file di handoff |
 
-Le regole stanno nelle `*-lib.mjs` e non nei gusci per un motivo preciso: due bug (CRLF di psql su Windows, cast booleano `'true'` vs `'t'`) hanno tenuto spente due regole su sei senza che nulla lo segnalasse, perché non c'era modo di eseguire le regole senza un database. **Una regola nuova si aggiunge nella lib, col suo test.**
+Le regole stanno nelle `*-lib.mjs` e non nei gusci per un motivo preciso: tre bug (CRLF di psql su Windows, cast booleano `'true'` vs `'t'`, e il parsing per riga che mandava in crash l'audit su ogni policy con una sottoquery) hanno tenuto spente delle regole senza che nulla lo segnalasse, perché non c'era modo di eseguire le regole senza un database. **Una regola nuova si aggiunge nella lib, col suo test.**

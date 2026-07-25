@@ -44,6 +44,41 @@ for select to authenticated using ( public.is_member_of(org_id) );
 
 **4. Role-based** — ruoli applicativi (admin, staff). Il ruolo sta nei **claim del JWT** o in una tabella dei ruoli letta da funzione `security definer`; **mai** in una colonna che l'utente stesso può aggiornare.
 
+**3b. Tenant con ruoli interni di ambito diverso** — la composizione di 3 e 4, ed è il caso vero più frequente: il titolare vede tutta l'azienda, il responsabile di una singola sede vede solo la propria. Non sono due pattern da scegliere, sono due condizioni da comporre in **una** funzione, così la policy resta una riga e l'ambito ha un posto solo dove essere corretto:
+
+```sql
+create or replace function public.puo_vedere_sede(sede uuid)
+returns boolean language sql security definer set search_path = '' stable as $$
+  select exists (
+    select 1 from public.staff s
+    where s.user_id = (select auth.uid())
+      and s.org_id = (select l.org_id from public.locations l where l.id = sede)
+      and (s.ruolo = 'titolare' or s.location_id = sede)   -- ambito del ruolo
+  );
+$$;
+
+create policy "lo staff vede gli ordini di sua competenza" on public.orders
+for select to authenticated using ( public.puo_vedere_sede(location_id) );
+```
+
+Le due condizioni in due policy separate si sommerebbero in **OR** (le policy permissive si uniscono): il responsabile di sede vedrebbe tutto. L'ambito ristretto va **dentro** la stessa condizione, non accanto.
+
+## La RLS è per riga, non per colonna
+
+L'errore più insidioso del modello, perché il database resta perfettamente valido mentre il dato è pubblico.
+
+PostgREST lascia scegliere al client **quali colonne leggere** (`?select=…`). Una policy autorizza o nega **la riga intera**: non esiste `using` che nasconda una colonna sola. Quindi:
+
+> **Un dato riservato messo in una colonna di una tabella leggibile è un dato pubblico.** Non «meno visibile»: pubblico, con una `select` sola.
+
+Il prezzo riservato concordato con un cliente B2B, il margine, il costo d'acquisto, la nota interna sull'utente: se stanno in `products` o in `profiles`, chiunque possa leggere quella riga li legge. La risposta non è una policy più furba, è il **modello**:
+
+- il dato riservato va in una **tabella separata** con la sua RLS (`product_prices` per listino, `internal_notes`, `costs`)
+- oppure lo si espone tramite una **vista** che seleziona solo le colonne pubbliche (con `security_invoker = on`) e si nega l'accesso diretto alla tabella
+- i `grant` per colonna esistono in Postgres, ma sono un secondo sistema di permessi che l'audit RLS non legge e che nessuno ricorderà: valgono come rinforzo, mai come unica difesa
+
+Vale anche al contrario: una colonna che deve essere **scritta solo dallo staff** (uno sconto, uno stato) su una riga che l'utente può aggiornare è scrivibile dall'utente. Il `with check` vede la riga, non il campo modificato: o la colonna sta in un'altra tabella, o la scrittura passa da una funzione.
+
 ## Una policy per operazione e per ruolo
 
 Non esiste la policy "tuttofare": `select`, `insert`, `update`, `delete` hanno regole diverse. Su `insert` e `update` serve `with check` (cosa può **scrivere**), non solo `using` (cosa può **vedere**):
@@ -59,6 +94,8 @@ Senza `with check`, un utente autenticato può inserire righe intestate a qualcu
 | Errore | Conseguenza |
 |---|---|
 | Tabella in `public` senza RLS | dati leggibili con la chiave anonima, cioè pubblici |
+| Tabella nuda in uno schema **secondario esposto** (`[api].schemas` del `config.toml`) | identico al precedente: esposto è esposto, `public` non è l'unico schema pubblicato |
+| Dato riservato in una **colonna** di una tabella leggibile | pubblico: la policy filtra righe, non campi (§La RLS è per riga) |
 | RLS attiva ma zero policy | applicazione che non legge nulla e sembra un bug del frontend |
 | `using (true)` su dati utente | RLS attiva ma inutile: falso senso di sicurezza |
 | `insert`/`update` senza `with check` | scrittura per conto di altri utenti |

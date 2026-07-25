@@ -64,7 +64,7 @@ Normalizza per default (3NF). Denormalizza **solo** con motivo scritto:
 
 ## Seed
 
-- **Idempotente**: `on conflict do nothing` ovunque; due `db reset` di fila lasciano lo stesso stato
+- **Idempotente**: `on conflict do nothing` ovunque; due `db reset` di fila lasciano lo stesso stato. Attenzione: `on conflict do nothing` protegge dalla **violazione di un vincolo unico**, non dai **trigger di dominio**. Un trigger che blocca la modifica di un ordine spedito, o che ricalcola una giacenza, scatta comunque e fa fallire il seed rieseguito su un database caldo. Dove ci sono trigger di dominio la forma sicura è `insert … select … where not exists (…)`: la riga non si tenta nemmeno
 - **Deterministico**: UUID scritti a mano e costanti. `gen_random_uuid()` nel seed rende i test non riproducibili e gli screenshot instabili
 - **Rappresentativo**: abbastanza dati da mostrare ogni stato dell'interfaccia — lista vuota, lista lunga, testo lungo che rompe il layout, caso limite (ordine annullato, prodotto esaurito)
 - Separato per ambiente: `seed.sql` è per lo sviluppo; i dati demo del cliente sono un'altra cosa e vivono altrove

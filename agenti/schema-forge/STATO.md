@@ -1,6 +1,6 @@
 # Stato — Schema Forge
 
-- **Stato attuale:** v1.2 — collaudata su Postgres reale (Supabase locale, Windows) **e nel comportamento**: il Flusso 1 conversazionale, `evolve` e i gate sono stati provati sul campo il 2026-07-25 (`COLLAUDO-2026-07-25.md`). Gli script hanno test propri (`node --test`, 49 verdi), passano sotto i guardiani, e il gate `verify` è verde su 7 su 7 su uno schema nuovo. **Non ancora usabile su un cliente vero senza la correzione n°1 qui sotto.**
+- **Stato attuale:** v1.3 — collaudata su Postgres reale (Supabase locale, Windows), **nel comportamento** (`COLLAUDO-2026-07-25.md`) e **corretta**: gli otto punti aperti del collaudo sono chiusi il 2026-07-26 (§Correzioni del 2026-07-26). Gli script hanno test propri (`node --test`, **66 verdi**), passano sotto i guardiani, e il gate `verify` è **VERDE su 8 passi su 8** sullo schema del banco *dopo* un `evolve` con due distruttivi autorizzati — il caso che prima restava rosso per sempre. **Usabile su un progetto cliente**, con le verifiche mancanti dichiarate in fondo.
 - **Proprietario:** Alberto
 - **Dipendenze:**
   - A monte: prompt-smith (richiesta professionale), brief-smith (entità e contenuti del cliente)
@@ -42,24 +42,44 @@ I due bug qui sopra erano vivi dal primo giorno ed erano stati trovati **a mano*
 - `node --test scripts/` **non** funziona su Node 24: i percorsi passati a `--test` sono trattati come pattern glob, non come cartelle. Il comando è `node --test "scripts/**/*.test.mjs"`.
 - **I tipi si generano da Git Bash, non con la redirezione di PowerShell.** `supabase gen types … > file.ts` in PowerShell scrive UTF-16 con CRLF: il confronto di `verify.mjs` fallisce sempre e il passo resta rosso senza motivo apparente.
 - `psql` non è nel PATH di default su questa macchina: sta in `%USERPROFILE%\scoop\apps\postgresql\current\bin`. Senza, `rls-audit.mjs` ed `erd.mjs` escono con `psql non disponibile nel PATH` e il gate registra una **verifica mancante** (correttamente, ma il messaggio va letto).
+- **`SUPABASE_DB_URL` non serve più e conviene non impostarla.** Da `verify` il database lo decide `[db].port` del `config.toml` del progetto. Lanciando gli script **a mano** (`rls-audit.mjs`, `erd.mjs`) su un progetto con porta non standard, passa `--db-url`: il default resta 54322, che con più stack accesi è il database di qualcun altro.
+
+## Correzioni del 2026-07-26 (chiusura degli otto punti del collaudo)
+
+Tutti e otto i punti aperti dal collaudo del comportamento sono chiusi. Ognuno **verificato sul campo**, non solo scritto.
+
+| # | Punto del collaudo | Correzione | Prova |
+|---|---|---|---|
+| 1 | Un distruttivo autorizzato teneva il gate rosso per sempre | `references/migrazioni.md` §Il distruttivo autorizzato e il gate: ricetta completa `-- squawk-ignore`, più il richiamo in `SKILL.md` §Regole non negoziabili e §`evolve` | banco: `squawk` **OK**, gate **VERDE 8/8** con i due `drop column` di `evolve` in casa |
+| 2 | `verify.mjs` auditava solo `public` | `schemiEsposti()` legge `[api].schemas` da `supabase/config.toml` e li passa tutti a `rls-audit` | tabella nuda in schema `privato` esposto → `[block] privato.log_interno: RLS non attiva`, gate rosso (prima: `OK`) |
+| 3 | Nessuno verificava le configurazioni copiate né l'handoff | ottavo passo del gate, `contrattoUscita()`: `.sqlfluff`, `squawk.toml`, handoff esistente e senza segnaposto `{{` | 4 test unitari + passo verde sul banco |
+| 4 | `erd.mjs --from-model` non esiste | `SKILL.md`: l'ERD dello Specchio è una **proposta** disegnata a mano (lì il database non c'è), quello di `docs/schema/ERD.md` è una **fotografia** generata. Se divergono ha ragione il secondo | — |
+| 5 | Il Flusso 1 metteva `verify` prima di `types` | Flusso 1 riordinato: forgia → seed → **tipi** → **handoff** → **verifica ultima**. Un rosso strutturale insegna a ignorare il rosso | il gate del banco è verde al primo colpo |
+| 6 | Voci mancanti nelle references | `pattern-ecommerce.md`: §Listini + `paid` fuori dalla catena col pagamento differito · `rls-supabase.md`: §La RLS è per riga, non per colonna + pattern 3b (tenant con ruoli di ambito diverso) · `migrazioni.md`: dati che smentiscono la richiesta, export prima del `drop`, backfill non meccanico = domanda di dominio · `SKILL.md` Flusso 1 passo 4: brief in conflitto col pattern → domanda dello Specchio | — |
+| 7 | In pipeline le domande senza risposta non avevano procedura | `SKILL.md` §Modalità: assunzione esplicita col default e la conseguenza; se l'assunzione è **strutturale** (carrello, albero categorie, multi-tenant, listini, proprietà delle righe) la pipeline **si ferma** | — |
+| 8 | `seed.sql` non ri-eseguibile a caldo coi trigger di dominio | `modellazione.md` §Seed: `on conflict do nothing` protegge dai vincoli unici, non dai trigger — forma sicura `insert … select … where not exists` | — |
+
+### Due bug trovati durante la correzione (non erano nel report)
+
+Entrambi **veri**, entrambi capaci di rendere silenziosamente inutile il gate. Trovati facendo girare il gate corretto su un progetto **vero**, non sul banco.
+
+1. **L'audit RLS crashava su ogni policy con una sottoquery.** `pg_policies.qual` viene deparsato **su più righe**; il guscio divideva l'uscita di `psql` per riga, quindi il record si spezzava, i campi diventavano `undefined` e lo script moriva. `verify` lo registrava come **verifica mancante** — cioè il controllo che «non può mancare» mancava proprio sugli schemi seri, che sono quelli con le policy complesse. Il banco non lo mostrava: le sue policy stanno tutte su una riga. Corretto col **separatore di record** di psql (`-R \x1e`) in `rls-audit.mjs` ed `erd.mjs`, regola pura `righeDaPsql()` in entrambe le lib, con 4 test di regressione. Verificato su un progetto reale da 150 warn: prima crash, ora audit completo.
+2. **Il gate auditava il database sbagliato.** `rls-audit.mjs` ripiega su `SUPABASE_DB_URL` o sulla porta 54322; `verify.mjs` non gli passava mai un URL. Con due stack Supabase accesi — normale su una macchina di sviluppo — il gate applicava le migrazioni su un database e auditava **quello di un altro progetto**, riportando `OK`. Corretto con `urlDbProgetto()`: la porta viene da `[db].port` del `config.toml` del progetto, la stessa che usa il CLI per `db reset`. Precedenza: `--db-url` esplicito > `config.toml` > mai l'ambiente. Il database auditato ora si **stampa** nel dettaglio del passo.
+
+**Test: da 49 a 66.** Nessuna regola allargata: ogni correzione rende il gate più severo o più veritiero.
 
 ## Aperto — decisioni per l'umano
 
-- ~~**Il Flusso 1 conversazionale non è ancora provato.**~~ — **chiuso il 2026-07-25**: giro completo eseguito sul brief «Pastificio Ferrero» (`COLLAUDO-2026-07-25.md`). Ne escono i punti qui sotto, tutti **nuovi**.
+- ~~**Il Flusso 1 conversazionale non è ancora provato.**~~ — chiuso il 2026-07-25 (`COLLAUDO-2026-07-25.md`).
+- ~~**Gli otto punti del collaudo del comportamento**~~ — chiusi il 2026-07-26 (tabella qui sopra).
+- ~~**`code-maniac scan` sul repo di regia riporta 10 passi saltati su 10**~~ — chiuso il 2026-07-25 (§Guardiani sugli script).
 
-### Da decidere dopo il collaudo del comportamento (2026-07-25)
+### Resta aperto
 
-Elenco completo, motivazioni e correzioni proposte in `COLLAUDO-2026-07-25.md` §Report finale. In ordine di gravità:
-
-1. **Un distruttivo autorizzato tiene il gate rosso per sempre.** `squawk` segnala `ban-drop-column` e non legge le motivazioni in prosa; le migrazioni sono immutabili, quindi il rilievo non se ne va più. Cioè: **usare `evolve` come previsto rende il progetto permanentemente non consegnabile.** La via d'uscita esiste ed è stata verificata (`-- squawk-ignore ban-drop-column` sulla riga sopra, con la motivazione accanto) ma **non è scritta da nessuna parte** — e va messa *prima* di applicare la migrazione. **Blocca l'uso su un cliente vero.**
-2. **`verify.mjs` non passa mai `--schemas` all'audit RLS**: gli schemi diversi da `public` non sono coperti dal gate, benché `rls-audit.mjs` li supporti e li documenti. Provato: una tabella nuda in uno schema secondario passa con `OK`.
-3. **`forge` copia `.sqlfluff` e `squawk.toml` solo se l'agente si ricorda di farlo**, e nulla lo verifica (il gate usa le configurazioni della skill, quindi resta verde comunque). Idem per l'esistenza dell'handoff. Due controlli in `verify.mjs` chiuderebbero entrambi.
-4. **`SKILL.md` prescrive `erd.mjs --from-model`, che non esiste**: al passo `model` il database non c'è ancora, quindi l'ERD dello Specchio lo disegna per forza l'LLM — in contraddizione con «il diagramma non lo disegna l'LLM».
-5. **Il Flusso 1 mette `verify` prima di `types`**: il primo `verify` di ogni progetto è sempre rosso sul passo dei tipi.
-6. **Voci mancanti nelle references** (tutte incontrate sul brief vero): listini differenziati per tipo cliente · un dato riservato è una tabella, non una colonna (la RLS è per riga) · pagamento differito con stato separato dalla consegna · un brief che contraddice un pattern diventa una **domanda dello Specchio**, non una decisione dell'agente · in `evolve`, riportare al committente i dati che smentiscono la sua richiesta, ed esportarli prima di un `drop`.
-7. **In pipeline, le domande dello Specchio senza risposta nel brief non hanno procedura**: l'orchestratore finisce per "confermare" assunzioni che nessuno ha preso.
-8. **`seed.sql` non è ri-eseguibile su un database caldo** se esistono trigger di dominio: `on conflict do nothing` non li previene.
-- ~~**`code-maniac scan` sul repo di regia riporta 10 passi saltati su 10**~~ — **chiuso il 2026-07-25** (vedi §Guardiani sugli script, sotto).
+1. **semgrep e gitleaks non sono installati**: sicurezza e segreti sugli script della skill restano **MANCANTI**, non `PASS`. È l'unica casella del gate dei guardiani che non si può spuntare senza installarli.
+2. **`code-inquisition --scope diff` non è mai stato eseguito** sui punti critici (policy RLS, dati utente), benché la Regola dei guardiani del `CLAUDE.md` lo richieda.
+3. **Nessun consumatore reale a valle.** L'analisi di impatto di `evolve` ha girato su un progetto senza codice applicativo: il caso facile. Fly UI e Gestionale Crafter non esistono ancora.
+4. **Il comando `rls` non è mai stato collaudato da solo** (esercitato dentro `forge` e `verify`), né il carrello persistito, né uno schema con viste materializzate.
 
 ## Guardiani sugli script della skill (2026-07-25)
 
@@ -92,3 +112,6 @@ Scelte di stile discutibili **elencate e non toccate**: `pulisci`, `vero` e `rig
 - I linter si configurano, il gate non si declassa (`DECISIONI.md` §8).
 - **Interi a `bigint` per default, non solo il denaro** (`references/modellazione.md`): il tipo largo costa 4 byte per riga, allargarlo dopo è un `alter column type` sotto lock esclusivo. `integer` solo dove il limite è strutturale e dimostrabile, e si motiva.
 - **Gli script degli agenti passano sotto i guardiani come qualsiasi altro codice**: ogni agente che aggiunge uno script aggiunge il proprio `package.json`/`eslint.config.mjs` locale, altrimenti lo script non è consegnabile.
+- **Un distruttivo autorizzato si dichiara al gate**, non lo si aggira: `-- squawk-ignore <regola>` da solo sulla sua riga, motivazione nelle righe sopra, autorizzazione umana come precondizione. È il modo di registrare chi se n'è preso la responsabilità, non un interruttore per far passare il rosso.
+- **Il gate parla del database che ha davvero guardato**: schemi auditati e URL del database si stampano sempre nel dettaglio del passo. Un audit su metà database, o sul database di un altro progetto, non deve poter assomigliare a un audit completo.
+- **`verify` è l'ultimo passo, non il penultimo.** Tipi e handoff si producono prima: un gate che nasce rosso per come è ordinato il flusso insegna a ignorare il rosso.
