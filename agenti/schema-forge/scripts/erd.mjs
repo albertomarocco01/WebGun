@@ -17,9 +17,10 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
-import { costruisciErd } from "./erd-lib.mjs";
+import { costruisciErd, righeDaPsql } from "./erd-lib.mjs";
 
 const SEP = "\x1f";
+const REC = "\x1e"; // vedi rls-audit.mjs: un valore puo' contenere un a capo
 const DEFAULT_DB_URL =
   process.env.SUPABASE_DB_URL ??
   "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
@@ -41,7 +42,7 @@ function parseArgs(argv) {
 }
 
 function query(dbUrl, sql) {
-  const res = spawnSync("psql", [dbUrl, "-At", "-F", SEP, "-c", sql], { encoding: "utf8" });
+  const res = spawnSync("psql", [dbUrl, "-At", "-F", SEP, "-R", REC, "-c", sql], { encoding: "utf8" });
   if (res.error) {
     console.error("psql non disponibile nel PATH: diagramma NON generato.");
     process.exit(2);
@@ -50,8 +51,7 @@ function query(dbUrl, sql) {
     console.error(`psql ha fallito: ${(res.stderr || "").trim()}`);
     process.exit(2);
   }
-  // split su \r?\n: su Windows psql chiude le righe con CRLF (vedi rls-audit.mjs).
-  return res.stdout.split(/\r?\n/).filter(Boolean).map((r) => r.split(SEP));
+  return righeDaPsql(res.stdout, SEP, REC);
 }
 
 // ------------------------------------------------------- lettura del catalogo

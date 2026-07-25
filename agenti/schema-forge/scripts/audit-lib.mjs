@@ -31,6 +31,21 @@ const vero = (v) => {
 
 const riga = (r) => r.map(pulisci);
 
+// ─── parsing dell'uscita di psql ─────────────────────────────────────────────
+// Si divide sul SEPARATORE DI RECORD (`psql -R`), non sui newline. Motivo: una
+// policy con una sottoquery viene deparsata da `pg_policies.qual` su piu' righe.
+// Dividendo per riga il record si spezza, i campi diventano `undefined` e
+// l'audit CRASHA — cioe' la verifica che «non puo' mancare» risulta MANCANTE
+// proprio sugli schemi veri, che sono quelli con le policy complesse.
+// Trovato sul campo il 2026-07-26 su un progetto vero, non sul banco di prova.
+export function righeDaPsql(stdout, sep = "\x1f", rs = "\x1e") {
+  return (stdout ?? "")
+    .split(rs)
+    .map((r) => r.replace(/\r?\n$/, ""))
+    .filter((r) => r.length > 0)
+    .map((r) => r.split(sep));
+}
+
 const trova = (severity, object, message, hint) => ({ severity, object, message, hint });
 
 // ─── regola 1, 1b e 1c — RLS attiva? con policy? forzata? ────────────────────

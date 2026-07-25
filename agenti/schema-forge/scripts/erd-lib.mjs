@@ -20,6 +20,17 @@ const vero = (v) => {
 
 const riga = (r) => r.map(pulisci);
 
+// Vedi audit-lib.mjs: si divide sul separatore di record di psql, non sui
+// newline. Qui il rischio e' minore (nomi di colonna e di tabella non contengono
+// a capo) ma il guscio e' lo stesso e la regola dev'essere una sola.
+export function righeDaPsql(stdout, sep = "\x1f", rs = "\x1e") {
+  return (stdout ?? "")
+    .split(rs)
+    .map((r) => r.replace(/\r?\n$/, ""))
+    .filter((r) => r.length > 0)
+    .map((r) => r.split(sep));
+}
+
 /**
  * @param colonne   righe [tabella, colonna, tipo, notNull, isPk, isFk]
  * @param relazioni righe [origine, destinazione, nomeVincolo, obbligatoria,

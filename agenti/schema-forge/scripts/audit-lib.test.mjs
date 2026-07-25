@@ -17,6 +17,7 @@ import { test } from "node:test";
 
 import {
   auditAll,
+  righeDaPsql,
   regolaChiaviEsterne,
   regolaColonneDiPolicy,
   regolaFunzioni,
@@ -284,4 +285,45 @@ test("regola 6: sulle colonne non booleane il suggerimento propone anche l'indic
   assert.deepEqual(gravita(findings), ["warn"]);
   assert.match(findings[0].hint, /create index on public\.documenti \(owner_id\);/);
   assert.match(findings[0].hint, /where/); // l'indice parziale, dove ha senso
+});
+
+// ─── parsing dell'uscita di psql — bug del 2026-07-26 ────────────────────────
+// Regressione permanente: dividere per riga anziche' per record spezzava ogni
+// policy con una sottoquery (`pg_policies.qual` deparsato su piu' righe), i
+// campi diventavano `undefined` e l'audit CRASHAVA. Il gate lo registrava come
+// verifica mancante: la sicurezza non veniva controllata proprio sugli schemi
+// veri, che sono quelli con le policy complesse.
+
+const US = "";
+const RS = "";
+
+test("un'espressione di policy su piu' righe resta UN solo record", () => {
+  const stdout =
+    `public${US}rimborsi${US}(EXISTS ( SELECT 1
+   FROM pagamenti p
+  WHERE (p.id = r.id)))${RS}` +
+    `public${US}ordini${US}(uid() = owner_id)
+`;
+  const righe = righeDaPsql(stdout, US, RS);
+  assert.equal(righe.length, 2);
+  assert.equal(righe[0].length, 3);
+  assert.match(righe[0][2], /FROM pagamenti p/);
+  assert.equal(righe[1][2], "(uid() = owner_id)");
+});
+
+test("nessun campo undefined: e' cosi' che l'audit andava in crash", () => {
+  const righe = righeDaPsql(`a${US}b${US}c
+`, US, RS);
+  assert.ok(righe[0].every((campo) => typeof campo === "string"));
+});
+
+test("CRLF di Windows in coda all'ultimo record non produce una riga vuota", () => {
+  const righe = righeDaPsql(`a${US}b${RS}c${US}d
+`, US, RS);
+  assert.deepEqual(righe, [["a", "b"], ["c", "d"]]);
+});
+
+test("uscita vuota: zero righe, non un crash", () => {
+  assert.deepEqual(righeDaPsql("", US, RS), []);
+  assert.deepEqual(righeDaPsql(null, US, RS), []);
 });

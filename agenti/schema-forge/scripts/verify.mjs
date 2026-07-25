@@ -24,6 +24,10 @@ const CONFIG_DIR = join(SKILL_DIR, "resources", "config");
 const PROJECT = process.cwd();
 const MIGRATIONS_DIR = join(PROJECT, "supabase", "migrations");
 const TYPES_PATH = join(PROJECT, "src", "lib", "database.types.ts");
+const SUPABASE_CONFIG = join(PROJECT, "supabase", "config.toml");
+// percorso relativo con le barre in avanti: `join` le normalizza su Windows, e
+// il messaggio all'utente resta lo stesso su ogni piattaforma
+const HANDOFF = "docs/handoff/07-schema-forge.md";
 
 const steps = [];
 const record = (name, status, detail = "") => steps.push({ name, status, detail });
@@ -59,6 +63,78 @@ export function dettaglioReset(res, ritentato, migrazioni) {
       (ritentato ? " (riuscito al secondo tentativo)" : "");
   }
   return (res.stderr || res.stdout || "").trim().split("\n").slice(-25).join("\n");
+}
+
+// ------------------------------------------------- lettura del config.toml
+// Due chiavi in tutto: niente parser TOML fra le dipendenze di uno script che
+// deve girare ovunque con `node` e basta.
+function valoreToml(testoConfig, sezione, chiave) {
+  let dentro = false;
+  const cerca = new RegExp(`^\\s*${chiave}\\s*=\\s*(.+)$`);
+  for (const riga of (testoConfig ?? "").split(/\r?\n/)) {
+    const intestazione = /^\s*\[([^\]]+)\]/.exec(riga);
+    if (intestazione) {
+      dentro = intestazione[1].trim() === sezione;
+      continue;
+    }
+    if (!dentro) continue;
+    const trovata = cerca.exec(riga);
+    if (trovata) return trovata[1];
+  }
+  return null;
+}
+
+// ------------------------------------------- schemi realmente esposti al client
+// L'audit RLS deve girare su cio' che PostgREST pubblica DAVVERO, non solo su
+// `public`: una tabella nuda in uno schema secondario esposto e' lo stesso data
+// leak. La verita' non e' un default dello script, e' `[api].schemas` del
+// config.toml del progetto — l'unica riga che decide cosa esce dalla chiave
+// anonima. Senza config leggibile si torna a `public` (e non a "niente").
+export function schemiEsposti(testoConfig) {
+  const valore = valoreToml(testoConfig, "api", "schemas");
+  const lista = valore && /\[([^\]]*)\]/.exec(valore);
+  if (!lista) return ["public"];
+  const schemi = lista[1]
+    .split(",")
+    .map((s) => s.trim().replace(/^["']|["']$/g, ""))
+    .filter(Boolean);
+  return schemi.length > 0 ? schemi : ["public"];
+}
+
+// --------------------------------------- il database del PROGETTO, non un altro
+// `rls-audit.mjs` ripiega su SUPABASE_DB_URL o sulla porta 54322. Con due stack
+// Supabase accesi — normale su una macchina di sviluppo — quella porta e' di un
+// ALTRO progetto: il gate applicava le migrazioni qui e auditava altrove,
+// riportando OK. La porta del progetto e' l'unica risposta giusta, ed e' la
+// stessa che usa il CLI per `db reset`.
+export function urlDbProgetto(testoConfig) {
+  const valore = valoreToml(testoConfig, "db", "port");
+  const porta = valore && /^(\d+)/.exec(valore.trim());
+  return porta ? `postgresql://postgres:postgres@127.0.0.1:${porta[1]}/postgres` : null;
+}
+
+// ------------------------------------------------ contratto d'uscita del progetto
+// `forge` copia .sqlfluff e squawk.toml nella radice, `handoff` scrive il file di
+// passaggio: due obblighi scritti che finora NIENTE verificava. Il gate restava
+// verde identico se l'agente se ne dimenticava — le configurazioni le passa la
+// skill, e l'handoff non lo legge nessuno strumento. Chi viene dopo, invece, ha
+// solo quelli: senza, riproduce il gate con altre regole e costruisce alla cieca.
+export function contrattoUscita(esiste, leggi) {
+  const mancanti = [];
+  for (const file of [".sqlfluff", "squawk.toml"]) {
+    if (!esiste(file)) {
+      mancanti.push(`${file} non copiato nella radice del progetto: il gate non e' riproducibile senza la skill (comando \`forge\`)`);
+    }
+  }
+  if (!esiste(HANDOFF)) {
+    mancanti.push(`${HANDOFF} assente: il passaggio a valle non e' valido (comando \`handoff\`)`);
+  } else if (leggi(HANDOFF).includes("{{")) {
+    mancanti.push(`${HANDOFF} contiene segnaposto {{...}} non compilati`);
+  }
+  return {
+    status: mancanti.length === 0 ? "pass" : "fail",
+    detail: mancanti.join("\n"),
+  };
 }
 
 function parseArgs(argv) {
@@ -129,20 +205,30 @@ function main() {
     record("supabase db lint", "skipped", "Supabase CLI assente");
   }
 
-  // 5. audit RLS (il controllo che non puo' mancare)
-  const auditArgs = [join(SKILL_DIR, "scripts", "rls-audit.mjs"), "--json"];
-  if (args.dbUrl) auditArgs.push("--db-url", args.dbUrl);
+  // 5. audit RLS (il controllo che non puo' mancare) — su TUTTI gli schemi esposti
+  const testoConfig = existsSync(SUPABASE_CONFIG) ? readFileSync(SUPABASE_CONFIG, "utf8") : null;
+  const schemi = schemiEsposti(testoConfig);
+  const auditArgs = [join(SKILL_DIR, "scripts", "rls-audit.mjs"), "--json", "--schemas", schemi.join(",")];
+  // precedenza: --db-url esplicito > config.toml del progetto. Mai l'ambiente:
+  // una SUPABASE_DB_URL rimasta da un altro progetto e' esattamente il modo in
+  // cui il gate finisce per auditare il database sbagliato e dire OK.
+  const dbUrl = args.dbUrl ?? urlDbProgetto(testoConfig);
+  if (dbUrl) auditArgs.push("--db-url", dbUrl);
   const audit = run("node", auditArgs);
   if (audit.status === 2 || !audit.stdout) {
     record("audit RLS", "skipped", (audit.stderr || "audit non eseguito").trim());
   } else {
     const parsed = JSON.parse(audit.stdout);
     const { block, issue, warn } = parsed.summary;
+    const residuo = parsed.findings
+      .filter((f) => f.severity !== "warn")
+      .map((f) => `[${f.severity}] ${f.object}: ${f.message}`)
+      .join("\n") || `nessun bloccante (${issue} issue, ${warn} warn)`;
+    // schemi e database si stampano sempre: un audit che ha guardato solo meta'
+    // del database — o il database di un altro progetto — non deve poter passare
+    // per un audit completo
     record("audit RLS", block === 0 ? "pass" : "fail",
-      parsed.findings
-        .filter((f) => f.severity !== "warn")
-        .map((f) => `[${f.severity}] ${f.object}: ${f.message}`)
-        .join("\n") || `nessun bloccante (${issue} issue, ${warn} warn)`);
+      `schemi esposti: ${schemi.join(", ")}${dbUrl ? ` · ${dbUrl}` : ""}\n${residuo}`);
   }
 
   // 6. test delle policy — pgTAP
@@ -171,6 +257,13 @@ function main() {
   } else {
     record("tipi TypeScript", "skipped", "Supabase CLI assente");
   }
+
+  // 8. contratto d'uscita: cosa trova davvero chi viene dopo
+  const contratto = contrattoUscita(
+    (rel) => existsSync(join(PROJECT, rel)),
+    (rel) => readFileSync(join(PROJECT, rel), "utf8")
+  );
+  record("contratto d'uscita (configurazioni + handoff)", contratto.status, contratto.detail);
 
   // ------------------------------------------------------------- verdetto
   const failed = steps.filter((s) => s.status === "fail");

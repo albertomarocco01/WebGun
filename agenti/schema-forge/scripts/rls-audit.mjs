@@ -19,9 +19,10 @@
 
 import { spawnSync } from "node:child_process";
 
-import { auditAll } from "./audit-lib.mjs";
+import { auditAll, righeDaPsql } from "./audit-lib.mjs";
 
 const SEP = "\x1f"; // unit separator: non compare mai nei nomi degli oggetti
+const REC = "\x1e"; // record separator: l'espressione di una policy va a capo
 const DEFAULT_DB_URL =
   process.env.SUPABASE_DB_URL ??
   "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
@@ -46,7 +47,7 @@ function parseArgs(argv) {
 
 // ------------------------------------------------------------------- query
 function query(dbUrl, sql) {
-  const res = spawnSync("psql", [dbUrl, "-At", "-F", SEP, "-c", sql], {
+  const res = spawnSync("psql", [dbUrl, "-At", "-F", SEP, "-R", REC, "-c", sql], {
     encoding: "utf8",
   });
   if (res.error) {
@@ -57,12 +58,7 @@ function query(dbUrl, sql) {
     console.error(`psql ha fallito: ${(res.stderr || "").trim()}`);
     process.exit(2);
   }
-  // split su \r?\n: su Windows psql chiude le righe con CRLF e il \r finirebbe
-  // dentro l'ultimo campo, falsando confronti e nomi degli oggetti.
-  return res.stdout
-    .split(/\r?\n/)
-    .filter((r) => r.length > 0)
-    .map((r) => r.split(SEP));
+  return righeDaPsql(res.stdout, SEP, REC);
 }
 
 // ------------------------------------------------------- lettura del catalogo
