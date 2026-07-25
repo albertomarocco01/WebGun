@@ -6,6 +6,9 @@
  * stampa un `erDiagram`. Il diagramma non lo disegna l'LLM: lo stampa il tool.
  * Stesso principio di tree.mjs in code-maniac — la mappa e' rigenerabile, non scritta a mano.
  *
+ * Questo file e' solo il GUSCIO: legge da psql e scrive. La costruzione del
+ * Mermaid sta in `erd-lib.mjs`, funzione pura testabile senza database.
+ *
  * USO:  node erd.mjs [--db-url <url>] [--schemas public] [--out docs/schema/ERD.md]
  * DIPENDENZE: solo `psql` nel PATH.
  */
@@ -13,6 +16,8 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+
+import { costruisciErd } from "./erd-lib.mjs";
 
 const SEP = "\x1f";
 const DEFAULT_DB_URL =
@@ -49,13 +54,11 @@ function query(dbUrl, sql) {
   return res.stdout.split(/\r?\n/).filter(Boolean).map((r) => r.split(SEP));
 }
 
-// psql rende i boolean come 'true'/'false' col cast ::text, 't'/'f' senza.
-const vero = (v) => v === "true" || v === "t";
-
-function build({ dbUrl, schemas }) {
+// ------------------------------------------------------- lettura del catalogo
+function leggiCatalogo({ dbUrl, schemas }) {
   const list = schemas.map((s) => `'${s}'`).join(",");
 
-  const columns = query(
+  const colonne = query(
     dbUrl,
     `select c.relname, a.attname, format_type(a.atttypid, a.atttypmod),
             (a.attnotnull)::text,
@@ -73,7 +76,7 @@ function build({ dbUrl, schemas }) {
       order by c.relname, a.attnum`
   );
 
-  const relations = query(
+  const relazioni = query(
     dbUrl,
     `select src.relname, tgt.relname, con.conname,
             (select bool_and(att.attnotnull) from pg_attribute att
@@ -86,32 +89,12 @@ function build({ dbUrl, schemas }) {
       order by 1, 2`
   );
 
-  const lines = ["erDiagram"];
-  let currentTable = null;
-  for (const [table, column, type, notNull, isPk, isFk] of columns) {
-    if (table !== currentTable) {
-      if (currentTable !== null) lines.push("    }");
-      lines.push(`    ${table} {`);
-      currentTable = table;
-    }
-    const key = vero(isPk) ? " PK" : vero(isFk) ? " FK" : "";
-    const req = vero(notNull) ? ' "obbligatorio"' : "";
-    lines.push(`        ${type.replace(/[^a-zA-Z0-9_]/g, "_")} ${column}${key}${req}`);
-  }
-  if (currentTable !== null) lines.push("    }");
-
-  for (const [source, target, name, required] of relations) {
-    // il figlio con FK obbligatoria appartiene sempre a un padre: ||--o{
-    const cardinality = vero(required) ? "||--o{" : "|o--o{";
-    lines.push(`    ${target} ${cardinality} ${source} : "${name}"`);
-  }
-
-  return lines.join("\n");
+  return { colonne, relazioni };
 }
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
-  const diagram = build(args);
+  const diagram = costruisciErd(leggiCatalogo(args));
   const document = [
     "# Diagramma ER",
     "",
