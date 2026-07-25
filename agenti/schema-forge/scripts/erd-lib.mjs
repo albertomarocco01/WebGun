@@ -22,9 +22,11 @@ const riga = (r) => r.map(pulisci);
 
 /**
  * @param colonne   righe [tabella, colonna, tipo, notNull, isPk, isFk]
- * @param relazioni righe [origine, destinazione, nomeVincolo, obbligatoria]
+ * @param relazioni righe [origine, destinazione, nomeVincolo, obbligatoria,
+ *                         schemaDestinazione, esclusiva]
+ * @param schemi    gli schemi richiesti: cio' che sta fuori si qualifica
  */
-export function costruisciErd({ colonne, relazioni }) {
+export function costruisciErd({ colonne, relazioni, schemi = ["public"] }) {
   const righe = ["erDiagram"];
 
   let tabellaCorrente = null;
@@ -43,10 +45,19 @@ export function costruisciErd({ colonne, relazioni }) {
   if (tabellaCorrente !== null) righe.push("    }");
 
   for (const r of relazioni) {
-    const [origine, destinazione, nome, obbligatoria] = riga(r);
-    // il figlio con FK obbligatoria appartiene sempre a un padre: ||--o{
-    const cardinalita = vero(obbligatoria) ? "||--o{" : "|o--o{";
-    righe.push(`    ${destinazione} ${cardinalita} ${origine} : "${nome}"`);
+    const [origine, destinazione, nome, obbligatoria, schemaDestinazione, esclusiva] = riga(r);
+    // Se l'insieme di colonne della FK e' anche unico (o chiave primaria, come
+    // profiles.id verso auth.users) la riga figlia non puo' ripetersi: e' 1:1.
+    // Altrimenti il figlio con FK obbligatoria appartiene sempre a un padre.
+    const cardinalita = vero(esclusiva)
+      ? (vero(obbligatoria) ? "||--||" : "||--o|")
+      : (vero(obbligatoria) ? "||--o{" : "|o--o{");
+    // Un'entita' fuori dagli schemi richiesti si qualifica: `auth.users` e una
+    // eventuale `public.users` non sono la stessa cosa e non devono collidere.
+    const entita = schemaDestinazione && !schemi.includes(schemaDestinazione)
+      ? `${schemaDestinazione}_${destinazione}`
+      : destinazione;
+    righe.push(`    ${entita} ${cardinalita} ${origine} : "${nome}"`);
   }
 
   return righe.join("\n");

@@ -33,6 +33,30 @@ function run(cmd, cmdArgs, opts = {}) {
   return spawnSync(cmd, cmdArgs, { encoding: "utf8", cwd: PROJECT, ...opts });
 }
 
+// ------------------------------------------------- ritentativo del solo reset
+// `supabase db reset` e' saltuariamente instabile su Windows (Error status 502
+// mentre i container si riavviano) e il gate diventa rosso per un motivo
+// ambientale. UN solo ritentativo: due tentativi distinguono l'ambiente
+// traballante dallo schema rotto, tre nasconderebbero lo schema rotto.
+// Nessun altro passo ritenta: se il lint fallisce, fallisce.
+export function conRitentativo(esegui, attesaMs = 10_000) {
+  const primo = esegui();
+  if (primo.status === 0) return { res: primo, ritentato: false };
+  // attesa sincrona: qui siamo nel mondo di spawnSync, non c'e' event loop
+  if (attesaMs > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, attesaMs);
+  return { res: esegui(), ritentato: true };
+}
+
+// L'instabilita' dell'ambiente resta SCRITTA: un passo verde che ha avuto
+// bisogno di due tentativi non e' uguale a un passo verde al primo colpo.
+export function dettaglioReset(res, ritentato, migrazioni) {
+  if (res.status === 0) {
+    return `${migrazioni} migrazioni applicate + seed` +
+      (ritentato ? " (riuscito al secondo tentativo)" : "");
+  }
+  return (res.stderr || res.stdout || "").trim().split("\n").slice(-25).join("\n");
+}
+
 function parseArgs(argv) {
   const args = { dbUrl: null, json: false, skipReset: false };
   for (let i = 0; i < argv.length; i++) {
@@ -83,10 +107,9 @@ function main() {
   } else if (args.skipReset) {
     record("supabase db reset (applicazione reale)", "skipped", "saltato esplicitamente con --skip-reset");
   } else {
-    const res = run("supabase", ["db", "reset"]);
+    const { res, ritentato } = conRitentativo(() => run("supabase", ["db", "reset"]));
     record("supabase db reset (applicazione reale)", res.status === 0 ? "pass" : "fail",
-      res.status === 0 ? `${migrations.length} migrazioni applicate + seed`
-        : (res.stderr || res.stdout || "").trim().split("\n").slice(-25).join("\n"));
+      dettaglioReset(res, ritentato, migrations.length));
   }
 
   // 4. lint del database
@@ -156,7 +179,9 @@ function main() {
   for (const s of steps) {
     const mark = { pass: "OK  ", fail: "FAIL", skipped: "MANC" }[s.status];
     console.log(`${mark}  ${s.name}`);
-    if (s.detail && s.status !== "pass") {
+    // il dettaglio si stampa anche sui passi verdi: e' li' che finisce
+    // "riuscito al secondo tentativo", e un'instabilita' nascosta non esiste
+    if (s.detail) {
       for (const line of s.detail.split("\n")) console.log(`        ${line}`);
     }
   }
@@ -166,4 +191,5 @@ function main() {
   process.exit(green ? 0 : 1);
 }
 
-main();
+// eseguito come comando, non quando i test importano conRitentativo/dettaglioReset
+if (import.meta.main) main();

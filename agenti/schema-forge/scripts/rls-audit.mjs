@@ -72,11 +72,12 @@ function leggiCatalogo({ dbUrl, schemas }) {
   const q = (sql) => query(dbUrl, sql);
 
   return {
-    // 1. tabelle: RLS attiva? quante policy?
+    // 1. tabelle: RLS attiva? quante policy? forzata anche per il proprietario?
     tabelle: q(
       `select n.nspname, c.relname, c.relrowsecurity::text,
               (select count(*) from pg_policies p
-                where p.schemaname = n.nspname and p.tablename = c.relname)::text
+                where p.schemaname = n.nspname and p.tablename = c.relname)::text,
+              c.relforcerowsecurity::text
          from pg_class c join pg_namespace n on n.oid = c.relnamespace
         where n.nspname in (${list}) and c.relkind = 'r'
         order by 1, 2`
@@ -122,9 +123,10 @@ function leggiCatalogo({ dbUrl, schemas }) {
          join pg_attribute a on a.attrelid = i.indrelid and a.attnum = i.indkey[0]
         where n.nspname in (${list})`
     ),
-    // 6b. tutte le colonne delle tabelle, per cercarle nelle espressioni delle policy
+    // 6b. tutte le colonne delle tabelle, per cercarle nelle espressioni delle
+    //     policy. Il tipo serve a esentare i booleani dall'indice pieno.
     colonne: q(
-      `select n.nspname, c.relname, a.attname
+      `select n.nspname, c.relname, a.attname, format_type(a.atttypid, a.atttypmod)
          from pg_attribute a
          join pg_class c on c.oid = a.attrelid
          join pg_namespace n on n.oid = c.relnamespace

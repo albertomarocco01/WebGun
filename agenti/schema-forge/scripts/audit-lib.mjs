@@ -33,18 +33,31 @@ const riga = (r) => r.map(pulisci);
 
 const trova = (severity, object, message, hint) => ({ severity, object, message, hint });
 
-// ─── regola 1 e 1b — tabelle senza RLS, o con RLS e zero policy ──────────────
+// ─── regola 1, 1b e 1c — RLS attiva? con policy? forzata? ────────────────────
+// Righe: [schema, tabella, rls, numeroPolicy, force]
 export function regolaTabelle(tabelle) {
   const findings = [];
   for (const r of tabelle) {
-    const [schema, tabella, rls, numeroPolicy] = riga(r);
+    const [schema, tabella, rls, numeroPolicy, force = ""] = riga(r);
     const obj = `${schema}.${tabella}`;
     if (!vero(rls)) {
+      // la tabella e' gia' un block: aggiungere il warn su `force` e' rumore
       findings.push(trova("block", obj, "RLS non attiva su una tabella esposta",
         `alter table ${obj} enable row level security;`));
-    } else if (numeroPolicy === "0") {
+      continue;
+    }
+    if (numeroPolicy === "0") {
       findings.push(trova("issue", obj, "RLS attiva ma nessuna policy: nessun ruolo puo' leggere o scrivere",
         "aggiungi almeno una policy, oppure sposta la tabella in uno schema non esposto"));
+    }
+    // `enable` non vale per il PROPRIETARIO della tabella: una funzione o un
+    // job che gira come owner legge e scrive tutto scavalcando le policy.
+    // `force` chiude anche quella porta (references/rls-supabase.md).
+    // Campo vuoto = la riga non porta l'informazione: non si inventa un verdetto.
+    if (force !== "" && !vero(force)) {
+      findings.push(trova("warn", obj,
+        "`force row level security` non attiva: le policy non valgono per il proprietario della tabella",
+        `alter table ${obj} force row level security;`));
     }
   }
   return findings;
@@ -128,16 +141,19 @@ export function regolaChiaviEsterne(chiaviEsterne) {
 
 // ─── regola 6 — colonne usate nelle policy senza indice ──────────────────────
 // La policy gira su ogni riga di ogni query: senza indice e' scansione completa.
+// Righe delle colonne: [schema, tabella, colonna, tipo]
+const booleano = (tipo) => /^bool(ean)?$/i.test(tipo);
+
 export function regolaColonneDiPolicy({ policy, colonne, indicizzate }) {
   const findings = [];
   const indice = new Set(indicizzate.map((r) => pulisci(r[0])));
 
   const perTabella = new Map();
   for (const r of colonne) {
-    const [schema, tabella, colonna] = riga(r);
+    const [schema, tabella, nome, tipo] = riga(r);
     const chiave = `${schema}.${tabella}`;
     if (!perTabella.has(chiave)) perTabella.set(chiave, []);
-    perTabella.get(chiave).push(colonna);
+    perTabella.get(chiave).push({ nome, tipo });
   }
 
   const viste = new Set();
@@ -145,15 +161,22 @@ export function regolaColonneDiPolicy({ policy, colonne, indicizzate }) {
     const [schema, tabella, , , , qual, withCheck] = riga(r);
     const chiave = `${schema}.${tabella}`;
     const espressione = `${qual} ${withCheck}`;
-    for (const colonna of perTabella.get(chiave) ?? []) {
-      if (colonna === "id") continue; // gia' chiave primaria
-      const usata = new RegExp(`\\b${colonna}\\b`).test(espressione);
-      const dedupe = `${chiave}.${colonna}`;
+    for (const { nome, tipo } of perTabella.get(chiave) ?? []) {
+      if (nome === "id") continue; // gia' chiave primaria
+      // Un booleano ha due valori: l'indice pieno non seleziona quasi nulla e
+      // rallenta ogni scrittura. references/modellazione.md: non si indicizza
+      // "per sicurezza" — semmai un indice PARZIALE, che qui non sappiamo
+      // proporre senza conoscere la query. Nessun finding: sarebbe rumore.
+      if (booleano(tipo)) continue;
+      const usata = new RegExp(`\\b${nome}\\b`).test(espressione);
+      const dedupe = `${chiave}.${nome}`;
       if (usata && !indice.has(dedupe) && !viste.has(dedupe)) {
         viste.add(dedupe);
         findings.push(trova("warn", dedupe,
           "colonna usata in una policy ma non indicizzata: costo su ogni riga di ogni query",
-          `create index on ${chiave} (${colonna});`));
+          `create index on ${chiave} (${nome}); ` +
+          `— se la policy tocca solo un sottoinsieme stabile delle righe, l'indice parziale ` +
+          `costa meno in scrittura: create index on ${chiave} (${nome}) where <condizione>;`));
       }
     }
   }

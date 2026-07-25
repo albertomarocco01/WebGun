@@ -76,20 +76,33 @@ function leggiCatalogo({ dbUrl, schemas }) {
       order by c.relname, a.attnum`
   );
 
+  // L'ultima colonna dice se l'insieme di colonne della FK e' anche UNICO: in
+  // quel caso la riga figlia non puo' ripetersi e la relazione e' 1:1.
+  // Un indice unico PARZIALE non garantisce l'unicita' globale: escluso.
   const relazioni = query(
     dbUrl,
     `select src.relname, tgt.relname, con.conname,
             (select bool_and(att.attnotnull) from pg_attribute att
-              where att.attrelid = con.conrelid and att.attnum = any(con.conkey))::text
+              where att.attrelid = con.conrelid and att.attnum = any(con.conkey))::text,
+            tgtn.nspname,
+            (exists (
+               select 1 from pg_index i
+                where i.indrelid = con.conrelid
+                  and i.indisunique and i.indisvalid and i.indpred is null
+                  and (select array_agg(k order by k)
+                         from unnest((string_to_array(i.indkey::text, ' ')::smallint[])[1:i.indnkeyatts]) k)
+                      = (select array_agg(k order by k) from unnest(con.conkey) k)
+            ))::text
        from pg_constraint con
        join pg_class src on src.oid = con.conrelid
        join pg_class tgt on tgt.oid = con.confrelid
+       join pg_namespace tgtn on tgtn.oid = tgt.relnamespace
        join pg_namespace n on n.oid = con.connamespace
       where con.contype = 'f' and n.nspname in (${list})
       order by 1, 2`
   );
 
-  return { colonne, relazioni };
+  return { colonne, relazioni, schemi: schemas };
 }
 
 function main() {
