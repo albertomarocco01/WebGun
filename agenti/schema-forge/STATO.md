@@ -45,7 +45,30 @@ I due bug qui sopra erano vivi dal primo giorno ed erano stati trovati **a mano*
 
 - **Il Flusso 1 conversazionale non è ancora provato.** Sono collaudati gli script; il giro `model` → Specchio del dominio → `forge` → `seed` → `verify` → `types` → `handoff` su un e-commerce di prova, dal brief all'handoff, resta da fare. È l'unica casella vuota del collaudo del 2026-07-24.
 - **La copia delle configurazioni dei linter da parte di `forge` è documentata in `SKILL.md`, non automatizzata da uno script.** Finché `forge` è una procedura che esegue l'agente, dipende dall'agente che la esegua.
-- **`code-maniac scan` sul repo di regia riporta 10 passi saltati su 10** (nessuno strumento installato: il repo non è un progetto npm). Vale `MANCANTE`, non `PASS`: gli script di Schema Forge non sono passati sotto lint, tipi, complessità, duplicati e segreti in modo deterministico.
+- ~~**`code-maniac scan` sul repo di regia riporta 10 passi saltati su 10**~~ — **chiuso il 2026-07-25** (vedi §Guardiani sugli script, sotto).
+
+## Guardiani sugli script della skill (2026-07-25)
+
+Gli script degli agenti passano sotto i guardiani **come qualsiasi altro codice** (CLAUDE.md, Regola dei guardiani). Predisposto il minimo perché la batteria giri sui soli `scripts/` della skill, senza trasformare il repo di regia in un progetto applicativo:
+
+- `agenti/schema-forge/package.json` — `"type": "module"`, `private: true`, tre devDependencies (`@eslint/js`, `eslint`, `jscpd`, `knip`)
+- `agenti/schema-forge/eslint.config.mjs` — `js.configs.recommended` più le soglie di complessità (`complexity 15`, `max-depth 4`, `max-params 4`)
+- `agenti/schema-forge/knip.jsonc` — entry point CLI dichiarati, ogni esenzione con la motivazione sulla riga sopra
+- `node_modules/` e `.jscpd/` in `.gitignore`: si reinstallano con `npm install` dalla cartella dell'agente
+
+**Residuo reale di `node agenti/code-maniac/scripts/scan.mjs`: 0 passi con problemi, 6 saltati su 10.**
+
+| Passo | Esito |
+|---|---|
+| Lint (ESLint) · Complessità · Codice morto (knip) · Duplicati (jscpd) | **PASS** |
+| Prettier · tsc · convenzioni · dependency-cruiser | MANCANTE — non pertinenti qui (niente TypeScript, niente grafo di moduli da validare) |
+| **semgrep · gitleaks** | **MANCANTE — non installati.** Regole di sicurezza e ricerca di segreti sugli script **non verificate**: vale `MANCANTE`, non `PASS` |
+
+Corretto solo ciò che era oggettivo: quattro `export` inutilizzati (`pulisci`, `vero` in `audit-lib.mjs` e `erd-lib.mjs` — usati solo dentro il proprio file: superficie pubblica senza consumatori) e `@eslint/js` non dichiarato fra le dipendenze. **I 49 test restano verdi** dopo le correzioni.
+
+Scelte di stile discutibili **elencate e non toccate**: `pulisci`, `vero` e `riga` sono triplicati identici fra `audit-lib.mjs` e `erd-lib.mjs` (jscpd non li segnala, sono sotto ogni soglia); estrarli in un terzo modulo accoppierebbe due librerie volutamente indipendenti, quindi la duplicazione resta una decisione, non una svista.
+
+**Stesso trattamento per `verify.mjs`**: lo script del gate è dentro `scripts/` e rientra nella stessa batteria — è già coperto da questo scan (ESLint, complessità, knip, jscpd verdi) e dai propri test (`verify.test.mjs`). Da qui in avanti, **ogni nuovo script di un agente nasce dentro questo perimetro**: se un agente aggiunge uno script, aggiunge anche il proprio `package.json`/`eslint.config.mjs` locale, oppure lo script non è consegnabile.
 
 ## Decisioni prese
 

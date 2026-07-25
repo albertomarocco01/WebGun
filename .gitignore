@@ -6,3 +6,9 @@
 # Banco di prova del collaudo: progetto Supabase usa e getta, si rigenera.
 banco-prova/
 banco-prova-pastificio/
+
+# Dipendenze dei guardiani sugli script degli agenti (si reinstallano con
+# `npm install` dalla cartella dell'agente). Il repo di regia NON e' un
+# progetto applicativo: qui npm serve solo a far girare la batteria.
+node_modules/
+.jscpd/

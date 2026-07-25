@@ -18,13 +18,13 @@
 // finisce in coda all'ultimo campo di ogni riga e falsa ogni confronto:
 // "owner_id\r" !== "owner_id". La normalizzazione sta qui, non solo nel
 // parsing, cosi' la regola resta corretta anche con un guscio diverso.
-export const pulisci = (v) => (v ?? "").replace(/\r/g, "");
+const pulisci = (v) => (v ?? "").replace(/\r/g, "");
 
 // psql rende i boolean come 'true'/'false' quando la query ha il cast ::text,
 // come 't'/'f' senza cast: un controllo di sicurezza li accetta entrambi.
 // Trattare 'true' come falso significava segnalare OGNI tabella come priva di
 // RLS (rumore) e rendere codice morto la regola 1b.
-export const vero = (v) => {
+const vero = (v) => {
   const s = pulisci(v);
   return s === "true" || s === "t";
 };

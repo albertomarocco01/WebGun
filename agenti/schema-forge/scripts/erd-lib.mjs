@@ -11,9 +11,9 @@
  */
 
 // Vedi audit-lib.mjs: CRLF di psql su Windows e rese booleane 'true'/'t'.
-export const pulisci = (v) => (v ?? "").replace(/\r/g, "");
+const pulisci = (v) => (v ?? "").replace(/\r/g, "");
 
-export const vero = (v) => {
+const vero = (v) => {
   const s = pulisci(v);
   return s === "true" || s === "t";
 };
