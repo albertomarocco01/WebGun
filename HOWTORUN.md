@@ -64,8 +64,17 @@ Ordine operativo pensato per un progetto reale (es. e-commerce da zero).
 
 ## FASE 3 — Costruzione (dati → interfaccia → funzioni)
 
-7. 🔵 **Schema Forge**  
-   Progetta lo schema del database: tabelle, relazioni, RLS e data seeding. Si parte da qui perché in un e-commerce i dati (prodotti, ordini, utenti) sono le fondamenta.
+7. 🟢 **Schema Forge**  
+   **Cosa fa:** Progetta lo schema del database: tabelle, relazioni, vincoli, indici, RLS e seed. Si parte da qui perché in un e-commerce i dati (prodotti, ordini, utenti) sono le fondamenta. Non scrive SQL prima di aver riformulato il dominio in italiano e aver ottenuto conferma (*Specchio del dominio*); nessuna migrazione è valida finché non è stata applicata davvero su un database pulito e non ha passato la batteria deterministica.  
+   **Prerequisiti:** Supabase CLI con Docker attivo, `psql`, e consigliati `pipx install sqlfluff squawk-cli`. Uno strumento assente vale **MANCANTE**, mai `pass`.  
+   **Come si installa:**  
+   Vive in `agenti/schema-forge/` di questo repo, esposta a Claude Code da una junction:  
+   `New-Item -ItemType Junction -Path ".claude\skills\schema-forge" -Target (Resolve-Path "agenti\schema-forge").Path`  
+   **Come si usa / lancia:**  
+   - in conversazione: `/schema-forge`, poi `model` → `forge` → `seed` → `types` → `handoff` → `verify`
+   - il gate a mano, dalla radice del progetto generato: `node <skill>/scripts/verify.mjs`
+   - solo l'audit di sicurezza: `node <skill>/scripts/rls-audit.mjs --json`
+   - manuale completo: `agenti/schema-forge/README.md`
 8. 🔴 **Fly UI**  
    Libreria di componenti e interfacce utente veloci. Costruisce le pagine sopra lo schema dati già definito, senza reinventare i componenti ogni volta.
 9. 🟢 **Sites Effects**  

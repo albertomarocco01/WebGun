@@ -9,7 +9,7 @@ BLU = da creare
 FASE 0 — Commerciale / Raccolta materiali
 1. 
 Brief Smith
-   [Da creare]
+   [In arrivo dagli amici]
 Raccoglie automaticamente dal cliente logo, palette colori, immagini, testi e informazioni. È il carburante iniziale: tutto quello che Web Gun deve sapere prima di sparare.
 2. 
 Preventivo Smith
@@ -32,13 +32,13 @@ Code Inquisition
 Audit profondo e continuo della qualità del codice: controlla il lavoro di ogni agente costruttore man mano che produce, prima che gli errori si accumulino.
 6. 
 Bug Bay
-   [Ce l'ho]
+   [Ce l'ho]   // BUTCHER DA METTEREEEEEEEE
 Rilevatore automatico di bug, attivo su ogni procedimento della pipeline. Intercetta i problemi appena nascono, quando costano poco da sistemare.
 FASE 3 — Costruzione (dati → interfaccia → funzioni)
 7. 
 Schema Forge
-   [Da creare]
-Progetta lo schema del database: tabelle, relazioni, RLS e data seeding. Si parte da qui perché in un e-commerce i dati (prodotti, ordini, utenti) sono le fondamenta.
+   [Ce l'ho]   // FATTO — v1.3, collaudata e in uso
+Progetta lo schema del database: tabelle, relazioni, vincoli, indici, RLS e seed. Si parte da qui perché in un e-commerce i dati (prodotti, ordini, utenti) sono le fondamenta. Tre leggi: il modello prima del DDL (riformula il dominio in italiano e si ferma finché non ottiene conferma), il database è il giudice (nessuna migrazione è valida se non è stata applicata davvero su un database pulito e passata a otto controlli deterministici), nessuna tabella nuda (RLS attiva alla nascita: su Supabase una tabella senza RLS è pubblicata su internet). Evolve gli schemi esistenti in expand-contract, con analisi di impatto sui dati veri e checkpoint umano su ogni distruttivo.
 8. 
 Fly UI
    [In arrivo dagli amici]

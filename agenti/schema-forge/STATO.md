@@ -68,6 +68,10 @@ Entrambi **veri**, entrambi capaci di rendere silenziosamente inutile il gate. T
 
 **Test: da 49 a 66.** Nessuna regola allargata: ogni correzione rende il gate più severo o più veritiero.
 
+### Banchi di prova rimossi
+
+`banco-prova/` e `banco-prova-pastificio/` sono stati **cancellati il 2026-07-26**, a collaudo chiuso: erano progetti Supabase usa e getta e si rigenerano con `supabase init`. Restano i verbali (`COLLAUDO-2026-07-25.md`) e ciò che il collaudo ha prodotto — regole nelle references, test negli script. Il logo della skill, che stava dentro `banco-prova/`, è ora in `resources/branding/`.
+
 ## Aperto — decisioni per l'umano
 
 - ~~**Il Flusso 1 conversazionale non è ancora provato.**~~ — chiuso il 2026-07-25 (`COLLAUDO-2026-07-25.md`).

@@ -39,7 +39,7 @@ Ci lavora un team: ogni agente ha un proprietario che lo sviluppa e lo mantiene.
 ### FASE 3 — Costruzione (dati → interfaccia → funzioni)
 
 7. 🟢 **Schema Forge**
-   Progetta lo schema del database: tabelle, relazioni, RLS e data seeding. Si parte da qui perché in un e-commerce i dati (prodotti, ordini, utenti) sono le fondamenta.
+   Progetta lo schema del database: tabelle, relazioni, vincoli, indici, RLS e seed. Si parte da qui perché in un e-commerce i dati (prodotti, ordini, utenti) sono le fondamenta. Applica tre leggi: il modello prima del DDL (riformula il dominio in italiano e si ferma finché non ottiene conferma), il database è il giudice (nessuna migrazione è valida se non è stata applicata davvero su un database pulito e passata a una batteria di otto controlli deterministici), nessuna tabella nuda (RLS attiva e policy esplicite alla nascita di ogni tabella — su Supabase una tabella senza RLS è pubblicata su internet). Evolve gli schemi esistenti in expand-contract, con analisi di impatto sui dati veri e checkpoint umano su ogni operazione distruttiva. Manuale: `agenti/schema-forge/README.md`.
 8. 🔴 **Fly UI**
    Libreria di componenti e interfacce utente veloci. Costruisce le pagine sopra lo schema dati già definito, senza reinventare i componenti ogni volta.
 9. 🟢 **Sites Effects**

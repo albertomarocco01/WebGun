@@ -90,3 +90,39 @@ Motivo: in centesimi, `integer` si ferma a 21.474.836,47 € — un fatturato an
 Aggiornati `references/modellazione.md` (riga *Denaro*) e `references/pattern-ecommerce.md` (tutti i `*_cents`). Il banco di prova è stato riportato a `bigint` e il gate è tornato verde su 7 passi su 7 senza toccare la regola.
 
 - **Stato:** presa.
+
+## Decisioni prese durante la correzione di Schema Forge (2026-07-26)
+
+### 10. Un distruttivo autorizzato si dichiara al gate, non lo si aggira
+
+`squawk` segnala `ban-drop-column` e non legge le motivazioni in prosa; le migrazioni sono immutabili, quindi il rilievo non se ne va più. Conseguenza: un `evolve` legittimo — autorizzato dall'umano, documentato, coi dati esportati — lasciava il progetto **rosso per sempre**, cioè non consegnabile.
+
+Tre strade: declassare `squawk` a non bloccante, disattivare `ban-drop-column` nella configurazione, oppure dichiarare l'eccezione riga per riga nella migrazione.
+
+Scelta: **l'eccezione nella migrazione** — `-- squawk-ignore ban-drop-column`, da solo sulla sua riga, con la motivazione nelle righe sopra e l'autorizzazione umana come precondizione.
+
+Motivo: le prime due spengono il controllo per tutti i `drop` futuri, compresi quelli che nessuno ha autorizzato. La terza lo lascia acceso e costringe a **firmare** ogni eccezione nel file che la esegue: chi, quando, perché, dove sono finiti i dati. Coerente con la §8 — i linter si configurano, il gate non si declassa.
+
+Verificato sul campo: la riga silenzia quella sola regola e lascia attive tutte le altre nello stesso file. La motivazione **accanto** al nome della regola non funziona: squawk la legge come altri nomi di regola e il rilievo scatta lo stesso.
+
+- **Stato:** presa — scritta in `references/migrazioni.md` §Il distruttivo autorizzato e il gate.
+
+### 11. Il gate dichiara sempre cosa ha guardato
+
+Due bug trovati facendo girare il gate corretto su un progetto vero: l'audit RLS girava sul database della porta 54322 — cioè di un **altro** progetto, con due stack Supabase accesi — e copriva il solo schema `public` anche quando il progetto ne esponeva altri. In entrambi i casi rispondeva `OK`.
+
+Scelta: il database viene da `[db].port` del `config.toml` del progetto e gli schemi da `[api].schemas`; **schemi e URL si stampano nel dettaglio del passo**, anche quando è verde.
+
+Motivo: un audit parziale, o su un database sbagliato, non deve poter assomigliare a un audit completo. La precedenza è `--db-url` esplicito > `config.toml` > **mai** l'ambiente: una `SUPABASE_DB_URL` rimasta da un altro progetto è esattamente il modo in cui era nato il bug.
+
+- **Stato:** presa.
+
+### 12. I banchi di prova si buttano, i verbali restano
+
+`banco-prova/` e `banco-prova-pastificio/` sono stati rimossi il 2026-07-26 a collaudo chiuso. Erano progetti Supabase usa e getta, gitignorati, e si rigenerano con `supabase init`.
+
+Motivo: un banco che resta in giro invecchia e diventa una fonte di verità falsa — qualcuno ci guarda dentro e crede che sia lo stato dell'arte. Ciò che vale è il **verbale** (`COLLAUDO-2026-07-25.md`) e ciò che il collaudo ha prodotto: regole nelle references, test negli script. La regola `.gitignore` resta (`banco-prova*/`) perché il prossimo agente ne creerà altri.
+
+Il logo di Schema Forge, che stava dentro `banco-prova/` per sbaglio, è stato spostato in `agenti/schema-forge/resources/branding/`.
+
+- **Stato:** presa.

@@ -3,9 +3,10 @@
 # gli stessi committati due volte.
 .claude/skills/
 
-# Banco di prova del collaudo: progetto Supabase usa e getta, si rigenera.
-banco-prova/
-banco-prova-pastificio/
+# Banchi di prova: progetti Supabase usa e getta, si rigenerano con
+# `supabase init`. Quelli del collaudo di Schema Forge sono stati rimossi il
+# 2026-07-26; la regola resta perche' il prossimo agente ne creera' altri.
+banco-prova*/
 
 # Dipendenze dei guardiani sugli script degli agenti (si reinstallano con
 # `npm install` dalla cartella dell'agente). Il repo di regia NON e' un
