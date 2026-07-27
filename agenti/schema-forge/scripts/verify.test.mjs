@@ -17,11 +17,18 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  CONTRATTO_JSON,
+  ID,
   conRitentativo,
   contrattoUscita,
   dettaglioAdvisors,
   dettaglioReset,
+  fileNonLintati,
+  formaEseguibile,
+  limiteSqlfluff,
+  riepilogo,
   schemiEsposti,
+  soloSql,
   urlDbProgetto,
 } from "./verify.mjs";
 
@@ -125,32 +132,62 @@ port = 54322
 `;
 
 test("legge gli schemi esposti da [api].schemas", () => {
-  assert.deepEqual(schemiEsposti(CONFIG_REALE), ["public", "graphql_public"]);
+  assert.deepEqual(schemiEsposti(CONFIG_REALE).schemi, ["public", "graphql_public"]);
 });
 
 test("uno schema secondario aggiunto a mano finisce nell'audit", () => {
   assert.deepEqual(
-    schemiEsposti('[api]\nschemas = ["public", "privato"]\n'),
+    schemiEsposti('[api]\nschemas = ["public", "privato"]\n').schemi,
     ["public", "privato"]
   );
 });
 
 test("senza config leggibile si audita almeno public, mai niente", () => {
-  assert.deepEqual(schemiEsposti(null), ["public"]);
-  assert.deepEqual(schemiEsposti(""), ["public"]);
+  assert.deepEqual(schemiEsposti(null), { schemi: ["public"], errore: null });
+  assert.deepEqual(schemiEsposti(""), { schemi: ["public"], errore: null });
 });
 
 test("una chiave `schemas` fuori da [api] non conta", () => {
   // `[storage] schemas` non esiste oggi, ma un config.toml futuro non deve
   // poter allargare l'audit di nascosto: conta solo cio' che espone l'API.
-  assert.deepEqual(schemiEsposti('[db]\nschemas = ["interno"]\n'), ["public"]);
+  assert.deepEqual(schemiEsposti('[db]\nschemas = ["interno"]\n').schemi, ["public"]);
 });
 
 test("la riga di commento che documenta `schemas` non viene letta come valore", () => {
   assert.deepEqual(
-    schemiEsposti('[api]\n# schemas = ["sbagliato"]\nschemas = ["public"]\n'),
+    schemiEsposti('[api]\n# schemas = ["sbagliato"]\nschemas = ["public"]\n').schemi,
     ["public"]
   );
+});
+
+// L'array TOML su piu' righe e' TOML valido e la CLI Supabase lo legge senza
+// fiatare (provato il 2026-07-27 con `supabase status --workdir`). Il parser si
+// fermava alla prima riga, non trovava `[...]` e ripiegava su `public` SENZA
+// dirlo: uno schema secondario esposto restava inaudito e il gate stampava
+// «schemi esposti: public» come se fosse la verita'.
+test("`schemas` su piu' righe: si leggono tutti, non si ripiega su public", () => {
+  assert.deepEqual(
+    schemiEsposti('[api]\nschemas = [\n  "public",\n  "graphql_public",\n  "clinico"\n]\n').schemi,
+    ["public", "graphql_public", "clinico"]
+  );
+});
+
+test("`schemas` su piu' righe non si mangia la sezione successiva", () => {
+  const config = '[api]\nschemas = [\n  "public"\n]\nport = 54321\n\n[db]\nport = 54322\n';
+  assert.deepEqual(schemiEsposti(config).schemi, ["public"]);
+  assert.equal(urlDbProgetto(config), "postgresql://postgres:postgres@127.0.0.1:54322/postgres");
+});
+
+test("`schemas` presente ma illeggibile: e' una verifica mancante, non un successo su public", () => {
+  const esito = schemiEsposti('[api]\nschemas = "public"\n');
+  assert.deepEqual(esito.schemi, []);
+  assert.match(esito.errore, /non interpretabile/);
+});
+
+test("`schemas` vuoto: nessuno schema, e lo dice", () => {
+  const esito = schemiEsposti("[api]\nschemas = []\n");
+  assert.deepEqual(esito.schemi, []);
+  assert.match(esito.errore, /vuoto/);
 });
 
 // ------------------------------------------------------- database del progetto
@@ -211,4 +248,96 @@ test("handoff col template non compilato: fallisce (esistere non basta)", () => 
   const esito = contrattoUscita(seEsistono(...TUTTI), () => "# Handoff\n\n{{entita}}\n");
   assert.equal(esito.status, "fail");
   assert.match(esito.detail, /segnaposto/);
+});
+
+// ------------------------------------------- i file che sqlfluff non ha letto
+// Misurato il 2026-07-27: `sqlfluff lint` su un file da 26 023 byte con dentro
+// uno statement invalido stampa «All Finished!» ed esce 0. L'avviso esce su
+// STDOUT (non su stderr, come si era scritto): il passo risultava verde su SQL
+// che nessuno aveva guardato.
+
+test("un file oltre il limite non e' un file pulito: viene nominato", () => {
+  assert.deepEqual(
+    fileNonLintati([{ nome: "grande.sql", byte: 26_023 }, { nome: "piccolo.sql", byte: 900 }], 20_000),
+    ["grande.sql: 26023 byte, oltre il limite di 20000"]
+  );
+});
+
+test("file tutti sotto il limite: nessun avviso (il passo puo' essere verde)", () => {
+  assert.deepEqual(fileNonLintati([{ nome: "a.sql", byte: 19_860 }], 20_000), []);
+});
+
+test("limite disattivato (0): sqlfluff legge tutto, niente da segnalare", () => {
+  assert.deepEqual(fileNonLintati([{ nome: "grande.sql", byte: 999_999 }], 0), []);
+});
+
+test("il limite si legge dal .sqlfluff, e senza la chiave vale il default di sqlfluff", () => {
+  assert.equal(limiteSqlfluff("[sqlfluff]\ndialect = postgres\n"), 20_000);
+  assert.equal(limiteSqlfluff("[sqlfluff]\nlarge_file_skip_byte_limit = 0\n"), 0);
+  assert.equal(limiteSqlfluff("[sqlfluff]\nlarge_file_skip_byte_limit = 50000\n"), 50_000);
+});
+
+// ------------------------------------------------------ conteggio dei file SQL
+// `supabase test db` su `supabase/tests/` VUOTA esce 0 (`Result: NOTESTS`,
+// misurato il 2026-07-27) e il passo diventava `pass`: cancellare i test era il
+// modo piu' rapido di rendere il gate piu' verde. Si contano i file.
+
+test("una cartella con soli file non-SQL vale zero test", () => {
+  assert.deepEqual(soloSql(["README.md", ".gitkeep"]), []);
+});
+
+test("i file .sql si contano tutti", () => {
+  assert.deepEqual(soloSql(["a.sql", "note.md", "b.test.sql"]), ["a.sql", "b.test.sql"]);
+});
+
+// ----------------------------------------------- shim .cmd di Windows (npm)
+// `spawnSync(cmd, args)` senza shell non consulta PATHEXT (ENOENT sullo shim) e
+// col percorso pieno Node rifiuta .cmd/.bat (EINVAL, mitigazione della
+// CVE-2024-27980): quattro passi risultavano `skipped` con scritto «Supabase
+// CLI assente» su una macchina dove la CLI c'era. Entrambe le rese misurate il
+// 2026-07-27.
+
+test("shim .cmd su Windows: si passa da cmd.exe, non da shell:true", () => {
+  assert.deepEqual(
+    formaEseguibile("supabase", () => "C:\\Users\\x\\AppData\\Roaming\\npm\\supabase.cmd", "win32"),
+    { file: "cmd.exe", prefisso: ["/c", "C:\\Users\\x\\AppData\\Roaming\\npm\\supabase.cmd"] }
+  );
+});
+
+test("un .exe su Windows si esegue diretto: nessun cmd.exe di mezzo", () => {
+  assert.deepEqual(
+    formaEseguibile("supabase", () => "C:\\Users\\x\\scoop\\shims\\supabase.exe", "win32"),
+    { file: "C:\\Users\\x\\scoop\\shims\\supabase.exe", prefisso: [] }
+  );
+});
+
+test("fuori da Windows non si cerca niente: il nome basta", () => {
+  let cercato = false;
+  const forma = formaEseguibile("supabase", () => { cercato = true; return "/x"; }, "linux");
+  assert.deepEqual(forma, { file: "supabase", prefisso: [] });
+  assert.equal(cercato, false);
+});
+
+test("comando davvero assente: si torna al nome, e il probe fallira' come prima", () => {
+  assert.deepEqual(formaEseguibile("squawk", () => null, "win32"), { file: "squawk", prefisso: [] });
+});
+
+// ------------------------------------------------------- contratto --json
+// L'etichetta italiana era l'unico identificatore di passo: riscriverla avrebbe
+// rotto in silenzio l'orchestratore. Questo test blocca gli `id` e il loro
+// ordine — se qualcuno ne rinomina uno, lo scopre qui e non a valle.
+
+test("gli id dei passi e il loro ordine sono il contratto: non cambiano da soli", () => {
+  assert.deepEqual(Object.values(ID), [
+    "sqlfluff", "squawk", "db-reset", "db-lint", "db-advisors",
+    "audit-rls", "pgtap", "tipi", "contratto-uscita",
+  ]);
+  assert.equal(CONTRATTO_JSON, 1);
+});
+
+test("il riepilogo conta i passi per stato, senza leggere la prosa del dettaglio", () => {
+  assert.deepEqual(
+    riepilogo([{ status: "pass" }, { status: "pass" }, { status: "fail" }, { status: "skipped" }]),
+    { passi: 4, pass: 2, fail: 1, skipped: 1 }
+  );
 });
