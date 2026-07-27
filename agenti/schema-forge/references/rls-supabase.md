@@ -27,13 +27,13 @@ RLS attiva **senza policy** = nessuno legge nulla (tranne `service_role`). È lo
 ```sql
 create policy "utente legge i propri ordini"
 on public.orders for select to authenticated
-using ( (select auth.uid()) = user_id );
+using ((select auth.uid()) = user_id);
 ```
 
 **2. Public read / write riservato** — cataloghi, contenuti pubblici.
 ```sql
 create policy "catalogo pubblico" on public.products
-for select to anon, authenticated using ( is_published );
+for select to anon, authenticated using (is_published);
 ```
 Nota: `using (true)` è ammesso **solo** su dati realmente pubblici e **va documentato** nell'handoff, altrimenti l'audit lo segnala.
 
@@ -43,8 +43,7 @@ create or replace function public.is_member_of(org uuid)
 returns boolean language sql security definer set search_path = '' stable as $$
   select exists (
     select 1 from public.memberships m
-    where m.org_id = org and m.user_id = (select auth.uid())
-  );
+    where m.org_id = org and m.user_id = (select auth.uid()));
 $$;
 -- obbligatorio: Postgres concede `execute` a PUBLIC per DEFAULT, quindi senza
 -- queste due righe la funzione è un endpoint chiamabile da `anon` che scavalca
@@ -53,7 +52,7 @@ revoke execute on function public.is_member_of(uuid) from public;
 grant execute on function public.is_member_of(uuid) to authenticated;
 
 create policy "membri leggono l'organizzazione" on public.invoices
-for select to authenticated using ( public.is_member_of(org_id) );
+for select to authenticated using (public.is_member_of(org_id));
 ```
 
 **4. Role-based** — ruoli applicativi (admin, staff). Il ruolo sta nei **claim del JWT** o in una tabella dei ruoli letta da funzione `security definer`; **mai** in una colonna che l'utente stesso può aggiornare.
@@ -61,9 +60,9 @@ for select to authenticated using ( public.is_member_of(org_id) );
 Nel JWT c'è un solo posto giusto: `raw_app_meta_data` (`app_metadata` nel token), che scrive **solo il server**. `raw_user_meta_data` (`user_metadata`) lo scrive **l'utente** con una chiamata a `updateUser`, e finisce anch'esso in `auth.jwt()`: una policy che ne ricava l'autorizzazione è auto-promozione ad admin in una riga di JavaScript. L'audit la blocca.
 ```sql
 -- corretto: app_metadata, scritto dal server
-using ( ((auth.jwt() -> 'app_metadata') ->> 'role') = 'admin' )
+using (((auth.jwt() -> 'app_metadata') ->> 'role') = 'admin')
 -- vulnerabile: user_metadata, scritto dall'utente
-using ( ((auth.jwt() -> 'user_metadata') ->> 'role') = 'admin' )
+using (((auth.jwt() -> 'user_metadata') ->> 'role') = 'admin')
 ```
 I claim del JWT **non sono freschi** fino al refresh del token: una revoca di ruolo vale dal token successivo. Se serve immediatezza, il ruolo si legge da tabella con una funzione `security definer`.
 
@@ -76,14 +75,13 @@ returns boolean language sql security definer set search_path = '' stable as $$
     select 1 from public.staff s
     where s.user_id = (select auth.uid())
       and s.org_id = (select l.org_id from public.locations l where l.id = sede)
-      and (s.ruolo = 'titolare' or s.location_id = sede)   -- ambito del ruolo
-  );
+      and (s.ruolo = 'titolare' or s.location_id = sede)   -- ambito del ruolo);
 $$;
 revoke execute on function public.puo_vedere_sede(uuid) from public;
 grant execute on function public.puo_vedere_sede(uuid) to authenticated;
 
 create policy "lo staff vede gli ordini di sua competenza" on public.orders
-for select to authenticated using ( public.puo_vedere_sede(location_id) );
+for select to authenticated using (public.puo_vedere_sede(location_id));
 ```
 
 Le due condizioni in due policy separate si sommerebbero in **OR** (le policy permissive si uniscono): il responsabile di sede vedrebbe tutto. L'ambito ristretto va **dentro** la stessa condizione, non accanto.
@@ -100,9 +98,32 @@ Il prezzo riservato concordato con un cliente B2B, il margine, il costo d'acquis
 
 - il dato riservato va in una **tabella separata** con la sua RLS (`product_prices` per listino, `internal_notes`, `costs`)
 - oppure lo si espone tramite una **vista** che seleziona solo le colonne pubbliche (con `security_invoker = on`) e si nega l'accesso diretto alla tabella
-- i `grant` per colonna esistono in Postgres, ma sono un secondo sistema di permessi che l'audit RLS non legge e che nessuno ricorderà: valgono come rinforzo, mai come unica difesa
+- i `grant` **per colonna** esistono in Postgres e funzionano davvero: con `grant update (nome) on public.profiles to authenticated` il tentativo di scrivere un'altra colonna riceve *permission denied for table* (verificato il 2026-07-27). Sono un secondo sistema di permessi, che va scritto nella migrazione e ricordato in ogni `alter table`: rinforzo obbligatorio sulle colonne di privilegio, non sostituto del modello
 
-Vale anche al contrario: una colonna che deve essere **scritta solo dallo staff** (uno sconto, uno stato) su una riga che l'utente può aggiornare è scrivibile dall'utente. Il `with check` vede la riga, non il campo modificato: o la colonna sta in un'altra tabella, o la scrittura passa da una funzione.
+### Il caso peggiore: la colonna che decide i permessi
+
+Vale anche al contrario: una colonna che deve essere **scritta solo dallo staff** (uno sconto, uno stato) su una riga che l'utente può aggiornare è scrivibile dall'utente. Il `with check` vede la riga, non il campo modificato.
+
+Quando quella colonna è il **ruolo**, non è un difetto di modello: è **auto-promozione ad admin**. Riprodotto sul banco veterinario il 2026-07-27, con la policy scritta correttamente:
+
+```sql
+-- policy corretta: lo staff modifica solo le righe della propria sede
+create policy "personale gestito dalla direzione" on public.staff
+for all to authenticated
+using (e_staff() and puo_vedere_clinica(clinic_id))
+with check (e_staff() and puo_vedere_clinica(clinic_id));
+grant select, insert, update, delete on public.staff to authenticated;
+```
+
+Un veterinario vede 2 visite e 0 note interne. Dopo un solo `update public.staff set job_title = 'direttore'` sulla **propria** riga ne vede 6 e 1, perché `puo_vedere_clinica()` decide in base a `job_title`. La policy non è mai stata violata: ha fatto esattamente quello che diceva.
+
+Le tre difese, in ordine di preferenza:
+
+1. **la colonna in una tabella che l'utente non scrive** (`staff_roles` gestita solo dalla direzione, o il claim in `raw_app_meta_data`)
+2. **`grant` per colonna**: `revoke update on public.staff from authenticated;` poi `grant update (full_name, phone) on public.staff to authenticated;`
+3. **un trigger `before update`** che rifiuta la modifica della colonna a chi non è autorizzato
+
+`scripts/rls-audit.mjs` lo controlla: colonna dal nome di privilegio (`role`, `ruolo`, `is_admin`, `job_title`, `permessi`…) + policy di scrittura + `grant update` sull'**intera** tabella + nessun trigger che la nomini → `block` se quella colonna compare in una policy o nel corpo di una funzione che una policy chiama, `issue` se c'è solo il nome.
 
 ## La trappola inversa: RLS perfetta, nessun `grant`
 
@@ -124,7 +145,7 @@ Non esiste la policy "tuttofare": `select`, `insert`, `update`, `delete` hanno r
 ```sql
 create policy "utente crea i propri ordini"
 on public.orders for insert to authenticated
-with check ( (select auth.uid()) = user_id );
+with check ((select auth.uid()) = user_id);
 ```
 
 **Cosa succede davvero se `with check` manca** — verificato su Postgres reale il 2026-07-27, perché la spiegazione che girava qui era falsa e mandava a cercare la cosa sbagliata:
@@ -141,11 +162,12 @@ In Postgres un `update` deve prima **selezionare** la riga da modificare. Senza 
 ```sql
 -- serve la coppia, non la sola scrittura
 create policy "legge i propri ordini" on public.orders
-for select to authenticated using ( (select auth.uid()) = user_id );
+for select to authenticated using ((select auth.uid()) = user_id);
 
 create policy "aggiorna i propri ordini" on public.orders
 for update to authenticated
-using ( (select auth.uid()) = user_id ) with check ( (select auth.uid()) = user_id );
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
 ```
 Attenzione ai **ruoli**: una policy di `select` per `anon` non copre un `update` per `authenticated`. L'audit confronta gli insiemi di ruoli, non solo la presenza della policy.
 
@@ -158,21 +180,68 @@ Concedendo solo `insert`, i caricamenti **nuovi** passano e la sostituzione di u
 ```sql
 create policy "carica nella propria cartella" on storage.objects
 for insert to authenticated
-with check ( bucket_id = 'avatars' and (storage.foldername(name))[1] = (select auth.uid())::text );
+with check (
+    bucket_id = 'avatars'
+    and (storage.foldername(name))[1] = (select auth.uid())::text
+);
 
 create policy "legge la propria cartella" on storage.objects
 for select to authenticated
-using ( bucket_id = 'avatars' and (storage.foldername(name))[1] = (select auth.uid())::text );
+using (
+    bucket_id = 'avatars'
+    and (storage.foldername(name))[1] = (select auth.uid())::text
+);
 
 create policy "sostituisce nella propria cartella" on storage.objects
 for update to authenticated
-using ( bucket_id = 'avatars' and (storage.foldername(name))[1] = (select auth.uid())::text );
+using (
+    bucket_id = 'avatars'
+    and (storage.foldername(name))[1] = (select auth.uid())::text
+);
 ```
 `scripts/rls-audit.mjs` **non** ha una regola per Storage: `storage` non è uno schema esposto dell'API e non compare in `[api].schemas`, quindi l'audit non lo guarda. Qui è documentazione, e va controllata a mano.
 
+## Macchine a stati: il vincolo su `update` non dice niente su `insert`
+
+Un trigger di transizione risponde alla domanda «da questo stato si può passare a quest'altro?». Non risponde a «da quale stato si può **partire**?». Verificato il 2026-07-27: con il trigger di transizione delle visite attivo e funzionante, `insert into public.visits (…, status) values (…, 'fatturata')` passa senza un fiato — nessuna transizione è avvenuta, quindi non c'è niente da rifiutare.
+
+Un `check` che **enumera il dominio** non è una difesa: `check (status = any (array['prenotata','confermata','eseguita','fatturata','annullata']))` ammette proprio lo stato che si vuole vietare all'inserimento. Serve un vincolo sullo stato **iniziale**:
+
+```sql
+-- lo stato iniziale è uno solo
+alter table public.visits
+add constraint visits_nasce_prenotata check (status = 'prenotata');
+```
+
+Se gli stati iniziali leciti sono più d'uno, o dipendono da chi inserisce, il vincolo diventa lo **stesso trigger anche `before insert`** (con `old` assente, quindi con un ramo dedicato). `scripts/rls-audit.mjs` lo controlla e produce un `issue`.
+
+## Una policy senza test negativo è un'ipotesi
+
+Il gate verifica che la RLS **esista**, non che **funzioni**: nessuno strumento legge la semantica di una policy. L'unica cosa che dimostra che una policy regge è **averla attaccata** e aver visto il database rifiutare.
+
+Perciò `scripts/rls-audit.mjs` produce un **`block`** su ogni tabella che ha una policy di `insert`, `update`, `delete` o `all` e per cui **nessun** file di `supabase/tests/` tenta una scrittura impersonando un ruolo. Non si pretende una forma di asserzione precisa: il test negativo corretto può asserire un'eccezione (`throws_ok`) oppure che il dato **non è cambiato**.
+
+```sql
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"…c1"}';
+
+-- il tentativo che DEVE fallire
+update public.visits set status = 'confermata' where id = '…001';
+
+-- e l'asserzione che è fallito: la riga è rimasta dov'era
+select is(
+    (select count(*) from public.visits
+     where id = '…001' and status = 'prenotata')::bigint,
+    1::bigint,
+    'il cliente non può confermarsi da solo una visita'
+);
+```
+
+I test negativi si scrivono **insieme alla policy**, non dopo: sono la sua specifica eseguibile. Uno per ogni cosa che la policy deve impedire — non uno per tabella.
+
 ## Errori classici
 
-`scripts/rls-audit.mjs` cerca tutte le righe di questa tabella **tranne** le ultime tre: ruolo in colonna scrivibile, policy di Storage e `service_role` lato client non sono nel catalogo che l'audit legge (l'ultima è territorio di `gitleaks`, non di Schema Forge). Su quelle tre il gate verde non dice niente: si controllano a mano.
+`scripts/rls-audit.mjs` cerca tutte le righe di questa tabella **tranne** le ultime due: le policy di Storage e la `service_role` lato client non sono nel catalogo che l'audit legge (la seconda è territorio di `gitleaks`, non di Schema Forge). Su quelle due il gate verde non dice niente: si controllano a mano.
 
 | Errore | Conseguenza |
 |---|---|
@@ -190,7 +259,9 @@ using ( bucket_id = 'avatars' and (storage.foldername(name))[1] = (select auth.u
 | Vista senza `security_invoker = on` | la vista gira coi diritti del **proprietario** e scavalca la RLS delle tabelle sotto |
 | `security definer` senza `set search_path = ''` | escalation di privilegi tramite oggetti omonimi |
 | `security definer` con `execute` a PUBLIC (il **default** di Postgres) | è un endpoint pubblico chiamabile da `anon` che scavalca la RLS: `revoke execute … from public` |
-| Ruolo letto da una colonna scrivibile dall'utente | auto-promozione ad admin |
+| Ruolo letto da una colonna scrivibile dall'utente | auto-promozione ad admin: la policy filtra la riga, non la colonna (§Il caso peggiore) |
+| Macchina a stati vincolata solo in `update` | la riga si crea direttamente nello stato di arrivo e la macchina non è mai passata di lì (§Macchine a stati) |
+| Policy di scrittura senza un test pgTAP che le attacchi | l'unica prova che una policy funziona è averla violata e aver visto il rifiuto: senza, è un'ipotesi (`block`) |
 | Upsert su `storage.objects` con la sola policy di `insert` | i caricamenti nuovi passano, la sostituzione dei file **fallisce in silenzio** (§Storage) |
 | `service_role` usata lato client | RLS completamente bypassata: la chiave sta **solo** sul server |
 
