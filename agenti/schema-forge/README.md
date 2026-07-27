@@ -161,6 +161,7 @@ Il commento `squawk-ignore` sta **da solo sulla sua riga** — la motivazione va
 | File | Cosa c'è dentro |
 |---|---|
 | `SKILL.md` | le tre leggi, i comandi, il flusso, il gate di chiusura |
+| `COME-PROVARLA.md` | **come vederla lavorare**: comandi eseguiti, banco di prova, caso d'uso VetCare Nord, cosa un gate verde non dimostra |
 | `references/modellazione.md` | naming, chiavi, tipi, vincoli, indici, seed |
 | `references/rls-supabase.md` | pattern RLS, errori classici, performance, **la RLS è per riga non per colonna** |
 | `references/migrazioni.md` | immutabilità, expand-contract, distruttivo autorizzato e gate |
