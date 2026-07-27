@@ -4,7 +4,7 @@
 
 Agente Web Gun per lo **schema dati** dei progetti generati (Postgres/Supabase). È il primo agente costruttore della pipeline: Fly UI, Gestionale Crafter, Sanity Creator e AI Specialist costruiscono tutti sopra ciò che decide qui.
 
-**Stato:** v1.3 — collaudata su database reale e nel comportamento, 66 test sugli script, gate a 8 passi. Dettagli in `STATO.md`, verbale del collaudo in `COLLAUDO-2026-07-25.md`.
+**Stato:** v1.3 — collaudata su database reale e nel comportamento, 66 test sugli script, gate a 8 passi. **Non ancora usabile su un progetto cliente:** il collaudo indipendente del 2026-07-26 ha trovato 16 difetti riprodotti su uno schema che il gate dichiara verde — il gate verifica che la RLS *esista*, non che *funzioni*. Dettagli in `STATO.md`, verbali in `COLLAUDO-2026-07-25.md` e `COLLAUDO-2026-07-26.md`.
 
 ---
 
@@ -168,3 +168,4 @@ Il commento `squawk-ignore` sta **da solo sulla sua riga** — la motivazione va
 | `references/pattern-ecommerce.md` | modello di riferimento e-commerce, listini, ordini |
 | `STATO.md` | stato, collaudi, decisioni prese, cosa resta aperto |
 | `COLLAUDO-2026-07-25.md` | verbale del collaudo del comportamento |
+| `COLLAUDO-2026-07-26.md` | verbale del collaudo indipendente: dominio non e-commerce, attacchi agli script, `/code-inquisition` |

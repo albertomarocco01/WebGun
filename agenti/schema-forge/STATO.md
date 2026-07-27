@@ -1,6 +1,7 @@
 # Stato — Schema Forge
 
-- **Stato attuale:** v1.3 — collaudata su Postgres reale (Supabase locale, Windows), **nel comportamento** (`COLLAUDO-2026-07-25.md`) e **corretta**: gli otto punti aperti del collaudo sono chiusi il 2026-07-26 (§Correzioni del 2026-07-26). Gli script hanno test propri (`node --test`, **66 verdi**), passano sotto i guardiani, e il gate `verify` è **VERDE su 8 passi su 8** sullo schema del banco *dopo* un `evolve` con due distruttivi autorizzati — il caso che prima restava rosso per sempre. **Usabile su un progetto cliente**, con le verifiche mancanti dichiarate in fondo.
+- **Stato attuale:** v1.3 — collaudata su Postgres reale (Supabase locale, Windows), **nel comportamento** (`COLLAUDO-2026-07-25.md`) e **corretta**: gli otto punti aperti del primo collaudo sono chiusi il 2026-07-26 (§Correzioni del 2026-07-26). Gli script hanno test propri (`node --test`, **66 verdi**), passano sotto i guardiani, e il gate `verify` è **VERDE su 8 passi su 8** anche dopo un `evolve` con distruttivi autorizzati, su due domini diversi.
+  **NON usabile su un progetto cliente.** Il secondo collaudo, indipendente e avversario (`COLLAUDO-2026-07-26.md`, dominio **non e-commerce**), ha fatto girare per la prima volta `/code-inquisition` sulle policy RLS: sullo schema che il gate dichiara VERDE 8/8, il tribunale ha **riprodotto con comandi reali 16 difetti su 17**, cinque Critical, mentre `sqlfluff`, `squawk` e `rls-audit.mjs` erano tutti verdi. Il flusso regge; **il gate verifica che la RLS esista, non che funzioni**. Punti aperti ordinati per gravità in fondo.
 - **Proprietario:** Alberto
 - **Dipendenze:**
   - A monte: prompt-smith (richiesta professionale), brief-smith (entità e contenuti del cliente)
@@ -72,18 +73,113 @@ Entrambi **veri**, entrambi capaci di rendere silenziosamente inutile il gate. T
 
 `banco-prova/` e `banco-prova-pastificio/` sono stati **cancellati il 2026-07-26**, a collaudo chiuso: erano progetti Supabase usa e getta e si rigenerano con `supabase init`. Restano i verbali (`COLLAUDO-2026-07-25.md`) e ciò che il collaudo ha prodotto — regole nelle references, test negli script. Il logo della skill, che stava dentro `banco-prova/`, è ora in `resources/branding/`.
 
-## Aperto — decisioni per l'umano
+## Collaudo indipendente del 2026-07-26 (`COLLAUDO-2026-07-26.md`)
 
-- ~~**Il Flusso 1 conversazionale non è ancora provato.**~~ — chiuso il 2026-07-25 (`COLLAUDO-2026-07-25.md`).
-- ~~**Gli otto punti del collaudo del comportamento**~~ — chiusi il 2026-07-26 (tabella qui sopra).
-- ~~**`code-maniac scan` sul repo di regia riporta 10 passi saltati su 10**~~ — chiuso il 2026-07-25 (§Guardiani sugli script).
+Secondo collaudo, avversario, su un dominio **non e-commerce** (tre cliniche
+veterinarie). Ha verificato le affermazioni di questo file invece di ereditarle,
+e ha eseguito per la prima volta `/code-inquisition` sulle policy RLS.
 
-### Resta aperto
+**Cosa ha retto.** Flusso 1 su dominio nuovo: Specchio fermo davvero, 13 domande,
+tutte le ambiguità attese emerse. Trappole per colonna, listini, pagamento
+differito e `bigint` superate tutte da **regole scritte**. `evolve` con due
+`drop table` autorizzati: gate **VERDE 8/8**. Audit su schema pulito: **0 warn**
+su 20 tabelle e 64 policy — zero rumore.
 
-1. **semgrep e gitleaks non sono installati**: sicurezza e segreti sugli script della skill restano **MANCANTI**, non `PASS`. È l'unica casella del gate dei guardiani che non si può spuntare senza installarli.
-2. **`code-inquisition --scope diff` non è mai stato eseguito** sui punti critici (policy RLS, dati utente), benché la Regola dei guardiani del `CLAUDE.md` lo richieda.
-3. **Nessun consumatore reale a valle.** L'analisi di impatto di `evolve` ha girato su un progetto senza codice applicativo: il caso facile. Fly UI e Gestionale Crafter non esistono ancora.
-4. **Il comando `rls` non è mai stato collaudato da solo** (esercitato dentro `forge` e `verify`), né il carrello persistito, né uno schema con viste materializzate.
+**Cosa non ha retto.** Sullo stesso schema che il gate dichiara VERDE 8/8,
+`/code-inquisition` ha **riprodotto con comandi reali 16 difetti su 17**, cinque
+dei quali Critical, mentre `sqlfluff`, `squawk` e `rls-audit.mjs` erano **tutti
+verdi**. Il gate verifica che la RLS *esista*, non che *funzioni*.
+
+### Chiuso da questo collaudo
+
+- ~~**`code-inquisition` non è mai stato eseguito** sui punti critici~~ — eseguito
+  il 2026-07-26. Non era invocabile: `agenti/code-inquisition/` non era
+  installato come skill. Creata la junction `.claude/skills/code-inquisition`
+  (stessa procedura di `DECISIONI.md` §7). Referto in `COLLAUDO-2026-07-26.md` §8.2.
+- ~~**Il comando `rls` non è mai stato collaudato da solo**, né uno schema con
+  viste materializzate~~ — collaudati entrambi. Entrambi hanno prodotto un
+  difetto: vedi i punti 2 e 5 qui sotto.
+
+### Resta aperto — ordinato per gravità
+
+1. **Il gate è verde su uno schema sfruttabile.** È il blocco n°1. Nessuno degli
+   strumenti guarda la **semantica** delle policy: verificano che la RLS esista,
+   che le policy ci siano e che gli indici ci siano. I cinque Critical del
+   tribunale (auto-promozione di ruolo, fattura riapribile, riga di fattura
+   spostabile, macchina a stati aggirabile in `INSERT`, archivio clinico che
+   copre 2 colonne su 8) sono tutti invisibili al gate. **Finché non si chiude,
+   un gate verde non è una garanzia consegnabile.**
+   Le due direzioni possibili: (a) test pgTAP **negativi** obbligatori — che
+   tentino l'exploit e ne asseriscano il rifiuto; (b) regole nuove in
+   `audit-lib.mjs` per le classi che sono catalogabili (colonna di ruolo
+   scrivibile dal suo stesso proprietario, trigger di transizione senza
+   controparte `INSERT`, funzione `EXECUTE`-abile da `anon`).
+2. **`SKILL.md`:62 fa auditare il database sbagliato.** La procedura del comando
+   `rls` prescrive `node <skill>/scripts/rls-audit.mjs` senza `--db-url` né
+   `--schemas`: eseguita alla lettera ha auditato **il database di un altro
+   progetto** e ha risposto «nessun bloccante». La correzione di `DECISIONI.md`
+   §11 è stata applicata a `verify.mjs` e non a questo percorso. Il comando `rls`
+   **andrebbe tolto**: non aggiunge nulla a `forge` e fa peggio di `verify`.
+3. **Tre falsi verdi del gate**, tutti riprodotti:
+   - `sqlfluff` **salta in silenzio** i file oltre 20 000 byte ed esce 0;
+     `verify.mjs`:168 scarta stderr sui passi verdi, quindi l'avviso non arriva
+     mai. Uno statement invalido dentro un file da 20 047 byte → passo `OK`.
+   - `supabase/tests/` **vuota** → passo pgTAP `pass`. Cartella assente →
+     `skipped` (rosso). **Cancellare i test rende il gate più verde.**
+   - Senza `[db].port`, `urlDbProgetto()` torna `null`, `verify` non passa
+     `--db-url`, l'audit ricade sulla 54322 **e la riga «quale database»
+     sparisce** — la garanzia di `DECISIONI.md` §11 svanisce dove servirebbe.
+4. **`schemas` su più righe non viene letto.** TOML valido; `schemiEsposti()`
+   ripiega su `["public"]` **senza dirlo**, e il gate stampa «schemi esposti:
+   public» come se fosse la verità. Uno schema secondario esposto resta
+   inaudito.
+5. **Le viste materializzate sono `issue`, non `block`.** Non supportano
+   `security_invoker` per costruzione — sono strettamente peggiori di una vista
+   nuda, che è `block` — eppure **non bloccano il gate**. Una MV che unisce ogni
+   cartella clinica a ogni nota interna passa.
+6. **Due caselle del gate di chiusura che nessuno strumento verifica.**
+   `SKILL.md`:87 («nessun dato riservato in una colonna di una tabella
+   leggibile») e il divieto di ruolo in colonna scrivibile: piantati entrambi,
+   **0 findings**. Sono le due prove avversarie più pericolose, difese solo da
+   prosa.
+7. **`resources/config/.sqlfluff` contro `references/rls-supabase.md`.** Il nome
+   di policy dell'esempio della reference, verbatim, fa scattare `RF05`;
+   `ignore_words = name,label` è il vocabolario dell'e-commerce e blocca `role`
+   e `summary`. La configurazione viaggia con la **skill**, quindi un progetto
+   non può estenderla senza modificare l'agente. O si esenta `RF05` sui nomi di
+   policy, o le reference vanno riscritte in `snake_case`.
+8. **`rls-supabase.md`:90 dichiara un meccanismo falso.** «Senza `with check` un
+   utente può inserire righe intestate ad altri»: Postgres **nega** l'inserimento.
+   Il consiglio è giusto, la spiegazione no — e manda a cercare la cosa sbagliata.
+9. **Il contratto `--json` non è documentato né stabile.** Nessuno schema; l'unico
+   identificatore di passo è l'etichetta italiana (`"contratto d'uscita
+   (configurazioni + handoff)"`); block/issue/warn appiattiti in prosa dentro
+   `detail`. Serve un `id` stabile per passo e i conteggi strutturati.
+10. **`pattern-ecommerce.md`:29 non regge fuori dall'e-commerce.**
+    `profiles.id = auth.users.id` presuppone che ogni cliente sia un utente del
+    sito. Una clinica ha clienti che telefonano: seguendolo alla lettera, metà
+    della clientela non è rappresentabile.
+11. **Il gate non può vedere un seed non rieseguibile a caldo.** `db reset` parte
+    sempre da un database pulito, quindi la regola di `modellazione.md`:67
+    (`insert … select … where not exists` coi trigger di dominio) — che è
+    **vera**, verificata sul campo — resta non verificabile dal gate.
+12. **semgrep e gitleaks non sono installati**: sicurezza e segreti sugli script
+    restano **MANCANTI**, non `PASS`. È anche l'unica difesa automatica contro
+    una `service_role` finita nel client.
+13. **Nessun consumatore reale a valle.** L'analisi di impatto di `evolve` ha
+    girato di nuovo sul caso facile, senza codice applicativo. Fly UI e
+    Gestionale Crafter non esistono ancora.
+14. **`has()` non vede gli shim `.cmd` su Windows** (`verify.mjs`:35-38): chi
+    installa la CLI Supabase via npm ottiene quattro passi `skipped` con il
+    messaggio «Supabase CLI assente» su una macchina dove è installata. Il guasto
+    va nella direzione sicura, la diagnosi no.
+15. **Diciotto voci mancanti nelle references** (`COLLAUDO-2026-07-26.md` §1.2),
+    ognuna con la frase esatta e il file esatto. Le sei più gravi non le aveva
+    colmate nemmeno l'auditor: `revoke execute` sulle funzioni RPC · macchina a
+    stati vincolata anche in `INSERT` · transizioni per **ogni** stato, non solo
+    il principale · trigger che scrive su tabella con RLS deve essere
+    `security definer` · audit trail con la colonna dell'attore · validazione
+    degli argomenti di un RPC `security definer`.
 
 ## Guardiani sugli script della skill (2026-07-25)
 
