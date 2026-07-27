@@ -27,18 +27,19 @@ Riferimenti: `README.md` (manuale), `STATO.md` (cosa è aperto),
 | Comando | Cosa fa | Si ferma? |
 |---|---|---|
 | `model` | entità, relazioni, cardinalità, **chi possiede ogni riga** → Specchio | **sì, STOP** |
-| `forge` | la migrazione: lookup → tabelle → vincoli → indici → trigger → RLS | no |
-| `rls` | genera o audita le policy | no |
+| `forge` | la migrazione: lookup → tabelle → vincoli → indici → trigger → RLS → policy → `grant` | no |
 | `seed` | `supabase/seed.sql` idempotente e deterministico | no |
+| `test` | i test pgTAP **negativi**: per ogni tabella scrivibile, il tentativo che deve fallire | no |
 | `verify` | **il gate**, 9 passi su database vero | — |
 | `types` | rigenera `src/lib/database.types.ts` | no |
 | `evolve` | modifica di uno schema esistente, expand-contract | **sì** su ogni distruttivo |
 | `handoff` | scrive `docs/handoff/07-schema-forge.md` | no |
 
-> ⚠️ **`rls` come comando a sé è rotto.** Nella forma prescritta da `SKILL.md`:62
-> audita il database **di un altro progetto** (la porta 54322 di default) e
-> risponde «nessun bloccante». Vedi §3 del verbale del 2026-07-26. Usa il passo 5
-> di `verify`, oppure `rls-audit.mjs` **con `--db-url` esplicito**.
+> **Il comando `rls` non esiste più**, dal 2026-07-27. Nella forma prescritta da
+> `SKILL.md`:62 auditava il database **di un altro progetto** (la porta 54322 di
+> default) e rispondeva «nessun bloccante»; per il resto non aggiungeva niente a
+> `forge`. Le policy si scrivono in `forge`, si attaccano in `test` e si
+> verificano in `verify`. Vedi `DECISIONI.md` §14.
 
 ### L'ordine del flusso
 
@@ -47,15 +48,17 @@ Riferimenti: `README.md` (manuale), `STATO.md` (cosa è aperto),
 2 dominio       entità, attributi, relazioni, cicli di vita
 3 proprietà     chi legge e chi scrive ogni tabella, in base a cosa
 4 SPECCHIO      riformulazione + ERD  →  STOP, aspetta il «sì»
-5 forge         la migrazione, RLS inclusa
+5 forge         la migrazione, RLS e policy incluse
 6 seed
-7 types         PRIMA del gate, o il passo dei tipi è rosso per forza
-8 handoff       PRIMA del gate, che ne verifica l'esistenza
-9 VERIFY        ultimo. Finché è rosso, lo schema non esiste
+7 test          i pgTAP negativi: il gate li pretende (block), non li suggerisce
+8 types         PRIMA del gate, o il passo dei tipi è rosso per forza
+9 handoff       PRIMA del gate, che ne verifica l'esistenza
+10 VERIFY       ultimo. Finché è rosso, lo schema non esiste
 ```
 
-7-8-9 in quest'ordine non è pedanteria: un gate che nasce rosso per come è
-ordinato il flusso insegna a ignorare il rosso.
+8-9-10 in quest'ordine non è pedanteria: un gate che nasce rosso per come è
+ordinato il flusso insegna a ignorare il rosso. Il passo 7 invece **deve**
+nascere rosso finché non lo si fa: è l'unica prova che le policy funzionano.
 
 ### Il gate — nove passi, tre stati
 
@@ -63,17 +66,23 @@ ordinato il flusso insegna a ignorare il rosso.
 
 | # | Passo | Cosa becca |
 |---|---|---|
-| 1 | `sqlfluff` | formato SQL |
-| 2 | `squawk` | lock, riscritture di tabella, distruttivi non dichiarati |
-| 3 | `supabase db reset` | le migrazioni applicate davvero, in ordine, più il seed |
-| 4 | `supabase db lint` | funzioni e plpgsql non validi |
-| 5 | `supabase db advisors` | il linter mantenuto da Supabase (CLI ≥ 2.81.3): rosso solo sugli `ERROR`, i `WARN` restano scritti |
-| 6 | audit RLS | tabelle nude, policy assenti o permissive, viste e funzioni pericolose, FK e colonne di policy senza indice |
-| 7 | pgTAP | le policy verificate impersonando i ruoli |
-| 8 | tipi TypeScript | disallineamento fra schema e codice |
-| 9 | contratto d'uscita | `.sqlfluff`, `squawk.toml`, handoff senza segnaposto |
+| # | `id` (`--json`) | Passo | Cosa becca |
+|---|---|---|---|
+| 1 | `sqlfluff` | `sqlfluff` | formato SQL — e i file che sqlfluff **salta** perché troppo grandi: quelli sono `MANC`, non `OK` |
+| 2 | `squawk` | `squawk` | lock, riscritture di tabella, distruttivi non dichiarati |
+| 3 | `db-reset` | `supabase db reset` | le migrazioni applicate davvero, in ordine, più il seed |
+| 4 | `db-lint` | `supabase db lint` | funzioni e plpgsql non validi |
+| 5 | `db-advisors` | `supabase db advisors` | il linter mantenuto da Supabase (CLI ≥ 2.81.3): rosso solo sugli `ERROR`, i `WARN` restano scritti |
+| 6 | `audit-rls` | audit RLS | tabelle nude, policy assenti o permissive, **policy mai attaccate da un test**, **colonna di privilegio scrivibile**, **macchina a stati senza vincolo su `insert`**, viste e funzioni pericolose, FK e colonne di policy senza indice |
+| 7 | `pgtap` | pgTAP | le policy verificate impersonando i ruoli — **si contano i file**, una cartella vuota è `MANC` |
+| 8 | `tipi` | tipi TypeScript | disallineamento fra schema e codice |
+| 9 | `contratto-uscita` | contratto d'uscita | `.sqlfluff`, `squawk.toml`, handoff senza segnaposto |
 
 Uscita: `0` verde · `1` rosso · `2` errore di esecuzione.
+
+La colonna `id` è il **contratto con l'orchestratore**: l'etichetta italiana può
+cambiare, l'`id` no. Forma completa in `references/verifica-deterministica.md`
+§Il contratto `--json`.
 
 ---
 
