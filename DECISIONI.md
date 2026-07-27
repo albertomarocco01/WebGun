@@ -126,3 +126,13 @@ Motivo: un banco che resta in giro invecchia e diventa una fonte di verità fals
 Il logo di Schema Forge, che stava dentro `banco-prova/` per sbaglio, è stato spostato in `agenti/schema-forge/resources/branding/`.
 
 - **Stato:** presa.
+
+## Decisioni prese estendendo Schema Forge con la skill Supabase ufficiale (2026-07-27)
+
+### 13. Schema Forge resta imperativo: niente `supabase/schemas/` dichiarativi
+
+La skill Supabase ufficiale documenta due flussi, dichiarativo (`supabase/schemas/`, migrazioni **generate** da uno stato desiderato) e imperativo (migrazioni scritte a mano). Schema Forge resta imperativo.
+
+Motivo: il dichiarativo è in conflitto diretto con due regole non negoziabili dell'agente. **Una migrazione applicata è immutabile** — ma il dichiarativo rigenera il diff dallo stato desiderato, quindi la storia diventa un prodotto derivato. E l'**expand-contract** è una sequenza di passi *intenzionali* (aggiungi, popola, sposta le letture, poi togli): un generatore di diff produce il passo unico e distruttivo, che è esattamente quello che serve un checkpoint umano per autorizzare.
+
+- **Stato:** presa — si riconsidera solo se il dichiarativo impara a produrre sequenze expand-contract, non un diff singolo.

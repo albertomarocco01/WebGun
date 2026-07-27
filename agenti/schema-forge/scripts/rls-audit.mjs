@@ -62,7 +62,7 @@ function query(dbUrl, sql) {
 }
 
 // ------------------------------------------------------- lettura del catalogo
-// Sei query, una per regola: nessun giudizio qui dentro, solo SELECT.
+// Sette query, una per regola: nessun giudizio qui dentro, solo SELECT.
 function leggiCatalogo({ dbUrl, schemas }) {
   const list = schemas.map((s) => `'${s}'`).join(",");
   const q = (sql) => query(dbUrl, sql);
@@ -91,9 +91,14 @@ function leggiCatalogo({ dbUrl, schemas }) {
          from pg_class c join pg_namespace n on n.oid = c.relnamespace
         where n.nspname in (${list}) and c.relkind in ('v','m') order by 1, 2`
     ),
-    // 4. funzioni security definer senza search_path fisso
+    // 4. funzioni security definer: search_path fisso? e chi puo' eseguirle?
+    //    `proacl` NULL (quindi '' dopo il coalesce) = privilegi di DEFAULT, che
+    //    in Postgres significano `execute` a PUBLIC: la funzione e' un endpoint
+    //    pubblico raggiungibile da `anon`. Il campo si legge, non si interpreta:
+    //    la lettura dell'ACL sta in `audit-lib.mjs`.
     funzioni: q(
-      `select n.nspname, p.proname, coalesce(array_to_string(p.proconfig, ','), '')
+      `select n.nspname, p.proname, coalesce(array_to_string(p.proconfig, ','), ''),
+              coalesce(p.proacl::text, '')
          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
         where n.nspname in (${list}) and p.prosecdef order by 1, 2`
     ),
@@ -128,6 +133,14 @@ function leggiCatalogo({ dbUrl, schemas }) {
          join pg_namespace n on n.oid = c.relnamespace
         where n.nspname in (${list}) and c.relkind = 'r'
           and a.attnum > 0 and not a.attisdropped`
+    ),
+    // 7. tabelle con un `grant` a anon/authenticated. La trappola inversa: RLS e
+    //    policy perfette non servono a niente se il ruolo del client non ha il
+    //    permesso sulla tabella — dalla Data API non legge nulla.
+    grants: q(
+      `select distinct table_schema, table_name
+         from information_schema.role_table_grants
+        where table_schema in (${list}) and grantee in ('anon', 'authenticated')`
     ),
   };
 }

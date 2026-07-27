@@ -1,6 +1,15 @@
 # RLS su Supabase — pattern, errori, performance
 
-Su Supabase ogni tabella dello schema `public` è **esposta via PostgREST** con la chiave anonima. Senza RLS non stai "rimandando la sicurezza": stai pubblicando il database su internet. Per questo la Legge n°3 non ha eccezioni.
+Su Supabase una tabella dello schema `public` è **raggiungibile via PostgREST** quando i ruoli `anon`/`authenticated` hanno il `grant` sulla tabella. Non è (più) vero che *ogni* tabella nuova sia esposta d'ufficio: dipende dalle **impostazioni della Data API del progetto**, e una tabella creata a mano in SQL può richiedere un `grant` esplicito per essere raggiungibile.
+
+**Questo non indebolisce di una virgola la Legge n°3.** L'esposizione è una *impostazione*: si cambia da un pannello, o con un `grant` scritto da chiunque venga dopo, e non lascia traccia nello schema. La RLS invece sta attaccata alla tabella. Una tabella non esposta oggi è esposta domani senza che nessuno riapra la migrazione — quindi **nessuna tabella nuda**, mai, nemmeno "per ora". Senza RLS non stai rimandando la sicurezza: stai lasciando che sia una casella di configurazione a decidere se il database è pubblico.
+
+Le due cose sono **ortogonali**, e vanno tenute distinte perché i due guasti hanno sintomi opposti:
+
+| | tabella esposta | tabella non esposta |
+|---|---|---|
+| **con RLS e policy** | funziona come previsto | il client non legge nulla e sembra un bug del frontend (§La trappola inversa) |
+| **senza RLS** | data leak pubblico (`block` dell'audit) | data leak in attesa di un `grant` |
 
 ## Le due righe che vengono prima di tutto
 
@@ -37,12 +46,26 @@ returns boolean language sql security definer set search_path = '' stable as $$
     where m.org_id = org and m.user_id = (select auth.uid())
   );
 $$;
+-- obbligatorio: Postgres concede `execute` a PUBLIC per DEFAULT, quindi senza
+-- queste due righe la funzione è un endpoint chiamabile da `anon` che scavalca
+-- la RLS. L'audit lo segnala (`issue`).
+revoke execute on function public.is_member_of(uuid) from public;
+grant execute on function public.is_member_of(uuid) to authenticated;
 
 create policy "membri leggono l'organizzazione" on public.invoices
 for select to authenticated using ( public.is_member_of(org_id) );
 ```
 
 **4. Role-based** — ruoli applicativi (admin, staff). Il ruolo sta nei **claim del JWT** o in una tabella dei ruoli letta da funzione `security definer`; **mai** in una colonna che l'utente stesso può aggiornare.
+
+Nel JWT c'è un solo posto giusto: `raw_app_meta_data` (`app_metadata` nel token), che scrive **solo il server**. `raw_user_meta_data` (`user_metadata`) lo scrive **l'utente** con una chiamata a `updateUser`, e finisce anch'esso in `auth.jwt()`: una policy che ne ricava l'autorizzazione è auto-promozione ad admin in una riga di JavaScript. L'audit la blocca.
+```sql
+-- corretto: app_metadata, scritto dal server
+using ( ((auth.jwt() -> 'app_metadata') ->> 'role') = 'admin' )
+-- vulnerabile: user_metadata, scritto dall'utente
+using ( ((auth.jwt() -> 'user_metadata') ->> 'role') = 'admin' )
+```
+I claim del JWT **non sono freschi** fino al refresh del token: una revoca di ruolo vale dal token successivo. Se serve immediatezza, il ruolo si legge da tabella con una funzione `security definer`.
 
 **3b. Tenant con ruoli interni di ambito diverso** — la composizione di 3 e 4, ed è il caso vero più frequente: il titolare vede tutta l'azienda, il responsabile di una singola sede vede solo la propria. Non sono due pattern da scegliere, sono due condizioni da comporre in **una** funzione, così la policy resta una riga e l'ambito ha un posto solo dove essere corretto:
 
@@ -56,6 +79,8 @@ returns boolean language sql security definer set search_path = '' stable as $$
       and (s.ruolo = 'titolare' or s.location_id = sede)   -- ambito del ruolo
   );
 $$;
+revoke execute on function public.puo_vedere_sede(uuid) from public;
+grant execute on function public.puo_vedere_sede(uuid) to authenticated;
 
 create policy "lo staff vede gli ordini di sua competenza" on public.orders
 for select to authenticated using ( public.puo_vedere_sede(location_id) );
@@ -79,6 +104,20 @@ Il prezzo riservato concordato con un cliente B2B, il margine, il costo d'acquis
 
 Vale anche al contrario: una colonna che deve essere **scritta solo dallo staff** (uno sconto, uno stato) su una riga che l'utente può aggiornare è scrivibile dall'utente. Il `with check` vede la riga, non il campo modificato: o la colonna sta in un'altra tabella, o la scrittura passa da una funzione.
 
+## La trappola inversa: RLS perfetta, nessun `grant`
+
+Il guasto simmetrico al data leak, e costa giorni perché non assomiglia a un problema di database. Tabella con RLS attiva, policy corrette, indici al posto giusto — e il client **non legge niente**. Non c'è errore: c'è una lista vuota, e sembra un bug del frontend.
+
+Manca il permesso Postgres, che è un secondo sistema **sopra** la RLS: le policy decidono *quali righe*, il `grant` decide *se la tabella è raggiungibile affatto*.
+
+```sql
+grant select on public.orders to anon, authenticated;
+grant insert, update, delete on public.orders to authenticated;
+```
+Verifica: `select grantee, privilege_type from information_schema.role_table_grants where table_name = 'orders';`
+
+`scripts/rls-audit.mjs` lo controlla: una tabella con RLS attiva e almeno una policy ma **senza `grant`** a `anon`/`authenticated` produce un `issue`. Se il client non deve raggiungerla, la risposta giusta non è il `grant` — è **spostarla in uno schema non esposto**.
+
 ## Una policy per operazione e per ruolo
 
 Non esiste la policy "tuttofare": `select`, `insert`, `update`, `delete` hanno regole diverse. Su `insert` e `update` serve `with check` (cosa può **scrivere**), non solo `using` (cosa può **vedere**):
@@ -87,9 +126,53 @@ create policy "utente crea i propri ordini"
 on public.orders for insert to authenticated
 with check ( (select auth.uid()) = user_id );
 ```
-Senza `with check`, un utente autenticato può inserire righe intestate a qualcun altro.
 
-## Errori classici (l'audit li cerca tutti)
+**Cosa succede davvero se `with check` manca** — verificato su Postgres reale il 2026-07-27, perché la spiegazione che girava qui era falsa e mandava a cercare la cosa sbagliata:
+
+- su **`insert`** Postgres **nega ogni inserimento** (`new row violates row-level security policy`). Non lascia passare righe intestate ad altri: non lascia passare niente. Il guasto è muto e sembra un bug del frontend. (`for insert using (…)` non è nemmeno scrivibile: *only WITH CHECK expression allowed for INSERT*.)
+- su **`update`** e **`all`** Postgres **riusa l'espressione di `using`** come controllo sulla riga nuova. Quindi `for update using ((select auth.uid()) = user_id)` senza `with check` è **sicuro**: il tentativo di intestare la riga a un altro utente viene rifiutato. Ma `for update using (true)` senza `with check` è un buco aperto — il controllo effettivo è `true` e chiunque riscrive la riga di chiunque.
+
+Scrivere entrambe le clausole resta la forma da preferire (l'intenzione si legge senza conoscere la regola di ereditarietà), ma l'audit segnala la **composizione** pericolosa, non l'assenza della clausola: segnalare l'assenza vorrebbe dire segnalare il codice corretto.
+
+## `update` e `delete` hanno bisogno di una policy di `select`
+
+In Postgres un `update` deve prima **selezionare** la riga da modificare. Senza una policy di `select` per gli **stessi ruoli**, l'operazione tocca **0 righe e non dà errore**: la chiamata riesce, il dato non cambia. È il guasto che sembra più di tutti un bug del frontend.
+
+```sql
+-- serve la coppia, non la sola scrittura
+create policy "legge i propri ordini" on public.orders
+for select to authenticated using ( (select auth.uid()) = user_id );
+
+create policy "aggiorna i propri ordini" on public.orders
+for update to authenticated
+using ( (select auth.uid()) = user_id ) with check ( (select auth.uid()) = user_id );
+```
+Attenzione ai **ruoli**: una policy di `select` per `anon` non copre un `update` per `authenticated`. L'audit confronta gli insiemi di ruoli, non solo la presenza della policy.
+
+## Storage: l'upsert vuole tre policy, non una
+
+`storage.objects` è una tabella con RLS come tutte le altre, e un **upsert non è un `insert`**: sostituire un file esistente è un `update`, e per aggiornarlo bisogna prima **leggerlo**. Servono quindi **tre** policy per lo stesso ruolo — `insert` + `select` + `update` — sullo stesso bucket.
+
+Concedendo solo `insert`, i caricamenti **nuovi** passano e la sostituzione di un file esistente **fallisce in silenzio**: il caso peggiore, perché la funzione sembra funzionare finché nessuno riprova con lo stesso nome. Il `delete` serve a parte, se l'applicazione cancella i file.
+
+```sql
+create policy "carica nella propria cartella" on storage.objects
+for insert to authenticated
+with check ( bucket_id = 'avatars' and (storage.foldername(name))[1] = (select auth.uid())::text );
+
+create policy "legge la propria cartella" on storage.objects
+for select to authenticated
+using ( bucket_id = 'avatars' and (storage.foldername(name))[1] = (select auth.uid())::text );
+
+create policy "sostituisce nella propria cartella" on storage.objects
+for update to authenticated
+using ( bucket_id = 'avatars' and (storage.foldername(name))[1] = (select auth.uid())::text );
+```
+`scripts/rls-audit.mjs` **non** ha una regola per Storage: `storage` non è uno schema esposto dell'API e non compare in `[api].schemas`, quindi l'audit non lo guarda. Qui è documentazione, e va controllata a mano.
+
+## Errori classici
+
+`scripts/rls-audit.mjs` cerca tutte le righe di questa tabella **tranne** le ultime tre: ruolo in colonna scrivibile, policy di Storage e `service_role` lato client non sono nel catalogo che l'audit legge (l'ultima è territorio di `gitleaks`, non di Schema Forge). Su quelle tre il gate verde non dice niente: si controllano a mano.
 
 | Errore | Conseguenza |
 |---|---|
@@ -97,11 +180,18 @@ Senza `with check`, un utente autenticato può inserire righe intestate a qualcu
 | Tabella nuda in uno schema **secondario esposto** (`[api].schemas` del `config.toml`) | identico al precedente: esposto è esposto, `public` non è l'unico schema pubblicato |
 | Dato riservato in una **colonna** di una tabella leggibile | pubblico: la policy filtra righe, non campi (§La RLS è per riga) |
 | RLS attiva ma zero policy | applicazione che non legge nulla e sembra un bug del frontend |
+| RLS e policy corrette ma **nessun `grant`** a `anon`/`authenticated` | identico al precedente e più difficile da vedere: il permesso Postgres manca, non la policy (§La trappola inversa) |
 | `using (true)` su dati utente | RLS attiva ma inutile: falso senso di sicurezza |
-| `insert`/`update` senza `with check` | scrittura per conto di altri utenti |
+| `update`/`all` con `using (true)` e **senza** `with check` | il controllo sulla riga nuova è ereditato da `using`, quindi è `true`: chiunque riscrive la riga di chiunque (`block`) |
+| `insert` senza `with check` | l'opposto di quel che si crede: Postgres **nega ogni** inserimento, e sembra un bug del frontend |
+| `update`/`delete` senza una policy di `select` per gli **stessi ruoli** | l'operazione tocca 0 righe **senza errore**: la chiamata riesce e il dato non cambia |
+| `user_metadata` / `raw_user_meta_data` in una policy | auto-promozione ad admin: quel campo lo scrive **l'utente** e finisce in `auth.jwt()` — il claim va in `raw_app_meta_data` |
+| `auth.role()` in una policy | deprecata, e con gli **accessi anonimi** attivi un anonimo porta il ruolo `authenticated` e la passa senza essere autenticato: il ruolo si dichiara con `to` |
 | Vista senza `security_invoker = on` | la vista gira coi diritti del **proprietario** e scavalca la RLS delle tabelle sotto |
 | `security definer` senza `set search_path = ''` | escalation di privilegi tramite oggetti omonimi |
+| `security definer` con `execute` a PUBLIC (il **default** di Postgres) | è un endpoint pubblico chiamabile da `anon` che scavalca la RLS: `revoke execute … from public` |
 | Ruolo letto da una colonna scrivibile dall'utente | auto-promozione ad admin |
+| Upsert su `storage.objects` con la sola policy di `insert` | i caricamenti nuovi passano, la sostituzione dei file **fallisce in silenzio** (§Storage) |
 | `service_role` usata lato client | RLS completamente bypassata: la chiave sta **solo** sul server |
 
 ## Performance delle policy

@@ -16,7 +16,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { conRitentativo, contrattoUscita, dettaglioReset, schemiEsposti, urlDbProgetto } from "./verify.mjs";
+import {
+  conRitentativo,
+  contrattoUscita,
+  dettaglioAdvisors,
+  dettaglioReset,
+  schemiEsposti,
+  urlDbProgetto,
+} from "./verify.mjs";
 
 // Finto comando: restituisce gli esiti in coda, uno per chiamata.
 function finto(...esiti) {
@@ -65,6 +72,39 @@ test("al primo colpo il dettaglio non parla di tentativi", () => {
 
 test("se fallisce, il dettaglio riporta l'errore vero", () => {
   assert.match(dettaglioReset({ status: 1, stderr: "Error status 502" }, true, 3), /502/);
+});
+
+// -------------------------------------------------------- dettaglio advisors
+// `supabase db advisors` risponde con un JSON da centinaia di righe (e la CLI
+// ci mette davanti "Connecting to local database..." e l'avviso di versione).
+// Nel dettaglio del gate serve una riga per regola, o non lo legge nessuno.
+
+const USCITA_ADVISORS = `Connecting to local database...
+[
+  { "name": "auth_rls_initplan", "level": "WARN",
+    "metadata": { "name": "t", "schema": "public" } },
+  { "name": "auth_rls_initplan", "level": "WARN",
+    "metadata": { "name": "t", "schema": "public" } },
+  { "name": "rls_references_user_metadata", "level": "ERROR",
+    "metadata": { "name": "ordini", "schema": "public" } }
+]
+A new version of Supabase CLI is available: v2.109.1`;
+
+test("gli advisors si comprimono a una riga per regola, gli ERROR per primi", () => {
+  assert.equal(
+    dettaglioAdvisors(USCITA_ADVISORS),
+    "[ERROR] rls_references_user_metadata (1): public.ordini\n" +
+    "[WARN] auth_rls_initplan (2): public.t"
+  );
+});
+
+test("nessun rilievo: lo dice, non stampa `[]`", () => {
+  assert.equal(dettaglioAdvisors("Connecting to local database...\n[]\n"), "nessun rilievo");
+});
+
+test("uscita non-JSON (connessione rifiutata): si riporta grezza, non si perde", () => {
+  const grezza = dettaglioAdvisors("failed to connect to postgres: connection refused");
+  assert.match(grezza, /connection refused/);
 });
 
 // ------------------------------------------------------------ schemi esposti

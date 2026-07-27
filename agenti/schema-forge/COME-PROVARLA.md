@@ -30,7 +30,7 @@ Riferimenti: `README.md` (manuale), `STATO.md` (cosa è aperto),
 | `forge` | la migrazione: lookup → tabelle → vincoli → indici → trigger → RLS | no |
 | `rls` | genera o audita le policy | no |
 | `seed` | `supabase/seed.sql` idempotente e deterministico | no |
-| `verify` | **il gate**, 8 passi su database vero | — |
+| `verify` | **il gate**, 9 passi su database vero | — |
 | `types` | rigenera `src/lib/database.types.ts` | no |
 | `evolve` | modifica di uno schema esistente, expand-contract | **sì** su ogni distruttivo |
 | `handoff` | scrive `docs/handoff/07-schema-forge.md` | no |
@@ -57,7 +57,7 @@ Riferimenti: `README.md` (manuale), `STATO.md` (cosa è aperto),
 7-8-9 in quest'ordine non è pedanteria: un gate che nasce rosso per come è
 ordinato il flusso insegna a ignorare il rosso.
 
-### Il gate — otto passi, tre stati
+### Il gate — nove passi, tre stati
 
 `pass` · `fail` · `skipped` (= **verifica mancante**, il gate resta rosso).
 
@@ -67,10 +67,11 @@ ordinato il flusso insegna a ignorare il rosso.
 | 2 | `squawk` | lock, riscritture di tabella, distruttivi non dichiarati |
 | 3 | `supabase db reset` | le migrazioni applicate davvero, in ordine, più il seed |
 | 4 | `supabase db lint` | funzioni e plpgsql non validi |
-| 5 | audit RLS | tabelle nude, policy assenti o permissive, viste e funzioni pericolose, FK e colonne di policy senza indice |
-| 6 | pgTAP | le policy verificate impersonando i ruoli |
-| 7 | tipi TypeScript | disallineamento fra schema e codice |
-| 8 | contratto d'uscita | `.sqlfluff`, `squawk.toml`, handoff senza segnaposto |
+| 5 | `supabase db advisors` | il linter mantenuto da Supabase (CLI ≥ 2.81.3): rosso solo sugli `ERROR`, i `WARN` restano scritti |
+| 6 | audit RLS | tabelle nude, policy assenti o permissive, viste e funzioni pericolose, FK e colonne di policy senza indice |
+| 7 | pgTAP | le policy verificate impersonando i ruoli |
+| 8 | tipi TypeScript | disallineamento fra schema e codice |
+| 9 | contratto d'uscita | `.sqlfluff`, `squawk.toml`, handoff senza segnaposto |
 
 Uscita: `0` verde · `1` rosso · `2` errore di esecuzione.
 
@@ -100,7 +101,7 @@ cd "agenti/schema-forge"
 npm test          # equivale a: node --test "scripts/**/*.test.mjs"
 ```
 
-66 test verdi, zero dipendenze runtime, nessun Docker. Verificano le **regole**
+93 test verdi, zero dipendenze runtime, nessun Docker. Verificano le **regole**
 dell'audit e del diagramma come funzioni pure. Se vuoi capire cosa becca l'audit
 RLS senza montare niente, questo è il punto d'ingresso.
 
@@ -153,23 +154,34 @@ node "../agenti/schema-forge/scripts/verify.mjs" --json      # per l'orchestrato
 node "../agenti/schema-forge/scripts/verify.mjs" --skip-reset --db-url postgresql://...
 ```
 
-Uscita reale del banco VetCare, rilanciata il 2026-07-27:
+Uscita reale del banco VetCare, rilanciata il 2026-07-27 **dopo** le sette regole
+nuove e il passo `db advisors` (dettaglio dell'audit accorciato qui, sono dodici
+righe uguali):
 
 ```
-GATE SCHEMA: VERDE (0 falliti, 0 verifiche mancanti su 8 passi)
+GATE SCHEMA: VERDE (0 falliti, 0 verifiche mancanti su 9 passi)
 
 OK    sqlfluff (formato SQL)
 OK    squawk (operazioni pericolose)
 OK    supabase db reset (applicazione reale)
         6 migrazioni applicate + seed
 OK    supabase db lint
+OK    supabase db advisors
+        [WARN] multiple_permissive_policies (20): public.animals, public.clinics, public.diagnoses, …
 OK    audit RLS
         schemi esposti: public, graphql_public · postgresql://postgres:postgres@127.0.0.1:57322/postgres
         [issue] public.species → "specie_visibili_a_tutti": policy con `using (true)`: RLS attiva ma senza filtro
+        [issue] public.e_staff(): funzione `security definer` eseguibile da PUBLIC (quindi da `anon`): e' un endpoint pubblico che scavalca la RLS
+        …altre dieci funzioni nella stessa condizione…
 OK    pgTAP (test delle policy)
 OK    tipi TypeScript
 OK    contratto d'uscita (configurazioni + handoff)
 ```
+
+Undici di quelle righe **prima non c'erano**: le funzioni `security definer` di
+questo banco sono sempre state chiamabili da `anon`, ma nessuno strumento lo
+diceva. Sono `issue`, non `block`: il gate resta verde e le scrive — che è
+esattamente il punto del §5 qui sotto.
 
 Le due righe di dettaglio dell'audit RLS — **quali schemi** e **quale database** —
 non sono decorative: con due stack Supabase accesi sono l'unica cosa che ti dice
@@ -348,9 +360,9 @@ Gate dopo l'`evolve`: **VERDE 8/8**, sei migrazioni.
 
 Questa sezione conta più di tutte le altre.
 
-Sullo schema qui sopra — quello che il gate dichiara **VERDE 8 su 8** — il
-tribunale di `/code-inquisition` ha riprodotto con comandi reali **16 difetti su
-17**, cinque Critical. Nello stesso momento:
+Sullo schema qui sopra — quello che il gate dichiara **VERDE** — il tribunale di
+`/code-inquisition` ha riprodotto con comandi reali **16 difetti su 17**, cinque
+Critical. Nello stesso momento:
 
 ```
 sqlfluff       All Finished!            (pulito)
@@ -358,6 +370,12 @@ squawk         Found 0 issues in 6 files
 rls-audit.mjs  0 block, 1 issue, 0 warn
 GATE SCHEMA:   VERDE (0 falliti, 0 verifiche mancanti su 8 passi)
 ```
+
+Le sette regole nuove del 2026-07-27 hanno spostato l'ago di poco: adesso l'audit
+scrive **12 issue** invece di 1 (le funzioni `security definer` scoperte, che
+erano il primo dei sei punti gravi rimasti). Ma il gate su questo schema è ancora
+**VERDE, 9 su 9**, e i difetti qui sotto sono ancora tutti lì. La conclusione non
+cambia di una virgola.
 
 Il più grave, riprodotto di nuovo il 2026-07-27 dentro una transazione annullata:
 

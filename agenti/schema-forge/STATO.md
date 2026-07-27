@@ -1,7 +1,7 @@
 # Stato — Schema Forge
 
-- **Stato attuale:** v1.3 — collaudata su Postgres reale (Supabase locale, Windows), **nel comportamento** (`COLLAUDO-2026-07-25.md`) e **corretta**: gli otto punti aperti del primo collaudo sono chiusi il 2026-07-26 (§Correzioni del 2026-07-26). Gli script hanno test propri (`node --test`, **66 verdi**), passano sotto i guardiani, e il gate `verify` è **VERDE su 8 passi su 8** anche dopo un `evolve` con distruttivi autorizzati, su due domini diversi.
-  **NON usabile su un progetto cliente.** Il secondo collaudo, indipendente e avversario (`COLLAUDO-2026-07-26.md`, dominio **non e-commerce**), ha fatto girare per la prima volta `/code-inquisition` sulle policy RLS: sullo schema che il gate dichiara VERDE 8/8, il tribunale ha **riprodotto con comandi reali 16 difetti su 17**, cinque Critical, mentre `sqlfluff`, `squawk` e `rls-audit.mjs` erano tutti verdi. Il flusso regge; **il gate verifica che la RLS esista, non che funzioni**. Punti aperti ordinati per gravità in fondo.
+- **Stato attuale:** v1.3 — collaudata su Postgres reale (Supabase locale, Windows), **nel comportamento** (`COLLAUDO-2026-07-25.md`) e **corretta**: gli otto punti aperti del primo collaudo sono chiusi il 2026-07-26 (§Correzioni del 2026-07-26). Gli script hanno test propri (`node --test`, **93 verdi**), e il gate `verify` è **VERDE su 9 passi su 9** (dal 2026-07-27 include `supabase db advisors`) anche dopo un `evolve` con distruttivi autorizzati, su due domini diversi. Sette regole nuove il 2026-07-27, tutte provate su Postgres reale (§Regole nuove dalla skill Supabase ufficiale).
+  **NON usabile su un progetto cliente.** Il secondo collaudo, indipendente e avversario (`COLLAUDO-2026-07-26.md`, dominio **non e-commerce**), ha fatto girare per la prima volta `/code-inquisition` sulle policy RLS: sullo schema che il gate dichiara VERDE, il tribunale ha **riprodotto con comandi reali 16 difetti su 17**, cinque Critical, mentre `sqlfluff`, `squawk` e `rls-audit.mjs` erano tutti verdi. Le regole del 2026-07-27 hanno portato l'audit di quello schema da 1 a 12 `issue`, ma il gate lì è **ancora VERDE (9/9)** e i 16 difetti sono ancora tutti riproducibili: il flusso regge, **il gate verifica che la RLS esista, non che funzioni**. Punti aperti ordinati per gravità in fondo.
 - **Proprietario:** Alberto
 - **Dipendenze:**
   - A monte: prompt-smith (richiesta professionale), brief-smith (entità e contenuti del cliente)
@@ -113,7 +113,10 @@ verdi**. Il gate verifica che la RLS *esista*, non che *funzioni*.
    tentino l'exploit e ne asseriscano il rifiuto; (b) regole nuove in
    `audit-lib.mjs` per le classi che sono catalogabili (colonna di ruolo
    scrivibile dal suo stesso proprietario, trigger di transizione senza
-   controparte `INSERT`, funzione `EXECUTE`-abile da `anon`).
+   controparte `INSERT`, ~~funzione `EXECUTE`-abile da `anon`~~ — quest'ultima
+   **fatta** il 2026-07-27, con le altre sei della skill Supabase ufficiale).
+   Restano fuori l'auto-promozione via **colonna** (l'audit ora blocca solo quella
+   via `user_metadata`) e la macchina a stati: il blocco n°1 **resta aperto**.
 2. **`SKILL.md`:62 fa auditare il database sbagliato.** La procedura del comando
    `rls` prescrive `node <skill>/scripts/rls-audit.mjs` senza `--db-url` né
    `--schemas`: eseguita alla lettera ha auditato **il database di un altro
@@ -148,9 +151,11 @@ verdi**. Il gate verifica che la RLS *esista*, non che *funzioni*.
    e `summary`. La configurazione viaggia con la **skill**, quindi un progetto
    non può estenderla senza modificare l'agente. O si esenta `RF05` sui nomi di
    policy, o le reference vanno riscritte in `snake_case`.
-8. **`rls-supabase.md`:90 dichiara un meccanismo falso.** «Senza `with check` un
-   utente può inserire righe intestate ad altri»: Postgres **nega** l'inserimento.
-   Il consiglio è giusto, la spiegazione no — e manda a cercare la cosa sbagliata.
+8. ~~**`rls-supabase.md`:90 dichiara un meccanismo falso.**~~ — corretto il
+   2026-07-27 con la spiegazione **verificata al banco**: su `insert` Postgres nega
+   ogni inserimento; su `update`/`all` riusa `using` come controllo sulla riga
+   nuova, quindi `using (true)` senza `with check` è il buco e `using (ownership)`
+   senza `with check` non lo è. È anche la regola `block` n°3 dell'audit.
 9. **Il contratto `--json` non è documentato né stabile.** Nessuno schema; l'unico
    identificatore di passo è l'etichetta italiana (`"contratto d'uscita
    (configurazioni + handoff)"`); block/issue/warn appiattiti in prosa dentro
@@ -175,11 +180,132 @@ verdi**. Il gate verifica che la RLS *esista*, non che *funzioni*.
     va nella direzione sicura, la diagnosi no.
 15. **Diciotto voci mancanti nelle references** (`COLLAUDO-2026-07-26.md` §1.2),
     ognuna con la frase esatta e il file esatto. Le sei più gravi non le aveva
-    colmate nemmeno l'auditor: `revoke execute` sulle funzioni RPC · macchina a
+    colmate nemmeno l'auditor: ~~`revoke execute` sulle funzioni RPC~~ (chiuso il
+    2026-07-27: scritto nelle reference **e** diventato una regola dell'audit,
+    che sul banco ha trovato 11 funzioni scoperte) · macchina a
     stati vincolata anche in `INSERT` · transizioni per **ogni** stato, non solo
     il principale · trigger che scrive su tabella con RLS deve essere
     `security definer` · audit trail con la colonna dell'attore · validazione
     degli argomenti di un RPC `security definer`.
+
+## Regole nuove dalla skill Supabase ufficiale (2026-07-27)
+
+Installata `.claude/skills/supabase/SKILL.md` (skill ufficiale Supabase, v0.1.2) e
+confrontata con Schema Forge. Chiuse le lacune che valeva chiudere: **sei regole
+nuove** in `audit-lib.mjs` e un passo nuovo nel gate. Ogni premessa è stata
+**provata su Postgres reale** prima di scrivere la regola, e una premessa si è
+rivelata sbagliata (punto 4 qui sotto).
+
+| # | Regola nuova | Gravità | Perché |
+|---|---|---|---|
+| 1 | `user_metadata` / `raw_user_meta_data` in una policy | `block` | `raw_user_meta_data` lo scrive **l'utente** con `updateUser` e finisce in `auth.jwt()`: è auto-promozione ad admin. Il claim va in `raw_app_meta_data` |
+| 2 | `auth.role()` in una policy | `block` | deprecata, ma il guaio vero è che con gli **accessi anonimi** attivi un anonimo porta il ruolo Postgres `authenticated` e passa il controllo: il controllo c'è e non controlla niente |
+| 3 | `update`/`all` con `using (true)` e **senza** `with check` | `block` (era `issue`) | è la **composizione** a essere il buco, non il singolo pezzo (vedi sotto) |
+| 4 | `insert` senza `with check` | `issue` | Postgres **nega ogni inserimento**: non è un buco, è un guasto muto |
+| 5 | `security definer` con `execute` a PUBLIC | `issue` | è il **default** di Postgres: ogni funzione nuova in uno schema esposto è un endpoint chiamabile da `anon` che scavalca la RLS |
+| 6 | RLS e policy in ordine ma **nessun `grant`** a `anon`/`authenticated` | `issue` | la trappola inversa: il client non legge niente e sembra un bug del frontend |
+| 7 | `update`/`delete` senza policy di `select` per gli **stessi ruoli** | `issue` | in Postgres l'update deve prima selezionare la riga: senza, tocca 0 righe **senza errore** |
+
+**Una premessa del gap analysis era sbagliata, e non è stata implementata come
+richiesta.** La proposta diceva: «`insert` senza `with check` → `block`, non c'è
+`using` da cui ereditare». Provato sul database: è vero che non c'è `using` da cui
+ereditare (Postgres rifiuta perfino `for insert using (…)` — *only WITH CHECK
+expression allowed for INSERT*), ma la conseguenza è l'**opposto** di un buco —
+`new row violates row-level security policy`, nessuna riga entra. Quindi `issue`,
+con il messaggio che dice cosa succede davvero. Un `block` avrebbe insegnato a
+temere la cosa sbagliata.
+
+**Il tranello della regola 3, che è il motivo per cui non era già scritta.** Quando
+`with check` è omesso su `update`/`all`, Postgres **riusa l'espressione di `using`**
+come controllo sulla riga nuova. Quindi:
+
+- `for update using ((select auth.uid()) = user_id)` senza `with check` è **sicuro**
+  — provato: il tentativo di intestare la riga a un altro utente viene rifiutato.
+  Segnalarlo sarebbe un falso positivo **sul codice corretto delle reference**.
+- `for update using (true)` senza `with check` è un buco aperto — provato: come
+  `authenticated`, `UPDATE 1` su una riga di un altro utente, riuscito.
+
+La regola guarda la composizione. `rls-supabase.md`:90 spiegava il meccanismo in
+modo **falso** («senza `with check` un utente può inserire righe intestate ad
+altri»): era il punto 8 dei residui del collaudo del 2026-07-26, ora corretto con
+la spiegazione verificata al banco.
+
+### Verifiche eseguite (non "letto e sembra giusto")
+
+- **Test unitari: da 66 a 93 verdi** (`node --test "scripts/**/*.test.mjs"`). Ogni
+  regola nuova ha il caso che scatta e quello che non deve scattare, compresi i
+  due che rendono le regole non banali: `update` con ownership in `using` e senza
+  `with check` → **nessun** finding; `update` per `authenticated` con `select`
+  solo per `anon` → finding comunque (gli insiemi di ruoli non si sovrappongono).
+- **Forme del catalogo verificate su Postgres reale**, non immaginate:
+  `proacl::text` rende `NULL` coi privilegi di default, `{postgres=X/postgres}`
+  dopo il `revoke`, `{postgres=X/postgres,=X/postgres}` col `grant` a public — il
+  **grantee vuoto** prima di `=` è PUBBLICO, ed è quello che la regola cerca.
+  Colonne di `information_schema.role_table_grants` confermate.
+- **Banco delle sole regole nuove** su uno schema usa e getta: 7 difetti piantati,
+  **7 rilevati** con la gravità attesa (3 `block`, 4 `issue`), e una tabella
+  scritta bene nello stesso schema → **0 findings**, incluso il `for update`
+  senza `with check` che la versione ingenua avrebbe segnalato.
+- **Gate completo su un progetto vero** (banco veterinario del collaudo
+  precedente): **VERDE, 9 passi su 9**, `db advisors` compreso. Il passo nuovo non
+  ha reso il gate strutturalmente rosso.
+- **Le regole nuove hanno trovato difetti veri sul banco esistente**: **11 funzioni**
+  `security definer` di quel progetto sono eseguibili da `anon` (`revoke execute`
+  mai scritto), contate sull'uscita del gate. Era il primo dei sei punti gravi del
+  residuo n°15 del collaudo, e ora lo trova uno strumento invece di un auditor.
+
+### Passo nuovo del gate: `supabase db advisors`
+
+Sesto→quinto passo di `verify.mjs`, dopo `db lint`. È il linter di
+sicurezza/performance **mantenuto da Supabase**. La sovrapposizione è dichiarata,
+non nascosta: circa **quattro delle sei regole storiche** di `audit-lib.mjs` le
+copre anche lui (RLS assente, policy senza RLS attiva, `search_path` mancante, FK
+non indicizzate). Il valore non è la novità, è che **l'altra metà la mantiene
+qualcun altro**: `auth_users_exposed`, `policy_exists_rls_disabled`,
+`multiple_permissive_policies`, `extension_in_public`,
+`rls_references_user_metadata`.
+
+- Fallisce il gate **solo** sui rilievi `ERROR` (`--fail-on error`). Fra i `WARN`
+  ci sono impostazioni di **Auth del progetto** (scadenza degli OTP, opzioni MFA)
+  che una migrazione non può correggere: farle diventare rosso il gate sarebbe un
+  rosso strutturale, e un rosso strutturale insegna a ignorare il rosso. I `WARN`
+  restano **scritti** nel dettaglio, che si stampa anche sui passi verdi.
+- Richiede la CLI **v2.81.3+**. Se il sottocomando non c'è (o la CLI manca) il
+  passo è `skipped` con la versione richiesta nel messaggio — **mai** `fail`:
+  stesso trattamento di `sqlfluff` e `squawk`.
+- L'uscita è JSON da centinaia di righe: `dettaglioAdvisors()` la comprime a una
+  riga per regola (`ERROR` prima). È una funzione **pura ed esportata**, con i
+  suoi test, non giudizio dentro il guscio.
+
+### Fuori perimetro, deciso e scritto
+
+- **Schemi dichiarativi** (`supabase/schemas/`): non adottati — vedi `DECISIONI.md` §13.
+- **Server MCP di Supabase**: `psql` + CLI coprono già tutto; MCP aggiungerebbe
+  OAuth, un `.mcp.json` e una dipendenza di rete **dentro un gate deterministico**.
+- **Changelog di Supabase al gate**: no, renderebbe il gate non deterministico. È
+  una riga nella procedura di `evolve`, da leggere a mano.
+- **Chiavi API, `NEXT_PUBLIC_`, lockfile**: territorio di `code-maniac` e
+  `gitleaks`, non dello schema.
+
+### Residuo chiuso lo stesso giorno: la complessità di `main()`
+
+- **`verify.mjs`:`main()` aveva complessità 56** (soglia dei guardiani: 15). Non era
+  un regresso delle sette regole — era **51 prima**, verificato lanciando ESLint
+  sulla versione precedente: la voce «Complessità PASS» della sezione qui sotto era
+  già falsa. Spezzata in **una funzione per passo** (`passoSqlfluff`, `passoSquawk`,
+  `passoReset`, `passoDbLint`, `passoAdvisors`, `passoAuditRls`, `passoPgtap`,
+  `passoTipi`, `passoContratto`) più `migrazioniDaVerificare()` e `verdetto()`;
+  `main()` è adesso solo l'elenco delle chiamate, e **l'ordine di quelle chiamate è
+  il gate**. `verdetto()` restituisce il codice d'uscita invece di chiamare
+  `process.exit` da due rami diversi. Nessun comportamento cambiato: 93 test verdi
+  prima e dopo, e il gate rilanciato sul banco veterinario chiude **VERDE 9 su 9**
+  con lo stesso dettaglio.
+- **Guardiani, dopo**: ESLint **0 errori 0 warning**, `knip` pulito, 93 test verdi.
+  Il gate non viola più la soglia che impone al codice che verifica.
+- **Nessuna regola per Storage.** `storage` non è uno schema esposto dell'API e non
+  compare in `[api].schemas`: l'audit non lo guarda. L'upsert che richiede
+  `insert` + `select` + `update` è **solo documentazione** in
+  `references/rls-supabase.md`, e su quella il gate verde non dice niente.
 
 ## Guardiani sugli script della skill (2026-07-25)
 
@@ -194,13 +320,15 @@ Gli script degli agenti passano sotto i guardiani **come qualsiasi altro codice*
 
 | Passo | Esito |
 |---|---|
-| Lint (ESLint) · Complessità · Codice morto (knip) · Duplicati (jscpd) | **PASS** |
+| Lint (ESLint) · Complessità · Codice morto (knip) · Duplicati (jscpd) | **PASS** — ma la voce «Complessità» era **falsa il giorno in cui è stata scritta**: `verify.mjs`:`main()` era a 51 contro una soglia di 15, e lo scan non era stato rilanciato dopo l'ultima modifica. Vero dal 2026-07-27, quando `main()` è stata spezzata (§Residuo chiuso lo stesso giorno) |
 | Prettier · tsc · convenzioni · dependency-cruiser | MANCANTE — non pertinenti qui (niente TypeScript, niente grafo di moduli da validare) |
 | **semgrep · gitleaks** | **MANCANTE — non installati.** Regole di sicurezza e ricerca di segreti sugli script **non verificate**: vale `MANCANTE`, non `PASS` |
 
 Corretto solo ciò che era oggettivo: quattro `export` inutilizzati (`pulisci`, `vero` in `audit-lib.mjs` e `erd-lib.mjs` — usati solo dentro il proprio file: superficie pubblica senza consumatori) e `@eslint/js` non dichiarato fra le dipendenze. **I 49 test restano verdi** dopo le correzioni.
 
-Scelte di stile discutibili **elencate e non toccate**: `pulisci`, `vero` e `riga` sono triplicati identici fra `audit-lib.mjs` e `erd-lib.mjs` (jscpd non li segnala, sono sotto ogni soglia); estrarli in un terzo modulo accoppierebbe due librerie volutamente indipendenti, quindi la duplicazione resta una decisione, non una svista.
+Scelte di stile discutibili **elencate e non toccate**: `pulisci`, `vero` e `riga` sono triplicati identici fra `audit-lib.mjs` e `erd-lib.mjs`; estrarli in un terzo modulo accoppierebbe due librerie volutamente indipendenti, quindi la duplicazione resta una decisione, non una svista.
+
+> **Correzione del 2026-07-27.** La frase originale diceva «jscpd non li segnala, sono sotto ogni soglia»: **falso**, e non era mai stato lanciato per controllare. Ai valori di default (`--min-lines 5 --min-tokens 50`) `jscpd` riporta **2 cloni**: `righeDaPsql` fra `audit-lib.mjs` ed `erd-lib.mjs` (8 righe) e la gestione dell'errore di `psql` fra `erd.mjs` ed `rls-audit.mjs` (11 righe, cambia solo il messaggio). La **decisione** di non estrarli resta — accoppierebbe due librerie indipendenti per otto righe — e `jscpd` esce `0` perché non c'è una soglia configurata. Ma andava scritto che lo strumento li vede: dire «pulito» di uno strumento che segnala qualcosa è la stessa bugia che il gate esiste per impedire.
 
 **Stesso trattamento per `verify.mjs`**: lo script del gate è dentro `scripts/` e rientra nella stessa batteria — è già coperto da questo scan (ESLint, complessità, knip, jscpd verdi) e dai propri test (`verify.test.mjs`). Da qui in avanti, **ogni nuovo script di un agente nasce dentro questo perimetro**: se un agente aggiunge uno script, aggiunge anche il proprio `package.json`/`eslint.config.mjs` locale, oppure lo script non è consegnabile.
 
@@ -215,3 +343,5 @@ Scelte di stile discutibili **elencate e non toccate**: `pulisci`, `vero` e `rig
 - **Un distruttivo autorizzato si dichiara al gate**, non lo si aggira: `-- squawk-ignore <regola>` da solo sulla sua riga, motivazione nelle righe sopra, autorizzazione umana come precondizione. È il modo di registrare chi se n'è preso la responsabilità, non un interruttore per far passare il rosso.
 - **Il gate parla del database che ha davvero guardato**: schemi auditati e URL del database si stampano sempre nel dettaglio del passo. Un audit su metà database, o sul database di un altro progetto, non deve poter assomigliare a un audit completo.
 - **`verify` è l'ultimo passo, non il penultimo.** Tipi e handoff si producono prima: un gate che nasce rosso per come è ordinato il flusso insegna a ignorare il rosso.
+- **Uno strumento esterno nel gate fallisce solo su ciò che lo schema può correggere.** `supabase db advisors` gira con `--fail-on error`: i suoi `WARN` includono impostazioni di Auth del progetto, che nessuna migrazione tocca. Si registrano nel dettaglio, non nel verdetto. Vale come regola generale per ogni strumento che si aggiungerà.
+- **Una premessa si prova sul database prima di diventare una regola.** Delle sette regole del 2026-07-27, una era stata proposta con la gravità sbagliata (`insert` senza `with check` come `block`) e una avrebbe prodotto falsi positivi sul codice corretto delle reference (`with check` omesso su `update`). Entrambe si vedono solo eseguendo l'SQL: leggere la documentazione non basta, e il gap analysis di un LLM nemmeno.

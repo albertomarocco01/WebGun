@@ -21,6 +21,8 @@ import {
   regolaChiaviEsterne,
   regolaColonneDiPolicy,
   regolaFunzioni,
+  regolaGrant,
+  regolaLetturaPerScrittura,
   regolaPolicy,
   regolaTabelle,
   regolaViste,
@@ -102,6 +104,98 @@ test("regola 2: policy senza ruolo esplicito → warn", () => {
   assert.match(findings[0].message, /ruolo esplicito/);
 });
 
+// ─── regola 2: `with check` OMESSO su una scrittura ──────────────────────────
+// Verificato su Postgres reale il 2026-07-27, perche' la versione ingenua di
+// questa regola e' SBAGLIATA: quando `with check` manca su `update`/`all`,
+// Postgres usa `using` anche come controllo sulla riga nuova. Segnalare la sola
+// assenza di `with check` significherebbe segnalare il codice corretto.
+
+test("using (true) su update senza with check → block (il controllo effettivo e' true)", () => {
+  const findings = regolaPolicy([
+    ["public", "orders", "aggiorna tutto", "UPDATE", "{authenticated}", "true", ""],
+  ]);
+  assert.deepEqual(gravita(findings), ["block"]);
+  assert.match(findings[0].message, /anche come controllo sulla riga nuova/);
+  assert.match(findings[0].hint, /with check \(\(select auth\.uid\(\)\) = user_id\)/);
+});
+
+test("using (true) su update senza with check non produce ANCHE l'issue: un difetto, un finding", () => {
+  const findings = regolaPolicy([
+    ["public", "orders", "aggiorna tutto", "ALL", "{authenticated}", "true", ""],
+  ]);
+  assert.deepEqual(gravita(findings), ["block"]);
+});
+
+test("update con ownership in using e senza with check → nessun finding (Postgres eredita il controllo)", () => {
+  // `for update using ((select auth.uid()) = user_id)` senza `with check`:
+  // provato sul database, il dirottamento della riga viene RIFIUTATO.
+  const findings = regolaPolicy([
+    ["public", "orders", "aggiorna i propri", "UPDATE", "{authenticated}",
+      "((select auth.uid()) = user_id)", ""],
+  ]);
+  assert.deepEqual(findings, []);
+});
+
+test("insert senza with check → issue: nessun inserimento passera' mai", () => {
+  // Su `insert` non c'e' `using` da cui ereditare: Postgres NEGA («new row
+  // violates row-level security policy»). Non e' un buco, e' un guasto muto.
+  const findings = regolaPolicy([
+    ["public", "orders", "crea", "INSERT", "{authenticated}", "", ""],
+  ]);
+  assert.deepEqual(gravita(findings), ["issue"]);
+  assert.match(findings[0].message, /nessun inserimento/);
+});
+
+// ─── regola 2: `user_metadata` in una policy ─────────────────────────────────
+
+test("user_metadata in una policy → block", () => {
+  const findings = regolaPolicy([
+    ["public", "orders", "admin", "SELECT", "{authenticated}",
+      "(((auth.jwt() -> 'user_metadata'::text) ->> 'role'::text) = 'admin'::text)", ""],
+  ]);
+  assert.deepEqual(gravita(findings), ["block"]);
+  assert.match(findings[0].message, /auto-promozione/);
+  assert.match(findings[0].hint, /app_metadata/);
+});
+
+test("raw_user_meta_data nel with_check → block anche li'", () => {
+  const findings = regolaPolicy([
+    ["public", "orders", "admin scrive", "INSERT", "{authenticated}", "",
+      "((select raw_user_meta_data ->> 'role' from auth.users where id = (select auth.uid())) = 'admin')"],
+  ]);
+  assert.deepEqual(gravita(findings), ["block"]);
+});
+
+test("app_metadata in una policy → nessun finding: quella la scrive solo il server", () => {
+  const findings = regolaPolicy([
+    ["public", "orders", "admin", "SELECT", "{authenticated}",
+      "(((auth.jwt() -> 'app_metadata'::text) ->> 'role'::text) = 'admin'::text)", ""],
+  ]);
+  assert.deepEqual(findings, []);
+});
+
+// ─── regola 2: `auth.role()` in una policy ───────────────────────────────────
+
+test("auth.role() in una policy → block", () => {
+  const findings = regolaPolicy([
+    ["public", "orders", "solo autenticati", "DELETE", "{authenticated}",
+      "(auth.role() = 'authenticated'::text)", ""],
+  ]);
+  assert.deepEqual(gravita(findings), ["block"]);
+  assert.match(findings[0].message, /anonimi/);
+  assert.match(findings[0].hint, /to authenticated/);
+});
+
+test("auth.roles del dominio non e' auth.role(): nessun falso positivo", () => {
+  // Una colonna o una funzione che si chiama `roles` non deve far scattare
+  // la regola: si cerca la chiamata `auth.role()`, non la parola.
+  const findings = regolaPolicy([
+    ["public", "orders", "per ruolo", "SELECT", "{authenticated}",
+      "(public.auth_roles((select auth.uid())) @> array['staff'])", ""],
+  ]);
+  assert.deepEqual(findings, []);
+});
+
 // ─── regola 3 — viste che scavalcano la RLS ──────────────────────────────────
 
 test("regola 3: vista senza security_invoker → block", () => {
@@ -129,6 +223,45 @@ test("regola 4: security definer senza search_path → block", () => {
 
 test("regola 4: security definer con search_path fisso → nessun finding", () => {
   assert.deepEqual(regolaFunzioni([["public", "ordine_del_chiamante", "search_path="]]), []);
+});
+
+// ─── regola 4b — security definer eseguibile da PUBLIC ───────────────────────
+// Le rese di `proacl::text` sono quelle lette su Postgres reale il 2026-07-27,
+// non forme immaginate: privilegi di default → NULL (quindi '' col coalesce);
+// dopo il revoke → {postgres=X/postgres}; col grant a public → il grantee vuoto.
+
+test("regola 4b: privilegi di default (proacl vuoto) → issue, la esegue anche anon", () => {
+  const findings = regolaFunzioni([["public", "rpc_aperta", "search_path=", ""]]);
+  assert.deepEqual(gravita(findings), ["issue"]);
+  assert.match(findings[0].message, /PUBLIC/);
+  assert.match(findings[0].hint, /revoke execute on function public\.rpc_aperta from public;/);
+});
+
+test("regola 4b: grantee vuoto nell'ACL = PUBLIC → issue", () => {
+  const findings = regolaFunzioni([
+    ["public", "rpc_aperta", "search_path=", "{postgres=X/postgres,=X/postgres}"],
+  ]);
+  assert.deepEqual(gravita(findings), ["issue"]);
+});
+
+test("regola 4b: execute revocato a public → nessun finding", () => {
+  assert.deepEqual(
+    regolaFunzioni([["public", "rpc_chiusa", "search_path=", "{postgres=X/postgres}"]]), []
+  );
+});
+
+test("regola 4b: revocato a public e concesso a authenticated → nessun finding", () => {
+  assert.deepEqual(
+    regolaFunzioni([
+      ["public", "rpc_chiusa", "search_path=", "{postgres=X/postgres,authenticated=X/postgres}"],
+    ]), []
+  );
+});
+
+test("regola 4b: senza il campo ACL non si inventa un verdetto", () => {
+  // La riga a tre campi e' quella delle query vecchie: l'assenza del campo non
+  // e' un ACL vuoto. Stesso criterio di `force` nella regola 1.
+  assert.deepEqual(regolaFunzioni([["public", "rpc", "search_path="]]), []);
 });
 
 // ─── regola 5 — chiavi esterne senza indice ──────────────────────────────────
@@ -171,9 +304,97 @@ test("regola 6: colonna di policy indicizzata → nessun finding", () => {
   assert.deepEqual(findings, []);
 });
 
+// ─── regola 2f — scrittura senza lettura per gli stessi ruoli ────────────────
+// In Postgres un `update` deve prima selezionare la riga: senza policy di
+// `select` per gli stessi ruoli l'operazione torna 0 righe e NON da' errore.
+
+test("update senza alcuna policy di select → issue", () => {
+  const findings = regolaLetturaPerScrittura([
+    ["public", "orders", "aggiorna i propri", "UPDATE", "authenticated",
+      "((select auth.uid()) = user_id)", ""],
+  ]);
+  assert.deepEqual(gravita(findings), ["issue"]);
+  assert.match(findings[0].message, /0 righe SENZA errore/);
+  assert.match(findings[0].hint, /for select to authenticated/);
+});
+
+test("update con la sua policy di select per lo stesso ruolo → nessun finding", () => {
+  assert.deepEqual(regolaLetturaPerScrittura([
+    ["public", "orders", "legge i propri", "SELECT", "authenticated", "((select auth.uid()) = user_id)", ""],
+    ["public", "orders", "aggiorna i propri", "UPDATE", "authenticated", "((select auth.uid()) = user_id)", ""],
+  ]), []);
+});
+
+test("ruoli disgiunti: update per authenticated e select per anon → issue comunque", () => {
+  // Il caso che rende la regola non banale: la policy di select ESISTE, ma non
+  // per il ruolo che scrive. Chi aggiorna continua a non vedere la riga.
+  const findings = regolaLetturaPerScrittura([
+    ["public", "orders", "anon legge", "SELECT", "anon", "(is_public)", ""],
+    ["public", "orders", "aggiorna i propri", "UPDATE", "authenticated", "((select auth.uid()) = user_id)", ""],
+  ]);
+  assert.deepEqual(gravita(findings), ["issue"]);
+  assert.match(findings[0].object, /aggiorna i propri/);
+});
+
+test("una policy `all` copre la lettura della scrittura", () => {
+  assert.deepEqual(regolaLetturaPerScrittura([
+    ["public", "orders", "tutto ai propri", "ALL", "authenticated", "((select auth.uid()) = user_id)", ""],
+    ["public", "orders", "cancella i propri", "DELETE", "authenticated", "((select auth.uid()) = user_id)", ""],
+  ]), []);
+});
+
+test("una select senza ruolo esplicito (`public`) copre qualunque ruolo che scrive", () => {
+  assert.deepEqual(regolaLetturaPerScrittura([
+    ["public", "orders", "legge", "SELECT", "public", "true", ""],
+    ["public", "orders", "cancella i propri", "DELETE", "authenticated", "((select auth.uid()) = user_id)", ""],
+  ]), []);
+});
+
+test("la select di un'ALTRA tabella non copre questa", () => {
+  const findings = regolaLetturaPerScrittura([
+    ["public", "altro", "legge", "SELECT", "authenticated", "true", ""],
+    ["public", "orders", "aggiorna", "UPDATE", "authenticated", "((select auth.uid()) = user_id)", ""],
+  ]);
+  assert.deepEqual(gravita(findings), ["issue"]);
+  assert.match(findings[0].object, /public\.orders/);
+});
+
+// ─── regola 7 — la trappola inversa: RLS in ordine, nessun `grant` ───────────
+// Colonne di `information_schema.role_table_grants` verificate su Postgres
+// reale il 2026-07-27: grantee · table_schema · table_name · privilege_type.
+
+test("regola 7: tabella con RLS e policy ma senza grant → issue", () => {
+  const findings = regolaGrant({
+    tabelle: [["public", "orders", "true", "3", "true"]],
+    grants: [],
+  });
+  assert.deepEqual(gravita(findings), ["issue"]);
+  assert.equal(findings[0].object, "public.orders");
+  assert.match(findings[0].hint, /grant select on public\.orders to anon, authenticated;/);
+});
+
+test("regola 7: tabella con il grant → nessun finding", () => {
+  assert.deepEqual(regolaGrant({
+    tabelle: [["public", "orders", "true", "3", "true"]],
+    grants: [["public", "orders"]],
+  }), []);
+});
+
+test("regola 7: una tabella che ha gia' il suo finding non ne prende un secondo", () => {
+  // RLS spenta o zero policy: la regola 1 ha gia' parlato, qui si tace.
+  assert.deepEqual(regolaGrant({
+    tabelle: [["public", "nuda", "false", "0"], ["public", "senza_policy", "true", "0"]],
+    grants: [],
+  }), []);
+});
+
+test("regola 7: senza la query dei grant non si inventa un verdetto", () => {
+  assert.deepEqual(regolaGrant({ tabelle: [["public", "orders", "true", "3"]] }), []);
+});
+
 // ─── composizione ────────────────────────────────────────────────────────────
 
-test("auditAll compone le sei regole nell'ordine del report", () => {
+test("auditAll compone le regole nell'ordine del report", () => {
   const findings = auditAll({
     tabelle: [["public", "nuda", "false", "0"]],
     policy: [["public", "documenti", "p", "SELECT", "{authenticated}", "((select auth.uid()) = owner_id)", ""]],

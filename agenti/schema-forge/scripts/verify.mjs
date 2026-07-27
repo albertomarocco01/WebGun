@@ -65,6 +65,45 @@ export function dettaglioReset(res, ritentato, migrazioni) {
   return (res.stderr || res.stdout || "").trim().split("\n").slice(-25).join("\n");
 }
 
+// ------------------------------------------- dettaglio compatto degli advisors
+// `supabase db advisors` risponde in JSON: stampato grezzo sono centinaia di
+// righe e nel dettaglio del gate non lo leggerebbe nessuno. Qui si comprime a
+// una riga per regola — nessun giudizio: il verdetto lo da' il codice d'uscita
+// del CLI (`--fail-on error`), non questa funzione.
+export function dettaglioAdvisors(stdout, massimoOggetti = 3) {
+  const testo = stdout ?? "";
+  let trovati;
+  try {
+    // il JSON e' incorniciato: "Connecting to local database..." davanti e, se la
+    // CLI e' vecchia, l'avviso di aggiornamento dietro. Si prende dalla prima
+    // quadra all'ULTIMA, non fino alla fine del testo.
+    trovati = JSON.parse(testo.slice(testo.indexOf("["), testo.lastIndexOf("]") + 1));
+  } catch {
+    trovati = null;
+  }
+  // uscita non-JSON (errore di connessione, avviso della CLI): si riporta grezza
+  if (!Array.isArray(trovati)) return testo.trim().split("\n").slice(0, 20).join("\n");
+  if (trovati.length === 0) return "nessun rilievo";
+
+  const gruppi = new Map();
+  for (const f of trovati) {
+    const chiave = `[${f.level}] ${f.name}`;
+    if (!gruppi.has(chiave)) gruppi.set(chiave, { livello: f.level, quanti: 0, oggetti: new Set() });
+    const g = gruppi.get(chiave);
+    g.quanti += 1;
+    g.oggetti.add([f.metadata?.schema, f.metadata?.name].filter(Boolean).join("."));
+  }
+  const peso = (livello) => ({ ERROR: 0, WARN: 1, INFO: 2 })[livello] ?? 9;
+  return [...gruppi]
+    .sort(([, a], [, b]) => peso(a.livello) - peso(b.livello))
+    .map(([chiave, g]) => {
+      const elenco = [...g.oggetti].filter(Boolean).slice(0, massimoOggetti);
+      const coda = g.oggetti.size > elenco.length ? ", …" : "";
+      return `${chiave} (${g.quanti}): ${elenco.join(", ")}${coda}`;
+    })
+    .join("\n");
+}
+
 // ------------------------------------------------- lettura del config.toml
 // Due chiavi in tutto: niente parser TOML fra le dipendenze di uno script che
 // deve girare ovunque con `node` e basta.
@@ -147,10 +186,15 @@ function parseArgs(argv) {
   return args;
 }
 
-function main() {
-  const args = parseArgs(process.argv.slice(2));
+// -------------------------------------------------------- i passi, uno per uno
+// Un passo per funzione: `main()` era una sequenza unica di nove `if/else` con
+// complessita' 56 contro la soglia 15 dei guardiani. Non era logica annidata, ma
+// la soglia e' la soglia, e un gate che viola le regole che impone non e'
+// credibile. Ogni funzione registra il proprio esito in `steps` e non ritorna
+// niente: l'ordine delle chiamate in `main()` e' l'ordine del gate.
 
-  // 0. prerequisito: esistono migrazioni da verificare?
+// 0. prerequisito: esistono migrazioni da verificare?
+function migrazioniDaVerificare() {
   if (!existsSync(MIGRATIONS_DIR)) {
     console.error(`Nessuna cartella ${MIGRATIONS_DIR}: non c'e' schema da verificare.`);
     process.exit(2);
@@ -160,8 +204,11 @@ function main() {
     console.error("Nessuna migrazione trovata: non c'e' schema da verificare.");
     process.exit(2);
   }
+  return migrations;
+}
 
-  // 1. formato SQL — sqlfluff (opzionale)
+// 1. formato SQL — sqlfluff (opzionale)
+function passoSqlfluff() {
   if (has("sqlfluff")) {
     const res = run("sqlfluff",
       ["lint", "--dialect", "postgres", "--config", join(CONFIG_DIR, ".sqlfluff"), MIGRATIONS_DIR]);
@@ -170,8 +217,10 @@ function main() {
   } else {
     record("sqlfluff (formato SQL)", "skipped", "sqlfluff non installato: pipx install sqlfluff");
   }
+}
 
-  // 2. sicurezza delle migrazioni — squawk (opzionale)
+// 2. sicurezza delle migrazioni — squawk (opzionale)
+function passoSquawk(migrations) {
   if (has("squawk")) {
     const res = run("squawk", [
       "-c", join(CONFIG_DIR, "squawk.toml"),
@@ -182,21 +231,24 @@ function main() {
   } else {
     record("squawk (operazioni pericolose)", "skipped", "squawk non installato: pipx install squawk-cli");
   }
+}
 
-  // 3. IL GATE VERO: applicazione su database pulito
-  const supabaseAvailable = has("supabase");
+// 3. IL GATE VERO: applicazione su database pulito
+function passoReset(supabaseAvailable, skipReset, quanteMigrazioni) {
   if (!supabaseAvailable) {
     record("supabase db reset (applicazione reale)", "skipped",
       "Supabase CLI assente: lo schema NON e' stato applicato. Il gate non puo' essere verde.");
-  } else if (args.skipReset) {
+  } else if (skipReset) {
     record("supabase db reset (applicazione reale)", "skipped", "saltato esplicitamente con --skip-reset");
   } else {
     const { res, ritentato } = conRitentativo(() => run("supabase", ["db", "reset"]));
     record("supabase db reset (applicazione reale)", res.status === 0 ? "pass" : "fail",
-      dettaglioReset(res, ritentato, migrations.length));
+      dettaglioReset(res, ritentato, quanteMigrazioni));
   }
+}
 
-  // 4. lint del database
+// 4. lint del database
+function passoDbLint(supabaseAvailable) {
   if (supabaseAvailable) {
     const res = run("supabase", ["db", "lint", "--level", "warning"]);
     record("supabase db lint", res.status === 0 ? "pass" : "fail",
@@ -204,15 +256,46 @@ function main() {
   } else {
     record("supabase db lint", "skipped", "Supabase CLI assente");
   }
+}
 
-  // 5. audit RLS (il controllo che non puo' mancare) — su TUTTI gli schemi esposti
+// 5. advisors: il linter di sicurezza/performance MANTENUTO da Supabase.
+// La sovrapposizione e' dichiarata, non nascosta: quattro delle sei regole di
+// `audit-lib.mjs` le copre anche lui (RLS assente, policy senza RLS attiva,
+// `security definer` senza search_path, chiavi esterne non indicizzate). Il
+// valore non e' la novita': e' che l'altra meta' — `auth_users_exposed`,
+// `policy_exists_rls_disabled`, `multiple_permissive_policies`,
+// `extension_in_public`, `rls_references_user_metadata` — la mantiene
+// qualcun altro, e resta aggiornata senza che questa skill la rincorra.
+// `--fail-on error` e non `warn`: fra i WARN ci sono impostazioni di Auth del
+// progetto (scadenza degli OTP, opzioni MFA) che una migrazione non puo'
+// correggere. Farle diventare rosso il gate sarebbe un rosso strutturale, e
+// un rosso strutturale insegna a ignorare il rosso. I WARN restano scritti nel
+// dettaglio, che si stampa anche sui passi verdi.
+function passoAdvisors(supabaseAvailable) {
+  if (!supabaseAvailable) {
+    record("supabase db advisors", "skipped", "Supabase CLI assente");
+  } else if (run("supabase", ["db", "advisors", "--help"]).status !== 0) {
+    // sottocomando sconosciuto: verifica MANCANTE, mai `fail`. Un gate rosso
+    // perche' la CLI e' vecchia non parla dello schema (come sqlfluff/squawk).
+    record("supabase db advisors", "skipped",
+      "sottocomando assente: `db advisors` richiede la CLI Supabase v2.81.3+ (`supabase --version`)");
+  } else {
+    const res = run("supabase",
+      ["db", "advisors", "--local", "--level", "warn", "--fail-on", "error"]);
+    record("supabase db advisors", res.status === 0 ? "pass" : "fail",
+      dettaglioAdvisors(res.stdout || res.stderr || ""));
+  }
+}
+
+// 6. audit RLS (il controllo che non puo' mancare) — su TUTTI gli schemi esposti
+function passoAuditRls(dbUrlEsplicito) {
   const testoConfig = existsSync(SUPABASE_CONFIG) ? readFileSync(SUPABASE_CONFIG, "utf8") : null;
   const schemi = schemiEsposti(testoConfig);
   const auditArgs = [join(SKILL_DIR, "scripts", "rls-audit.mjs"), "--json", "--schemas", schemi.join(",")];
   // precedenza: --db-url esplicito > config.toml del progetto. Mai l'ambiente:
   // una SUPABASE_DB_URL rimasta da un altro progetto e' esattamente il modo in
   // cui il gate finisce per auditare il database sbagliato e dire OK.
-  const dbUrl = args.dbUrl ?? urlDbProgetto(testoConfig);
+  const dbUrl = dbUrlEsplicito ?? urlDbProgetto(testoConfig);
   if (dbUrl) auditArgs.push("--db-url", dbUrl);
   const audit = run("node", auditArgs);
   if (audit.status === 2 || !audit.stdout) {
@@ -230,8 +313,10 @@ function main() {
     record("audit RLS", block === 0 ? "pass" : "fail",
       `schemi esposti: ${schemi.join(", ")}${dbUrl ? ` · ${dbUrl}` : ""}\n${residuo}`);
   }
+}
 
-  // 6. test delle policy — pgTAP
+// 7. test delle policy — pgTAP
+function passoPgtap(supabaseAvailable) {
   if (supabaseAvailable && existsSync(join(PROJECT, "supabase", "tests"))) {
     const res = run("supabase", ["test", "db"]);
     record("pgTAP (test delle policy)", res.status === 0 ? "pass" : "fail",
@@ -240,8 +325,10 @@ function main() {
     record("pgTAP (test delle policy)", "skipped",
       "nessun test in supabase/tests/: le policy sono un'ipotesi non verificata");
   }
+}
 
-  // 7. tipi TypeScript allineati
+// 8. tipi TypeScript allineati
+function passoTipi(supabaseAvailable) {
   if (supabaseAvailable) {
     const res = run("supabase", ["gen", "types", "typescript", "--local"]);
     if (res.status !== 0) {
@@ -257,22 +344,28 @@ function main() {
   } else {
     record("tipi TypeScript", "skipped", "Supabase CLI assente");
   }
+}
 
-  // 8. contratto d'uscita: cosa trova davvero chi viene dopo
+// 9. contratto d'uscita: cosa trova davvero chi viene dopo
+function passoContratto() {
   const contratto = contrattoUscita(
     (rel) => existsSync(join(PROJECT, rel)),
     (rel) => readFileSync(join(PROJECT, rel), "utf8")
   );
   record("contratto d'uscita (configurazioni + handoff)", contratto.status, contratto.detail);
+}
 
-  // ------------------------------------------------------------- verdetto
+// ------------------------------------------------------------------- verdetto
+// Ritorna il codice d'uscita invece di chiamare `process.exit`: cosi' il verdetto
+// e' la stessa cosa stampata e la stessa cosa restituita, senza due strade.
+function verdetto(json) {
   const failed = steps.filter((s) => s.status === "fail");
   const skipped = steps.filter((s) => s.status === "skipped");
   const green = failed.length === 0 && skipped.length === 0;
 
-  if (args.json) {
+  if (json) {
     console.log(JSON.stringify({ ok: green, steps }, null, 2));
-    process.exit(green ? 0 : 1);
+    return green ? 0 : 1;
   }
 
   console.log(`GATE SCHEMA: ${green ? "VERDE" : "ROSSO"} ` +
@@ -289,7 +382,26 @@ function main() {
   if (skipped.length > 0) {
     console.log("\nUna verifica mancante non e' una verifica superata: il gate resta rosso.");
   }
-  process.exit(green ? 0 : 1);
+  return green ? 0 : 1;
+}
+
+// L'ordine di queste chiamate E' il gate. Niente altro qui dentro.
+function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const migrations = migrazioniDaVerificare();
+  const supabaseAvailable = has("supabase");
+
+  passoSqlfluff();
+  passoSquawk(migrations);
+  passoReset(supabaseAvailable, args.skipReset, migrations.length);
+  passoDbLint(supabaseAvailable);
+  passoAdvisors(supabaseAvailable);
+  passoAuditRls(args.dbUrl);
+  passoPgtap(supabaseAvailable);
+  passoTipi(supabaseAvailable);
+  passoContratto();
+
+  process.exit(verdetto(args.json));
 }
 
 // eseguito come comando, non quando i test importano conRitentativo/dettaglioReset
