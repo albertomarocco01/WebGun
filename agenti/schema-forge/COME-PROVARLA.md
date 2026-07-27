@@ -110,7 +110,7 @@ cd "agenti/schema-forge"
 npm test          # equivale a: node --test "scripts/**/*.test.mjs"
 ```
 
-93 test verdi, zero dipendenze runtime, nessun Docker. Verificano le **regole**
+132 test verdi, zero dipendenze runtime, nessun Docker. Verificano le **regole**
 dell'audit e del diagramma come funzioni pure. Se vuoi capire cosa becca l'audit
 RLS senza montare niente, questo è il punto d'ingresso.
 
@@ -380,11 +380,26 @@ rls-audit.mjs  0 block, 1 issue, 0 warn
 GATE SCHEMA:   VERDE (0 falliti, 0 verifiche mancanti su 8 passi)
 ```
 
-Le sette regole nuove del 2026-07-27 hanno spostato l'ago di poco: adesso l'audit
-scrive **12 issue** invece di 1 (le funzioni `security definer` scoperte, che
-erano il primo dei sei punti gravi rimasti). Ma il gate su questo schema è ancora
-**VERDE, 9 su 9**, e i difetti qui sotto sono ancora tutti lì. La conclusione non
-cambia di una virgola.
+**Questo era il 26 luglio. Il 27-28 il gate ha smesso di dirlo.** Sullo stesso
+schema, con lo stesso seed, chiude ora:
+
+```
+GATE SCHEMA:   ROSSO (2 falliti, 0 verifiche mancanti su 9 passi)
+FAIL  audit RLS     [block] public.staff.job_title: colonna che decide gli accessi …
+                    [issue] public.visits.status: macchina a stati vincolata solo in `update` …
+FAIL  pgTAP         Failed tests: 22-23
+```
+
+Le due strade concordano senza sapere l'una dell'altra: le regole nuove del
+catalogo trovano l'auto-promozione e la macchina a stati; i test pgTAP negativi
+— che il gate adesso **pretende** su ogni tabella scrivibile — falliscono su
+quelle due cose e su nient'altro, 2 asserzioni su 23.
+
+Quello che resta vero, e che nessuna regola chiuderà: **l'audit guarda la forma
+delle policy.** La semantica la dimostrano i test negativi, e il gate verifica
+che esistano e passino, non che siano severi. I difetti qui sotto che non sono
+auto-promozione né macchina a stati sono ancora lì, e li trova solo chi li
+attacca.
 
 Il più grave, riprodotto di nuovo il 2026-07-27 dentro una transazione annullata:
 
