@@ -136,3 +136,68 @@ La skill Supabase ufficiale documenta due flussi, dichiarativo (`supabase/schema
 Motivo: il dichiarativo è in conflitto diretto con due regole non negoziabili dell'agente. **Una migrazione applicata è immutabile** — ma il dichiarativo rigenera il diff dallo stato desiderato, quindi la storia diventa un prodotto derivato. E l'**expand-contract** è una sequenza di passi *intenzionali* (aggiungi, popola, sposta le letture, poi togli): un generatore di diff produce il passo unico e distruttivo, che è esattamente quello che serve un checkpoint umano per autorizzare.
 
 - **Stato:** presa — si riconsidera solo se il dichiarativo impara a produrre sequenze expand-contract, non un diff singolo.
+
+## Decisioni prese chiudendo i falsi verdi del gate (2026-07-27, seconda tornata — chiusa il 2026-07-28)
+
+### 14. Il comando `rls` è stato tolto
+
+`SKILL.md`:62 prescriveva `node <skill>/scripts/rls-audit.mjs` senza `--db-url` né `--schemas`. Eseguito alla lettera, nel collaudo del 2026-07-26 ha auditato **il database di un altro progetto** (porta 54322 di default) e ha risposto «nessun bloccante». La correzione della §11 era stata applicata a `verify.mjs` e non a quel percorso.
+
+Tre strade: correggere la procedura del comando, lasciarla e documentare il rischio, oppure togliere il comando.
+
+Scelta: **togliere il comando.** La generazione delle policy va in `forge` — dove già stavano RLS, indici e vincoli, e dove il `grant` per colonna e il vincolo sullo stato iniziale vanno scritti nella **stessa** migrazione della policy. L'audit va in `verify`, che l'URL lo risolve dal `config.toml`. Al suo posto nasce `test`, che scrive i pgTAP negativi.
+
+Motivo: `rls` non aggiungeva niente a `forge` e faceva peggio di `verify`. Un comando che duplica un altro comando *in modo meno sicuro* è una trappola, non una comodità: chi lo usa ottiene una risposta più debole credendo di averne ottenuta una più mirata. Restano gli otto comandi, con `test` al posto di `rls`.
+
+`scripts/rls-audit.mjs` resta, e resta lanciabile a mano: ma ora **stampa sempre in testa** il database e gli schemi che ha guardato, anche quando non ha niente da segnalare. La garanzia della §11 vale su entrambi i percorsi, non solo dentro il gate.
+
+- **Stato:** presa — `SKILL.md`, `README.md`, `COME-PROVARLA.md` allineati.
+
+### 15. Il contratto `--json` ha un `id` per passo, separato dall'etichetta
+
+L'unico identificatore di passo era l'etichetta italiana (`"contratto d'uscita (configurazioni + handoff)"`), e block/issue/warn erano appiattiti in prosa dentro `detail`.
+
+Scelta: ogni passo porta un **`id` stabile** (`sqlfluff`, `squawk`, `db-reset`, `db-lint`, `db-advisors`, `audit-rls`, `pgtap`, `tipi`, `contratto-uscita`), il documento porta `contract` (numero di versione) e `summary` (conteggi per stato), e i passi che producono findings per gravità portano `counts`. Un test blocca gli `id` e il loro ordine.
+
+Motivo: senza, riscrivere un'etichetta per renderla più chiara agli umani avrebbe rotto in silenzio l'orchestratore — cioè il costo di migliorare la comunicazione sarebbe stato un guasto invisibile a valle. Con l'`id` separato, l'etichetta torna a essere prosa e può cambiare quando serve.
+
+Le chiavi del JSON restano in inglese (`ok`, `steps`, `status`, `detail`, `counts`), come erano nate qui e in `rls-audit.mjs` (`severity`, `object`, `message`, `hint`, `findings`). Tradurle avrebbe significato un rinominamento totale del formato di scambio per zero guadagno, e mescolare le due lingue nello stesso oggetto è peggio di entrambe. La regola dell'italiano vale sul codice e sulla prosa: il formato di scambio resta com'è nato, e ora è documentato.
+
+- **Stato:** presa — forma completa in `references/verifica-deterministica.md` §Il contratto `--json`.
+
+### 16. Un test pgTAP che attacca ogni policy di scrittura è obbligatorio (`block`)
+
+È la risposta al blocco n°1: sullo schema che il gate dichiarava VERDE 9/9, `/code-inquisition` aveva riprodotto 16 difetti su 17. Nessuno strumento guarda la **semantica** di una policy — verificano che esista.
+
+Scelta: `audit-lib.mjs` produce un **`block`** su ogni tabella con policy di `insert`/`update`/`delete`/`all` per cui nessun file di `supabase/tests/` tenta una scrittura **impersonando un ruolo**.
+
+**La regola proposta chiedeva anche che il test asserisse un rifiuto** (`throws_ok`, o «righe toccate = 0»). Non è stata implementata così, ed è stato misurato perché: il test negativo corretto già scritto sul banco veterinario asserisce che la visita è **rimasta** `prenotata` — conteggio **1**, non 0 — e non usa `throws_ok`. Quella clausola avrebbe segnalato come mancante un test negativo corretto: il falso positivo peggiore, quello sul codice di riferimento del progetto stesso. La forma dell'asserzione resta prescritta **in prosa** (`SKILL.md` comando `test`, `references/rls-supabase.md`), non nel controllo automatico.
+
+Motivo della gravità `block`: è l'unica regola che converte «l'agente ha promesso» in «qualcosa ha ceduto quando ci abbiamo provato». Sul banco l'effetto si misura: 17 tabelle scrivibili, **16 `block`** al primo giro (l'unica salva era `visits`, che il test esistente attaccava davvero); scritti i test negativi, i 16 spariscono e **2 asserzioni su 23 falliscono** — l'auto-promozione del veterinario e la visita che nasce già `fatturata`. Non è un rosso strutturale: è il lavoro che l'agente deve fare, e quando è fatto il gate lo riconosce.
+
+- **Stato:** presa.
+
+### 17. Le regole euristiche non sono `block`, tranne dove la prova è nel catalogo
+
+Due classi nuove di `audit-lib.mjs` si appoggiano a un'inferenza:
+
+- **colonna di privilegio scrivibile dal proprietario della riga** — quali colonne siano «di privilegio» si decide dal **nome** (`role`, `ruolo`, `is_admin`, `job_title`, `permessi`…);
+- **macchina a stati vincolata solo in `update`** — quale colonna sia «lo stato» si deduce dal corpo del trigger.
+
+Scelta: la seconda è `issue`. La prima è **`block` solo quando la prova è nel catalogo** — cioè quando quella colonna compare in un'espressione di policy *oppure* nel corpo di una funzione che una policy chiama — e `issue` quando c'è solo il nome.
+
+Motivo: un `block` inferito è un rosso che si impara a scavalcare, e sul banco esiste il caso che lo dimostra — `job_title` non compare in **nessuna** policy: sta nel corpo di `puo_vedere_clinica()`, che le policy chiamano. Guardare solo il testo delle policy avrebbe declassato a `issue` un Critical vero; guardare solo il nome avrebbe bloccato un `job_title` puramente descrittivo. La prova sta nel mezzo, ed è catalogabile.
+
+Il segnale che distingue una scrittura su **tutte** le colonne da una ristretta non è euristico: `information_schema.role_table_grants` legge `relacl` e **non elenca i grant per colonna** (verificato su Postgres reale — con `grant update (nome) on t to authenticated` la tabella non compare, e l'update della colonna esclusa riceve *permission denied for table*).
+
+- **Stato:** presa — l'euristica è dichiarata nel messaggio del finding, non solo qui.
+
+### 18. Uno strumento che non ha letto niente non produce un `pass`
+
+Tre passi potevano essere verdi senza aver guardato, tutti e tre riprodotti prima di essere corretti: `sqlfluff` salta i file oltre 20 000 byte ed esce 0; `supabase test db` su una cartella vuota esce 0; senza `[db].port` l'audit ripiegava sulla porta 54322 — il database di un altro progetto — e la riga «quale database» spariva.
+
+Scelta: il gate **misura la premessa prima di leggere l'esito**. Byte di ogni migrazione prima di lanciare sqlfluff; conteggio dei file `.sql` invece dell'esistenza della cartella; URL del database risolto prima di invocare l'audit. Dove la premessa manca, il passo è `skipped` — verifica mancante — e mai `pass`.
+
+Motivo: leggere gli avvisi in prosa dello strumento (l'avviso di sqlfluff esce su **stdout**, non su stderr come si credeva) fa dipendere il verdetto da come lo strumento formatta i suoi messaggi. Misurare la premessa non dipende da niente. È la generalizzazione della regola anti-simulazione: *uno strumento assente* era già `skipped`, adesso lo è anche *uno strumento presente che non ha letto l'input*.
+
+- **Stato:** presa.

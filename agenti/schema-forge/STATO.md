@@ -1,7 +1,7 @@
 # Stato — Schema Forge
 
-- **Stato attuale:** v1.3 — collaudata su Postgres reale (Supabase locale, Windows), **nel comportamento** (`COLLAUDO-2026-07-25.md`) e **corretta**: gli otto punti aperti del primo collaudo sono chiusi il 2026-07-26 (§Correzioni del 2026-07-26). Gli script hanno test propri (`node --test`, **93 verdi**), e il gate `verify` è **VERDE su 9 passi su 9** (dal 2026-07-27 include `supabase db advisors`) anche dopo un `evolve` con distruttivi autorizzati, su due domini diversi. Sette regole nuove il 2026-07-27, tutte provate su Postgres reale (§Regole nuove dalla skill Supabase ufficiale).
-  **NON usabile su un progetto cliente.** Il secondo collaudo, indipendente e avversario (`COLLAUDO-2026-07-26.md`, dominio **non e-commerce**), ha fatto girare per la prima volta `/code-inquisition` sulle policy RLS: sullo schema che il gate dichiara VERDE, il tribunale ha **riprodotto con comandi reali 16 difetti su 17**, cinque Critical, mentre `sqlfluff`, `squawk` e `rls-audit.mjs` erano tutti verdi. Le regole del 2026-07-27 hanno portato l'audit di quello schema da 1 a 12 `issue`, ma il gate lì è **ancora VERDE (9/9)** e i 16 difetti sono ancora tutti riproducibili: il flusso regge, **il gate verifica che la RLS esista, non che funzioni**. Punti aperti ordinati per gravità in fondo.
+- **Stato attuale:** v1.4 — collaudata su Postgres reale (Supabase locale, Windows), **nel comportamento** (`COLLAUDO-2026-07-25.md`) e **corretta due volte**: gli otto punti del primo collaudo il 2026-07-26, nove dei quindici del secondo il 2026-07-27 (§Il gate ha smesso di essere verde su uno schema sfruttabile). Gli script hanno test propri (`node --test`, **132 verdi**), il gate `verify` ha **9 passi** e undici regole di audit.
+  **NON ancora usabile su un progetto cliente — ma il gate ha smesso di mentire.** Il secondo collaudo, indipendente e avversario (`COLLAUDO-2026-07-26.md`, dominio **non e-commerce**), aveva riprodotto con comandi reali **16 difetti su 17**, cinque Critical, su uno schema che il gate dichiarava **VERDE 9/9**. Su quello stesso schema il gate chiude ora **ROSSO**: `block` sull'auto-promozione di ruolo via colonna, `issue` sulla macchina a stati aggirabile in `insert`, e `block` su ogni tabella con policy di scrittura che nessun test pgTAP attacca. Scritti i test negativi, **2 asserzioni su 23 falliscono** — l'auto-promozione e la visita che nasce già `fatturata`. Resta vero che **l'audit guarda la forma delle policy**: la semantica la dimostrano i test negativi, e il gate verifica che esistano e passino, non che siano severi. Punti aperti ordinati per gravità in fondo.
 - **Proprietario:** Alberto
 - **Dipendenze:**
   - A monte: prompt-smith (richiesta professionale), brief-smith (entità e contenuti del cliente)
@@ -102,64 +102,69 @@ verdi**. Il gate verifica che la RLS *esista*, non che *funzioni*.
 
 ### Resta aperto — ordinato per gravità
 
-1. **Il gate è verde su uno schema sfruttabile.** È il blocco n°1. Nessuno degli
-   strumenti guarda la **semantica** delle policy: verificano che la RLS esista,
-   che le policy ci siano e che gli indici ci siano. I cinque Critical del
-   tribunale (auto-promozione di ruolo, fattura riapribile, riga di fattura
-   spostabile, macchina a stati aggirabile in `INSERT`, archivio clinico che
-   copre 2 colonne su 8) sono tutti invisibili al gate. **Finché non si chiude,
-   un gate verde non è una garanzia consegnabile.**
-   Le due direzioni possibili: (a) test pgTAP **negativi** obbligatori — che
-   tentino l'exploit e ne asseriscano il rifiuto; (b) regole nuove in
-   `audit-lib.mjs` per le classi che sono catalogabili (colonna di ruolo
-   scrivibile dal suo stesso proprietario, trigger di transizione senza
-   controparte `INSERT`, ~~funzione `EXECUTE`-abile da `anon`~~ — quest'ultima
-   **fatta** il 2026-07-27, con le altre sei della skill Supabase ufficiale).
-   Restano fuori l'auto-promozione via **colonna** (l'audit ora blocca solo quella
-   via `user_metadata`) e la macchina a stati: il blocco n°1 **resta aperto**.
-2. **`SKILL.md`:62 fa auditare il database sbagliato.** La procedura del comando
-   `rls` prescrive `node <skill>/scripts/rls-audit.mjs` senza `--db-url` né
-   `--schemas`: eseguita alla lettera ha auditato **il database di un altro
-   progetto** e ha risposto «nessun bloccante». La correzione di `DECISIONI.md`
-   §11 è stata applicata a `verify.mjs` e non a questo percorso. Il comando `rls`
-   **andrebbe tolto**: non aggiunge nulla a `forge` e fa peggio di `verify`.
-3. **Tre falsi verdi del gate**, tutti riprodotti:
-   - `sqlfluff` **salta in silenzio** i file oltre 20 000 byte ed esce 0;
-     `verify.mjs`:168 scarta stderr sui passi verdi, quindi l'avviso non arriva
-     mai. Uno statement invalido dentro un file da 20 047 byte → passo `OK`.
-   - `supabase/tests/` **vuota** → passo pgTAP `pass`. Cartella assente →
-     `skipped` (rosso). **Cancellare i test rende il gate più verde.**
-   - Senza `[db].port`, `urlDbProgetto()` torna `null`, `verify` non passa
-     `--db-url`, l'audit ricade sulla 54322 **e la riga «quale database»
-     sparisce** — la garanzia di `DECISIONI.md` §11 svanisce dove servirebbe.
-4. **`schemas` su più righe non viene letto.** TOML valido; `schemiEsposti()`
-   ripiega su `["public"]` **senza dirlo**, e il gate stampa «schemi esposti:
-   public» come se fosse la verità. Uno schema secondario esposto resta
-   inaudito.
-5. **Le viste materializzate sono `issue`, non `block`.** Non supportano
-   `security_invoker` per costruzione — sono strettamente peggiori di una vista
-   nuda, che è `block` — eppure **non bloccano il gate**. Una MV che unisce ogni
-   cartella clinica a ogni nota interna passa.
-6. **Due caselle del gate di chiusura che nessuno strumento verifica.**
-   `SKILL.md`:87 («nessun dato riservato in una colonna di una tabella
-   leggibile») e il divieto di ruolo in colonna scrivibile: piantati entrambi,
-   **0 findings**. Sono le due prove avversarie più pericolose, difese solo da
-   prosa.
-7. **`resources/config/.sqlfluff` contro `references/rls-supabase.md`.** Il nome
-   di policy dell'esempio della reference, verbatim, fa scattare `RF05`;
-   `ignore_words = name,label` è il vocabolario dell'e-commerce e blocca `role`
-   e `summary`. La configurazione viaggia con la **skill**, quindi un progetto
-   non può estenderla senza modificare l'agente. O si esenta `RF05` sui nomi di
-   policy, o le reference vanno riscritte in `snake_case`.
+1. ~~**Il gate è verde su uno schema sfruttabile.**~~ — **chiuso il 2026-07-27**
+   (§Il gate ha smesso di essere verde su uno schema sfruttabile). Sullo stesso
+   banco veterinario il gate chiude ora **ROSSO**: `block` sull'auto-promozione
+   via colonna, `issue` sulla macchina a stati aggirabile in `insert`, e `block`
+   su ogni tabella con policy di scrittura che nessun test pgTAP attacca.
+   Scritti quei test, **2 asserzioni su 23 falliscono** — e sono esattamente due
+   dei cinque Critical del tribunale. **Resta vero** che l'audit guarda la forma
+   delle policy: la semantica la dimostrano i test negativi, e il gate verifica
+   che esistano e passino, non che siano severi (vedi punto 16).
+2. ~~**`SKILL.md`:62 fa auditare il database sbagliato.**~~ — **chiuso il
+   2026-07-27**: il comando `rls` è stato **tolto** (`DECISIONI.md` §14). Le
+   policy si scrivono in `forge`, si attaccano nel comando nuovo `test`, si
+   verificano in `verify`. `rls-audit.mjs` resta lanciabile a mano e ora stampa
+   sempre in testa **quale database** e **quali schemi** ha guardato.
+3. ~~**Tre falsi verdi del gate**~~ — **chiusi tutti e tre il 2026-07-27**,
+   ognuno riprodotto prima e dopo:
+   - ~~`sqlfluff` salta in silenzio i file oltre 20 000 byte~~ → il gate misura i
+     byte di ogni migrazione **prima** di lanciarlo: un file che sqlfluff non
+     leggerà non può produrre `pass`. **La premessa del report era sbagliata**:
+     l'avviso di sqlfluff esce su **stdout**, non su stderr (vedi §Due premesse
+     smentite).
+   - ~~`supabase/tests/` vuota → passo pgTAP `pass`~~ → si contano i file `.sql`,
+     non si guarda se la cartella esiste. Misurato: `Result: NOTESTS`, uscita 0.
+   - ~~senza `[db].port` l'audit ricade sulla 54322~~ → il passo è `skipped`.
+     Senza un database risolvibile l'audit non può dire di aver auditato il
+     progetto. La 54322 su questa macchina è `supabase_db_BaldisportV1`.
+4. ~~**`schemas` su più righe non viene letto.**~~ — **chiuso il 2026-07-27**:
+   `valoreToml()` accumula le righe fino alla quadra di chiusura. E una chiave
+   `schemas` **presente ma illeggibile** non ripiega più su `public`: è una
+   verifica mancante, e il passo è `skipped`.
+5. ~~**Le viste materializzate sono `issue`, non `block`.**~~ — **chiuso il
+   2026-07-27**, promosse a `block`. Premessa verificata sul database:
+   `alter materialized view … set (security_invoker = on)` risponde
+   `ERROR: unrecognized parameter "security_invoker"`. Sul banco veterinario non
+   ci sono viste materializzate, quindi la promozione **non** rende il gate
+   strutturalmente rosso; l'ho verificata piantandone una su uno schema usa e
+   getta.
+6. ~~**Due caselle del gate di chiusura che nessuno strumento verifica.**~~ —
+   **chiusa la seconda** il 2026-07-27: il ruolo in colonna scrivibile ora è una
+   regola dell'audit, che sul banco trova `staff.job_title` con `block`.
+   **Resta aperta la prima** («nessun dato riservato in una colonna di una
+   tabella leggibile»): quale colonna sia «riservata» è una domanda di dominio,
+   non una proprietà del catalogo, e nessuna euristica sul nome la coprirebbe
+   senza rumore. Difesa da prosa (`references/rls-supabase.md` §La RLS è per
+   riga) e dai test negativi.
+7. ~~**`resources/config/.sqlfluff` contro `references/rls-supabase.md`.**~~ —
+   **chiuso il 2026-07-27**: `quoted_identifiers_policy = none` esenta i nomi di
+   policy da `RF05` (solo i **quotati**: su un identificatore nudo la regola
+   continua a scattare) e `ignore_words` passa da `name,label` a
+   `name,label,role,summary`. Entrambe le esenzioni con la motivazione scritta
+   nel file. Verificato: gli undici blocchi DDL delle quattro reference passano
+   `sqlfluff` con la configurazione della skill, zero rilievi.
 8. ~~**`rls-supabase.md`:90 dichiara un meccanismo falso.**~~ — corretto il
    2026-07-27 con la spiegazione **verificata al banco**: su `insert` Postgres nega
    ogni inserimento; su `update`/`all` riusa `using` come controllo sulla riga
    nuova, quindi `using (true)` senza `with check` è il buco e `using (ownership)`
    senza `with check` non lo è. È anche la regola `block` n°3 dell'audit.
-9. **Il contratto `--json` non è documentato né stabile.** Nessuno schema; l'unico
-   identificatore di passo è l'etichetta italiana (`"contratto d'uscita
-   (configurazioni + handoff)"`); block/issue/warn appiattiti in prosa dentro
-   `detail`. Serve un `id` stabile per passo e i conteggi strutturati.
+9. ~~**Il contratto `--json` non è documentato né stabile.**~~ — **chiuso il
+   2026-07-27**: `id` stabile per passo (separato dall'etichetta, che resta
+   libera di cambiare), `contract`, `summary` per stato, `counts` per gravità
+   dove ha senso. Documentato in `references/verifica-deterministica.md` §Il
+   contratto `--json`, con un test che blocca gli id e il loro ordine.
+   `DECISIONI.md` §15.
 10. **`pattern-ecommerce.md`:29 non regge fuori dall'e-commerce.**
     `profiles.id = auth.users.id` presuppone che ogni cliente sia un utente del
     sito. Una clinica ha clienti che telefonano: seguendolo alla lettera, metà
@@ -174,10 +179,18 @@ verdi**. Il gate verifica che la RLS *esista*, non che *funzioni*.
 13. **Nessun consumatore reale a valle.** L'analisi di impatto di `evolve` ha
     girato di nuovo sul caso facile, senza codice applicativo. Fly UI e
     Gestionale Crafter non esistono ancora.
-14. **`has()` non vede gli shim `.cmd` su Windows** (`verify.mjs`:35-38): chi
-    installa la CLI Supabase via npm ottiene quattro passi `skipped` con il
-    messaggio «Supabase CLI assente» su una macchina dove è installata. Il guasto
-    va nella direzione sicura, la diagnosi no.
+14. ~~**`has()` non vede gli shim `.cmd` su Windows**~~ — **chiuso il
+    2026-07-27**. Misurato: `spawnSync("finto-cli", ["--version"])` senza shell
+    dà **ENOENT** (non consulta PATHEXT), e col **percorso pieno** dà **EINVAL** —
+    Node rifiuta di eseguire `.cmd`/`.bat` senza shell dalla mitigazione della
+    CVE-2024-27980. **Correggere la sola rilevazione avrebbe peggiorato le cose**:
+    `has()` avrebbe detto sì e ogni `run()` sarebbe morto con un `fail` dal
+    dettaglio vuoto. Corretti insieme, con `formaEseguibile()`: su win32 si
+    risolve il percorso con `where` e, se è uno shim, si lancia
+    `cmd.exe /c <percorso> <args>`. **Non** `shell: true` — lì gli argomenti
+    vengono concatenati invece che passati come vettore, e questo gate passa
+    percorsi con spazi (provato: con `cmd.exe /c` l'argomento con lo spazio
+    arriva intero).
 15. **Diciotto voci mancanti nelle references** (`COLLAUDO-2026-07-26.md` §1.2),
     ognuna con la frase esatta e il file esatto. Le sei più gravi non le aveva
     colmate nemmeno l'auditor: ~~`revoke execute` sulle funzioni RPC~~ (chiuso il
@@ -187,6 +200,164 @@ verdi**. Il gate verifica che la RLS *esista*, non che *funzioni*.
     il principale · trigger che scrive su tabella con RLS deve essere
     `security definer` · audit trail con la colonna dell'attore · validazione
     degli argomenti di un RPC `security definer`.
+
+## Il gate ha smesso di essere verde su uno schema sfruttabile (2026-07-27, seconda tornata — chiusa il 2026-07-28)
+
+> Le date dentro i commenti del codice e in questa sezione sono quelle in cui le
+> misure sono state **prese** (27 luglio); il lavoro ha scavalcato la mezzanotte.
+
+Chiusi **nove** dei quindici punti aperti: 1, 2, 3 (tutte e tre le voci), 4, 5, 7,
+9, 14, e metà del 6. Ogni premessa è stata **provata sul database** prima di
+diventare codice, e **due premesse consegnate col compito si sono rivelate
+sbagliate** (§Due premesse smentite). Fuori perimetro per scelta dichiarata: 10,
+11, 12, 13, 15 — **non toccati**.
+
+### Il blocco n°1, chiuso su due strade
+
+Il collaudo del 2026-07-26 aveva riprodotto 16 difetti su 17 — cinque Critical —
+su uno schema che il gate dichiarava **VERDE 9/9**. Le due direzioni sono state
+percorse entrambe, e si controllano a vicenda.
+
+**(a) Test pgTAP negativi obbligatori.** `audit-lib.mjs` produce un `block` su
+ogni tabella con policy di `insert`/`update`/`delete`/`all` per cui nessun file di
+`supabase/tests/` tenta una scrittura **impersonando un ruolo**.
+`rls-audit.mjs --tests <cartella>` legge i file, la regola resta pura. Effetto
+misurato sul banco: 17 tabelle scrivibili, **16 `block`** al primo giro — l'unica
+salva era `visits`, che il test già esistente attaccava davvero. Scritti i test
+negativi (`supabase/tests/rls_negativi.test.sql`, 23 asserzioni), i 16 `block`
+spariscono: la regola è **soddisfacibile**, non è un rosso strutturale.
+
+**(b) Tre regole nuove in `audit-lib.mjs`**, tutte provate su Postgres reale:
+
+| Regola | Gravità | Prova |
+|---|---|---|
+| colonna che decide gli accessi, scrivibile dal proprietario della riga | `block` (se la colonna compare in una policy o nel corpo di una funzione chiamata da una policy) · `issue` (se c'è solo il nome) | sul banco: un veterinario di Biella vede 2 visite e 0 note interne; dopo `update public.staff set job_title = 'direttore'` sulla **propria** riga ne vede 6 e 1 |
+| macchina a stati vincolata solo in `update` | `issue` | `insert into public.visits (…, status) values (…, 'fatturata')` passa senza un fiato: il trigger di transizione non scatta su `insert` |
+| vista materializzata in schema esposto | `block` (era `issue`) | `alter materialized view … set (security_invoker = on)` → `ERROR: unrecognized parameter "security_invoker"` |
+
+**Le due strade concordano.** Le regole del catalogo trovano l'auto-promozione e
+la macchina a stati; i test negativi, scritti dopo, falliscono **su quelle due
+cose e su nient'altro**:
+
+```
+# Failed test 22: "il veterinario non si promuove a direttore sulla propria riga"
+#         have: direttore
+#         want: veterinario
+# Failed test 23: "una visita non nasce gia' fatturata"
+#       caught: no exception
+#       wanted: an exception
+# Looks like you failed 2 tests of 23
+```
+
+### Il banco veterinario adesso: ROSSO, e per i motivi giusti
+
+```
+GATE SCHEMA: ROSSO (2 falliti, 0 verifiche mancanti su 9 passi)
+
+OK    sqlfluff (formato SQL)
+OK    squawk (operazioni pericolose)
+OK    supabase db reset (applicazione reale)
+        6 migrazioni applicate + seed
+OK    supabase db lint
+OK    supabase db advisors
+        [WARN] multiple_permissive_policies (20): public.animals, public.clinics, …
+FAIL  audit RLS
+        schemi esposti: public, graphql_public · postgresql://…:57322/postgres
+        [issue] public.species → "specie_visibili_a_tutti": policy con `using (true)` …
+        [block] public.staff.job_title: colonna che decide gli accessi, scrivibile …
+        [issue] public.visits.status: macchina a stati vincolata solo in `update` …
+        [issue] public.<undici funzioni>(): `security definer` eseguibile da PUBLIC …
+FAIL  pgTAP (test delle policy)
+        Failed tests: 22-23  (auto-promozione · visita che nasce fatturata)
+OK    tipi TypeScript
+OK    contratto d'uscita (configurazioni + handoff)
+```
+
+**Il rosso è il risultato, non un regresso.** Lo stesso schema, con lo stesso
+seed, chiudeva VERDE 9/9 il giorno prima mentre `/code-inquisition` ci riproduceva
+sedici difetti. Portarlo a verde adesso richiede di **correggere lo schema del
+banco** — nuove migrazioni per il `grant` per colonna su `staff`, il vincolo sullo
+stato iniziale di `visits`, il `revoke execute` sulle undici funzioni — ed è
+lavoro sul banco, non sull'agente: **non è stato fatto**, e il banco resta rosso
+apposta, come caso di prova di uno schema difettoso.
+
+### Due premesse smentite dal database
+
+Nessuna delle due è stata implementata come chiesto.
+
+1. **«sqlfluff emette l'avviso su stderr, e `verify.mjs` scarta stderr sui passi
+   verdi».** Falso: l'avviso esce su **stdout**. Misurato — `sqlfluff lint` su un
+   file da 26 023 byte con dentro `seleziona * da niente;` stampa
+   `WARNING Length of file … Skipping to avoid parser lock` **su stdout**, poi
+   `All Finished!`, uscita **0**; su stderr non arriva niente (in `2>&1 >/dev/null`
+   compare solo un `UnicodeEncodeError` di colorama, artefatto della redirezione
+   su Windows). «Far emergere stderr anche sui passi verdi» non avrebbe corretto
+   niente. La correzione applicata è l'altra: **misurare i byte prima**, così il
+   verdetto non dipende da come lo strumento formatta i suoi avvisi.
+2. **«correggere la rilevazione di `has()`, scoping la modifica alla sola
+   rilevazione se è la strada più sicura».** Sarebbe stato **peggio** del bug.
+   Misurato: col percorso pieno di uno shim `.cmd`, `spawnSync` senza shell dà
+   **EINVAL** (mitigazione della CVE-2024-27980), non solo ENOENT sul nome. Con la
+   sola rilevazione corretta, `has()` avrebbe risposto sì e ogni `run()` sarebbe
+   morto: quattro `fail` col dettaglio vuoto invece di quattro `skipped` con una
+   diagnosi sbagliata. Corretti **insieme**, entrambi via `formaEseguibile()`.
+
+Vale anche una terza correzione, trovata sul banco e non nel compito: la regola
+della macchina a stati considerava difesa una tabella con un `check` sulla colonna
+di stato. Il banco ne ha uno — `check (status = any (array[<tutti e cinque gli
+stati>]))` — che **enumera il dominio** e non impedisce affatto di nascere già
+`fatturata`. Con la versione ingenua la regola sarebbe stata muta proprio sul
+difetto che doveva trovare. Ora un `check` vale come difesa solo se **vieta almeno
+uno** degli stati che il trigger nomina, e gli stati del trigger sono quelli che il
+trigger **confronta** con quella colonna — non tutti i letterali del corpo, o ci
+finirebbero i messaggi di `raise exception` e gli `interval '24 hours'`.
+
+### Falsi verdi chiusi, e come sono stati riprodotti
+
+| Difetto | Prima | Dopo |
+|---|---|---|
+| migrazione da 23 423 byte con statement invalido | `OK sqlfluff` | `MANC sqlfluff` col file nominato e i byte |
+| `supabase/tests/` svuotata | `OK pgTAP` | `MANC pgTAP`, «nessun file .sql» |
+| `config.toml` senza `[db].port` | audit sulla 54322 di un altro progetto, riga «quale database» sparita | `MANC audit RLS` con la spiegazione |
+| `schemas` su tre righe | «schemi esposti: public» | i tre schemi letti tutti |
+| `schemas` presente ma illeggibile | «schemi esposti: public» | `MANC audit RLS` |
+
+### Verifiche eseguite
+
+- **Test unitari: da 93 a 132 verdi** (`node --test "scripts/**/*.test.mjs"`).
+  Ogni regola nuova ha il caso che scatta **e** quello che non deve scattare,
+  compresi i tre che le rendono non banali: `grant update` per colonna → nessun
+  finding; trigger `updated_at` e trigger di archiviazione → non sono macchine a
+  stati; un test negativo che asserisce «conteggio 1» invece di `throws_ok` →
+  copre lo stesso.
+- **Banco delle sole regole nuove**, schema usa e getta con le gemelle scritte
+  bene accanto a quelle rotte: **5 difetti piantati, 5 rilevati** (4 `block`, 1
+  `issue`) e **0 findings** su `profili_ok` (grant per colonna), `ordini_ok`
+  (`check` sullo stato iniziale), `fatture` (sola lettura) e `v_ordini_ok` (vista
+  con `security_invoker`). Zero falsi positivi.
+- **Guardiani**: ESLint **0 errori 0 warning**, `knip` pulito, `jscpd` **2 cloni**
+  (gli stessi due dichiarati: `righeDaPsql` fra le due lib, gestione dell'errore di
+  `psql` fra i due gusci).
+- **Reference contro la configurazione della skill**: gli **undici** blocchi DDL
+  di `rls-supabase.md`, `pattern-ecommerce.md`, `modellazione.md` e
+  `migrazioni.md` passano `sqlfluff` con `resources/config/.sqlfluff`, zero
+  rilievi. (Restano fuori i frammenti che non sono statement — un elenco di
+  colonne in `modellazione.md`, e lo snippet pgTAP con
+  `set local request.jwt.claims`, che il dialetto postgres di sqlfluff non parsa:
+  nessuno dei due è una migrazione, e il gate linta solo `supabase/migrations`.)
+
+### Cosa resta aperto, di quello che è stato toccato
+
+- **Il gate verifica che i test negativi esistano e passino, non che siano
+  severi.** Un `insert` che il test si aspetta *riesca* copre la casella. È una
+  scelta misurata, non una svista: pretendere `throws_ok` o «righe = 0» avrebbe
+  segnalato come mancante il test negativo **corretto** già scritto sul banco, che
+  asserisce che la visita è rimasta `prenotata` — conteggio **1**, non 0
+  (`DECISIONI.md` §16).
+- **Le colonne di privilegio si riconoscono dal nome.** Una colonna `livello` che
+  decide dei permessi non la vede nessuno. L'euristica è dichiarata nel messaggio
+  del finding, non solo nei documenti.
+- **Il banco veterinario resta rosso**: correggerne lo schema è lavoro sul banco.
 
 ## Regole nuove dalla skill Supabase ufficiale (2026-07-27)
 
