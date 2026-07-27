@@ -12,12 +12,22 @@
  * Questo file e' solo il GUSCIO: legge da psql e stampa. Le regole stanno in
  * `audit-lib.mjs`, funzioni pure testabili senza database (`node --test`).
  *
- * USO:  node rls-audit.mjs [--db-url <url>] [--schemas public,shop] [--json]
+ * USO:  node rls-audit.mjs [--db-url <url>] [--schemas public,shop]
+ *                          [--tests supabase/tests] [--json]
  * USCITA: 0 = nessun problema bloccante · 1 = almeno un `block` · 2 = errore di esecuzione
  * DIPENDENZE: solo `psql` nel PATH. Zero pacchetti npm.
+ *
+ * ATTENZIONE al default: senza `--db-url` si audita la porta 54322, che su una
+ * macchina con due stack Supabase accesi e' il progetto di QUALCUN ALTRO. Per
+ * questo il database auditato si stampa sempre, anche quando non c'e' niente da
+ * segnalare: un audit sul database sbagliato non deve poter assomigliare a un
+ * audit riuscito. Dentro `verify.mjs` l'URL arriva sempre dal config.toml del
+ * progetto e il passo e' `skipped` se non e' risolvibile.
  */
 
 import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 
 import { auditAll, righeDaPsql } from "./audit-lib.mjs";
 
@@ -29,10 +39,11 @@ const DEFAULT_DB_URL =
 
 // ---------------------------------------------------------------- argomenti
 function parseArgs(argv) {
-  const args = { dbUrl: DEFAULT_DB_URL, schemas: ["public"], json: false };
+  const args = { dbUrl: DEFAULT_DB_URL, schemas: ["public"], json: false, tests: null };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--db-url") args.dbUrl = argv[++i];
     else if (argv[i] === "--schemas") args.schemas = argv[++i].split(",").map((s) => s.trim());
+    else if (argv[i] === "--tests") args.tests = argv[++i];
     else if (argv[i] === "--json") args.json = true;
   }
   // identificatori validati: finiscono dentro una query, non si accettano sorprese
@@ -61,13 +72,26 @@ function query(dbUrl, sql) {
   return righeDaPsql(res.stdout, SEP, REC);
 }
 
+// --------------------------------------------------- lettura dei test pgTAP
+// Senza `--tests` la regola dei test negativi TACE (nessun verdetto inventato:
+// stesso criterio di `grants`). Con `--tests` una cartella assente o vuota vale
+// «zero test», che e' un'informazione, non un'assenza di informazione.
+function leggiTestPgtap(cartella) {
+  if (cartella === null) return null;
+  if (!existsSync(cartella)) return [];
+  return readdirSync(cartella)
+    .filter((f) => f.endsWith(".sql"))
+    .map((f) => ({ nome: f, testo: readFileSync(join(cartella, f), "utf8") }));
+}
+
 // ------------------------------------------------------- lettura del catalogo
-// Sette query, una per regola: nessun giudizio qui dentro, solo SELECT.
-function leggiCatalogo({ dbUrl, schemas }) {
+// Undici query, nessun giudizio qui dentro: solo SELECT.
+function leggiCatalogo({ dbUrl, schemas, tests }) {
   const list = schemas.map((s) => `'${s}'`).join(",");
   const q = (sql) => query(dbUrl, sql);
 
   return {
+    testiPgtap: leggiTestPgtap(tests),
     // 1. tabelle: RLS attiva? quante policy? forzata anche per il proprietario?
     tabelle: q(
       `select n.nspname, c.relname, c.relrowsecurity::text,
@@ -96,9 +120,12 @@ function leggiCatalogo({ dbUrl, schemas }) {
     //    in Postgres significano `execute` a PUBLIC: la funzione e' un endpoint
     //    pubblico raggiungibile da `anon`. Il campo si legge, non si interpreta:
     //    la lettura dell'ACL sta in `audit-lib.mjs`.
+    //    Il quinto campo e' il CORPO: una policy che chiama `puo_vedere_x(...)`
+    //    porta la decisione di privilegio li' dentro, non nel testo della
+    //    policy. Sul banco veterinario `job_title` compare solo nel corpo.
     funzioni: q(
       `select n.nspname, p.proname, coalesce(array_to_string(p.proconfig, ','), ''),
-              coalesce(p.proacl::text, '')
+              coalesce(p.proacl::text, ''), coalesce(p.prosrc, '')
          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
         where n.nspname in (${list}) and p.prosecdef order by 1, 2`
     ),
@@ -142,6 +169,40 @@ function leggiCatalogo({ dbUrl, schemas }) {
          from information_schema.role_table_grants
         where table_schema in (${list}) and grantee in ('anon', 'authenticated')`
     ),
+    // 8. grant di UPDATE sull'INTERA tabella. `role_table_grants` legge `relacl`
+    //    e quindi NON elenca i grant per colonna (verificato su Postgres reale
+    //    il 2026-07-27: con `grant update (nome) on t to authenticated` la
+    //    tabella non compare qui, e l'update della colonna esclusa viene negato
+    //    con «permission denied for table»). E' il segnale che distingue una
+    //    scrittura su tutte le colonne da una scrittura ristretta.
+    grantsScrittura: q(
+      `select distinct table_schema, table_name
+         from information_schema.role_table_grants
+        where table_schema in (${list}) and privilege_type = 'UPDATE'
+          and grantee in ('anon', 'authenticated')`
+    ),
+    // 9. trigger non interni, con il CORPO della funzione. `tgtype` e' una
+    //    maschera di bit: 4 = insert, 16 = update (verificate sul catalogo).
+    //    Serve a vedere le macchine a stati vincolate solo in `update`.
+    trigger: q(
+      `select n.nspname, c.relname, t.tgname,
+              ((t.tgtype & 4) > 0)::text, ((t.tgtype & 16) > 0)::text,
+              coalesce(f.prosrc, '')
+         from pg_trigger t
+         join pg_class c on c.oid = t.tgrelid
+         join pg_namespace n on n.oid = c.relnamespace
+         join pg_proc f on f.oid = t.tgfoid
+        where not t.tgisinternal and n.nspname in (${list}) order by 1, 2, 3`
+    ),
+    // 10. vincoli `check`: sono la difesa che pianta lo stato iniziale di una
+    //     macchina a stati (e in generale l'unica che vale anche in `insert`).
+    vincoli: q(
+      `select n.nspname, c.relname, con.conname, pg_get_constraintdef(con.oid)
+         from pg_constraint con
+         join pg_class c on c.oid = con.conrelid
+         join pg_namespace n on n.oid = c.relnamespace
+        where con.contype = 'c' and n.nspname in (${list}) order by 1, 2, 3`
+    ),
   };
 }
 
@@ -153,13 +214,20 @@ function main() {
   const blocking = count("block");
 
   if (args.json) {
-    console.log(JSON.stringify({ ok: blocking === 0, findings, summary: {
-      block: blocking, issue: count("issue"), warn: count("warn") } }, null, 2));
+    console.log(JSON.stringify({ ok: blocking === 0, dbUrl: args.dbUrl,
+      schemas: args.schemas, findings, summary: {
+        block: blocking, issue: count("issue"), warn: count("warn") } }, null, 2));
     process.exit(blocking === 0 ? 0 : 1);
   }
 
+  // intestazione sempre stampata: quale database, quali schemi. E' la stessa
+  // garanzia che `verify` da' nel dettaglio del passo (DECISIONI.md §11), che
+  // qui mancava — ed e' proprio per questo che il comando `rls`, eseguito alla
+  // lettera, ha auditato il database di un altro progetto rispondendo «nessun
+  // bloccante».
+  console.log(`AUDIT RLS su ${args.dbUrl} · schemi: ${args.schemas.join(", ")}`);
   if (findings.length === 0) {
-    console.log("AUDIT RLS: nessun problema rilevato.");
+    console.log("Nessun problema rilevato.");
     process.exit(0);
   }
   for (const severity of ["block", "issue", "warn"]) {

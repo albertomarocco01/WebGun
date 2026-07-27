@@ -219,8 +219,14 @@ export function regolaViste(viste) {
     const [schema, vista, tipo, opzioni] = riga(r);
     const obj = `${schema}.${vista}`;
     if (tipo === "m") {
-      findings.push(trova("issue", obj, "vista materializzata in uno schema esposto: non supporta RLS",
-        "spostala in uno schema privato ed esponi semmai una funzione controllata"));
+      // `block` e non `issue` dal 2026-07-27: una vista materializzata non
+      // puo' avere `security_invoker` per COSTRUZIONE — Postgres risponde
+      // «unrecognized parameter "security_invoker"» (provato sul banco). E'
+      // quindi strettamente peggiore di una vista nuda, che e' gia' `block`:
+      // una MV che unisce ogni cartella clinica a ogni nota interna passava.
+      findings.push(trova("block", obj,
+        "vista materializzata in uno schema esposto: non supporta `security_invoker` (Postgres lo rifiuta), quindi si legge coi diritti del proprietario e scavalca la RLS di ogni tabella sottostante",
+        `drop materialized view ${obj}; — spostala in uno schema non esposto, oppure sostituiscila con una vista normale \`security_invoker = on\``));
     } else if (!/security_invoker\s*=\s*(on|true)/i.test(opzioni)) {
       findings.push(trova("block", obj, "vista senza `security_invoker`: gira coi diritti del proprietario e scavalca la RLS",
         `alter view ${obj} set (security_invoker = on);`));
@@ -347,6 +353,213 @@ export function regolaGrant({ tabelle, grants }) {
   return findings;
 }
 
+// ─── regola 8 — auto-promozione: la colonna che decide i permessi ────────────
+// La RLS di Postgres filtra le RIGHE, non le COLONNE. Una policy di `update`
+// che autorizza l'utente sulla propria riga lo autorizza su OGNI colonna di
+// quella riga, compresa quella che decide i suoi permessi.
+// Provato sul banco veterinario il 2026-07-27, con comandi reali: un
+// veterinario di Biella vede 2 visite e 0 note interne; dopo un solo
+// `update public.staff set job_title = 'direttore' where auth_user_id = <se stesso>`
+// ne vede 6 e 1. La policy era corretta, il grant no.
+//
+// Le difese vere sono tre, e il catalogo le vede tutte:
+//   1. `grant update (col, ...)` per COLONNA — con quello Postgres nega
+//      l'update della colonna esclusa («permission denied for table», provato).
+//      Un grant per colonna NON compare in `role_table_grants`: e' quello il
+//      segnale, e non e' euristico.
+//   2. un trigger su `update` che nomina la colonna (la blocca o la ripristina)
+//   3. la colonna in una tabella che l'utente non scrive — allora non c'e'
+//      nessuna policy di scrittura e la regola non arriva nemmeno qui.
+//
+// L'EURISTICA, dichiarata: quali colonne sono "di privilegio" si decide dal
+// NOME. Per limitarne il danno il verdetto e' doppio — `block` solo quando si
+// puo' DIMOSTRARE che quella colonna decide accessi (compare in una policy, o
+// nel corpo di una funzione `security definer` che una policy chiama: sul banco
+// `job_title` sta li' dentro, non nel testo delle policy), `issue` quando c'e'
+// solo il nome. Un `block` sul nome soltanto segnalerebbe un `job_title`
+// descrittivo, e un rosso strutturale insegna a ignorare il rosso.
+const NOMI_DI_PRIVILEGIO =
+  /^(ruolo|ruoli|role|roles|is_admin|e_admin|admin|is_staff|is_superuser|permessi|permissions|privilegi|privileges|livello_accesso|access_level|job_title|mansione|qualifica|tipo_utente|user_type)$/i;
+
+const chiaviDi = (righe, indiceCmd, comandi) =>
+  new Set(righe
+    .filter((r) => comandi.includes(riga(r)[indiceCmd]))
+    .map((r) => `${riga(r)[0]}.${riga(r)[1]}`));
+
+// Il corpo delle funzioni che le policy CHIAMANO davvero: `puo_vedere_clinica(...)`
+// nel testo di una policy tira dentro il corpo di `puo_vedere_clinica`.
+const corpiChiamatiDallePolicy = (funzioni, espressioni) =>
+  (funzioni ?? [])
+    .filter((r) => espressioni.includes(`${pulisci(r[1])}(`))
+    .map((r) => pulisci(r[4] ?? ""))
+    .join(" ");
+
+const triggerCheNomina = (trigger, chiave, colonna, suQuale) =>
+  (trigger ?? []).some((r) => {
+    const [schema, tabella, , suInsert, suUpdate, corpo] = riga(r);
+    if (`${schema}.${tabella}` !== chiave) return false;
+    if (!vero(suQuale === "insert" ? suInsert : suUpdate)) return false;
+    return new RegExp(`\\b${colonna}\\b`).test(corpo);
+  });
+
+export function regolaColonnaDiPrivilegio({ policy, colonne, grantsScrittura, trigger, funzioni }) {
+  if (!grantsScrittura) return []; // la query non c'e': nessun verdetto inventato
+  const scrivibili = chiaviDi(policy, 3, ["UPDATE", "ALL"]);
+  const grantPieno = new Set(grantsScrittura.map((r) => `${pulisci(r[0])}.${pulisci(r[1])}`));
+  const espressioni = policy.map((r) => `${riga(r)[5]} ${riga(r)[6]}`).join(" ");
+  const decisionale = `${espressioni} ${corpiChiamatiDallePolicy(funzioni, espressioni)}`;
+
+  const findings = [];
+  for (const r of colonne) {
+    const [schema, tabella, nome] = riga(r);
+    const chiave = `${schema}.${tabella}`;
+    if (!NOMI_DI_PRIVILEGIO.test(nome)) continue;
+    if (!scrivibili.has(chiave) || !grantPieno.has(chiave)) continue;
+    if (triggerCheNomina(trigger, chiave, nome, "update")) continue;
+    const dimostrata = new RegExp(`\\b${nome}\\b`).test(decisionale);
+    const rimedio =
+      `revoke update on ${chiave} from anon, authenticated; ` +
+      `grant update (<solo le colonne che l'utente puo' davvero cambiare>) on ${chiave} to authenticated; ` +
+      `— in alternativa un trigger su update che rifiuta la modifica di ${nome}, o la colonna in una tabella che l'utente non scrive`;
+    findings.push(dimostrata
+      ? trova("block", `${chiave}.${nome}`,
+        `colonna che decide gli accessi, scrivibile dal proprietario della riga: la RLS filtra le righe e non le colonne, quindi la policy di scrittura lascia riscrivere anche \`${nome}\`, che compare in una policy o nel corpo di una funzione chiamata da una policy. E' auto-promozione`,
+        rimedio)
+      : trova("issue", `${chiave}.${nome}`,
+        `colonna dal nome di privilegio (euristica sul nome) scrivibile dal proprietario della riga: oggi nessuna policy la usa, ma se un domani decidesse dei permessi sarebbe auto-promozione, perche' la RLS filtra le righe e non le colonne`,
+        rimedio));
+  }
+  return findings;
+}
+
+// ─── regola 9 — macchina a stati vincolata solo in `update` ──────────────────
+// Un trigger di transizione su `update` non dice niente su `insert`: la riga si
+// crea direttamente nello stato di arrivo. Provato: con il trigger di
+// transizione delle visite attivo, `insert into visits (id, status) values
+// (..., 'fatturata')` passa senza un fiato.
+// Due filtri tengono fuori il rumore, ed entrambi lavorano davvero sul banco:
+//   - il corpo deve contenere un `raise` — cosi' i 18 trigger `updated_at`
+//     (che non rifiutano niente) e il trigger di archiviazione delle cartelle
+//     (che scrive una revisione e basta) restano fuori;
+//   - il trigger non deve gia' scattare anche su `insert` — cosi' il trigger
+//     delle righe di fattura, che scatta su entrambi, resta fuori.
+// La colonna di stato non si indovina dal nome: e' quella che il trigger
+// confronta fra `old.` e `new.`, cioe' la definizione stessa di transizione.
+// `issue` e non `block`: quale sia "lo stato" resta un'inferenza sul corpo del
+// trigger, e un `block` inferito e' un rosso che si impara a scavalcare. Chi
+// deve dimostrare che il buco non c'e' e' il test pgTAP negativo (regola 10).
+const colonneDiTransizione = (corpo) => {
+  const nomi = (prefisso) =>
+    new Set([...corpo.matchAll(new RegExp(`\\b${prefisso}\\.([a-z_][a-z0-9_]*)`, "gi"))]
+      .map((m) => m[1].toLowerCase()));
+  const vecchie = nomi("old");
+  return [...nomi("new")].filter((c) => vecchie.has(c));
+};
+
+const letterali = (sql) => [...sql.matchAll(/'([^']*)'/g)].map((m) => m[1]);
+
+// Gli stati che il trigger CONFRONTA con quella colonna, e nient'altro. Presi
+// tutti i letterali del corpo ci finirebbero i messaggi di `raise exception` e
+// gli `interval '24 hours'`, e basta uno di quelli fuori dal `check` per far
+// sembrare difesa una tabella che non lo e' — misurato sul banco veterinario.
+const statiConfrontati = (corpo, colonna) => {
+  const rif = `(?:old|new)\\.${colonna}`;
+  const uguaglianze = [...corpo.matchAll(new RegExp(`${rif}\\s*(?:=|<>|!=)\\s*'([^']*)'`, "gi"))]
+    .map((m) => m[1]);
+  const elenchi = [...corpo.matchAll(new RegExp(`${rif}\\s+(?:not\\s+)?in\\s*\\(([^)]*)\\)`, "gi"))]
+    .flatMap((m) => letterali(m[1]));
+  return new Set([...uguaglianze, ...elenchi]);
+};
+
+// Un `check` sulla colonna di stato NON e' automaticamente un vincolo sullo
+// stato iniziale. Sul banco veterinario c'e'
+//   check (status = any (array['prenotata','confermata','eseguita','fatturata','annullata']))
+// che enumera il DOMINIO — permette ogni stato di cui parla la macchina, quindi
+// non impedisce affatto di nascere gia' `fatturata`. Trattarlo come difesa
+// avrebbe reso muta la regola proprio sul difetto vero. Il vincolo vale come
+// difesa se VIETA almeno uno stato che il trigger nomina.
+// Se il trigger non nomina nessuno stato letterale non c'e' niente da
+// confrontare: allora un `check` sulla colonna vale come difesa, perche' un
+// verdetto non si inventa.
+const vincolaLoStatoIniziale = (vincoli, chiave, colonna, statiDelTrigger) =>
+  vincoli.some((v) => {
+    const [schema, tabella, , definizione] = riga(v);
+    if (`${schema}.${tabella}` !== chiave) return false;
+    if (!new RegExp(`\\b${colonna}\\b`).test(definizione)) return false;
+    if (statiDelTrigger.size === 0) return true;
+    const ammessi = new Set(letterali(definizione));
+    return [...statiDelTrigger].some((stato) => !ammessi.has(stato));
+  });
+
+export function regolaStatoIniziale({ policy, trigger, vincoli }) {
+  if (!trigger || !vincoli) return []; // le query non ci sono: nessun verdetto
+  const inseribili = chiaviDi(policy, 3, ["INSERT", "ALL"]);
+  const findings = [];
+  const viste = new Set();
+  for (const r of trigger) {
+    const [schema, tabella, , suInsert, suUpdate, corpo] = riga(r);
+    const chiave = `${schema}.${tabella}`;
+    if (!vero(suUpdate) || vero(suInsert)) continue;
+    if (!/\braise\b/i.test(corpo)) continue;
+    if (!inseribili.has(chiave)) continue;
+    for (const colonna of colonneDiTransizione(corpo)) {
+      const dedupe = `${chiave}.${colonna}`;
+      if (viste.has(dedupe)) continue;
+      if (vincolaLoStatoIniziale(vincoli, chiave, colonna, statiConfrontati(corpo, colonna))) continue;
+      if (triggerCheNomina(trigger, chiave, colonna, "insert")) continue;
+      viste.add(dedupe);
+      findings.push(trova("issue", dedupe,
+        "macchina a stati vincolata solo in `update`: il trigger di transizione non scatta su `insert`, e non c'e' nessun `check` sullo stato iniziale — la riga si crea direttamente nello stato di arrivo e la macchina non e' mai passata di li'",
+        `alter table ${chiave} add constraint ${tabella}_stato_iniziale check (${colonna} = '<stato iniziale>'); ` +
+        `— oppure lo stesso trigger anche \`before insert\`, se gli stati iniziali leciti sono piu' di uno`));
+    }
+  }
+  return findings;
+}
+
+// ─── regola 10 — policy di scrittura mai attaccate da un test ────────────────
+// E' il blocco n°1 del collaudo del 2026-07-26: sullo schema che il gate
+// dichiarava VERDE, `/code-inquisition` ha riprodotto 16 difetti su 17. Nessuno
+// strumento guarda la SEMANTICA di una policy — verificano che esista. L'unica
+// cosa che dimostra che una policy funziona e' averla attaccata e aver visto il
+// database rifiutare.
+// Il test cercato e' testuale, e la coppia e' dichiarata: il file deve (a)
+// impersonare un ruolo (`set local role` / `request.jwt.claims`) e (b) tentare
+// una SCRITTURA su quella tabella. Non si pretende anche che l'asserzione sia
+// di rifiuto: il test negativo corretto gia' scritto sul banco asserisce che la
+// visita e' RIMASTA `prenotata` (conteggio 1, non 0) e non usa `throws_ok` —
+// pretendere `throws_ok` o «righe = 0» avrebbe segnalato come mancante un test
+// negativo corretto, cioe' il falso positivo peggiore possibile.
+const perRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const tentaScrittura = (testo, schema, tabella) => {
+  const rif = `(?:${perRegex(schema)}\\.)?${perRegex(tabella)}\\b`;
+  return new RegExp(
+    `insert\\s+into\\s+${rif}|update\\s+(?:only\\s+)?${rif}|delete\\s+from\\s+${rif}`, "i"
+  ).test(testo);
+};
+
+export function regolaTestNegativi({ policy, testiPgtap }) {
+  if (!testiPgtap) return []; // i test non sono stati letti: nessun verdetto
+  const conRuolo = testiPgtap
+    .filter((t) => /set\s+local\s+role|request\.jwt\.claims/i.test(t.testo))
+    .map((t) => t.testo);
+  const findings = [];
+  const viste = new Set();
+  for (const r of policy) {
+    const [schema, tabella, , cmd] = riga(r);
+    const chiave = `${schema}.${tabella}`;
+    if (!["INSERT", "UPDATE", "DELETE", "ALL"].includes(cmd) || viste.has(chiave)) continue;
+    viste.add(chiave);
+    if (conRuolo.some((testo) => tentaScrittura(testo, schema, tabella))) continue;
+    findings.push(trova("block", chiave,
+      "policy di scrittura mai attaccate: nessun test pgTAP tenta un `insert`/`update`/`delete` su questa tabella impersonando un ruolo, quindi le sue policy sono un'ipotesi non verificata",
+      `in supabase/tests/: \`set local role authenticated; set local request.jwt.claims = '{"sub":"<utente>"}';\` ` +
+      `poi il tentativo che DEVE fallire su ${chiave}, e l'asserzione che e' fallito`));
+  }
+  return findings;
+}
+
 // ─── composizione ────────────────────────────────────────────────────────────
 // L'ordine e' quello del report: prima le tabelle, per ultima la performance.
 export function auditAll(catalogo) {
@@ -355,6 +568,9 @@ export function auditAll(catalogo) {
     ...regolaGrant(catalogo),
     ...regolaPolicy(catalogo.policy),
     ...regolaLetturaPerScrittura(catalogo.policy),
+    ...regolaTestNegativi(catalogo),
+    ...regolaColonnaDiPrivilegio(catalogo),
+    ...regolaStatoIniziale(catalogo),
     ...regolaViste(catalogo.viste),
     ...regolaFunzioni(catalogo.funzioni),
     ...regolaChiaviEsterne(catalogo.chiaviEsterne),

@@ -19,12 +19,15 @@ import {
   auditAll,
   righeDaPsql,
   regolaChiaviEsterne,
+  regolaColonnaDiPrivilegio,
   regolaColonneDiPolicy,
   regolaFunzioni,
   regolaGrant,
   regolaLetturaPerScrittura,
   regolaPolicy,
+  regolaStatoIniziale,
   regolaTabelle,
+  regolaTestNegativi,
   regolaViste,
 } from "./audit-lib.mjs";
 
@@ -208,9 +211,18 @@ test("regola 3: vista con security_invoker = on → nessun finding", () => {
   assert.deepEqual(regolaViste([["public", "catalogo_pubblico", "v", "security_invoker=on"]]), []);
 });
 
-test("regola 3: vista materializzata in schema esposto → issue", () => {
+// `block` dal 2026-07-27: provato su Postgres reale, `alter materialized view
+// ... set (security_invoker = on)` risponde «unrecognized parameter
+// "security_invoker"». Una MV e' quindi strettamente peggiore di una vista
+// nuda, che era gia' `block`, e passava il gate.
+test("regola 3: vista materializzata in schema esposto → block", () => {
   const findings = regolaViste([["public", "riepilogo", "m", ""]]);
-  assert.deepEqual(gravita(findings), ["issue"]);
+  assert.deepEqual(gravita(findings), ["block"]);
+  assert.match(findings[0].message, /security_invoker/);
+});
+
+test("regola 3: una MV fuori dagli schemi esposti non arriva qui (la query non la porta)", () => {
+  assert.deepEqual(regolaViste([]), []);
 });
 
 // ─── regola 4 — security definer senza search_path ───────────────────────────
@@ -506,6 +518,264 @@ test("regola 6: sulle colonne non booleane il suggerimento propone anche l'indic
   assert.deepEqual(gravita(findings), ["warn"]);
   assert.match(findings[0].hint, /create index on public\.documenti \(owner_id\);/);
   assert.match(findings[0].hint, /where/); // l'indice parziale, dove ha senso
+});
+
+// ─── regola 8 — auto-promozione via colonna ──────────────────────────────────
+// Il Critical n°1 del collaudo del 2026-07-26, riprodotto sul banco con comandi
+// reali il 2026-07-27: un veterinario di Biella vede 2 visite e 0 note interne;
+// dopo `update public.staff set job_title = 'direttore'` sulla PROPRIA riga ne
+// vede 6 e 1. La policy era corretta — la RLS filtra le righe, non le colonne.
+
+const POLICY_SCRITTURA_PROPRIA = [
+  ["public", "profili", "propria", "UPDATE", "{authenticated}",
+    "(id = (select auth.uid()))", "(id = (select auth.uid()))"],
+];
+const COLONNE_PROFILI = [
+  ["public", "profili", "id", "uuid"],
+  ["public", "profili", "job_title", "text"],
+];
+
+test("regola 8: colonna di privilegio usata da una policy e scrivibile → block", () => {
+  const findings = regolaColonnaDiPrivilegio({
+    policy: [...POLICY_SCRITTURA_PROPRIA,
+      ["public", "fatture", "solo direzione", "SELECT", "{authenticated}",
+        "(EXISTS ( SELECT 1 FROM profili p WHERE (p.job_title = 'direttore')))", ""]],
+    colonne: COLONNE_PROFILI,
+    grantsScrittura: [["public", "profili"]],
+    trigger: [],
+    funzioni: [],
+  });
+  assert.deepEqual(gravita(findings), ["block"]);
+  assert.equal(findings[0].object, "public.profili.job_title");
+  assert.match(findings[0].hint, /grant update \(/);
+});
+
+test("regola 8: la decisione dentro una funzione chiamata dalla policy vale come dentro la policy", () => {
+  // sul banco `job_title` non compare in NESSUNA policy: sta nel corpo di
+  // `puo_vedere_clinica()`, che le policy chiamano. Guardare solo il testo
+  // delle policy avrebbe declassato il Critical a `issue`.
+  const findings = regolaColonnaDiPrivilegio({
+    policy: [...POLICY_SCRITTURA_PROPRIA,
+      ["public", "fatture", "sede", "SELECT", "{authenticated}", "puo_vedere_clinica(clinic_id)", ""]],
+    colonne: COLONNE_PROFILI,
+    grantsScrittura: [["public", "profili"]],
+    trigger: [],
+    funzioni: [["public", "puo_vedere_clinica", "search_path=", "{postgres=X/postgres}",
+      "select exists (select 1 from public.staff s where s.job_title = 'direttore')"]],
+  });
+  assert.deepEqual(gravita(findings), ["block"]);
+});
+
+test("regola 8: `grant update` per COLONNA difende → nessun finding", () => {
+  // Provato su Postgres reale: con `grant update (nome) on t to authenticated`
+  // l'update di `job_title` risponde «permission denied for table», e la
+  // tabella NON compare in `role_table_grants` — e' quello il segnale.
+  assert.deepEqual(regolaColonnaDiPrivilegio({
+    policy: POLICY_SCRITTURA_PROPRIA,
+    colonne: COLONNE_PROFILI,
+    grantsScrittura: [], // nessun grant sull'intera tabella
+    trigger: [],
+    funzioni: [],
+  }), []);
+});
+
+test("regola 8: un trigger su update che nomina la colonna difende → nessun finding", () => {
+  assert.deepEqual(regolaColonnaDiPrivilegio({
+    policy: POLICY_SCRITTURA_PROPRIA,
+    colonne: COLONNE_PROFILI,
+    grantsScrittura: [["public", "profili"]],
+    trigger: [["public", "profili", "blocca_promozione", "false", "true",
+      "begin if new.job_title <> old.job_title then raise exception 'no'; end if; return new; end"]],
+    funzioni: [],
+  }), []);
+});
+
+test("regola 8: nome di privilegio che nessuna policy usa → issue, e l'euristica e' dichiarata", () => {
+  const findings = regolaColonnaDiPrivilegio({
+    policy: POLICY_SCRITTURA_PROPRIA,
+    colonne: COLONNE_PROFILI,
+    grantsScrittura: [["public", "profili"]],
+    trigger: [],
+    funzioni: [],
+  });
+  assert.deepEqual(gravita(findings), ["issue"]);
+  assert.match(findings[0].message, /euristica sul nome/);
+});
+
+test("regola 8: una colonna qualunque non e' una colonna di privilegio", () => {
+  assert.deepEqual(regolaColonnaDiPrivilegio({
+    policy: POLICY_SCRITTURA_PROPRIA,
+    colonne: [["public", "profili", "note", "text"], ["public", "profili", "telefono", "text"]],
+    grantsScrittura: [["public", "profili"]],
+    trigger: [],
+    funzioni: [],
+  }), []);
+});
+
+test("regola 8: senza la query dei grant non si inventa nessun verdetto", () => {
+  assert.deepEqual(regolaColonnaDiPrivilegio({
+    policy: POLICY_SCRITTURA_PROPRIA, colonne: COLONNE_PROFILI,
+    grantsScrittura: undefined, trigger: [], funzioni: [],
+  }), []);
+});
+
+// ─── regola 9 — macchina a stati vincolata solo in `update` ──────────────────
+// Provato: col trigger di transizione attivo, `insert into ordini (id, stato)
+// values (1, 'pagato')` passa senza un fiato. Il trigger non scatta su insert.
+
+const POLICY_INSERIMENTO = [
+  ["public", "ordini", "crea", "INSERT", "{authenticated}", "", "(cliente_id = (select auth.uid()))"],
+];
+const TRIGGER_TRANSIZIONE = ["public", "ordini", "transizione", "false", "true",
+  "begin if old.stato = 'pagato' and new.stato <> 'pagato' then raise exception 'non si riapre'; end if; return new; end"];
+
+test("regola 9: trigger di transizione solo su update, nessun check → issue", () => {
+  const findings = regolaStatoIniziale({
+    policy: POLICY_INSERIMENTO, trigger: [TRIGGER_TRANSIZIONE], vincoli: [],
+  });
+  assert.deepEqual(gravita(findings), ["issue"]);
+  assert.equal(findings[0].object, "public.ordini.stato");
+  assert.match(findings[0].hint, /check \(stato =/);
+});
+
+test("regola 9: un `check` sullo stato iniziale difende → nessun finding", () => {
+  assert.deepEqual(regolaStatoIniziale({
+    policy: POLICY_INSERIMENTO,
+    trigger: [TRIGGER_TRANSIZIONE],
+    vincoli: [["public", "ordini", "ordini_nasce_bozza", "CHECK ((stato = 'bozza'::stato_ordine))"]],
+  }), []);
+});
+
+test("regola 9: un `check` che enumera il DOMINIO non e' un vincolo sullo stato iniziale", () => {
+  // il caso vero del banco veterinario: `check (status = any (array[<tutti e
+  // cinque gli stati>]))` permette di nascere gia' `fatturata`. Trattarlo come
+  // difesa rendeva la regola muta proprio sul difetto che doveva trovare.
+  const findings = regolaStatoIniziale({
+    policy: POLICY_INSERIMENTO,
+    trigger: [TRIGGER_TRANSIZIONE],
+    vincoli: [["public", "ordini", "ordini_stato_check",
+      "CHECK ((stato = ANY (ARRAY['bozza'::text, 'emesso'::text, 'pagato'::text])))"]],
+  });
+  assert.deepEqual(gravita(findings), ["issue"]);
+});
+
+test("regola 9: lo stesso trigger anche su insert difende → nessun finding", () => {
+  assert.deepEqual(regolaStatoIniziale({
+    policy: POLICY_INSERIMENTO,
+    trigger: [["public", "ordini", "transizione", "true", "true", TRIGGER_TRANSIZIONE[5]]],
+    vincoli: [],
+  }), []);
+});
+
+test("regola 9: un trigger `updated_at` non e' una macchina a stati", () => {
+  // sul banco veterinario ce ne sono diciotto: senza il filtro sul `raise`
+  // questa regola sarebbe stata diciotto findings di puro rumore.
+  assert.deepEqual(regolaStatoIniziale({
+    policy: POLICY_INSERIMENTO,
+    trigger: [["public", "ordini", "ordini_updated_at", "false", "true",
+      "begin new.updated_at := now(); return new; end"]],
+    vincoli: [],
+  }), []);
+});
+
+test("regola 9: un trigger di archiviazione che non rifiuta niente non e' una transizione", () => {
+  // il trigger delle cartelle cliniche del banco: confronta `old.` e `new.` su
+  // due colonne e scrive una revisione. Nessun `raise`, nessun finding.
+  assert.deepEqual(regolaStatoIniziale({
+    policy: POLICY_INSERIMENTO,
+    trigger: [["public", "ordini", "archivia", "false", "true",
+      "begin if new.testo is distinct from old.testo then insert into revisioni values (old.id, old.testo); end if; return new; end"]],
+    vincoli: [],
+  }), []);
+});
+
+test("regola 9: nessuna policy di inserimento → la macchina non e' aggirabile dal client", () => {
+  assert.deepEqual(regolaStatoIniziale({
+    policy: [["public", "ordini", "legge", "SELECT", "{authenticated}", "true", ""]],
+    trigger: [TRIGGER_TRANSIZIONE], vincoli: [],
+  }), []);
+});
+
+// ─── regola 10 — policy di scrittura mai attaccate da un test ────────────────
+// Il blocco n°1: sullo schema che il gate dichiarava VERDE, il tribunale ha
+// riprodotto 16 difetti su 17. Nessuno strumento guarda la semantica di una
+// policy; l'unica prova che una policy funziona e' averla attaccata.
+
+const POLICY_DI_SCRITTURA = [
+  ["public", "ordini", "crea", "INSERT", "{authenticated}", "", "(cliente_id = (select auth.uid()))"],
+  ["public", "ordini", "legge", "SELECT", "{authenticated}", "(cliente_id = (select auth.uid()))", ""],
+];
+
+test("regola 10: tabella scrivibile senza nessun test che la attacca → block", () => {
+  const findings = regolaTestNegativi({ policy: POLICY_DI_SCRITTURA, testiPgtap: [] });
+  assert.deepEqual(gravita(findings), ["block"]);
+  assert.equal(findings[0].object, "public.ordini");
+  assert.match(findings[0].message, /ipotesi non verificata/);
+});
+
+test("regola 10: un test che impersona e tenta la scrittura basta → nessun finding", () => {
+  assert.deepEqual(regolaTestNegativi({
+    policy: POLICY_DI_SCRITTURA,
+    testiPgtap: [{
+      nome: "rls.test.sql",
+      testo: "set local role authenticated;\nset local request.jwt.claims = '{\"sub\":\"x\"}';\n" +
+        "insert into public.ordini (id) values (1);\nselect is((select count(*) from public.ordini)::bigint, 0::bigint, 'rifiutato');",
+    }],
+  }), []);
+});
+
+test("regola 10: un'asserzione che NON usa throws_ok vale lo stesso", () => {
+  // il test negativo gia' scritto sul banco asserisce che la visita e' RIMASTA
+  // `prenotata` (conteggio 1, non 0). Pretendere `throws_ok` o «righe = 0»
+  // avrebbe segnalato come mancante un test negativo corretto.
+  assert.deepEqual(regolaTestNegativi({
+    policy: [["public", "visits", "modifica", "UPDATE", "{authenticated}", "true", "true"]],
+    testiPgtap: [{
+      nome: "rls.test.sql",
+      testo: "set local role authenticated;\nupdate public.visits set status = 'confermata' where id = 'x';\n" +
+        "select is((select count(*) from public.visits where status = 'prenotata')::bigint, 1::bigint, 'non si conferma da solo');",
+    }],
+  }), []);
+});
+
+test("regola 10: un test che legge soltanto non e' un attacco", () => {
+  const findings = regolaTestNegativi({
+    policy: POLICY_DI_SCRITTURA,
+    testiPgtap: [{ nome: "letture.test.sql",
+      testo: "set local role authenticated;\nselect is((select count(*) from public.ordini)::bigint, 2::bigint, 'vede i suoi');" }],
+  });
+  assert.deepEqual(gravita(findings), ["block"]);
+});
+
+test("regola 10: una scrittura SENZA impersonare un ruolo non conta", () => {
+  // eseguita da `postgres` non prova niente sulle policy: `postgres` le scavalca
+  const findings = regolaTestNegativi({
+    policy: POLICY_DI_SCRITTURA,
+    testiPgtap: [{ nome: "seed.test.sql", testo: "insert into public.ordini (id) values (1);" }],
+  });
+  assert.deepEqual(gravita(findings), ["block"]);
+});
+
+test("regola 10: `ordini_ok` non copre `ordini` (il confine di parola conta)", () => {
+  const findings = regolaTestNegativi({
+    policy: POLICY_DI_SCRITTURA,
+    testiPgtap: [{ nome: "t.sql",
+      testo: "set local role authenticated;\ninsert into public.ordini_ok (id) values (1);" }],
+  });
+  assert.deepEqual(gravita(findings), ["block"]);
+});
+
+test("regola 10: una tabella di sola lettura non deve nessun test di scrittura", () => {
+  assert.deepEqual(regolaTestNegativi({
+    policy: [["public", "listino", "legge", "SELECT", "{anon}", "true", ""]],
+    testiPgtap: [],
+  }), []);
+});
+
+test("regola 10: senza `--tests` la regola tace, non assolve", () => {
+  // nessun verdetto inventato: se i test non sono stati letti, la regola non
+  // sa niente — stesso criterio di `grants` e di `force row level security`.
+  assert.deepEqual(regolaTestNegativi({ policy: POLICY_DI_SCRITTURA, testiPgtap: null }), []);
 });
 
 // ─── parsing dell'uscita di psql — bug del 2026-07-26 ────────────────────────
