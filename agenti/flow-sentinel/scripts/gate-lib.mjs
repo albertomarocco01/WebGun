@@ -200,7 +200,16 @@ function motivato(linee, indice) {
 // quella giusta, sa che ce n'e' una che ha guardato il database. La stessa
 // onesta' che Schema Forge scrive sul suo audit RLS («guarda la forma delle
 // policy, la semantica la dimostrano i test»).
-const IMPORT_HELPER_DB = /import\s+(?:type\s+)?([\s\S]*?)\s+from\s+["'][^"']*helpers\/db(?:\.[cm]?[jt]s)?["']/g;
+// La clausola non puo' contenere `;` ne' virgolette: e' quello che le impedisce
+// di scavalcare all'indietro gli import precedenti.
+// Con `[\s\S]*?` lo faceva, e il ritaglio partiva dal PRIMO `import` del file:
+// in una spec che comincia — come tutte — con `import { test, expect } from
+// "@playwright/test";`, i nomi raccolti diventavano `test`, `expect`, `import`,
+// `contaProdotti`, e un `expect(...)` qualsiasi passava per una chiamata
+// all'helper del database. Cioe' la regola verificava l'import e NON la
+// chiamata, proprio sul passo che esiste per pretendere la chiamata.
+// Riprodotto e chiuso il 2026-07-28, con i due test che lo bloccano.
+const IMPORT_HELPER_DB = /import\s+(?:type\s+)?([^;"']*?)\s+from\s+["'][^"']*helpers\/db(?:\.[cm]?[jt]s)?["']/g;
 
 export function usaHelperDb(testo) {
   const pulito = senzaBom(testo);

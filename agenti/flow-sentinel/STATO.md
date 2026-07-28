@@ -2,10 +2,10 @@
 
 - **Stato attuale:** costruita (P1, 2026-07-28). `SKILL.md` confermata in P0 e **non modificata**; ora
   esistono le **4 references**, il gate `verify.mjs` a **7 passi** con id stabili, le regole pure in
-  `scripts/gate-lib.mjs` con **77 test verdi** (`node --test`), i **3 template** e la configurazione
+  `scripts/gate-lib.mjs` con **79 test verdi** (`node --test`), i **3 template** e la configurazione
   ESLint delle spec. Il gate e' stato **eseguito davvero** su un banco Next.js + Supabase locale
-  (`banco-prova-flow/`, usa e getta, gitignorato): **VERDE 7 su 7**, poi **rosso quattro volte** per
-  quattro difetti piantati apposta, poi **verde di nuovo**. Verbale con le uscite incollate:
+  (`banco-prova-flow/`, usa e getta, gitignorato): **VERDE 7 su 7**, poi **rosso cinque volte** per
+  cinque difetti piantati apposta, poi **verde di nuovo**. Verbale con le uscite incollate:
   `COSTRUZIONE-2026-07-28.md`.
   **NON ancora usabile su un progetto cliente:** la batteria e il banco sono stati scritti dalla stessa
   mano, quindi non e' mai successo che il gate trovasse un difetto di qualcun altro. Punti aperti in
@@ -32,17 +32,18 @@
 | Cosa | Numero | Come e' stato misurato |
 |---|---|---|
 | Passi del gate | 7 | `verify.mjs --json`, `summary.passi` |
-| Test degli script | 77 verdi | `node --test "scripts/**/*.test.mjs"` |
-| References | 4 | `references/`, 1285 righe in tutto |
+| Test degli script | 79 verdi | `node --test "scripts/**/*.test.mjs"` |
+| References | 4 | `references/`, 1288 righe in tutto |
 | Template | 3 | `flussi-critici.md`, `handoff-flow-sentinel.md`, `eslint-spec.config.mjs` |
 | Flussi del banco | 5 (3 positivi, 1 ostile-lettura, 1 ostile-scrittura) | dettaglio del passo `flussi-critici` |
 | Spec del banco | 5, tutte verdi | dettaglio del passo `playwright` |
-| Difetti piantati e rilevati | 4 su 4 | `COSTRUZIONE-2026-07-28.md` §Sabotaggio |
+| Difetti piantati e rilevati | 5 su 5 | `COSTRUZIONE-2026-07-28.md` §Sabotaggio |
 | Premesse tolte e riconosciute mancanti | 3 su 3 | `COSTRUZIONE-2026-07-28.md` §MANCANTE |
 
-## Due falsi verdi trovati costruendo, e chiusi
+## Tre falsi verdi trovati costruendo, e chiusi
 
-Nessuno dei due veniva dal compito: sono usciti facendo girare il gate per davvero.
+Nessuno dei tre veniva dal compito: due sono usciti facendo girare il gate per davvero, il terzo
+dalla verifica avversaria delle references — cercando di smentire una frase, non di leggere il codice.
 
 1. **Un contratto non firmato passava per firmato.** `RIGA_CONFERMA` usava `\s` fra i due punti e la
    firma, e `\s` comprende l'a capo: una riga `Confermato da:` **vuota** catturava la prima riga non
@@ -56,6 +57,16 @@ Nessuno dei due veniva dal compito: sono usciti facendo girare il gate per davve
    direzione sicura (MANCANTE, mai un falso verde), la diagnosi no: incolpava Playwright. Chiuso con
    `primoEseguibile()`, che sceglie la riga con estensione eseguibile, piu' un esito distinto per
    l'errore di esecuzione.
+3. **`effetto-db` verificava l'import e non la chiamata.** Il ritaglio della clausola di import partiva
+   dal **primo** `import` del file, quindi in una spec vera — che comincia sempre con
+   `import { test, expect } from "@playwright/test";` — i nomi raccolti erano `test`, `expect`,
+   `import`, `contaProdotti`, e un `expect(...)` qualsiasi passava per una chiamata all'helper del
+   database. Bastava importare l'helper e non usarlo mai per avere il verde, **sul passo che esiste
+   apposta per pretendere la chiamata**. Sul banco non si vedeva: le cinque spec l'helper lo chiamano.
+   Chiuso vietando `;` e virgolette dentro la clausola, con due test nuovi che usano la forma **vera**
+   di una spec. La lezione: i test della regola usavano frammenti con un solo import, cioe' una forma
+   che nella realta' non esiste — un test che non somiglia all'input vero prova la fixture, non la
+   regola.
 
 ## Cosa un gate verde NON prova
 
@@ -82,7 +93,7 @@ Questa sezione esiste perche' la sua assenza e' il modo in cui un verde diventa 
 1. **Nessun consumatore reale.** Banco e batteria sono stati scritti dalla stessa mano, nello stesso
    giorno: il gate non ha mai giudicato il lavoro di qualcun altro, ed e' esattamente li' che Schema
    Forge ha trovato i suoi difetti veri. Lo chiude P3 (Bottega Nord).
-2. **Nessun collaudo avversario indipendente.** I quattro sabotaggi li ha scelti chi ha scritto le
+2. **Nessun collaudo avversario indipendente.** I cinque sabotaggi li ha scelti chi ha scritto le
    regole: provano che le regole scattano dove chi le ha scritte si aspettava. P2 esiste per questo.
 3. **`lint-spec` e' MANCANTE senza `npm install` nella cartella della skill.** ESLint viaggia con la
    skill (DECISIONI.md §8), quindi su una macchina nuova il primo giro del gate e' rosso finche' non si

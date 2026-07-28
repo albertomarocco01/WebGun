@@ -11,10 +11,10 @@ porte 583xx, app sulla 3170), usa e getta e gitignorato per la §12 di `DECISION
 
 | Cosa | Dove | Misura |
 |---|---|---|
-| References | `references/` | 4 file, 1285 righe |
+| References | `references/` | 4 file, 1288 righe |
 | Gate | `scripts/verify.mjs` | 7 passi, id stabili, `--json`, uscite 0/1/2 |
 | Regole pure | `scripts/gate-lib.mjs` | nessun I/O: stringhe dentro, verdetti fuori |
-| Test | `scripts/gate-lib.test.mjs`, `scripts/verify.test.mjs` | **77 verdi** |
+| Test | `scripts/gate-lib.test.mjs`, `scripts/verify.test.mjs` | **79 verdi** |
 | Template | `resources/templates/` | contratto dei flussi, handoff |
 | Configurazione delle spec | `resources/config/eslint-spec.config.mjs` | viaggia con la skill, `forge` la copia |
 | Guardiani | `package.json`, `eslint.config.mjs`, `knip.jsonc` | ESLint 0/0, knip pulito, jscpd 0 cloni |
@@ -85,7 +85,7 @@ per brevita', `id` e ordine sono quelli veri):
 }
 ```
 
-### 3.2 Sabotaggio — quattro difetti piantati, quattro rossi
+### 3.2 Sabotaggio — cinque difetti piantati, cinque rossi
 
 Procedura di `references/sabotaggio.md`: un difetto per volta, si rilancia, si verifica che il rosso
 arrivi dal passo giusto **e per il motivo giusto**, si ripristina, si rilancia.
@@ -210,7 +210,45 @@ OK    batteria Playwright (il browser giudica)
 OK    contratto d'uscita (handoff + configurazione)
 ```
 
-Tutti e quattro i sabotaggi sono stati **ripristinati** e l'ultimo giro chiude VERDE 7 su 7.
+#### Classe E — `.only` committato (collaudo del gate, non della batteria)
+
+`test(` → `test.only(` in `admin-negato-anon.spec.ts`. Qui il rosso arriva da due passi diversi, ed e'
+la prova piu' istruttiva di tutte:
+
+```
+GATE FLUSSI: ROSSO (3 falliti, 0 verifiche mancanti su 7 passi)
+
+OK    contratto dei flussi critici
+FAIL  lint delle spec
+        [block] e2e/admin-negato-anon.spec.ts:10: `.only` committato: il resto della batteria non gira, e il verde che ne esce non ha guardato niente
+OK    asserzione di effetto sul database
+FAIL  batteria Playwright (il browser giudica)
+        5 file di spec · 0 passati, 0 falliti, 0 saltati
+        errore del runner: Error: item focused with '.only' is not allowed due to the 'forbidOnly' option in '..\playwright.config.ts': "admin-negato-anon.spec.ts l'anonimo non entra nell'area riservata @flusso:admin-negato-anon"
+FAIL  contratto d'uscita (handoff + configurazione)
+```
+
+**`0 passati, 0 falliti, 0 saltati` e il passo e' rosso.** Senza `esito.errori`, una batteria che non ha
+eseguito niente avrebbe zero fallimenti — cioe' sarebbe passata per verde. E' lo stesso falso verde
+delle spec cancellate, in una forma che si presenta da sola il giorno in cui qualcuno dimentica un
+`.only`.
+
+#### Prova extra: la regola sulle attese fisse non e' decorativa
+
+Una spec temporanea con `await page.waitForTimeout(500)`, e il passo `lint-spec`:
+
+```
+FAIL  lint delle spec
+        C:\...\banco-prova-flow\e2e\tmp-prova-regola.spec.ts
+          5:9  error  Attesa fissa vietata: aspetta una condizione (locator, risposta di rete, riga nel database), non un numero di millisecondi  no-restricted-syntax
+
+        ✖ 1 problem (1 error, 0 warnings)
+```
+
+E' l'unica convenzione Playwright che uno strumento fa rispettare davvero, e ora c'e' la misura che
+scatta invece della promessa che scatterebbe.
+
+Tutti e cinque i sabotaggi sono stati **ripristinati** e l'ultimo giro chiude VERDE 7 su 7.
 
 ### 3.3 Premesse tolte — MANCANTE, mai PASS
 
@@ -301,25 +339,25 @@ cinque test passano. La copertura e' un rapporto fra due cose, e una delle due n
 
 ```
 === node --test ===
-ℹ tests 77
-ℹ pass 77
+ℹ tests 79
+ℹ pass 79
 ℹ fail 0
 === ESLint ===
 ESLint uscita: 0        (0 errori, 0 warning su scripts/ e resources/)
 === knip ===
 knip uscita: 0          (nessun file morto, nessun export inutilizzato, nessuna dipendenza sospesa)
 === jscpd ===
-javascript │ 4 file │ 1524 righe │ 0 cloni │ 0 (0%) righe duplicate
+javascript │ 4 file │ 1560 righe │ 0 cloni │ 0 (0%) righe duplicate
 ```
 
-**77 test**: ogni regola pura ha il caso in cui scatta e quello in cui non deve scattare (e' il secondo
+**79 test**: ogni regola pura ha il caso in cui scatta e quello in cui non deve scattare (e' il secondo
 che conta: una regola che scatta sempre e' rumore, e il rumore si impara a scavalcare). Fra questi:
 tre test bloccano gli id dei sette passi e il loro ordine — uno sulla lista `PASSI`, uno sulla tabella
 `ID`, e uno che lancia `verify.mjs` per davvero su una cartella temporanea e controlla l'ordine
 nell'uscita `--json` vera. Due prove d'integrazione verificano che «premessa assente» produca MANCANTE
 e non `pass`, e che fuori da un progetto l'uscita sia `2` senza JSON.
 
-## 4. Due falsi verdi trovati costruendo
+## 4. Tre falsi verdi trovati costruendo
 
 Nessuno dei due era nel compito: sono usciti facendo girare il gate per davvero, che e' l'unico posto
 dove escono.
@@ -361,6 +399,42 @@ righe di `where` guardare.
 
 Chiuso con `primoEseguibile()` (funzione pura, quattro test) e con un esito distinto per l'errore di
 esecuzione: «la batteria non e' stata lanciata: `<messaggio>`».
+
+### 4.3 `effetto-db` verificava l'import e non la chiamata
+
+Il piu' grave dei tre, e l'ha trovato la **seconda** verifica avversaria delle references — cercando di
+smentire una frase, non di leggere il codice.
+
+`IMPORT_HELPER_DB` ritagliava la clausola dell'import con `[\s\S]*?`, cioe' a partire dal **primo**
+`import` del file. In una spec vera — e ogni spec Playwright comincia cosi' — i nomi raccolti erano:
+
+```
+import c'e', helper MAI chiamato -> {"importa":true,"chiama":true,"nomi":["test","expect","import","contaProdotti"]}
+```
+
+`test` ed `expect` finivano fra i «nomi importati dall'helper del database», quindi un `expect(...)`
+qualsiasi contava come chiamata. **La regola verificava l'import e non la chiamata**, sul passo che
+esiste apposta per pretendere la chiamata: bastava importare l'helper e non usarlo mai per avere il
+verde. Sul banco non si vedeva, perche' le cinque spec l'helper lo chiamano davvero.
+
+Chiuso vietando `;` e virgolette dentro la clausola (`[^;"']*?`), che e' cio' che le impedisce di
+scavalcare all'indietro gli import precedenti. Due test nuovi con la forma **vera** di una spec — import
+di Playwright in testa — uno che scatta e uno che non deve scattare.
+
+Provato end-to-end togliendo l'asserzione sul database da `crea-prodotto.spec.ts` e lasciando l'import:
+
+```
+GATE FLUSSI: ROSSO (3 falliti, 0 verifiche mancanti su 7 passi)
+
+FAIL  asserzione di effetto sul database
+        4 flussi devono asserire l'effetto sul database (i positivi e gli ostili in scrittura)
+        [block] flusso crea-prodotto: nessuna delle spec che lo attaccano (e2e/crea-prodotto.spec.ts) importa e chiama `e2e/helpers/db`: un flusso positivo che asserisce solo la pagina passa anche con un backend che non ha scritto niente. Il controllo guarda la FORMA (import + chiamata), non se l'asserzione e' quella giusta
+```
+
+Prima della correzione questo giro sarebbe stato **verde**. La lezione e' la stessa dei primi due: i
+test della regola usavano frammenti con **un solo import**, cioe' una forma che nella realta' non
+esiste mai. Un test che non somiglia all'input vero non e' un test della regola, e' un test della
+fixture.
 
 ## 5. Verifica avversaria delle references
 
@@ -408,7 +482,7 @@ rileggera' le incontrera'.
 | Voce | Esito |
 |---|---|
 | 4 references scritte, zero `TODO`, ogni regola col suo perche' | **PASS** — 1285 righe, verificate due volte contro il codice |
-| `verify.mjs` + lib pura + test, `node --test` verde, id e ordine bloccati da un test | **PASS** — 77 test, tre dei quali bloccano id e ordine |
+| `verify.mjs` + lib pura + test, `node --test` verde, id e ordine bloccati da un test | **PASS** — 79 test, tre dei quali bloccano id e ordine |
 | ESLint 0/0, knip pulito sugli script dell'agente | **PASS** — piu' jscpd a 0 cloni |
 | Corsa verde VERDE 7/7 incollata | **PASS** — §3.1 |
 | Sabotaggio: rosso per il motivo GIUSTO, poi verde dopo il ripristino | **PASS** — §3.2, quattro classi invece della sola richiesta |
@@ -431,7 +505,7 @@ Cose fuori dal perimetro di questa fase, che qualcuno con i permessi deve decide
    percorso assoluto obbligatorio, DECISIONI.md §7). Va nell'installatore, o la prossima macchina non ce
    l'ha.
 2. **`README.md`: aggiornare la riga di Flow Sentinel** da «scaffold/progettata» a «costruita, gate a 7
-   passi, 77 test, non ancora provata su un progetto cliente».
+   passi, 79 test, non ancora provata su un progetto cliente».
 3. **`DECISIONI.md`: tre voci nuove.**
    - *La firma sta sulla riga della firma.* Una riga di contratto lasciata a meta' non vale come
      compilata: le classi di spazi dei regex che leggono i verdetti ammettono i soli spazi orizzontali.

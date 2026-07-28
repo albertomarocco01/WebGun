@@ -229,6 +229,31 @@ test("importato e mai chiamato non conta: un import non asserisce niente", () =>
   assert.deepEqual({ importa: u.importa, chiama: u.chiama }, { importa: true, chiama: false });
 });
 
+// Il caso vero: OGNI spec comincia con l'import di Playwright. Il ritaglio della
+// clausola partiva dal primo `import` del file e inghiottiva anche quei nomi,
+// quindi un `expect(...)` passava per una chiamata all'helper del database — la
+// regola verificava l'import e non la chiamata, sul passo che esiste apposta per
+// pretendere la chiamata.
+const SPEC_REALE = (corpo) => [
+  'import { test, expect } from "@playwright/test";',
+  'import { contaProdotti } from "./helpers/db";',
+  "",
+  'test("x @flusso:a", async ({ page }) => {',
+  corpo,
+  "});",
+].join("\n");
+
+test("con l'import di Playwright davanti, un `expect` non passa per una chiamata all'helper", () => {
+  const u = usaHelperDb(SPEC_REALE('  await expect(page.getByRole("status")).toHaveText("fatto");'));
+  assert.deepEqual({ importa: u.importa, chiama: u.chiama }, { importa: true, chiama: false });
+  assert.deepEqual(u.nomi, ["contaProdotti"], "solo i nomi importati DALL'helper");
+});
+
+test("con l'import di Playwright davanti, una chiamata vera all'helper si vede", () => {
+  const u = usaHelperDb(SPEC_REALE("  expect(await contaProdotti()).toBe(2);"));
+  assert.deepEqual({ importa: u.importa, chiama: u.chiama }, { importa: true, chiama: true });
+});
+
 test("una spec che importa solo Playwright non usa l'helper", () => {
   const u = usaHelperDb(`import { test, expect } from "@playwright/test";`);
   assert.equal(u.importa, false);

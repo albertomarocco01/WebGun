@@ -23,7 +23,7 @@ Quattro nomi sono contratto col gate, non gusto:
 - **la cartella è `e2e/`**: `verify.mjs` la cerca lì (`DIR_SPEC = join(PROGETTO, "e2e")`). Un `testDir` diverso fa contare zero spec al gate, e zero spec è MANCANTE — non `pass`.
 - **il file finisce in `.spec.ts`** (o `.test.ts`, `.spec.mts`…): `eSpec()` usa lo stesso `testMatch` di Playwright. Un `carrello.e2e.ts` non lo esegue il runner e non lo conta il gate: sparisce due volte, in silenzio.
 - **l'helper di verifica sta in un percorso che finisce in `helpers/db`** (con o senza estensione). Il passo `effetto-db` cerca quello: un `helpers/database.ts` o un `supporto/db.ts` producono un `block` su una spec che il database lo guarda davvero.
-- **l'id nel tag è minuscolo, cifre e trattini** (`/@flusso:([a-z0-9][a-z0-9-]*)/`). `@flusso:Crea-Prodotto` non viene letto affatto: il flusso risulta scoperto e il gate è rosso su una spec che esiste.
+- **l'id nel tag è minuscolo, cifre e trattini** (`/@flusso:([a-z0-9][a-z0-9-]*)/g`, tutte le occorrenze del file). `@flusso:Crea-Prodotto` non viene letto affatto: il flusso risulta scoperto e il gate è rosso su una spec che esiste.
 
 ## Selettori: ruolo e label prima di tutto
 
@@ -47,7 +47,7 @@ Il perché è tutto nel momento in cui il selettore si rompe. **Un selettore di 
 
 ## Attese: una condizione, mai un numero di millisecondi
 
-`waitForTimeout` è **vietato**, ed è una delle due sole regole che il gate fa rispettare con ESLint — l'altra è in fondo a questa sezione. La regola sta in `resources/config/eslint-spec.config.mjs` e il passo `lint-spec` la applica alla cartella `e2e/` con `--no-config-lookup`, cioè ignorando la configurazione del progetto:
+`waitForTimeout` è **vietato**, ed è una delle due regole che questa configurazione aggiunge di suo — l'altra è in fondo a questa sezione, e sotto ci sono comunque le due raccomandate (`js` e `typescript-eslint`). La regola sta in `resources/config/eslint-spec.config.mjs` e il passo `lint-spec` la applica alla cartella `e2e/` con `--no-config-lookup`, cioè ignorando la configurazione del progetto:
 
 ```js
 "no-restricted-syntax": ["error", {
@@ -221,7 +221,9 @@ import { contaProdotti as conta } from "../helpers/db.ts";  // rinominato: conta
 import * as db from "../../e2e/helpers/db.js";       // namespace
 ```
 
-e riconosce la chiamata in due forme: `nome(` e `nome.metodo(`. Un import senza chiamata **non** conta — un import non asserisce niente.
+e riconosce la chiamata in due forme: `nome(` e `nome.metodo(`.
+
+Un import senza chiamata **non** conta — un import non asserisce niente — ma la stretta vale davvero solo quando `helpers/db` è il **primo** import del file, e conviene saperlo. La clausola dell'import viene ritagliata da `import` fino a `from "…/helpers/db"`, quindi si porta dentro anche i nomi importati sopra: in una spec vera, che apre con `import { test, expect } from "@playwright/test";`, fra i nomi cercati finiscono pure `test` ed `expect` — e quelli vengono chiamati di sicuro. Su quelle spec l'import di `helpers/db` risulta «chiamato» anche se non lo si usa mai. Non è un buco che chiuda un controllo statico più furbo: lo chiude il sabotaggio di classe B (`references/sabotaggio.md`), che pretende il rosso quando la scrittura sparisce.
 
 Il controllo guarda la **forma, non la semantica**: sa che qualcosa ha guardato il database, non che l'asserzione sia quella giusta. È la stessa onestà che Schema Forge scrive sul suo audit RLS («verifica che la policy esista, non che funzioni»). In concreto, questo passa il gate e non prova niente:
 

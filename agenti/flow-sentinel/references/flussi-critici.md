@@ -67,8 +67,9 @@ L'asserzione è il rifiuto, e va scritta guardando due cose: la rotta (stato HTT
 **Il gate non pretende l'asserzione sul database su questo tipo, ed è una scelta, non una dimenticanza.** Un attacco in lettura non cambia niente: non c'è uno stato «prima» da confrontare con uno «dopo», e pretendere un conteggio identico a sé stesso vorrebbe dire chiedere un'asserzione che non può fallire — cioè la definizione di un test finto. La costante che lo dice, in `scripts/gate-lib.mjs`, elenca i tipi con effetto DB e lascia fuori `ostile-lettura` di proposito:
 
 ```ts
-// gate-lib.mjs — i tipi che DEVONO asserire l'effetto sul database
-export const TIPI_CON_EFFETTO_DB = Object.freeze(["positivo", "ostile-scrittura"]);
+// gate-lib.mjs — i tipi che DEVONO asserire l'effetto sul database.
+// Costante interna al modulo: la usa `findingsEffettoDb`, non e' esportata.
+const TIPI_CON_EFFETTO_DB = Object.freeze(["positivo", "ostile-scrittura"]);
 ```
 
 Conseguenza da conoscere: **marcare `ostile-lettura` un attacco che in realtà scrive fa uscire quel flusso dalla regola.** Il gate crede al tipo dichiarato. Se l'attacco tenta un `insert`, un `update` o un `delete`, il tipo è `ostile-scrittura`, anche quando ti aspetti che fallisca subito.
@@ -100,7 +101,7 @@ test("l'ospite completa il checkout @flusso:checkout-ospite", async ({ page }) =
 });
 ```
 
-Un import senza chiamata non conta (un import non asserisce niente) e un percorso che non finisce in `helpers/db` non viene riconosciuto: `./helpers/db.ts` e `../../e2e/helpers/db.js` valgono, `./helpers/database` no. Ciò che il gate **non** sa è se l'asserzione è quella giusta: una spec che chiama l'helper e poi confronta un valore irrilevante passa il passo. Quella distanza la chiude il **sabotaggio** (`references/sabotaggio.md`), che rompe l'app in un punto noto e pretende il rosso. La stessa onestà che Schema Forge scrive sul suo audit RLS: lo strumento guarda la forma, la semantica la dimostrano i test.
+Un percorso che non finisce in `helpers/db` non viene riconosciuto: `./helpers/db.ts` e `../../e2e/helpers/db.js` valgono, `./helpers/database` no. Un import senza chiamata non conta (un import non asserisce niente), ma solo finché `helpers/db` è il primo import del file — il perché sta in `references/playwright.md` §Cosa verifica davvero il passo `effetto-db`, e allarga il passo più di quanto sembri. Ciò che il gate **non** sa è se l'asserzione è quella giusta: una spec che chiama l'helper e poi confronta un valore irrilevante passa il passo. Quella distanza la chiude il **sabotaggio** (`references/sabotaggio.md`), che rompe l'app in un punto noto e pretende il rosso. La stessa onestà che Schema Forge scrive sul suo audit RLS: lo strumento guarda la forma, la semantica la dimostrano i test.
 
 ## Come si derivano i flussi ostili
 
