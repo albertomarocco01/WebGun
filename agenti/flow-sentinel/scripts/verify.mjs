@@ -1,0 +1,431 @@
+#!/usr/bin/env node
+/**
+ * verify.mjs — Il gate di Flow Sentinel (Legge n°2: il browser e' il giudice).
+ *
+ * COSA FA: misura le premesse (contratto dei flussi, spec contate, app viva,
+ * database del progetto raggiungibile e seedato) PRIMA di leggere l'esito
+ * della batteria Playwright. Ogni passo finisce in uno di tre stati:
+ *   pass | fail | skipped  →  `skipped` NON e' un successo, e' una verifica
+ *   mancante, e il gate resta rosso.
+ *
+ * USO:  node verify.mjs [--url <url>] [--db-url <url>] [--json]
+ * USCITA: 0 = gate verde · 1 = gate rosso · 2 = errore di esecuzione
+ * DIPENDENZE: la batteria del progetto (@playwright/test), psql, ESLint (nella
+ *             cartella della skill). Ognuna assente vale MANCANTE, mai PASS.
+ *
+ * Le regole vivono in `gate-lib.mjs` e hanno i loro test: qui dentro c'e' solo
+ * il guscio di I/O, e l'ORDINE della lista `PASSI` e' il gate.
+ */
+
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import {
+  contaGravita,
+  contrattoUscita,
+  dettaglioFindings,
+  dettaglioPlaywright,
+  eSpec,
+  esitoBatteriaVerde,
+  esitoPlaywright,
+  estraiOggettoJson,
+  findingsCopertura,
+  findingsEffettoDb,
+  formaEseguibile,
+  leggiFlussi,
+  regoleSpec,
+  righeDaPsql,
+  schemiEsposti,
+  sqlConteggioRighe,
+  sqlTabelleEsposte,
+  statoDaFindings,
+  tagDaSpec,
+  urlAppProgetto,
+  urlDbProgetto,
+  verdettoDa,
+} from "./gate-lib.mjs";
+
+const SKILL_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
+// La configurazione di ESLint viaggia con la SKILL, non col progetto: il gate
+// deve dare lo stesso esito ovunque giri, anche su un progetto che non l'ha
+// (ancora) ricevuta da `forge`. Precedente: DECISIONI.md §8.
+const CONFIG_SPEC = join(SKILL_DIR, "resources", "config", "eslint-spec.config.mjs");
+const ESLINT_BIN = join(SKILL_DIR, "node_modules", "eslint", "bin", "eslint.js");
+const PROGETTO = process.cwd();
+const DIR_SPEC = join(PROGETTO, "e2e");
+// percorsi relativi con le barre in avanti: `join` le normalizza su Windows e
+// il messaggio all'utente resta lo stesso su ogni piattaforma
+const FLUSSI_CRITICI = "docs/flussi-critici.md";
+const HANDOFF = "docs/handoff/12-flow-sentinel.md";
+const CONFIG_PLAYWRIGHT = "playwright.config.ts";
+
+// ------------------------------------------------- identificatori di passo
+// L'etichetta e' per gli umani e resta libera di cambiare; l'`id` e' il
+// contratto con l'orchestratore e NON cambia (DECISIONI.md §15).
+export const ID = Object.freeze({
+  flussi: "flussi-critici",
+  copertura: "spec-coverage",
+  lint: "lint-spec",
+  effettoDb: "effetto-db",
+  appViva: "app-viva",
+  playwright: "playwright",
+  contratto: "contratto-uscita",
+});
+
+export const CONTRATTO_JSON = 1;
+
+const steps = [];
+const record = (id, name, status, detail = "") => {
+  const passo = { id, name, status, detail };
+  steps.push(passo);
+  return passo;
+};
+
+const leggiSeCe = (relativo) => {
+  const pieno = join(PROGETTO, relativo);
+  return existsSync(pieno) ? readFileSync(pieno, "utf8") : null;
+};
+
+// --------------------------------------- eseguibili risolti a mano su Windows
+// `spawnSync(cmd, args)` senza shell non consulta PATHEXT: uno shim `.cmd`
+// (npx, eslint, supabase installati da npm) risulta ENOENT sul nome e EINVAL
+// col percorso pieno — Node rifiuta .cmd/.bat senza shell dalla mitigazione
+// della CVE-2024-27980. NON si abilita `shell: true`: li' gli argomenti
+// vengono concatenati invece che passati come vettore, e questo gate passa
+// percorsi con spazi. Prezzo gia' pagato da Schema Forge, non si ripaga.
+function dove(nome) {
+  const res = spawnSync(process.platform === "win32" ? "where" : "which", [nome], { encoding: "utf8" });
+  if (res.error || res.status !== 0) return null;
+  return (res.stdout ?? "").split(/\r?\n/).map((r) => r.trim()).find(Boolean) ?? null;
+}
+
+function has(cmd) {
+  const { file, prefisso } = formaEseguibile(cmd, dove);
+  const probe = spawnSync(file, [...prefisso, "--version"], { encoding: "utf8" });
+  return !probe.error && probe.status === 0;
+}
+
+function run(cmd, cmdArgs, opts = {}) {
+  const { file, prefisso } = formaEseguibile(cmd, dove);
+  return spawnSync(file, [...prefisso, ...cmdArgs], {
+    encoding: "utf8", cwd: PROGETTO, maxBuffer: 64 * 1024 * 1024, ...opts,
+  });
+}
+
+// -------------------------------------------------------------- il contesto
+// Si legge una volta sola, prima dei passi: i file delle spec servono a tre
+// passi diversi e rileggerli tre volte darebbe tre verita' diverse se qualcuno
+// scrivesse nel frattempo.
+function raccogliContesto() {
+  const spec = elencaSpec().map((file) => {
+    const testo = readFileSync(join(DIR_SPEC, file), "utf8");
+    return { file: `e2e/${file.replace(/\\/g, "/")}`, testo, tags: tagDaSpec(testo) };
+  });
+  return {
+    config: leggiSeCe("supabase/config.toml"),
+    spec,
+    flussi: null,      // lo riempie il passo 1
+    perFlusso: null,   // lo riempie il passo 2
+    appViva: false,    // lo alza il passo 5
+    urlApp: null,
+    dbUrl: null,
+    schemi: [],
+  };
+}
+
+function elencaSpec() {
+  if (!existsSync(DIR_SPEC)) return [];
+  return readdirSync(DIR_SPEC, { recursive: true }).filter((f) => eSpec(String(f)));
+}
+
+// ------------------------------------------------------------- i sette passi
+
+// 1. il contratto: `docs/flussi-critici.md` esiste, e' confermato, e ogni
+// flusso ha id stabile e tipo. Una batteria perfetta sui flussi sbagliati e'
+// comunque da buttare, e un elenco che nessuno ha confermato non e' un elenco:
+// e' l'opinione dell'agente su cosa fosse critico.
+function passoFlussi(ctx) {
+  const etichetta = "contratto dei flussi critici";
+  const testo = leggiSeCe(FLUSSI_CRITICI);
+  if (testo === null) {
+    record(ID.flussi, etichetta, "skipped",
+      `${FLUSSI_CRITICI} assente: non c'e' contratto da coprire (comando \`map\`, con lo Specchio dei flussi)`);
+    return;
+  }
+  const { confermatoDa, flussi, errori } = leggiFlussi(testo);
+  if (confermatoDa === null) {
+    record(ID.flussi, etichetta, "skipped",
+      `${FLUSSI_CRITICI} senza riga \`Confermato da:\`: un elenco non confermato non e' un contratto — chi ha deciso che questi sono i flussi critici?`);
+    return;
+  }
+  if (flussi.length === 0) {
+    record(ID.flussi, etichetta, "skipped",
+      `${FLUSSI_CRITICI} non dichiara nessun flusso: formato atteso \`## \\\`<id>\\\` — <tipo>\` (vedi resources/templates/flussi-critici.md)`);
+    return;
+  }
+  ctx.flussi = flussi;
+  const perTipo = flussi.reduce((acc, f) => ({ ...acc, [f.tipo]: (acc[f.tipo] ?? 0) + 1 }), {});
+  const riassunto = Object.entries(perTipo).map(([t, n]) => `${n} ${t}`).join(" · ");
+  record(ID.flussi, etichetta, errori.length === 0 ? "pass" : "fail",
+    [`${flussi.length} flussi (${riassunto}) — confermati da: ${confermatoDa}`, ...errori].join("\n"));
+}
+
+// 2. copertura: ogni flusso dichiarato ha almeno una spec che lo attacca.
+function passoCopertura(ctx) {
+  const etichetta = "copertura dei flussi (una spec per flusso)";
+  if (ctx.flussi === null) {
+    record(ID.copertura, etichetta, "skipped", "contratto dei flussi non leggibile: non c'e' niente di cui misurare la copertura");
+    return;
+  }
+  // la premessa si conta PRIMA: zero spec non e' «tutto coperto», e' «non e'
+  // stato guardato niente». Playwright su zero test esce 0.
+  if (ctx.spec.length === 0) {
+    record(ID.copertura, etichetta, "skipped", "nessun file di spec in e2e/: la copertura sarebbe 0 su 0, cioe' nessuna misura");
+    return;
+  }
+  const { findings, perFlusso } = findingsCopertura(ctx.flussi, ctx.spec);
+  ctx.perFlusso = perFlusso;
+  record(ID.copertura, etichetta, statoDaFindings(findings),
+    [`${ctx.flussi.length} flussi · ${ctx.spec.length} file di spec`,
+      dettaglioFindings(findings) || "ogni flusso dichiarato ha almeno una spec che lo attacca"].join("\n")
+  ).counts = contaGravita(findings);
+}
+
+// 3. lint delle spec: `.only` committato (`block`) e skip non motivati
+// (`issue`), piu' ESLint con la configurazione della skill.
+function passoLint(ctx) {
+  const etichetta = "lint delle spec";
+  if (ctx.spec.length === 0) {
+    record(ID.lint, etichetta, "skipped", "nessun file di spec in e2e/: non c'e' niente da lintare");
+    return;
+  }
+  const findings = ctx.spec.flatMap((s) => regoleSpec(s.file, s.testo));
+  const eslint = esitoEslint();
+  const dettaglio = [dettaglioFindings(findings), eslint.dettaglio].filter(Boolean).join("\n");
+  // un `block` trovato pesa piu' di uno strumento assente: si e' guardato, e si
+  // e' trovato. Se invece non c'e' niente di bloccante ma ESLint manca, allora
+  // meta' del passo NON e' stata eseguita — MANCANTE, mai `pass`.
+  const stato = statoDaFindings(findings) === "fail" || eslint.stato === "fail"
+    ? "fail"
+    : (eslint.stato === "skipped" ? "skipped" : "pass");
+  record(ID.lint, etichetta, stato, dettaglio || "nessun `.only`, nessuno skip non motivato, ESLint pulito")
+    .counts = contaGravita(findings);
+}
+
+function esitoEslint() {
+  if (!existsSync(ESLINT_BIN)) {
+    return { stato: "skipped", dettaglio: `ESLint non installato nella skill (${ESLINT_BIN}): lancia \`npm install\` in agenti/flow-sentinel. Le spec NON sono state lintate` };
+  }
+  const res = run("node", [ESLINT_BIN, "--no-config-lookup", "--config", CONFIG_SPEC, "e2e"]);
+  if (res.status === 0) return { stato: "pass", dettaglio: "" };
+  return {
+    stato: "fail",
+    dettaglio: (res.stdout || res.stderr || "").trim().split("\n").slice(0, 25).join("\n"),
+  };
+}
+
+// 4. effetto sul database: la terza legge in forma verificabile.
+function passoEffettoDb(ctx) {
+  const etichetta = "asserzione di effetto sul database";
+  if (ctx.perFlusso === null) {
+    record(ID.effettoDb, etichetta, "skipped", "copertura non misurata: non si sa quale spec attacchi quale flusso");
+    return;
+  }
+  const findings = findingsEffettoDb(ctx.flussi, ctx.spec, ctx.perFlusso);
+  const conEffetto = ctx.flussi.filter((f) => f.tipo !== "ostile-lettura").length;
+  record(ID.effettoDb, etichetta, statoDaFindings(findings),
+    [`${conEffetto} flussi devono asserire l'effetto sul database (i positivi e gli ostili in scrittura)`,
+      dettaglioFindings(findings) || "tutti importano e chiamano `e2e/helpers/db`"].join("\n")
+  ).counts = contaGravita(findings);
+}
+
+// 5. LA PREMESSA: app viva e database del progetto raggiungibile e seedato.
+// Senza, l'esito della batteria non e' un esito — e' il rumore di un'app che
+// non c'era. Si misura prima di lanciare Playwright, non dopo.
+async function passoAppViva(ctx, args) {
+  const etichetta = "app viva e database del progetto";
+  const errore = risolviAmbiente(ctx, args);
+  if (errore) {
+    record(ID.appViva, etichetta, "skipped", errore);
+    return;
+  }
+  const app = await interrogaApp(ctx.urlApp);
+  if (app.errore) {
+    record(ID.appViva, etichetta, "skipped", app.errore);
+    return;
+  }
+  const db = misuraDatabase(ctx);
+  if (db.errore) {
+    record(ID.appViva, etichetta, "skipped", `app: ${ctx.urlApp} (HTTP ${app.stato})\n${db.errore}`);
+    return;
+  }
+  ctx.appViva = true;
+  // URL, database e schemi si stampano SEMPRE, anche sul verde: un gate che
+  // ha guardato un'altra app o un altro database non deve poter assomigliare a
+  // un gate che ha guardato la tua (DECISIONI.md §11).
+  record(ID.appViva, etichetta, "pass",
+    `app: ${ctx.urlApp} (HTTP ${app.stato}) · database: ${ctx.dbUrl}\n` +
+    `schemi esposti: ${ctx.schemi.join(", ")} · ${db.tabelle} tabelle, ${db.righe} righe di seed`);
+}
+
+// Precedenza: flag esplicito > `supabase/config.toml` del progetto > MAI
+// l'ambiente. Una variabile rimasta da un altro progetto e' esattamente il modo
+// in cui un gate finisce per verificare l'app di qualcun altro e dire verde.
+function risolviAmbiente(ctx, args) {
+  if (ctx.config === null && !(args.url && args.dbUrl)) {
+    return "supabase/config.toml assente: l'URL dell'app e il database non sono risolvibili dal progetto. Passa --url e --db-url espliciti, oppure lancia il gate dalla radice del progetto";
+  }
+  ctx.urlApp = args.url ?? urlAppProgetto(ctx.config);
+  ctx.dbUrl = args.dbUrl ?? urlDbProgetto(ctx.config);
+  ctx.schemi = schemiEsposti(ctx.config);
+  if (!ctx.urlApp) {
+    return "URL dell'app non dichiarato: manca `[auth].site_url` in supabase/config.toml e non e' stato passato --url. Il gate non indovina un `localhost:3000`: e' cosi' che si testa l'app di un altro progetto";
+  }
+  if (!ctx.dbUrl) {
+    return "database del progetto non risolvibile: manca `[db].port` in supabase/config.toml e non e' stato passato --db-url. La porta 54322 di default, con piu' stack Supabase accesi, e' il database di qualcun altro";
+  }
+  return null;
+}
+
+async function interrogaApp(url) {
+  try {
+    const risposta = await fetch(url, { signal: AbortSignal.timeout(15_000), redirect: "manual" });
+    if (risposta.status >= 500) {
+      return { errore: `l'app risponde ${risposta.status} su ${url}: e' accesa ma rotta, la batteria misurerebbe l'errore invece del flusso` };
+    }
+    return { stato: risposta.status };
+  } catch (errore) {
+    return { errore: `l'app non risponde su ${url} (${errore.message}): senza app viva non esiste esito, e un verde qui sarebbe un verde su niente` };
+  }
+}
+
+// Il seed non e' un dettaglio: una batteria su un database vuoto fallisce per
+// mancanza di dati, e i suoi rossi somigliano a difetti dell'app.
+function misuraDatabase(ctx) {
+  if (!has("psql")) {
+    return { errore: "psql non disponibile nel PATH: il database del progetto NON e' stato interrogato (su Windows sta in %USERPROFILE%\\scoop\\apps\\postgresql\\current\\bin)" };
+  }
+  const tabelle = interrogaDb(ctx.dbUrl, sqlTabelleEsposte(ctx.schemi));
+  if (tabelle.errore) return { errore: `database non raggiungibile su ${ctx.dbUrl}: ${tabelle.errore}` };
+  if (tabelle.righe.length === 0) {
+    return { errore: `nessuna tabella negli schemi esposti (${ctx.schemi.join(", ")}) su ${ctx.dbUrl}: le migrazioni non sono applicate, la batteria girerebbe sul vuoto` };
+  }
+  const conteggio = interrogaDb(ctx.dbUrl, sqlConteggioRighe(tabelle.righe));
+  if (conteggio.errore) return { errore: `conteggio delle righe fallito su ${ctx.dbUrl}: ${conteggio.errore}` };
+  const righe = Number(conteggio.righe[0] ?? 0);
+  if (righe === 0) {
+    return { errore: `database senza dati su ${ctx.dbUrl} (${tabelle.righe.length} tabelle, 0 righe): il seed non e' stato applicato, e i fallimenti della batteria sembrerebbero difetti dell'app` };
+  }
+  return { tabelle: tabelle.righe.length, righe };
+}
+
+function interrogaDb(dbUrl, sql) {
+  const res = run("psql", [dbUrl, "-At", "-c", sql]);
+  if (res.error) return { errore: res.error.message };
+  if (res.status !== 0) return { errore: (res.stderr || res.stdout || "").trim().split("\n").slice(0, 5).join(" ") };
+  return { righe: righeDaPsql(res.stdout) };
+}
+
+// 6. la batteria vera. Le spec si CONTANO prima: `playwright test` su zero
+// file esce 0, e zero test che passano non e' un verde.
+function passoPlaywright(ctx) {
+  const etichetta = "batteria Playwright (il browser giudica)";
+  if (ctx.spec.length === 0) {
+    record(ID.playwright, etichetta, "skipped", "nessun file di spec in e2e/: `playwright test` su zero file esce 0, e zero test passati non e' un verde");
+    return;
+  }
+  if (!ctx.appViva) {
+    record(ID.playwright, etichetta, "skipped", "premessa mancante (passo `app-viva`): la batteria non e' stata lanciata, perche' il suo esito non sarebbe un esito");
+    return;
+  }
+  if (!existsSync(join(PROGETTO, "node_modules", "@playwright", "test"))) {
+    record(ID.playwright, etichetta, "skipped", "@playwright/test non installato nel progetto: la batteria NON e' stata eseguita (`npm install`)");
+    return;
+  }
+  const res = run("npx", ["playwright", "test", "--reporter=json"]);
+  const { parsed, errore } = estraiOggettoJson(res.stdout || res.stderr || "");
+  if (errore) {
+    record(ID.playwright, etichetta, "skipped", `report JSON di Playwright non interpretabile: ${errore}`);
+    return;
+  }
+  const esito = esitoPlaywright(parsed);
+  record(ID.playwright, etichetta, esitoBatteriaVerde(esito) ? "pass" : "fail",
+    dettaglioPlaywright(esito, ctx.spec.length));
+}
+
+// 7. contratto d'uscita: cosa trova davvero chi viene dopo, e se l'handoff
+// dice la verita' sul gate che lo sta verificando (DECISIONI.md §19).
+function passoContratto() {
+  const esito = contrattoUscita(HANDOFF, leggiSeCe(HANDOFF), leggiSeCe(CONFIG_PLAYWRIGHT), verdettoDa(steps));
+  record(ID.contratto, "contratto d'uscita (handoff + configurazione)", esito.status, esito.detail);
+}
+
+// L'ordine di questa lista E' il gate: un test lo blocca insieme agli id.
+export const PASSI = Object.freeze([
+  { id: ID.flussi, esegui: (ctx) => passoFlussi(ctx) },
+  { id: ID.copertura, esegui: (ctx) => passoCopertura(ctx) },
+  { id: ID.lint, esegui: (ctx) => passoLint(ctx) },
+  { id: ID.effettoDb, esegui: (ctx) => passoEffettoDb(ctx) },
+  { id: ID.appViva, esegui: (ctx, args) => passoAppViva(ctx, args) },
+  { id: ID.playwright, esegui: (ctx) => passoPlaywright(ctx) },
+  { id: ID.contratto, esegui: () => passoContratto() },
+]);
+
+// ------------------------------------------------------------------- verdetto
+export function riepilogo(passi) {
+  const per = (stato) => passi.filter((s) => s.status === stato).length;
+  return { passi: passi.length, pass: per("pass"), fail: per("fail"), skipped: per("skipped") };
+}
+
+function verdetto(json) {
+  const riassunto = riepilogo(steps);
+  const verde = riassunto.fail === 0 && riassunto.skipped === 0;
+
+  if (json) {
+    console.log(JSON.stringify({ contract: CONTRATTO_JSON, ok: verde, summary: riassunto, steps }, null, 2));
+    return verde ? 0 : 1;
+  }
+
+  console.log(`GATE FLUSSI: ${verde ? "VERDE" : "ROSSO"} ` +
+    `(${riassunto.fail} falliti, ${riassunto.skipped} verifiche mancanti su ${riassunto.passi} passi)\n`);
+  for (const s of steps) {
+    const marchio = { pass: "OK  ", fail: "FAIL", skipped: "MANC" }[s.status];
+    console.log(`${marchio}  ${s.name}`);
+    // il dettaglio si stampa anche sui passi verdi: e' li' che finisce
+    // «passati al secondo tentativo», e un'instabilita' nascosta non esiste
+    if (s.detail) for (const riga of s.detail.split("\n")) console.log(`        ${riga}`);
+  }
+  if (riassunto.skipped > 0) {
+    console.log("\nUna verifica mancante non e' una verifica superata: il gate resta rosso.");
+  }
+  return verde ? 0 : 1;
+}
+
+function parseArgs(argv) {
+  const args = { url: null, dbUrl: null, json: false };
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--url") args.url = argv[++i];
+    else if (argv[i] === "--db-url") args.dbUrl = argv[++i];
+    else if (argv[i] === "--json") args.json = true;
+  }
+  return args;
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  // Uscita 2 = errore di esecuzione, non verdetto: qui non c'e' un progetto
+  // Web Gun, e un gate che desse ROSSO direbbe una cosa su un progetto che non
+  // ha guardato.
+  if (!existsSync(join(PROGETTO, "docs")) && !existsSync(DIR_SPEC)) {
+    console.error(`Ne' docs/ ne' e2e/ in ${PROGETTO}: non c'e' batteria da verificare (lancia il gate dalla radice del progetto).`);
+    process.exit(2);
+  }
+  const ctx = raccogliContesto();
+  for (const passo of PASSI) await passo.esegui(ctx, args);
+  process.exit(verdetto(args.json));
+}
+
+// eseguito come comando, non quando i test importano ID/PASSI/riepilogo
+if (import.meta.main) await main();

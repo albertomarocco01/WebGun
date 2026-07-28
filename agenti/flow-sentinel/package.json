@@ -1,0 +1,17 @@
+{
+  "name": "flow-sentinel-scripts",
+  "private": true,
+  "type": "module",
+  "description": "Solo per far girare i guardiani sugli script della skill e per dare al gate l'ESLint con cui linta le spec. Il repo di regia NON e' un progetto applicativo: qui non si pubblica nulla e non si costruisce nulla.",
+  "scripts": {
+    "test": "node --test \"scripts/**/*.test.mjs\""
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "eslint": "^9.39.0",
+    "jscpd": "^4.0.5",
+    "knip": "^5.66.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.0"
+  }
+}

@@ -1,0 +1,22 @@
+// Configurazione knip degli script di Flow Sentinel.
+// Ogni esenzione ha la motivazione sulla riga sopra: un'esenzione senza motivo
+// scritto e' un'esenzione che nessuno rimettera' mai (DECISIONI.md §8).
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+
+  // `verify.mjs` e' un ENTRY POINT da riga di comando, non un modulo importato;
+  // la configurazione delle spec la carica ESLint per percorso, non un import.
+  // Senza queste righe knip li dichiara file morti.
+  "entry": [
+    "scripts/verify.mjs",
+    "scripts/*.test.mjs",
+    "resources/config/eslint-spec.config.mjs"
+  ],
+  "project": ["scripts/**/*.mjs", "resources/config/**/*.mjs"],
+
+  // eslint e jscpd non si importano: li ESEGUE `code-maniac scan` come binari,
+  // ed eslint lo esegue anche il passo `lint-spec` del gate.
+  // typescript e' la dipendenza di pari di typescript-eslint (serve il parser
+  // per leggere una spec `.ts`), non un import di questo repo.
+  "ignoreDependencies": ["eslint", "jscpd", "typescript"]
+}
