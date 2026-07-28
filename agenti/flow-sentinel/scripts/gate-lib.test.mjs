@@ -101,6 +101,27 @@ test("una riga `Confermato da:` con soli spazi non e' una firma", () => {
   assert.equal(leggiFlussi("Confermato da:   \nUMANO\n").confermatoDa, null);
 });
 
+// Riprodotti il 2026-07-28 al collaudo: la riga vuota era chiusa, le sue due
+// varianti no. La prima e' il template della skill compilato a meta'.
+test("il segnaposto del template non e' una firma", () => {
+  assert.equal(
+    leggiFlussi("Confermato da: {{UMANO | ORCHESTRATORE}} ({{QUANDO}})\n\n## `a-b` — positivo\n").confermatoDa,
+    null);
+});
+
+test("la sola decorazione markdown non e' una firma", () => {
+  for (const riga of ["- **Confermato da:** ", "**Confermato da:**", "Confermato da: -", "Confermato da: ___"]) {
+    assert.equal(leggiFlussi(`${riga}\n`).confermatoDa, null, `ha firmato: ${riga}`);
+  }
+});
+
+test("una firma vera resta una firma, anche in grassetto dentro un elenco", () => {
+  assert.equal(leggiFlussi("- **Confermato da:** ORCHESTRATORE (2026-07-28)\n").confermatoDa,
+    "ORCHESTRATORE (2026-07-28)");
+  assert.equal(leggiFlussi("Confermato da: UMANO (Alberto, committente) il 2026-07-28\n").confermatoDa,
+    "UMANO (Alberto, committente) il 2026-07-28");
+});
+
 test("un tipo sconosciuto e' un errore, e quel flusso non entra nell'elenco", () => {
   const { flussi, errori } = leggiFlussi("## `pippo` — ostile\n");
   assert.deepEqual(flussi, []);

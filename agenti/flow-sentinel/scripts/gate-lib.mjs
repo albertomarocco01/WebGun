@@ -71,6 +71,25 @@ const INTESTAZIONE_FLUSSO = /^##\s+`?([a-z0-9][a-z0-9-]*)`?\s*[—–-]\s*([a-z-
 // e chiuso ammettendo i soli spazi orizzontali, con due test che lo bloccano.
 const RIGA_CONFERMA = /^[ \t>*_-]*Confermato da[ \t*_]*:[ \t*_]*(\S.*?)[ \t*_]*$/im;
 
+/**
+ * Una firma deve firmare. Due forme catturate il 2026-07-28 al collaudo, e
+ * nessuna delle due e' esotica:
+ *
+ * - il **segnaposto del template**: `Confermato da: {{UMANO | ORCHESTRATORE}}
+ *   ({{QUANDO}})`, cioe' `resources/templates/flussi-critici.md` compilato a
+ *   meta'. E' la forma tipica del template non finito — la stessa ragione per
+ *   cui `contrattoUscita` boccia i `{{...}}` nell'handoff — e usciva `pass`,
+ *   col segnaposto stampato al posto del firmatario;
+ * - la **sola decorazione markdown**: `- **Confermato da:** ` senza nome
+ *   catturava `*` (la classe di coda cede un asterisco al gruppo), e cosi'
+ *   `Confermato da: -` e `Confermato da: ___`. La riga vuota era gia' chiusa,
+ *   la sua variante in grassetto — la piu' scritta delle tre — no.
+ *
+ * Il criterio e' il piu' stretto che non tolga niente a una firma vera: almeno
+ * un carattere alfanumerico, e nessun segnaposto rimasto.
+ */
+const firmaVera = (firma) => /[\p{L}\p{N}]/u.test(firma) && !firma.includes("{{");
+
 export function leggiFlussi(testo) {
   const flussi = [];
   const errori = [];
@@ -89,7 +108,8 @@ export function leggiFlussi(testo) {
     }
   }
   const conferma = RIGA_CONFERMA.exec(senzaBom(testo));
-  return { confermatoDa: conferma ? conferma[1].trim() : null, flussi, errori };
+  const firma = conferma ? conferma[1].trim() : null;
+  return { confermatoDa: firma && firmaVera(firma) ? firma : null, flussi, errori };
 }
 
 // ------------------------------------------------------- spec e loro etichette
