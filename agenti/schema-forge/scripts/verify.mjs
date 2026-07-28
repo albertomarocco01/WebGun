@@ -276,7 +276,10 @@ export function verdettoDa(passi) {
 // si vuole; una riga con una parola dentro no. Tollera l'elenco puntato, la
 // citazione e il grassetto perche' sono i modi in cui un markdown scrive la
 // stessa riga, non tre significati diversi.
-const RIGA_VERDETTO = /^[\s>*_-]*Gate[\s*_]*:[\s*_]*(VERDE|ROSSO)\b/im;
+// Spazi ORIZZONTALI soltanto: `\s` comprende l'a capo, e una riga `Gate:`
+// lasciata vuota catturava un `VERDE` a inizio della riga seguente — cioe' un
+// handoff non compilato passava per firmato. La firma sta sulla riga della firma.
+const RIGA_VERDETTO = /^[ \t>*_-]*Gate[ \t*_]*:[ \t*_]*(VERDE|ROSSO)\b/im;
 
 export function contrattoUscita(esiste, leggi, verdettoPrima) {
   const mancanti = [];
