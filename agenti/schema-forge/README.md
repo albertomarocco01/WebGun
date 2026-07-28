@@ -2,7 +2,7 @@
 
 # Schema Forge — manuale d'uso
 
-Agente Web Gun per lo **schema dati** dei progetti generati (Postgres/Supabase). È il primo agente costruttore della pipeline: Fly UI, Gestionale Crafter, Sanity Creator e AI Specialist costruiscono tutti sopra ciò che decide qui.
+Agente Web Gun per lo **schema dati** dei progetti generati (Postgres/Supabase). È il primo agente costruttore della pipeline: Fly UI, Gestionale Crafter e AI Specialist costruiscono tutti sopra ciò che decide qui.
 
 **Stato:** v1.5 — collaudata su database reale e nel comportamento. **143 test** sugli script, gate a **9 passi**, ESLint 0 errori 0 warning, `knip` pulito. `jscpd` riporta **2 cloni**, entrambi dichiarati (§7).
 

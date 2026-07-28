@@ -5,7 +5,7 @@
 - **Proprietario:** Alberto
 - **Dipendenze:**
   - A monte: prompt-smith (richiesta professionale), brief-smith (entità e contenuti del cliente)
-  - A valle: fly-ui (costruisce sulle tabelle e sui tipi generati), gestionale-crafter (CRUD), sanity-creator (mappa i contenuti sul modello), ai-specialist (RAG sui dati)
+  - A valle: fly-ui (costruisce sulle tabelle e sui tipi generati), gestionale-crafter (CRUD), ai-specialist (RAG sui dati)
 - **Guardiani:** code-maniac e code-inquisition valutano l'SQL e gli script come qualsiasi altro codice.
 
 ## Collaudo del 2026-07-24 (banco di prova Supabase locale)

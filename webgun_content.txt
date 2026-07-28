@@ -52,37 +52,33 @@ Gestionale Crafter
    [Da creare]
 Crea il pannello gestionale / backoffice (dal flow sulla foto, non era nel documento). Per un e-commerce: gestione prodotti, ordini, magazzino e clienti.
 11. 
-Sanity Creator
-   [Da creare]
-Configura il CMS (Sanity) per i contenuti modificabili dal cliente (dal flow sulla foto, non era nel documento). Così il cliente aggiorna testi e prodotti senza toccare il codice.
-12. 
 AI Specialist
    [Da creare]
 Integra assistenti IA, RAG e agenti autonomi nel sito: ad esempio il chatbot che guida i clienti dell'e-commerce tra prodotti e ordini. (Nel documento era duplicato: unificato in una voce sola.)
 FASE 4 — Test e performance
-13. 
+12. 
 Flow Sentinel
    [Da creare]
 Genera ed esegue test End-to-End con Playwright sui flussi critici (carrello, checkout, login) prima del lancio. Se il checkout si rompe, lo scopre lui e non il cliente.
-14. 
+13. 
 Speed Demon
    [Da creare]
 Ottimizza velocità, SEO, metatag e performance puntando al 100/100 Lighthouse. Va lanciato a sito completo, perché ottimizzare prima è lavoro sprecato.
 FASE 5 — Sicurezza e conformità
-15. 
+14. 
 Cyber Shield
    [Da creare]
 Specializzato in cybersecurity: verifica vulnerabilità, permessi, esposizione di dati e configurazioni pericolose prima della messa online.
-16. 
+15. 
 Site Doctor
    [Da creare]
 Scanner pre-produzione di conformità: cookie/GDPR e privacy, accessibilità (alt, contrasti, HTML semantico), Open Graph per le anteprime social, hreflang multilingua, favicon, robots.txt e sitemap. In pratica: il certificato di idoneità del sito prima del lancio.
 FASE 6 — Lancio e vendita
-17. 
+16. 
 Launchpad
    [Da creare]
 Deployment 1-click su Vercel/Cloudflare con DNS, domini e certificati SSL. L'ultimo miglio: dal codice al sito online.
-18. 
+17. 
 DemonIAc
    [Ce l'ho]
 Genera automaticamente video demo con Remotion da mostrare alle aziende. Opzionale nella pipeline: serve per vendere il risultato, non per costruirlo.

@@ -84,30 +84,28 @@ Ordine operativo pensato per un progetto reale (es. e-commerce da zero).
    Libreria con UI degli effetti applicabili ai siti. Aggiunge animazioni e microinterazioni sopra l'interfaccia base per dare carattere al sito.
 10. 🔵 **Gestionale Crafter**  
    Crea il pannello gestionale / backoffice. Per un e-commerce: gestione prodotti, ordini, magazzino e clienti.
-11. 🔵 **Sanity Creator**  
-   Configura il CMS (Sanity) per i contenuti modificabili dal cliente. Così il cliente aggiorna testi e prodotti senza toccare il codice.
-12. 🔵 **AI Specialist**  
+11. 🔵 **AI Specialist**  
    Integra assistenti IA, RAG e agenti autonomi nel sito: ad esempio il chatbot che guida i clienti dell'e-commerce tra prodotti e ordini.
 
 ## FASE 4 — Test e performance
 
-13. 🔵 **Flow Sentinel**  
+12. 🔵 **Flow Sentinel**  
    Genera ed esegue test End-to-End con Playwright sui flussi critici (carrello, checkout, login) prima del lancio. Se il checkout si rompe, lo scopre lui e non il cliente.
-14. 🔵 **Speed Demon**  
+13. 🔵 **Speed Demon**  
    Ottimizza velocità, SEO, metatag e performance puntando al 100/100 Lighthouse. Va lanciato a sito completo, perché ottimizzare prima è lavoro sprecato.
 
 ## FASE 5 — Sicurezza e conformità
 
-15. 🔵 **Cyber Shield**  
+14. 🔵 **Cyber Shield**  
    Specializzato in cybersecurity: verifica vulnerabilità, permessi, esposizione di dati e configurazioni pericolose prima della messa online.
-16. 🔵 **Site Doctor**  
+15. 🔵 **Site Doctor**  
    Scanner pre-produzione di conformità: cookie/GDPR e privacy, accessibilità (alt, contrasti, HTML semantico), Open Graph per le anteprime social, hreflang multilingua, favicon, robots.txt e sitemap. In pratica: il certificato di idoneità del sito prima del lancio.
 
 ## FASE 6 — Lancio e vendita
 
-17. 🔵 **Launchpad**  
+16. 🔵 **Launchpad**  
    Deployment 1-click su Vercel/Cloudflare con DNS, domini e certificati SSL. L'ultimo miglio: dal codice al sito online.
-18. 🟢 **DemonIAc**  
+17. 🟢 **DemonIAc**  
    Genera automaticamente video demo con Remotion da mostrare alle aziende. Opzionale nella pipeline: serve per vendere il risultato, non per costruirlo.
 
 ---

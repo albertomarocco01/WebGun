@@ -12,7 +12,7 @@
 
 $ErrorActionPreference = "Stop"
 
-# Solo le skill VERE. I dieci agenti scaffold (brief-smith, site-doctor, …) non
+# Solo le skill VERE. I nove agenti scaffold (brief-smith, site-doctor, …) non
 # si installano finche' sono scheletri: una skill con quattro sezioni `TODO`
 # nell'elenco di Claude Code e' rumore che si somiglia tutto, e la prima volta
 # che ne invochi una scopri che non fa niente.

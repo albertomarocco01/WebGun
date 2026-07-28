@@ -4,4 +4,4 @@
 - **Proprietario:** TODO
 - **Dipendenze:**
   - A monte: nessuna (è il primo agente della pipeline, Fase 0)
-  - A valle: preventivo-smith (stima sui requisiti raccolti), prompt-smith (trasforma il brief in prompt), schema-forge e sanity-creator (entità e contenuti)
+  - A valle: preventivo-smith (stima sui requisiti raccolti), prompt-smith (trasforma il brief in prompt), schema-forge (entità e contenuti)

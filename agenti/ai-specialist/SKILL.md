@@ -23,7 +23,7 @@ Integra assistenti IA, RAG e agenti autonomi nel sito: ad esempio il chatbot che
 
 ## Gate di chiusura
 
-- [ ] L'assistente risponde correttamente su dati reali del progetto (RAG collegato a DB/CMS, non a dati inventati)
+- [ ] L'assistente risponde correttamente su dati reali del progetto (RAG collegato al DB, non a dati inventati)
 - [ ] Nessuna chiave API esposta lato client; chiamate ai modelli solo server-side
 - [ ] Gestione errori e fallback: il sito resta usabile se il servizio IA non risponde
 - [ ] Costi sotto controllo: limiti di uso configurati e documentati

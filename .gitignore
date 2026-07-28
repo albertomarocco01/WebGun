@@ -22,3 +22,7 @@ banco-prova*/
 # progetto applicativo: qui npm serve solo a far girare la batteria.
 node_modules/
 .jscpd/
+
+# File di lock di Word: nasce quando `Web Gun.docx` e' aperto, sparisce quando
+# si chiude. Non e' contenuto, e' uno stato della macchina.
+~$*
