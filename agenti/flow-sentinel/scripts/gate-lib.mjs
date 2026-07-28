@@ -244,14 +244,66 @@ const SOLO = /\b(test|describe|it)(?:\.[a-z]+)*\.only\s*\(/;
 const SALTA = /\b(test|describe|it)(?:\.[a-z]+)*\.(skip|fixme)\s*\(/;
 const COMMENTO = /^\s*(\/\/|\*|\/\*)/;
 
+/**
+ * Le stesse righe, senza cio' che e' commentato — e senza perdere il conto:
+ * una riga resta una riga, cosi' il numero nel rilievo e' quello del file.
+ *
+ * Serviva perche' il controllo saltava le righe che COMINCIANO per `//`, `*` o
+ * `/*`, e questo lascia fuori due forme misurate il 2026-07-28:
+ * - un test commentato via a blocco (fra `/*` e la sua chiusura) le cui righe interne non
+ *   cominciano per `*`: il `.only` dentro produceva un `block`, cioe' il gate
+ *   bloccava la consegna per una riga che non gira (rosso sbagliato);
+ * - `const x = 1; // mai committare test.only(...)`, dove il commento sta in
+ *   coda a codice vero: la riga non comincia per `//`, quindi il `.only`
+ *   nominato nel commento diventava un `block`;
+ * - e all'opposto una riga che apre e chiude il commento e poi chiama
+ *   `test.only(...)`: comincia
+ *   per `/*` ma il codice vero viene dopo: veniva saltata, cioe' un `.only`
+ *   committato passava.
+ *
+ * Le stringhe restano: un `.only` scritto dentro un titolo di test continua a
+ * produrre un rilievo, ed e' un limite dichiarato.
+ */
+function codiceSenzaCommenti(linee) {
+  let inBlocco = false;
+  return linee.map((linea) => {
+    let fuori = "";
+    let i = 0;
+    while (i < linea.length) {
+      if (inBlocco) {
+        const fine = linea.indexOf("*/", i);
+        if (fine === -1) break;
+        inBlocco = false;
+        i = fine + 2;
+        continue;
+      }
+      const blocco = linea.indexOf("/*", i);
+      const riga = linea.indexOf("//", i);
+      if (riga !== -1 && (blocco === -1 || riga < blocco)) {
+        fuori += linea.slice(i, riga);
+        break;
+      }
+      if (blocco !== -1) {
+        fuori += linea.slice(i, blocco);
+        inBlocco = true;
+        i = blocco + 2;
+        continue;
+      }
+      fuori += linea.slice(i);
+      break;
+    }
+    return fuori;
+  });
+}
+
 export function regoleSpec(file, testo) {
   const linee = righe(testo);
+  // il codice, per cercare `.only` e gli skip; le righe intere, per capire se
+  // uno skip ha la motivazione scritta accanto (che e' un commento, appunto)
+  const codice = codiceSenzaCommenti(linee);
   const findings = [];
-  for (let i = 0; i < linee.length; i++) {
-    const linea = linee[i];
-    // una riga di commento che NOMINA `.only` non e' un `.only`: le reference
-    // e i commenti di questa casa ne parlano, e il gate non deve bocciarle
-    if (COMMENTO.test(linea)) continue;
+  for (let i = 0; i < codice.length; i++) {
+    const linea = codice[i];
     if (SOLO.test(linea)) {
       findings.push({
         severity: "block",
@@ -302,7 +354,15 @@ function motivato(linee, indice) {
 const IMPORT_HELPER_DB = /import\s+(?:type\s+)?([^;"']*?)\s+from\s+["'][^"']*helpers\/db(?:\.[cm]?[jt]s)?["']/g;
 
 export function usaHelperDb(testo) {
-  const pulito = senzaBom(testo);
+  // Un'asserzione commentata via non guarda niente, e nemmeno il suo import.
+  // Misurato il 2026-07-28: commentando insieme `// import { corsoPerTitolo }
+  // from "./helpers/db";` e `// const riga = await corsoPerTitolo(...)`, il
+  // passo `effetto-db` restava verde («tutti importano e chiamano») e ESLint
+  // taceva — un import commentato non e' una variabile inutilizzata. La stessa
+  // cancellazione senza commenti produce il `block`: era il commento a portare
+  // il verde, cioe' il modo piu' comodo che esista per spegnere l'unica
+  // asserzione che guarda il database.
+  const pulito = senzaCommentiJs(senzaBom(testo));
   const nomi = [];
   for (const [, clausola] of pulito.matchAll(IMPORT_HELPER_DB)) {
     for (const pezzo of clausola.replace(/[{}]/g, ",").split(",")) {

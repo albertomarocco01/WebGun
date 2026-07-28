@@ -251,6 +251,22 @@ test("`.only` NOMINATO in un commento non e' un `.only`", () => {
   assert.deepEqual(regoleSpec("e2e/a.spec.ts", "// mai committare un test.only(...) qui\n"), []);
 });
 
+// Tre forme misurate il 2026-07-28, tutte sulla stessa cecita': il controllo
+// guardava solo l'INIZIO della riga.
+test("un test commentato via a blocco non e' un `.only` committato", () => {
+  const spec = 'import { test } from "@playwright/test";\n\n/*\ntest.only("vecchio caso @flusso:a", async () => {});\n*/\n\ntest("x @flusso:a", async () => {});\n';
+  assert.deepEqual(regoleSpec("e2e/a.spec.ts", spec), []);
+});
+
+test("`.only` nominato in un commento in coda a codice vero non e' un `.only`", () => {
+  assert.deepEqual(regoleSpec("e2e/a.spec.ts", "const x = 1; // mai committare test.only(...)\n"), []);
+});
+
+test("un `.only` dopo un commento di blocco chiuso sulla stessa riga e' un block", () => {
+  const findings = regoleSpec("e2e/a.spec.ts", '/* setup rapido */ test.only("x @flusso:a", async () => {});\n');
+  assert.equal(findings[0]?.severity, "block", "il codice viene dopo il commento, e gira");
+});
+
 test("uno skip senza motivazione e' un issue", () => {
   const findings = regoleSpec("e2e/a.spec.ts", "test.skip('x', async () => {});");
   assert.equal(findings[0]?.severity, "issue");
@@ -304,6 +320,23 @@ test("import a namespace e chiamata di metodo: l'helper e' usato", () => {
 test("importato e mai chiamato non conta: un import non asserisce niente", () => {
   const u = usaHelperDb(`import { contaProdotti } from "./helpers/db";\nawait expect(page).toHaveURL(/admin/);`);
   assert.deepEqual({ importa: u.importa, chiama: u.chiama }, { importa: true, chiama: false });
+});
+
+// Misurato il 2026-07-28: commentando insieme import e asserzione, `effetto-db`
+// restava verde e ESLint taceva (un import commentato non e' una variabile
+// inutilizzata). La stessa cancellazione senza commenti produceva il `block`:
+// era il commento a portare il verde.
+test("un'asserzione commentata via non guarda il database", () => {
+  const spec = [
+    'import { expect, test } from "@playwright/test";',
+    '// import { corsoPerTitolo } from "./helpers/db";',
+    'test("x @flusso:a", async ({ page }) => {',
+    '  await expect(page.getByRole("status")).toHaveText("Corso creato");',
+    '  // const riga = await corsoPerTitolo("Spinning");',
+    "});",
+  ].join("\n");
+  const u = usaHelperDb(spec);
+  assert.deepEqual({ importa: u.importa, chiama: u.chiama }, { importa: false, chiama: false });
 });
 
 // Il caso vero: OGNI spec comincia con l'import di Playwright. Il ritaglio della
