@@ -1,15 +1,17 @@
 # Stato — Flow Sentinel
 
-- **Stato attuale:** costruita (P1, 2026-07-28). `SKILL.md` confermata in P0 e **non modificata**; ora
-  esistono le **4 references**, il gate `verify.mjs` a **7 passi** con id stabili, le regole pure in
-  `scripts/gate-lib.mjs` con **79 test verdi** (`node --test`), i **3 template** e la configurazione
-  ESLint delle spec. Il gate e' stato **eseguito davvero** su un banco Next.js + Supabase locale
-  (`banco-prova-flow/`, usa e getta, gitignorato): **VERDE 7 su 7**, poi **rosso cinque volte** per
-  cinque difetti piantati apposta, poi **verde di nuovo**. Verbale con le uscite incollate:
-  `COSTRUZIONE-2026-07-28.md`.
-  **NON ancora usabile su un progetto cliente:** la batteria e il banco sono stati scritti dalla stessa
-  mano, quindi non e' mai successo che il gate trovasse un difetto di qualcun altro. Punti aperti in
-  fondo, ordinati per gravita'.
+- **Stato attuale:** costruita (P1) e **collaudata in modo indipendente** (P2), entrambe il 2026-07-28.
+  `SKILL.md` confermata in P0 e **non modificata** da nessuna delle due fasi; esistono le
+  **4 references**, il gate `verify.mjs` a **7 passi** con id stabili, le regole pure in
+  `scripts/gate-lib.mjs` con **103 test verdi** (`node --test`), i **3 template** e la configurazione
+  ESLint delle spec. Il gate e' stato **eseguito davvero** su due banchi Next.js + Supabase locale,
+  scritti da due mani diverse: `banco-prova-flow/` (P1, e-commerce) e `banco-prova-collaudo-fs/`
+  (P2, palestra) — **VERDE 7 su 7 su entrambi**, e rosso ogni volta che qualcosa e' stato rotto apposta.
+- **Il collaudo avversario ha trovato dieci difetti**, tutti misurati prima di essere corretti, tutti
+  con un test di regressione e un commit ciascuno. Sette erano **falsi verdi**: il gate diceva verde
+  senza aver guardato. Verbale con le uscite incollate: `COLLAUDO-2026-07-28.md`.
+  **NON ancora usabile su un progetto cliente:** i due banchi restano scritti da chi scriveva anche le
+  regole, e i flussi critici li ha proposti l'agente. Punti aperti in fondo, ordinati per gravita'.
 - **Proprietario:** Alberto
 - **Dipendenze:**
   - A monte: gestionale-crafter e fly-ui (l'app da testare), schema-forge (il modello di accesso del suo
@@ -24,7 +26,7 @@
 |---|---|---|---|
 | P0 | progettazione SKILL.md | qui | fatta, confermata dall'umano il 2026-07-28 |
 | P1 | references, scripts (gate + lib pura + test), banco minimo usa e getta, sabotaggio provato | branch `agente/flow-sentinel` | **fatta il 2026-07-28** |
-| P2 | collaudo avversario indipendente su dominio diverso: caccia ai falsi verdi del gate | chat dedicata, vergine | da fare |
+| P2 | collaudo avversario indipendente su dominio diverso: caccia ai falsi verdi del gate | chat dedicata, vergine | **fatta il 2026-07-28** — 10 difetti, `COLLAUDO-2026-07-28.md` |
 | P3 | primo consumatore reale: batteria su Bottega Nord (`banco-prova-negozio`), dopo l'handoff di gestionale-crafter | chat dedicata | da fare |
 
 ## Cosa esiste, misurato
@@ -32,13 +34,14 @@
 | Cosa | Numero | Come e' stato misurato |
 |---|---|---|
 | Passi del gate | 7 | `verify.mjs --json`, `summary.passi` |
-| Test degli script | 79 verdi | `node --test "scripts/**/*.test.mjs"` |
-| References | 4 | `references/`, 1288 righe in tutto |
+| Test degli script | **103 verdi** (79 dopo P1, +24 di regressione in P2) | `node --test "scripts/**/*.test.mjs"` |
+| References | 4 | `references/`, 1288 righe dopo P1, corrette in tre punti da P2 |
 | Template | 3 | `flussi-critici.md`, `handoff-flow-sentinel.md`, `eslint-spec.config.mjs` |
-| Flussi del banco | 5 (3 positivi, 1 ostile-lettura, 1 ostile-scrittura) | dettaglio del passo `flussi-critici` |
-| Spec del banco | 5, tutte verdi | dettaglio del passo `playwright` |
-| Difetti piantati e rilevati | 5 su 5 | `COSTRUZIONE-2026-07-28.md` §Sabotaggio |
+| Banchi su cui il gate e' girato | 2, di due domini e due mani | `banco-prova-flow/` (5 flussi, 5 spec) · `banco-prova-collaudo-fs/` (6 flussi, 6 spec) |
+| Difetti piantati e rilevati | 5 su 5 (P1) + 3 su 3 (P2, classi nuove) | `COSTRUZIONE` §3.2 · `COLLAUDO` §4 |
 | Premesse tolte e riconosciute mancanti | 3 su 3 | `COSTRUZIONE-2026-07-28.md` §MANCANTE |
+| Forme ostili provate sulle regole pure | 79, con input della forma vera | `COLLAUDO-2026-07-28.md` §6 |
+| Difetti del gate trovati dal collaudo | **10** (7 falsi verdi, 3 crash o rossi sbagliati) | `COLLAUDO-2026-07-28.md` §3 |
 
 ## Tre falsi verdi trovati costruendo, e chiusi
 
@@ -81,6 +84,9 @@ Questa sezione esiste perche' la sua assenza e' il modo in cui un verde diventa 
 - **Che i flussi ostili in lettura siano davvero rifiutati.** Su `ostile-lettura` il gate non pretende
   nessuna asserzione sul database — non c'e' stato da confrontare — quindi una spec che asserisce solo
   l'URL e non l'assenza del contenuto riservato passa. Lo trova il sabotaggio di classe C, non il gate.
+  E non basta guardare il DOM: se il rifiuto lo decide il browser, l'HTML riservato e' gia' stato
+  servito e ogni `getByText` lo trova pulito. Si asserisce sul **corpo della risposta** — misurato in
+  P2, `COLLAUDO-2026-07-28.md` §4.1.
 - **Che il seed contenga i dati giusti.** `app-viva` conta tabelle e righe: sa che il database non e'
   vuoto, non sa che dentro ci sia quello che serve ai flussi.
 - **Che la batteria trovi i difetti.** Lo dimostra il sabotaggio, e il sabotaggio si esegue al collaudo,
@@ -88,13 +94,35 @@ Questa sezione esiste perche' la sua assenza e' il modo in cui un verde diventa 
 - **Niente sulla sicurezza oltre i flussi dichiarati.** Le porte che nessuno ha dichiarato le cerca
   Cyber Shield: qui si prova che quelle dichiarate restano chiuse.
 
+## Cosa ha trovato il collaudo indipendente (P2)
+
+Dieci difetti, tutti riprodotti prima di essere corretti. I quattro che contano:
+
+1. **Una batteria in cui ogni test e' saltato usciva VERDE 7/7**, con `ok: true`: le spec si contavano
+   come **file**, mai come esecuzioni. Bastavano sei `test.skip` con la motivazione accanto — cioe' la
+   forma legittima, quella che `lint-spec` non segnala nemmeno — per avere un gate verde su zero flussi
+   percorsi. Era l'ultimo punto in cui «uno strumento che esce 0 senza aver letto» era rimasto aperto.
+2. **Un handoff che dichiarava `Gate: VERDE` su un gate ROSSO passava**, se piu' sopra citava in un
+   blocco recintato il rosso dell'esecuzione precedente — cioe' esattamente cio' che
+   `references/sabotaggio.md` prescrive di incollare li' dentro.
+3. **Un contratto firmato da `{{UMANO | ORCHESTRATORE}}`** — il template compilato a meta' — o da un
+   asterisco del grassetto passava per firmato.
+4. **La spec ostile guardava il DOM dopo il redirect.** Col controllo di ruolo spostato nel browser,
+   l'area riservata veniva servita per intero al socio e la batteria restava verde 6 su 6: ogni
+   `getByText(...).toHaveCount(0)` girava sulla pagina lecita. Ora si asserisce sul corpo della
+   risposta di navigazione, che un redirect del client non puo' riscrivere.
+
+Gli altri sei: `retries` letto in un commento o ignorato dentro `projects`, `test.fixme` invisibile,
+l'asserzione commentata via che contava come asserzione, gli schemi esposti multiriga che sparivano in
+silenzio, tre crash su report malformati, e tre rossi sbagliati su codice commentato.
+
 ## Punti aperti — ordinati per gravita'
 
-1. **Nessun consumatore reale.** Banco e batteria sono stati scritti dalla stessa mano, nello stesso
-   giorno: il gate non ha mai giudicato il lavoro di qualcun altro, ed e' esattamente li' che Schema
-   Forge ha trovato i suoi difetti veri. Lo chiude P3 (Bottega Nord).
-2. **Nessun collaudo avversario indipendente.** I cinque sabotaggi li ha scelti chi ha scritto le
-   regole: provano che le regole scattano dove chi le ha scritte si aspettava. P2 esiste per questo.
+1. **Nessun consumatore reale.** I due banchi sono stati scritti da chi scriveva anche le regole, e i
+   flussi critici li ha proposti l'agente: il gate non ha mai giudicato il lavoro di qualcun altro, ed
+   e' esattamente li' che Schema Forge ha trovato i suoi difetti veri. Lo chiude P3 (Bottega Nord).
+2. **`evolve` non e' mai stato collaudato.** Nessun flusso aggiunto o tolto dopo la conferma: il diff
+   delle rotte, l'etichetta orfana sul campo e la rinomina in un giro solo restano non provati.
 3. **`lint-spec` e' MANCANTE senza `npm install` nella cartella della skill.** ESLint viaggia con la
    skill (DECISIONI.md §8), quindi su una macchina nuova il primo giro del gate e' rosso finche' non si
    installano le dipendenze. E' corretto — MANCANTE non e' PASS — ma va scritto nel README della skill,
