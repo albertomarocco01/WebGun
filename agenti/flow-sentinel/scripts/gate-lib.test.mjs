@@ -634,6 +634,28 @@ test("`retries: 2` boccia: un test che passa una volta su tre resterebbe invisib
   assert.match(esito.detail, /retries: 2/);
 });
 
+// Due falsi verdi misurati il 2026-07-28 sul config VERO del banco. Il secondo
+// e' stato verificato eseguendo il runner: globale 1 + progetto 3 = quattro
+// tentativi.
+test("un commento che nomina `retries: 1` non copre un `retries: 3` vero", () => {
+  const config = "export default defineConfig({\n  // retries: 1 e' la regola del gate (references/playwright.md)\n  retries: 3,\n});\n";
+  const esito = contrattoUscita("docs/handoff/12.md", "Gate: VERDE\n", config, "VERDE");
+  assert.equal(esito.status, "fail");
+  assert.match(esito.detail, /retries: 3/);
+});
+
+test("`retries` alzato dentro `projects` boccia: scavalca quello globale", () => {
+  const config = 'export default defineConfig({\n  retries: 1,\n  projects: [{ name: "chromium", retries: 3 }],\n});\n';
+  const esito = contrattoUscita("docs/handoff/12.md", "Gate: VERDE\n", config, "VERDE");
+  assert.equal(esito.status, "fail");
+  assert.match(esito.detail, /scavalca la globale/);
+});
+
+test("`retries: 1` dichiarato due volte (globale e progetto) va bene", () => {
+  const config = 'export default defineConfig({\n  retries: 1,\n  projects: [{ name: "chromium", retries: 1 }],\n});\n';
+  assert.equal(contrattoUscita("docs/handoff/12.md", "Gate: VERDE\n", config, "VERDE").status, "pass");
+});
+
 test("`retries` non dichiarato boccia: il default cambia il significato del verde", () => {
   const esito = contrattoUscita("docs/handoff/12.md", HANDOFF_ROSSO, "export default { forbidOnly: true }", "ROSSO");
   assert.match(esito.detail, /non dichiara `retries`/);

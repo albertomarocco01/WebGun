@@ -555,16 +555,39 @@ export const verdettoDa = (passi) =>
 const RIGA_VERDETTO = /^[ \t>*_-]*Gate[ \t*_]*:[ \t*_]*(VERDE|ROSSO)\b/im;
 
 /** `retries: 1` — ne' 0 (rosso strutturale) ne' 2 (un flaky su tre invisibile). */
-const RIGA_RETRIES = /(^|[^\w.])retries\s*:\s*(\d+)/m;
+const RIGA_RETRIES = /(^|[^\w.])retries\s*:\s*(\d+)/gm;
+
+/**
+ * Un commento non configura niente.
+ *
+ * La lettura prendeva la PRIMA occorrenza nel file, commenti compresi: un
+ * `// retries: 1 e' la regola del gate` scritto sopra un `retries: 3` vero
+ * faceva uscire il passo `pass`. Misurato il 2026-07-28 sul `playwright.config.ts`
+ * del banco — e la forma non e' cercata: la configurazione che questa casa
+ * prescrive ha, sopra quella riga, quattro righe di commento che spiegano
+ * perche' il numero e' 1.
+ *
+ * Le stringhe restano: `//` dentro un URL non apre un commento, ed e' il solo
+ * caso che si incontra in un file di configurazione.
+ */
+const senzaCommentiJs = (testo) =>
+  testo.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 
 export function contrattoUscita(percorsoHandoff, testoHandoff, testoConfigPlaywright, verdettoPrima) {
   const mancanti = [];
   if (testoConfigPlaywright === null) {
     mancanti.push("playwright.config.ts assente: senza, chi viene dopo non rilancia la batteria con le stesse regole (comando `forge`)");
   } else {
-    const retries = RIGA_RETRIES.exec(senzaBom(testoConfigPlaywright));
-    if (!retries) mancanti.push("playwright.config.ts non dichiara `retries`: il default cambia il significato di ogni verde, e non si legge da nessuna parte");
-    else if (retries[2] !== "1") mancanti.push(`playwright.config.ts dichiara \`retries: ${retries[2]}\`: la regola e' 1 — con 0 un ambiente instabile e' rosso strutturale, con 2 un test che passa una volta su tre e' invisibile`);
+    // OGNI dichiarazione, non la prima: `projects: [{ retries: 3 }]` scavalca
+    // il `retries: 1` globale, ed e' la forma che la documentazione di
+    // Playwright suggerisce per alzare i tentativi di un progetto solo.
+    // Misurato il 2026-07-28: con globale 1 e progetto 3, il runner esegue
+    // quattro tentativi. Il gate leggeva il primo numero e diceva `pass`.
+    const valori = [...senzaCommentiJs(senzaBom(testoConfigPlaywright)).matchAll(RIGA_RETRIES)]
+      .map((t) => t[2]);
+    const diversi = [...new Set(valori.filter((v) => v !== "1"))];
+    if (valori.length === 0) mancanti.push("playwright.config.ts non dichiara `retries`: il default cambia il significato di ogni verde, e non si legge da nessuna parte");
+    else if (diversi.length > 0) mancanti.push(`playwright.config.ts dichiara \`retries: ${diversi.join("` e `")}\`: la regola e' 1 — con 0 un ambiente instabile e' rosso strutturale, con 2 un test che passa una volta su tre e' invisibile. Vale ogni dichiarazione: quella dentro \`projects\` scavalca la globale`);
   }
   if (testoHandoff === null) {
     mancanti.push(`${percorsoHandoff} assente: il passaggio a valle non e' valido (comando \`handoff\`)`);
