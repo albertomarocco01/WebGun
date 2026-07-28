@@ -44,7 +44,8 @@ updated_at  timestamptz not null default now()
 - `on delete` **esplicito** su ogni FK: `cascade` (figlio che da solo non ha senso), `restrict` (protegge i dati storici, es. ordini), `set null` (relazione facoltativa). Mai il default implicito
 - `unique` sulle chiavi naturali (slug, SKU, email), anche se "l'applicazione già controlla"
 - `check` per le regole invarianti: `quantity > 0`, `price_cents >= 0`, coerenza fra date (`ends_at > starts_at`)
-- Macchine a stati: campo `status` con `check` sui valori ammessi; le **transizioni** illegali si bloccano con trigger, non con la buona volontà del frontend
+- Macchine a stati: campo `status` con `check` sui valori ammessi; le **transizioni** illegali si bloccano con trigger, non con la buona volontà del frontend. Il `check` che **enumera i valori** non è una difesa: ammette anche lo stato finale in `insert`. Serve un vincolo sullo stato **iniziale** — vedi `rls-supabase.md` §Macchine a stati
+- **Ogni macchina a stati, non solo quella principale.** Se un trigger difende un dato *guardando uno stato* (*«una fattura emessa non si tocca»*), quello stato ha bisogno a sua volta delle sue transizioni vincolate: altrimenti la difesa si aggira in tre mosse — riporta lo stato indietro, modifica, rimettilo avanti. Vale per ogni colonna di stato dello schema; quella dimenticata è sempre quella dell'entità di servizio (fattura, spedizione, ticket), non quella dell'entità di cui parla il brief
 
 ## Indici
 

@@ -25,12 +25,29 @@ La giacenza è una colonna sulla variante solo se il magazzino è uno solo e non
 
 ### Clienti
 
+**Prima domanda, e va nello Specchio: il cliente ha per forza un account?** È una scelta **strutturale** — cambiarla dopo significa riscrivere la chiave primaria della tabella dei clienti e ogni chiave esterna che la punta.
+
+*Se ogni cliente è per forza un utente del sito* (e-commerce puro, niente ordini telefonici):
+
 ```
 profiles    id references auth.users(id) — dati applicativi dell'utente
 addresses   più indirizzi per utente, con is_default; MAI un solo indirizzo sul profilo
 ```
 
-Supabase possiede l'identità in `auth.users`: `profiles` la estende, non la duplica. Email e password non si copiano.
+*Se il cliente può esistere senza registrarsi* — telefona, entra in negozio, lo inserisce lo staff — l'identità applicativa deve reggere **da sola**, e il legame con l'account è facoltativo:
+
+```
+customers   id uuid primary key default gen_random_uuid(),
+            auth_user_id uuid unique references auth.users (id) on delete set null
+```
+
+`unique` perché un account non può essere due clienti; `on delete set null` perché la cancellazione dell'account non deve portarsi via lo storico degli ordini, che è un obbligo fiscale.
+
+**Il caso senza account non è l'eccezione: è la maggioranza fuori dall'e-commerce.** Verificato sul campo (collaudo del 2026-07-26, tre cliniche veterinarie): con `profiles.id = auth.users.id` preso alla lettera, **metà della clientela non era rappresentabile** — chi prenota per telefono non si registrerà mai, e va fatturato lo stesso. Lo stesso vale per un gestionale, uno studio professionale, un ristorante.
+
+Conseguenza sulle policy, che è la parte che si dimentica: `auth_user_id is null` significa che **nessuna policy per `authenticated` può raggiungere quella riga**. I clienti senza account li vede solo lo staff, e la loro RLS si scrive su quella base — non con una policy che confronta `auth.uid()` con una colonna che è `null`, perché in SQL `null = null` non è vero e la riga sparisce senza errore.
+
+In entrambi i casi Supabase possiede l'identità in `auth.users`: la tabella applicativa la **estende**, non la duplica. Email e password non si copiano.
 
 ### Listini — quando il prezzo non è uno solo
 

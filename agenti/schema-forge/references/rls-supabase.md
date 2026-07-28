@@ -123,6 +123,20 @@ Le tre difese, in ordine di preferenza:
 2. **`grant` per colonna**: `revoke update on public.staff from authenticated;` poi `grant update (full_name, phone) on public.staff to authenticated;`
 3. **un trigger `before update`** che rifiuta la modifica della colonna a chi non è autorizzato
 
+**La quarta difesa, quella che viene in mente per prima, non funziona — ed è circolare.** Irrigidire il `with check` facendogli chiamare la funzione di autorizzazione (*«solo un direttore può scrivere la riga di uno staff»*) sembra la risposta ovvia, e approva sempre:
+
+```sql
+-- NON difende: `e_direttore()` è `stable` e legge lo snapshot PRECEDENTE
+create policy "solo la direzione tocca il personale" on public.staff
+for update to authenticated
+using (public.e_direttore())
+with check (public.e_direttore());
+```
+
+Una funzione `stable` vede il database com'era **prima** dell'`update`, non com'è dopo. Se sta valutando la riga di un veterinario che si sta promuovendo a direttore, legge `job_title = 'veterinario'` — il valore vecchio — e il `with check` non può nemmeno accorgersi della mutazione che dovrebbe impedire. Peggio ancora se la funzione legge la riga *dell'attore*: quella riga è esattamente quella che sta cambiando.
+
+Restano le tre difese sopra: la colonna altrove, `revoke update (colonna)`, o un trigger `before update` che confronta `new` e `old` — l'unico posto dove il valore nuovo e il valore vecchio esistono **entrambi**.
+
 `scripts/rls-audit.mjs` lo controlla: colonna dal nome di privilegio (`role`, `ruolo`, `is_admin`, `job_title`, `permessi`…) + policy di scrittura + `grant update` sull'**intera** tabella + nessun trigger che la nomini → `block` se quella colonna compare in una policy o nel corpo di una funzione che una policy chiama, `issue` se c'è solo il nome.
 
 ## La trappola inversa: RLS perfetta, nessun `grant`
@@ -239,9 +253,78 @@ select is(
 
 I test negativi si scrivono **insieme alla policy**, non dopo: sono la sua specifica eseguibile. Uno per ogni cosa che la policy deve impedire — non uno per tabella.
 
+## Un trigger che scrive su una tabella protetta non gira coi tuoi diritti
+
+Un trigger gira coi diritti di **chi ha scatenato l'operazione**, non del proprietario della tabella. Con `force row level security` attiva — che è la regola della casa — il trigger di audit lanciato da un cliente tenta l'`insert` sulla tabella delle revisioni **come quel cliente**, che su quella tabella non ha nessuna policy di scrittura. L'inserimento viene negato e, siccome il trigger è nella stessa transazione, **fallisce l'intera operazione dell'utente**: il difetto non si manifesta come «l'audit non ha registrato», ma come «il salvataggio non funziona».
+
+```sql
+create or replace function public.registra_revisione()
+returns trigger language plpgsql
+security definer set search_path = '' as $$
+begin
+    insert into public.medical_record_revisions (record_id, changed_by, snapshot)
+    values (old.id, (select auth.uid()), to_jsonb(old));
+    return new;
+end;
+$$;
+```
+
+`security definer` più `set search_path = ''` sempre insieme: il primo senza il secondo è un'escalation di privilegi tramite oggetti omonimi.
+
+## Un audit trail senza attore non è un audit trail
+
+Una tabella di revisioni che registra **cosa** e **quando** ma non **chi** documenta che qualcosa è successo, non chi l'ha fatto — cioè non serve a niente il giorno in cui la si va a leggere. Due regole:
+
+- **l'attore lo scrive il trigger**, prendendolo dal contesto di sessione (`(select auth.uid())`), **mai il client**: una colonna `changed_by` che arriva dall'applicazione è una dichiarazione dell'attaccante su sé stesso;
+- **«append-only» scritto in un commento non è append-only.** L'assenza di policy di `update`/`delete` non ferma `service_role`, che le policy le scavalca per definizione. Serve un trigger che sollevi eccezione:
+
+```sql
+create or replace function public.revisioni_immutabili()
+returns trigger language plpgsql as $$
+begin
+    raise exception 'le revisioni non si modificano e non si cancellano';
+end;
+$$;
+
+create trigger revisioni_solo_append
+before update or delete on public.medical_record_revisions
+for each row execute function public.revisioni_immutabili();
+```
+
+E se il trigger difende il dato **guardando uno stato** (*«una fattura emessa non si tocca»*), quello stato va vincolato a sua volta, o la difesa si aggira in tre passi. Vedi `modellazione.md` §Vincoli, *ogni macchina a stati, non solo la principale*.
+
+## Gli argomenti di un RPC `security definer` li sceglie l'attaccante
+
+Una funzione in uno schema esposto è un endpoint `POST /rest/v1/rpc/<nome>`. Se è `security definer` scavalca la RLS **per costruzione**: i suoi argomenti sono l'unica superficie di attacco rimasta, e arrivano dal client.
+
+- **valida estremi, ordine, orizzonte e nullità** prima di scrivere: una `sposta_visita(id, inizio, fine)` che non controlla niente accetta un intervallo invertito, uno lungo un anno, o uno nel 1970;
+- **cattura le violazioni di vincolo e rispondi con un messaggio generico.** Il testo di un `exclusion_violation` contiene i valori della riga **in conflitto** — cioè di una riga che il chiamante non avrebbe avuto il diritto di leggere. Un messaggio d'errore è un canale di lettura.
+
+```sql
+create or replace function public.sposta_visita(
+    visita uuid, inizio timestamptz, fine timestamptz
+)
+returns void language plpgsql
+security definer set search_path = '' as $$
+begin
+    if inizio is null or fine is null or fine <= inizio then
+        raise exception 'intervallo non valido';
+    end if;
+    if inizio < now() or inizio > now() + interval '1 year' then
+        raise exception 'intervallo fuori dall''orizzonte consentito';
+    end if;
+
+    update public.visits set scheduled_at = inizio, ends_at = fine where id = visita;
+exception
+    -- il messaggio nativo conterrebbe i valori della riga in conflitto
+    when exclusion_violation then raise exception 'orario non disponibile';
+end;
+$$;
+```
+
 ## Errori classici
 
-`scripts/rls-audit.mjs` cerca tutte le righe di questa tabella **tranne** le ultime due: le policy di Storage e la `service_role` lato client non sono nel catalogo che l'audit legge (la seconda è territorio di `gitleaks`, non di Schema Forge). Su quelle due il gate verde non dice niente: si controllano a mano.
+`scripts/rls-audit.mjs` cerca le righe di questa tabella **tranne le ultime sei**, che stanno sotto la riga di separazione. Non sono nel catalogo che l'audit legge, oppure la loro correttezza è una domanda di dominio che nessuna forma tradisce: un trigger `security definer` esiste o non esiste, ma «questo trigger scrive su una tabella protetta?» richiede di sapere cosa fa; una colonna `changed_by` c'è, ma se la riempie il client il catalogo la vede identica. **Su quelle sei un gate verde non dice niente**: si controllano a mano, ed è per questo che dopo un gate verde va lanciato `/code-inquisition`.
 
 | Errore | Conseguenza |
 |---|---|
@@ -262,6 +345,11 @@ I test negativi si scrivono **insieme alla policy**, non dopo: sono la sua speci
 | Ruolo letto da una colonna scrivibile dall'utente | auto-promozione ad admin: la policy filtra la riga, non la colonna (§Il caso peggiore) |
 | Macchina a stati vincolata solo in `update` | la riga si crea direttamente nello stato di arrivo e la macchina non è mai passata di lì (§Macchine a stati) |
 | Policy di scrittura senza un test pgTAP che le attacchi | l'unica prova che una policy funziona è averla violata e aver visto il rifiuto: senza, è un'ipotesi (`block`) |
+| — *sotto questa riga il gate non guarda* — | — |
+| `with check` che chiama una funzione `stable` per difendere una colonna di privilegio | approva **sempre**: la funzione legge lo snapshot precedente all'`update` e non vede la mutazione (§Il caso peggiore) |
+| Trigger che scrive su una tabella con RLS forzata, senza `security definer` | gira coi diritti del chiamante: l'insert viene negato e **fallisce l'operazione dell'utente**, non solo l'audit |
+| Tabella di revisioni senza colonna dell'attore, o «append-only» senza trigger | non dice **chi**, e `service_role` la riscrive comunque: le policy assenti non fermano chi le scavalca |
+| Funzione `security definer` esposta via RPC che non valida gli argomenti | li sceglie l'attaccante; e il testo di un `exclusion_violation` rivela la riga in conflitto, che lui non poteva leggere |
 | Upsert su `storage.objects` con la sola policy di `insert` | i caricamenti nuovi passano, la sostituzione dei file **fallisce in silenzio** (§Storage) |
 | `service_role` usata lato client | RLS completamente bypassata: la chiave sta **solo** sul server |
 
