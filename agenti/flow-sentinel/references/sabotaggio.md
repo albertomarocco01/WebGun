@@ -121,6 +121,20 @@ export default async function LayoutAdmin({ children }: { children: ReactNode })
 
 **Se resta verde, la spec sta asserendo l'URL invece del contenuto negato.** È l'errore standard dei test ostili: si verifica `expect(page).toHaveURL("/")` dopo il redirect, e quando il redirect sparisce l'asserzione continua a passare perché la pagina è comunque una pagina. Un flusso ostile si asserisce sul **contenuto**: che l'elemento riservato non sia visibile, che il dato altrui non compaia, che la risposta sia quella di rifiuto. Il gate qui non aiuta per costruzione: `TIPI_CON_EFFETTO_DB` esclude `ostile-lettura` — un attacco in lettura non cambia niente, non c'è stato da confrontare — quindi per questa classe di flussi il sabotaggio è **l'unica** verifica di sostanza che esista.
 
+**Variante C-client — il rifiuto che arriva dopo la consegna.** Il controllo non sparisce: si sposta dal server al browser. La pagina riservata viene servita per intero e poi un `useEffect` (o un guard in un componente client) rimanda l'utente altrove.
+
+```tsx
+// src/app/staff/page.tsx — sabotaggio C-client (da rimuovere)
+  const profilo = await profiloCorrente();
+  if (!profilo) redirect("/accesso");
+- if (profilo.tipo !== "staff") redirect("/area");     ← il controllo tolto dal server
++ <RimandaSeNonStaff staff={profilo.tipo === "staff"} />  ← e rifatto nel browser
+```
+
+È la variante che conta di più, perché **lascia intatte tutte le asserzioni che una spec ostile scrive di solito**: l'URL finale è quello lecito (il redirect avviene davvero), e ogni `getByText(...).toHaveCount(0)` gira sulla pagina *dopo* la sostituzione, quindi la trova pulita. Misurato il 2026-07-28 sul banco `palestra` del collaudo: il corpo servito al socio conteneva `Area staff`, `Nuovo corso` e `Crea corso`; batteria **verde 6 su 6**, gate **VERDE 7/7**. Con l'asserzione riscritta sul corpo della risposta di navigazione (`references/playwright.md` §Lettura negata) lo stesso sabotaggio ha reso rossa quella spec, e solo quella.
+
+Se il gate resta verde su questa variante, non serve concludere niente sulla RLS: **la spec ostile guarda il DOM invece del corpo servito**, e va riscritta prima di poter dire qualsiasi cosa su quella porta.
+
 Per un flusso `ostile-scrittura` la variante è la stessa idea sull'altra faccia: si toglie la policy o il controllo che impedisce la scrittura vietata e si verifica che la spec fallisca sull'asserzione «il database non è cambiato». Se resta verde, la spec ha asserito solo ciò che si vede in pagina: in Postgres una scrittura negata da RLS non solleva niente, tocca **0 righe senza errore**, quindi l'app può mostrare lo stesso identico esito prima e dopo il sabotaggio. L'unica asserzione che distingue l'attacco respinto da quello riuscito è quella sul database — la riga vietata non c'è, o il valore non è cambiato.
 
 ### Classe D — il test instabile
@@ -182,6 +196,7 @@ Varianti della stessa classe, tutte con lo stesso ripristino: uno `.skip` senza 
 | **B** — la UI mente (successo dichiarato, niente scritto) | la server action: via l'`insert`/`update`, resta il messaggio di successo | `playwright` — e a cedere dev'essere l'**asserzione di effetto DB** | **il difetto più grave che questo collaudo trova**: quella spec non asserisce l'effetto. Il passo `effetto-db` non se ne accorge, guarda import e chiamata. Riscrivere la spec |
 | **B′** — cede l'asserzione sulla pagina invece di quella sul DB | come sopra | `playwright`, ma sull'`expect` sbagliato | il sabotaggio è stato piantato male (tolto anche il messaggio di successo): ripiantarlo lasciando intatto ciò che l'utente vede |
 | **C** — rotta ostile aperta (via il controllo di ruolo o il redirect) | `src/app/<area riservata>/layout.tsx` o il middleware | `playwright` — la spec del flusso `ostile-lettura` | la spec asserisce l'URL invece del contenuto negato. Per gli `ostile-lettura` il gate non ha nessun altro controllo: qui il sabotaggio è l'unica prova |
+| **C-client** — il controllo di ruolo spostato dal server al browser (`useEffect` che rimanda via) | la pagina riservata: via il `redirect` del server, dentro il guard nel client | `playwright` — la spec `ostile-lettura`, **e solo se asserisce sul corpo della risposta** | la spec guarda il DOM dopo il redirect, cioè la pagina lecita: la fuga è già stata consegnata. Misurato: verde 6/6 e gate VERDE 7/7 con l'area riservata nel corpo servito |
 | **C′** — scrittura vietata lasciata passare | la policy o il controllo che la nega | `playwright` — la spec del flusso `ostile-scrittura` | la spec asserisce il messaggio d'errore e non che il database è rimasto fermo: in Postgres una scrittura negata può toccare 0 righe **senza errore** |
 | **D** — instabile al primo tentativo (`testInfo.retry === 0`) | dentro la spec | **nessuno: il gate resta VERDE** — ma il dettaglio di `playwright` nomina il test fra i «passati al SECONDO tentativo» | se il nome non compare, l'instabilità è invisibile; se il gate diventa rosso, `retries` non vale 1 |
 | **E** — `test.only` committato | dentro la spec | `lint-spec` (`block`, con file e riga) — e `playwright` con `errore del runner:` se `forbidOnly` è attivo | è stato piantato in un commento: `regoleSpec` salta le righe di commento apposta |

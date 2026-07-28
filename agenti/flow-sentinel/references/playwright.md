@@ -290,15 +290,25 @@ test("un anonimo non vede l'area prodotti @flusso:admin-negato-anon", async ({ p
   await expect(page).toHaveURL(/\/accesso/);
   expect(risposta?.status() ?? 0).toBeLessThan(400);
 
-  // e SOPRATTUTTO l'assenza del contenuto riservato: un'asserzione sul solo URL
-  // passa anche se l'HTML riservato e' stato servito e poi il router e' andato
-  // altrove — la fuga di dati e' gia' avvenuta, nel corpo della risposta
+  // e SOPRATTUTTO l'assenza del contenuto riservato NEL CORPO SERVITO. Questa
+  // e' la riga che conta, e va letta due volte: `risposta.text()` e' cio' che il
+  // server ha davvero consegnato, ed e' l'unica cosa che un redirect deciso dal
+  // browser non puo' riscrivere.
+  const servito = (await risposta?.text()) ?? "";
+  expect(servito, "l'area riservata e' stata servita").not.toContain("Area prodotti");
+  expect(servito, "il dato riservato e' nel payload").not.toContain("sedia-riservata-seed");
+
+  // il DOM si guarda comunque, per il caso opposto: contenuto iniettato dopo
   await expect(page.getByRole("heading", { name: "Prodotti" })).toHaveCount(0);
   await expect(page.getByText("sedia-riservata-seed")).toHaveCount(0);
 });
 ```
 
-Il gate non ha un controllo automatico su questa classe: `effetto-db` non la riguarda (un attacco in lettura non cambia niente, non c'è stato da confrontare) e nessun passo legge le asserzioni. Regola in prosa, quindi, e va rispettata: **si asserisce l'assenza del contenuto, non solo l'URL.**
+Il gate non ha un controllo automatico su questa classe: `effetto-db` non la riguarda (un attacco in lettura non cambia niente, non c'è stato da confrontare) e nessun passo legge le asserzioni. Regola in prosa, quindi, e va rispettata: **si asserisce l'assenza del contenuto nel corpo servito, non solo l'URL e non solo il DOM.**
+
+**Perché il DOM non basta, misurato.** Le due righe `getByText(...).toHaveCount(0)` guardano la pagina *nello stato in cui si trova quando l'asserzione gira* — cioè **dopo** che l'attesa su `toHaveURL` è stata soddisfatta. Se il controllo di ruolo è passato dal server al browser (un `redirect` dentro un `useEffect`, un guard in un componente client), il server serve l'area riservata **per intero**, il browser la dipinge, e solo dopo la sostituisce con la pagina lecita: a quel punto ogni `getByText` la trova pulita, e la spec è verde su una fuga già avvenuta. Riprodotto al collaudo del 2026-07-28 sul banco `palestra`: col controllo spostato nel client, il corpo servito al socio conteneva `Area staff`, `Nuovo corso` e `Crea corso`, la batteria restava **verde 6 su 6** e il gate chiudeva **VERDE 7/7**. Con l'asserzione su `risposta.text()` lo stesso sabotaggio fa fallire quella spec — e solo quella. È il motivo per cui il `goto` si tiene in una variabile invece di scriverlo `await page.goto(...)` e basta.
+
+Nota di lettura sul rosso: se cade la riga di `risposta.text()` ma il DOM è pulito, il difetto è **il momento** del rifiuto (si nega dopo aver consegnato), non il rifiuto in sé. Se cade il DOM ed è pulito il corpo, il contenuto riservato arriva da una chiamata successiva al caricamento, e allora la porta da chiudere è quella dell'API, non quella della rotta.
 
 ### Scrittura negata (`ostile-scrittura`)
 
