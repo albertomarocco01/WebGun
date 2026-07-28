@@ -25,11 +25,14 @@ import {
   dettaglioReset,
   fileNonLintati,
   formaEseguibile,
+  leggiAudit,
   limiteSqlfluff,
+  normalizzaTipi,
   riepilogo,
   schemiEsposti,
   soloSql,
   urlDbProgetto,
+  verdettoDa,
 } from "./verify.mjs";
 
 // Finto comando: restituisce gli esiti in coda, uno per chiamata.
@@ -224,30 +227,134 @@ test("il commento in coda alla porta non entra nell'URL", () => {
 const seEsistono = (...presenti) => (rel) => presenti.includes(rel);
 const HANDOFF = "docs/handoff/07-schema-forge.md";
 const TUTTI = [".sqlfluff", "squawk.toml", HANDOFF];
+const HANDOFF_VERDE = "# Handoff\n\nGate: VERDE (0 falliti su 9 passi)\n";
 
 test("contratto completo: passa", () => {
-  const esito = contrattoUscita(seEsistono(...TUTTI), () => "handoff scritto per intero");
+  const esito = contrattoUscita(seEsistono(...TUTTI), () => HANDOFF_VERDE, "VERDE");
   assert.equal(esito.status, "pass");
   assert.equal(esito.detail, "");
 });
 
 test("configurazioni non copiate da forge: fallisce e le nomina entrambe", () => {
-  const esito = contrattoUscita(seEsistono(HANDOFF), () => "ok");
+  const esito = contrattoUscita(seEsistono(HANDOFF), () => HANDOFF_VERDE, "VERDE");
   assert.equal(esito.status, "fail");
   assert.match(esito.detail, /\.sqlfluff/);
   assert.match(esito.detail, /squawk\.toml/);
 });
 
 test("handoff assente: fallisce", () => {
-  const esito = contrattoUscita(seEsistono(".sqlfluff", "squawk.toml"), () => "");
+  const esito = contrattoUscita(seEsistono(".sqlfluff", "squawk.toml"), () => "", "VERDE");
   assert.equal(esito.status, "fail");
   assert.match(esito.detail, /07-schema-forge\.md/);
 });
 
 test("handoff col template non compilato: fallisce (esistere non basta)", () => {
-  const esito = contrattoUscita(seEsistono(...TUTTI), () => "# Handoff\n\n{{entita}}\n");
+  const esito = contrattoUscita(seEsistono(...TUTTI), () => "# Handoff\n\n{{entita}}\n\nGate: VERDE\n", "VERDE");
   assert.equal(esito.status, "fail");
   assert.match(esito.detail, /segnaposto/);
+});
+
+// --------------------- l'handoff deve dichiarare il verdetto, e dire il vero
+// Il buco che questo blocco chiude: sul banco veterinario l'handoff dichiarava
+// «1 issue, 1 warn» — fermo a due giorni prima, muto sui due passi rossi — e il
+// contratto d'uscita lo promuoveva `pass`. Cioe' il passo che esiste per far
+// rispettare la Regola dei guardiani era cieco proprio su quella clausola.
+
+test("handoff che tace il verdetto: fallisce, e dice quale riga serve", () => {
+  const esito = contrattoUscita(
+    seEsistono(...TUTTI),
+    () => "# Handoff\n\n## Problemi noti\n\n1 issue e 1 warn, nessun bloccante.\n",
+    "ROSSO"
+  );
+  assert.equal(esito.status, "fail");
+  assert.match(esito.detail, /non dichiara il verdetto/);
+  assert.match(esito.detail, /Gate: ROSSO/);
+});
+
+test("handoff che dichiara VERDE su un gate ROSSO: fallisce (e' il caso del banco)", () => {
+  const esito = contrattoUscita(
+    seEsistono(...TUTTI),
+    () => "# Handoff\n\nGate: VERDE, 9 passi su 9.\n",
+    "ROSSO"
+  );
+  assert.equal(esito.status, "fail");
+  assert.match(esito.detail, /un'altra esecuzione/);
+});
+
+test("handoff che dichiara il rosso su un gate rosso: passa — dichiarare non e' fallire", () => {
+  const esito = contrattoUscita(
+    seEsistono(...TUTTI),
+    () => "- **Gate: ROSSO** (2 falliti, 0 verifiche mancanti su 9 passi)\n",
+    "ROSSO"
+  );
+  assert.equal(esito.status, "pass");
+});
+
+test("la riga si riconosce dentro un elenco, una citazione o del grassetto", () => {
+  for (const riga of ["Gate: VERDE", "- Gate: VERDE", "> Gate: VERDE", "**Gate:** VERDE", "  * **Gate**: verde"]) {
+    assert.equal(
+      contrattoUscita(seEsistono(...TUTTI), () => `# Handoff\n\n${riga}\n`, "VERDE").status,
+      "pass",
+      riga
+    );
+  }
+});
+
+test("`VERDE` scritto nella prosa non conta: serve la riga", () => {
+  const esito = contrattoUscita(
+    seEsistono(...TUTTI),
+    () => "Il gate era VERDE quando l'ho lanciato ieri.\n",
+    "VERDE"
+  );
+  assert.equal(esito.status, "fail");
+  assert.match(esito.detail, /non dichiara il verdetto/);
+});
+
+test("il verdetto atteso viene dai passi gia' eseguiti, non da un'opinione", () => {
+  assert.equal(verdettoDa([{ status: "pass" }, { status: "pass" }]), "VERDE");
+  assert.equal(verdettoDa([{ status: "pass" }, { status: "fail" }]), "ROSSO");
+  // `skipped` = verifica mancante = gate rosso: vale anche qui
+  assert.equal(verdettoDa([{ status: "pass" }, { status: "skipped" }]), "ROSSO");
+  assert.equal(verdettoDa([]), "VERDE");
+});
+
+// ------------------------------------- l'audit che non risponde in JSON
+// `JSON.parse(audit.stdout)` era nudo: un guscio morto a meta' stampa faceva
+// morire il GATE con un'eccezione. Un gate che crasha non e' ne' verde ne'
+// rosso: e' assente, ed e' il peggiore dei tre.
+
+test("uscita non-JSON dell'audit: verifica mancante, non un'eccezione", () => {
+  const { parsed, errore } = leggiAudit("psql: error: connection refused");
+  assert.equal(parsed, undefined);
+  assert.match(errore, /non interpretabile come JSON/);
+});
+
+test("JSON valido ma senza il contratto dell'audit: verifica mancante", () => {
+  assert.match(leggiAudit('{"altro": 1}').errore, /summary/);
+  assert.match(leggiAudit('{"summary": {}}').errore, /findings/);
+});
+
+test("uscita regolare: si legge e basta", () => {
+  const { parsed, errore } = leggiAudit('{"summary":{"block":1,"issue":0,"warn":2},"findings":[]}');
+  assert.equal(errore, undefined);
+  assert.equal(parsed.summary.block, 1);
+});
+
+// ---------------------------------------------- tipi: cosa NON e' una differenza
+// Il confronto era byte a byte sul testo grezzo: un BOM o dei CRLF bastavano a
+// far nascere rosso il passo 8 su Windows. Un rosso strutturale insegna a
+// ignorare il rosso; un tipo davvero diverso deve restare rosso.
+
+test("BOM e CRLF non sono un disallineamento dei tipi", () => {
+  const generato = "export type Db = {\n  id: string\n}\n";
+  assert.equal(normalizzaTipi("﻿" + generato.replace(/\n/g, "\r\n")), normalizzaTipi(generato));
+});
+
+test("una colonna in piu' resta un disallineamento", () => {
+  assert.notEqual(
+    normalizzaTipi("export type Db = {\r\n  id: string\r\n}\r\n"),
+    normalizzaTipi("export type Db = {\n  id: string\n  nome: string\n}\n")
+  );
 });
 
 // ------------------------------------------- i file che sqlfluff non ha letto

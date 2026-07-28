@@ -38,6 +38,10 @@ Policy `using (true)` presenti e perché sono legittime: {{ELENCO_O_NESSUNA}}
 
 ## 6. Residui di `verify` e problemi noti
 
+**Gate: {{VERDE|ROSSO}}** ({{N}} falliti, {{N}} verifiche mancanti su 9 passi) — rilanciato il {{DATA}}.
+
+> Questa riga **la verifica il gate stesso**, ultimo passo (`contratto-uscita`): se dichiara un verdetto diverso da quello dell'esecuzione in corso, il passo fallisce. Non è burocrazia — un handoff che dice «nessun bloccante» mentre il gate chiude rosso è il modo in cui un difetto arriva a valle con un timbro sopra. La forma è fissa: una riga che comincia con `Gate:` seguito da `VERDE` o `ROSSO`.
+
 | Gravità | Cosa | Perché resta | Rientro previsto |
 |---|---|---|---|
 | {{issue/warn}} | {{...}} | {{...}} | {{...}} |

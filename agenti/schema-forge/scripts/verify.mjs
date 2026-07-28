@@ -265,7 +265,20 @@ export function fileNonLintati(dimensioni, limite) {
 // verde identico se l'agente se ne dimenticava — le configurazioni le passa la
 // skill, e l'handoff non lo legge nessuno strumento. Chi viene dopo, invece, ha
 // solo quelli: senza, riproduce il gate con altre regole e costruisce alla cieca.
-export function contrattoUscita(esiste, leggi) {
+
+// Il verdetto dei passi GIA' eseguiti. Serve al contratto d'uscita: l'handoff
+// deve dichiarare lo stesso verdetto che il gate sta chiudendo.
+export function verdettoDa(passi) {
+  return passi.some((s) => s.status !== "pass") ? "ROSSO" : "VERDE";
+}
+
+// Una riga sola, in una forma sola. La prosa libera si puo' sempre leggere come
+// si vuole; una riga con una parola dentro no. Tollera l'elenco puntato, la
+// citazione e il grassetto perche' sono i modi in cui un markdown scrive la
+// stessa riga, non tre significati diversi.
+const RIGA_VERDETTO = /^[\s>*_-]*Gate[\s*_]*:[\s*_]*(VERDE|ROSSO)\b/im;
+
+export function contrattoUscita(esiste, leggi, verdettoPrima) {
   const mancanti = [];
   for (const file of [".sqlfluff", "squawk.toml"]) {
     if (!esiste(file)) {
@@ -274,8 +287,27 @@ export function contrattoUscita(esiste, leggi) {
   }
   if (!esiste(HANDOFF)) {
     mancanti.push(`${HANDOFF} assente: il passaggio a valle non e' valido (comando \`handoff\`)`);
-  } else if (leggi(HANDOFF).includes("{{")) {
+    return { status: "fail", detail: mancanti.join("\n") };
+  }
+  const testo = leggi(HANDOFF);
+  if (testo.includes("{{")) {
     mancanti.push(`${HANDOFF} contiene segnaposto {{...}} non compilati`);
+  }
+  // ESISTERE NON BASTA, e nemmeno essere compilato. Sul banco veterinario un
+  // handoff fermo a due giorni prima — «1 issue, 1 warn», muto sui due passi
+  // rossi e con dentro una tabella gia' droppata — chiudeva `pass`. Cioe' il
+  // passo nato per far rispettare la Regola dei guardiani del CLAUDE.md
+  // («nessun handoff valido senza scan pulito oppure residuo documentato») era
+  // cieco proprio su quella clausola: verificava la forma del file, non che
+  // dicesse la verita' sul gate che lo stava verificando.
+  // Il confronto e' col verdetto dei passi 1-8: se l'handoff mente, il passo
+  // fallisce; se dice il vero, passa. Non e' un rosso strutturale — si aggiorna
+  // l'handoff e si rilancia, che e' esattamente il ciclo che deve esistere.
+  const dichiarato = RIGA_VERDETTO.exec(testo)?.[1]?.toUpperCase() ?? null;
+  if (dichiarato === null) {
+    mancanti.push(`${HANDOFF} non dichiara il verdetto del gate: serve una riga \`Gate: ${verdettoPrima}\`. Chi viene dopo non deve rilanciare il gate per sapere com'era chiuso`);
+  } else if (dichiarato !== verdettoPrima) {
+    mancanti.push(`${HANDOFF} dichiara \`Gate: ${dichiarato}\` ma il gate chiude ${verdettoPrima}: l'handoff parla di un'altra esecuzione. Riscrivilo con i residui di QUESTA`);
   }
   return {
     status: mancanti.length === 0 ? "pass" : "fail",
@@ -442,12 +474,33 @@ function passoAuditRls(dbUrlEsplicito) {
   ]), schemi, dbUrl);
 }
 
+// L'uscita dell'audit era data in pasto a `JSON.parse` nuda: un `rls-audit.mjs`
+// morto a meta' stampa, o una CLI che ci infila un avviso davanti, faceva morire
+// il GATE con un'eccezione non gestita — nessun verdetto affatto, invece di una
+// verifica mancante. Un gate che crasha non e' ne' verde ne' rosso: e' assente.
+export function leggiAudit(stdout) {
+  let parsed;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    return { errore: `uscita dell'audit non interpretabile come JSON: ${String(stdout).trim().slice(0, 200)}` };
+  }
+  if (!parsed?.summary || !Array.isArray(parsed.findings)) {
+    return { errore: "uscita dell'audit senza `summary`/`findings`: contratto non rispettato, l'audit non e' utilizzabile" };
+  }
+  return { parsed };
+}
+
 function registraAudit(audit, schemi, dbUrl) {
   if (audit.status === 2 || !audit.stdout) {
     record(ID.auditRls, ETICHETTA_AUDIT, "skipped", (audit.stderr || "audit non eseguito").trim());
     return;
   }
-  const parsed = JSON.parse(audit.stdout);
+  const { parsed, errore } = leggiAudit(audit.stdout);
+  if (errore) {
+    record(ID.auditRls, ETICHETTA_AUDIT, "skipped", errore);
+    return;
+  }
   const { block, issue, warn } = parsed.summary;
   const residuo = parsed.findings
     .filter((f) => f.severity !== "warn")
@@ -470,8 +523,13 @@ function passoPgtap(supabaseAvailable) {
   const dir = join(PROJECT, "supabase", "tests");
   const quanti = existsSync(dir) ? soloSql(readdirSync(dir)).length : 0;
   if (quanti === 0) {
+    // il conteggio che DECIDE resta quello del primo livello: e' l'unico di cui
+    // si sa cosa faccia `supabase test db`. Quello ricorsivo serve solo a non
+    // dire «nessun file .sql» a chi i file ce li ha, annidati.
+    const annidati = existsSync(dir) ? soloSql(readdirSync(dir, { recursive: true })).length : 0;
     record(ID.pgtap, etichetta, "skipped",
-      "nessun file .sql in supabase/tests/: le policy sono un'ipotesi non verificata");
+      "nessun file .sql al primo livello di supabase/tests/: le policy sono un'ipotesi non verificata" +
+      (annidati > 0 ? ` (${annidati} in sottocartelle, non contati)` : ""));
   } else if (!supabaseAvailable) {
     record(ID.pgtap, etichetta, "skipped", "Supabase CLI assente");
   } else {
@@ -483,6 +541,17 @@ function passoPgtap(supabaseAvailable) {
 }
 
 // 8. tipi TypeScript allineati
+// Il confronto era byte a byte sul testo grezzo, quindi un BOM o dei CRLF
+// bastavano a farlo fallire: su Windows e' la norma (`>` di PowerShell, git con
+// `autocrlf`, mezzo editor). Un passo rosso per un fine riga NON parla dello
+// schema, ed e' esattamente il rosso strutturale che insegna a ignorare il
+// rosso. Si normalizza SOLO cio' che non porta significato: un tipo davvero
+// diverso resta rosso, e un file in UTF-16 pure (letto come utf8 non e' testo
+// che qualche `\r` possa salvare).
+export function normalizzaTipi(testo) {
+  return String(testo ?? "").replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").trim();
+}
+
 function passoTipi(supabaseAvailable) {
   if (supabaseAvailable) {
     const res = run("supabase", ["gen", "types", "typescript", "--local"]);
@@ -491,8 +560,8 @@ function passoTipi(supabaseAvailable) {
     } else if (!existsSync(TYPES_PATH)) {
       record(ID.tipi, "tipi TypeScript", "fail", `${TYPES_PATH} non esiste: Fly UI costruirebbe alla cieca`);
     } else {
-      const current = readFileSync(TYPES_PATH, "utf8").trim();
-      const fresh = res.stdout.trim();
+      const current = normalizzaTipi(readFileSync(TYPES_PATH, "utf8"));
+      const fresh = normalizzaTipi(res.stdout);
       record(ID.tipi, "tipi TypeScript", current === fresh ? "pass" : "fail",
         current === fresh ? "" : "tipi disallineati dallo schema: rigenerali con `types`");
     }
@@ -502,10 +571,13 @@ function passoTipi(supabaseAvailable) {
 }
 
 // 9. contratto d'uscita: cosa trova davvero chi viene dopo
+// E' l'ultimo passo apposta: il verdetto che l'handoff deve dichiarare e' quello
+// degli otto passi che l'hanno preceduto, ed e' gia' tutto in `steps`.
 function passoContratto() {
   const contratto = contrattoUscita(
     (rel) => existsSync(join(PROJECT, rel)),
-    (rel) => readFileSync(join(PROJECT, rel), "utf8")
+    (rel) => readFileSync(join(PROJECT, rel), "utf8"),
+    verdettoDa(steps)
   );
   record(ID.contratto, "contratto d'uscita (configurazioni + handoff)", contratto.status, contratto.detail);
 }
