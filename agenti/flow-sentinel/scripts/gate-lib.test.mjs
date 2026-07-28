@@ -134,6 +134,44 @@ test("un id ripetuto e' un errore: un id stabile identifica un flusso solo", () 
   assert.match(errori[0], /id ripetuto/);
 });
 
+// Cio' che un documento CITA non e' cio' che dichiara. Quattro guasti dallo
+// stesso buco, riprodotti al collaudo del 2026-07-28. La forma e' quella vera:
+// un contratto che spiega il proprio formato con un esempio recintato.
+const CONTRATTO_CON_ESEMPIO = `# Flussi critici — Palestra
+
+Confermato da: UMANO (Alberto) il 2026-07-28
+
+Come si scrive un flusso:
+
+\`\`\`markdown
+## \`id-del-flusso\` — positivo
+\`\`\`
+
+<!-- promemoria: ## \`da-scrivere\` — ostile-lettura -->
+
+## \`prenota-corso\` — positivo
+## \`staff-negato\` — ostile-lettura
+`;
+
+test("un esempio recintato non dichiara flussi fantasma", () => {
+  const { flussi, errori } = leggiFlussi(CONTRATTO_CON_ESEMPIO);
+  assert.deepEqual(flussi.map((f) => f.id), ["prenota-corso", "staff-negato"]);
+  assert.deepEqual(errori, []);
+});
+
+test("un esempio recintato che riusa un id vero non e' un id ripetuto", () => {
+  const { flussi, errori } = leggiFlussi(
+    CONTRATTO_CON_ESEMPIO.replace("## `id-del-flusso` — positivo", "## `prenota-corso` — positivo"));
+  assert.deepEqual(errori, [], "il doppione sta nell'esempio, non nell'elenco");
+  assert.equal(flussi.length, 2);
+});
+
+test("una firma che esiste solo dentro un esempio non firma niente", () => {
+  const soloEsempio = CONTRATTO_CON_ESEMPIO.replace("Confermato da: UMANO (Alberto) il 2026-07-28",
+    "```\nConfermato da: UMANO (esempio del template)\n```");
+  assert.equal(leggiFlussi(soloEsempio).confermatoDa, null);
+});
+
 test("un documento senza intestazioni di flusso non produce errori inventati", () => {
   const { flussi, errori } = leggiFlussi("# Titolo\n\nProsa qualsiasi.\n## Sezione normale\n");
   assert.deepEqual(flussi, []);
@@ -537,6 +575,29 @@ test("dichiarare VERDE su un gate rosso fallisce, e il passo dice quale e' quell
   const esito = contrattoUscita("docs/handoff/12.md", "Gate: VERDE\n", CONFIG_PW, "ROSSO");
   assert.equal(esito.status, "fail");
   assert.match(esito.detail, /dichiara `Gate: VERDE` ma il gate chiude ROSSO/);
+});
+
+// `references/sabotaggio.md` prescrive di incollare l'uscita del gate
+// nell'handoff: quella citazione contiene una riga `Gate:` che NON e' una
+// dichiarazione. Misurato il 2026-07-28: vinceva lei, e un handoff che
+// dichiarava VERDE su un gate ROSSO passava — sul passo che esiste per
+// impedire proprio quello.
+test("la riga `Gate:` citata da un'esecuzione precedente non e' una dichiarazione", () => {
+  const handoff = "# Handoff\n\nIeri il gate chiudeva cosi':\n\n```\nGate: ROSSO (2 falliti)\n```\n\n**Gate: VERDE** (0 falliti)\n";
+  const esito = contrattoUscita("docs/handoff/12.md", handoff, CONFIG_PW, "ROSSO");
+  assert.equal(esito.status, "fail");
+  assert.match(esito.detail, /dichiara `Gate: VERDE` ma il gate chiude ROSSO/);
+});
+
+test("uno snippet CI dentro un recinto non e' un segnaposto non compilato", () => {
+  const handoff = "# Handoff\n\n```yaml\n  env:\n    CHIAVE: ${{ secrets.CHIAVE }}\n```\n\n**Gate: VERDE**\n";
+  assert.equal(contrattoUscita("docs/handoff/12.md", handoff, CONFIG_PW, "VERDE").status, "pass");
+});
+
+test("un segnaposto nella prosa dell'handoff resta un segnaposto", () => {
+  const esito = contrattoUscita("docs/handoff/12.md", "# Handoff\n\nFlussi: {{N}}\n\nGate: VERDE\n", CONFIG_PW, "VERDE");
+  assert.equal(esito.status, "fail");
+  assert.match(esito.detail, /segnaposto/);
 });
 
 test("un `Gate:` lasciato a meta' non va a pescare la parola VERDE piu' sotto", () => {

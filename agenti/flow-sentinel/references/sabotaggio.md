@@ -236,6 +236,8 @@ Per ogni difetto piantato, nel verbale di collaudo del progetto:
 
 Se il verbale del progetto non esiste, le stesse informazioni vanno in `docs/handoff/12-flow-sentinel.md` sotto «cosa ha fatto»: la casella del sabotaggio nel gate di chiusura è spuntabile solo da chi può indicare dove sta la prova.
 
+**Incollare l'uscita del gate nell'handoff è sicuro, e da poco.** Quell'uscita contiene una riga `Gate:` che parla di *un'altra* esecuzione, e fino al collaudo del 2026-07-28 vinceva lei: `contrattoUscita` prendeva la prima occorrenza nel file, quindi un handoff che dichiarava `Gate: VERDE` mentre il gate chiudeva ROSSO **passava** se più sopra citava il rosso di ieri. Ora le righe dentro un recinto di codice e dentro un commento HTML non contano come dichiarazioni — né per `Gate:`, né per i segnaposto `{{…}}`. La riga che conta è quella che l'handoff scrive di suo, in §7.
+
 ## Cosa il sabotaggio NON prova
 
 - **Prova che quelle spec possono fallire su quei difetti**, non che la batteria trovi ogni difetto. Un flusso può restare rotto in dieci modi che nessuno ha piantato; il sabotaggio dice che la spec non è cieca, non che è completa.

@@ -194,6 +194,7 @@ Perché l'avanzamento di stato è sempre nell'elenco: una macchina a stati vinco
 
 Cosa il parser accetta, alla lettera:
 
+- **quello che il documento dichiara di suo**: le righe dentro un recinto di codice (```` ``` ````, `~~~`) e dentro un commento HTML (`<!-- … -->`) non vengono lette. Un esempio di formato non è un flusso, un promemoria del template non è una firma, e l'uscita del gate incollata in un recinto non è una dichiarazione. Fino al collaudo del 2026-07-28 lo erano: un contratto che spiegava il proprio formato con un esempio recintato nasceva con due flussi fantasma e un `block` di copertura su un id che nessuno aveva dichiarato — e se l'esempio riusava un id vero, il passo accusava «id ripetuto» un documento con un id solo;
 - esattamente **due** cancelletti a inizio riga, seguiti da almeno uno spazio (`###` non viene letto: il flusso sparisce senza dire niente);
 - gli **apici inversi attorno all'id sono facoltativi** — `## checkout-ospite — positivo` è valido;
 - il separatore è **un carattere solo** fra `-`, `–` (mezza lineetta) e `—` (lineetta lunga): tre modi di scrivere lo stesso separatore in markdown, non tre significati;

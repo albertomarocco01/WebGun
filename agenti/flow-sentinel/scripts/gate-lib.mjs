@@ -27,6 +27,66 @@ const righe = (testo) =>
 
 const senzaBom = (testo) => String(testo ?? "").replace(/^\uFEFF/, "");
 
+/**
+ * Cio' che un documento CITA non e' cio' che dichiara.
+ *
+ * I due documenti che questo gate legge \u2014 il contratto dei flussi e l'handoff \u2014
+ * sono markdown scritto da umani, e un markdown scritto da umani contiene
+ * esempi: un recinto di codice che mostra il formato, un commento HTML col
+ * promemoria del template, l'uscita dell'esecuzione di ieri incollata.
+ * Riprodotto il 2026-07-28 al collaudo, quattro guasti dallo stesso buco:
+ *
+ * - un handoff che dichiara `Gate: VERDE` su un gate ROSSO **passava**, perche'
+ *   piu' sopra citava in un recinto il `Gate: ROSSO` dell'esecuzione
+ *   precedente e vince la prima occorrenza. E' il caso peggiore: incollare
+ *   l'uscita del gate nell'handoff e' esattamente cio' che prescrive
+ *   `references/sabotaggio.md`;
+ * - una firma che esiste **solo** dentro un esempio recintato valeva come
+ *   firma, e il gate stampava l'esempio al posto del firmatario;
+ * - un esempio di intestazione dentro un recinto diventava un flusso fantasma
+ *   (`block` di copertura su un id che nessuno ha dichiarato), e se l'esempio
+ *   riusava un id vero il passo accusava \u00ABid ripetuto\u00BB un documento con un id
+ *   solo. La reference della casa, letta come contratto, produce quell'errore;
+ * - uno snippet CI legittimo (`${{ secrets.X }}` di GitHub Actions) faceva
+ *   fallire il controllo dei segnaposto `{{...}}` dell'handoff.
+ *
+ * Le righe citate diventano vuote invece di sparire: la numerazione resta
+ * quella del file, cosi' un messaggio che citi una riga cita quella giusta.
+ * Un recinto mai chiuso spegne tutto cio' che segue \u2014 il guasto va nella
+ * direzione sicura (nessun flusso letto = premessa mancante = MANCANTE), non
+ * in quella di un verde.
+ */
+function senzaZoneCitate(testo) {
+  let inRecinto = false;
+  let inCommento = false;
+  return righe(testo)
+    .map((linea) => {
+      if (!inCommento && /^\s{0,3}(```|~~~)/.test(linea)) {
+        inRecinto = !inRecinto;
+        return "";
+      }
+      if (inRecinto) return "";
+      let resto = linea;
+      if (inCommento) {
+        const fine = resto.indexOf("-->");
+        if (fine === -1) return "";
+        inCommento = false;
+        resto = resto.slice(fine + 3);
+      }
+      for (;;) {
+        const apre = resto.indexOf("<!--");
+        if (apre === -1) return resto;
+        const chiude = resto.indexOf("-->", apre + 4);
+        if (chiude === -1) {
+          inCommento = true;
+          return resto.slice(0, apre);
+        }
+        resto = resto.slice(0, apre) + resto.slice(chiude + 3);
+      }
+    })
+    .join("\n");
+}
+
 /** I tre tipi di flusso. L'ordine e' quello di `references/flussi-critici.md`. */
 const TIPI_FLUSSO = Object.freeze(["positivo", "ostile-lettura", "ostile-scrittura"]);
 
@@ -94,7 +154,10 @@ export function leggiFlussi(testo) {
   const flussi = [];
   const errori = [];
   const visti = new Set();
-  for (const linea of righe(testo)) {
+  // solo cio' che il documento dichiara di suo: gli esempi recintati e i
+  // promemoria nei commenti HTML non firmano e non dichiarano flussi
+  const proprio = senzaZoneCitate(testo);
+  for (const linea of righe(proprio)) {
     const trovata = INTESTAZIONE_FLUSSO.exec(linea);
     if (!trovata) continue;
     const [, id, tipo] = trovata;
@@ -107,7 +170,7 @@ export function leggiFlussi(testo) {
       flussi.push({ id, tipo });
     }
   }
-  const conferma = RIGA_CONFERMA.exec(senzaBom(testo));
+  const conferma = RIGA_CONFERMA.exec(proprio);
   const firma = conferma ? conferma[1].trim() : null;
   return { confermatoDa: firma && firmaVera(firma) ? firma : null, flussi, errori };
 }
@@ -507,13 +570,18 @@ export function contrattoUscita(percorsoHandoff, testoHandoff, testoConfigPlaywr
     mancanti.push(`${percorsoHandoff} assente: il passaggio a valle non e' valido (comando \`handoff\`)`);
     return { status: "fail", detail: mancanti.join("\n") };
   }
-  if (testoHandoff.includes("{{")) {
+  // stessa regola del contratto dei flussi: valgono le righe che l'handoff
+  // scrive di suo, non quelle che cita. L'uscita del gate incollata in un
+  // recinto e' cio' che `references/sabotaggio.md` prescrive di fare, e la sua
+  // riga `Gate:` non e' una dichiarazione: e' un ricordo.
+  const proprio = senzaZoneCitate(testoHandoff);
+  if (proprio.includes("{{")) {
     mancanti.push(`${percorsoHandoff} contiene segnaposto {{...}} non compilati`);
   }
   // Esistere non basta, e nemmeno essere compilato: l'handoff deve dire la
   // verita' sul gate che lo sta verificando. Dichiarare ROSSO su un gate rosso
   // PASSA — dichiarare non e' fallire.
-  const dichiarato = RIGA_VERDETTO.exec(senzaBom(testoHandoff))?.[1]?.toUpperCase() ?? null;
+  const dichiarato = RIGA_VERDETTO.exec(proprio)?.[1]?.toUpperCase() ?? null;
   if (dichiarato === null) {
     mancanti.push(`${percorsoHandoff} non dichiara il verdetto: serve una riga \`Gate: ${verdettoPrima}\`. Chi viene dopo non deve rilanciare la batteria per sapere com'era chiusa`);
   } else if (dichiarato !== verdettoPrima) {
