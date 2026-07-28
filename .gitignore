@@ -8,6 +8,15 @@
 # 2026-07-26; la regola resta perche' il prossimo agente ne creera' altri.
 banco-prova*/
 
+# Eccezione: `banco-prova-vetcare` non e' usa e getta, e' il caso di prova
+# permanente di uno schema difettoso — il gate ci chiude ROSSO su due passi, ed
+# e' il modo in cui si verifica che le regole del blocco n°1 trovino ancora
+# quello che devono trovare. Un banco non tracciato rende quell'affermazione
+# non riproducibile: vedi DECISIONI.md §20.
+# Gli artefatti di runtime del CLI (`supabase/.branches`, `.temp`) li esclude
+# gia' il `supabase/.gitignore` del banco stesso, che `supabase init` scrive.
+!banco-prova-vetcare/
+
 # Dipendenze dei guardiani sugli script degli agenti (si reinstallano con
 # `npm install` dalla cartella dell'agente). Il repo di regia NON e' un
 # progetto applicativo: qui npm serve solo a far girare la batteria.
