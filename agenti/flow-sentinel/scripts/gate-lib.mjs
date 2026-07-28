@@ -319,6 +319,26 @@ export function dettaglioPlaywright(esito, quanteSpec) {
 export const esitoBatteriaVerde = (esito) =>
   esito.falliti.length === 0 && esito.errori.length === 0;
 
+/**
+ * La batteria ha ESEGUITO qualcosa, o si e' limitata a esistere?
+ *
+ * Con ogni test saltato, Playwright esce 0 e stampa un report validissimo:
+ * `0 passati, 0 falliti, N saltati`. `esitoBatteriaVerde` lo legge come verde —
+ * non e' fallito niente — e il gate chiude VERDE 7 su 7 senza che nessun flusso
+ * critico sia stato percorso. Misurato il 2026-07-28 sul banco `palestra`:
+ * sei spec marcate `test.skip` con la motivazione accanto (quindi `lint-spec`
+ * pulito, nessun `issue`) davano `ok: true` e «6 file di spec · 0 passati,
+ * 0 falliti, 6 saltati».
+ *
+ * E' la stessa forma dei cinque falsi verdi gia' chiusi — «uno strumento che
+ * non ha letto niente esce 0» (DECISIONI.md §18) — nell'unico punto in cui era
+ * rimasta aperta: le spec si contavano come FILE, mai come test eseguiti.
+ * Il passo che ne esce e' `skipped` e non `fail`: nessuno ha guardato, quindi
+ * e' una verifica mancante, non un difetto trovato.
+ */
+export const batteriaHaEseguito = (esito) =>
+  esito.passati > 0 || esito.falliti.length > 0;
+
 // ------------------------------------------ eseguibili risolti su Windows
 /**
  * `spawnSync(cmd, args)` senza shell non consulta PATHEXT: uno shim `.cmd` —

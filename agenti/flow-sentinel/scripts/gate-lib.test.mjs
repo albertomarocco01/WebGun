@@ -19,6 +19,7 @@ import {
   copertura,
   dettaglioPlaywright,
   eSpec,
+  batteriaHaEseguito,
   esitoBatteriaVerde,
   esitoPlaywright,
   estraiOggettoJson,
@@ -335,6 +336,42 @@ test("un errore del runner rende la batteria rossa anche senza test falliti", ()
 
 test("un report senza `suites` non e' un report: la batteria non e' verde", () => {
   assert.equal(esitoBatteriaVerde(esitoPlaywright({ nonSonoUnReport: true })), false);
+});
+
+// La forma e' quella VERA, catturata il 2026-07-28 da `npx playwright test
+// --reporter=json` sul banco `palestra` con le sei spec marcate `test.skip`:
+// una suite per file, `tests[].status = "skipped"` e `results[].status` uguale.
+// Un frammento inventato avrebbe provato la fixture, non la regola (§4.3 del
+// verbale di costruzione).
+const REPORT_TUTTI_SALTATI = {
+  errors: [],
+  suites: [
+    { title: "accesso-socio.spec.ts", specs: [{ title: "il socio entra dalla UI vera @flusso:accesso-socio", tests: [{ status: "skipped", results: [{ status: "skipped" }] }] }], suites: [] },
+    { title: "prenota-corso.spec.ts", specs: [{ title: "il socio prenota un corso @flusso:prenota-corso", tests: [{ status: "skipped", results: [{ status: "skipped" }] }] }], suites: [] },
+  ],
+};
+
+test("una batteria in cui ogni test e' saltato NON ha eseguito niente", () => {
+  const esito = esitoPlaywright(REPORT_TUTTI_SALTATI);
+  assert.equal(esito.passati, 0);
+  assert.equal(esito.falliti.length, 0);
+  assert.equal(esito.saltati.length, 2);
+  // il tranello: non e' fallito niente, quindi «verde» direbbe di si'
+  assert.equal(esitoBatteriaVerde(esito), true, "e' proprio questo che rendeva il passo `pass`");
+  assert.equal(batteriaHaEseguito(esito), false, "e questo e' cio' che lo rende MANCANTE");
+});
+
+test("una batteria che ha eseguito anche un solo test ha guardato", () => {
+  const unoSolo = { errors: [], suites: [{ title: "a.spec.ts", specs: [
+    { title: "x", tests: [{ status: "expected" }] },
+    { title: "y", tests: [{ status: "skipped" }] },
+  ], suites: [] }] };
+  assert.equal(batteriaHaEseguito(esitoPlaywright(unoSolo)), true, "uno skip motivato resta legittimo");
+});
+
+test("una batteria tutta rossa ha eseguito: e' un difetto trovato, non una verifica mancante", () => {
+  const rossa = { errors: [], suites: [{ title: "a.spec.ts", specs: [{ title: "x", tests: [{ status: "unexpected" }] }], suites: [] }] };
+  assert.equal(batteriaHaEseguito(esitoPlaywright(rossa)), true);
 });
 
 test("il JSON si estrae anche se lo strumento ci mette del rumore attorno", () => {

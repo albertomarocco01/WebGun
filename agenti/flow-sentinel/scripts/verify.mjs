@@ -23,6 +23,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  batteriaHaEseguito,
   contaGravita,
   contrattoUscita,
   dettaglioFindings,
@@ -359,8 +360,18 @@ function passoPlaywright(ctx) {
     return;
   }
   const esito = esitoPlaywright(parsed);
-  record(ID.playwright, etichetta, esitoBatteriaVerde(esito) ? "pass" : "fail",
-    dettaglioPlaywright(esito, ctx.spec.length));
+  const dettaglio = dettaglioPlaywright(esito, ctx.spec.length);
+  // La batteria e' partita, ma ha eseguito qualcosa? Con ogni test saltato il
+  // report e' valido, l'uscita e' 0 e non e' fallito niente: senza questa riga
+  // il passo sarebbe `pass` su zero flussi percorsi. Le spec contate PRIMA sono
+  // file, non esecuzioni — e' l'ultimo posto in cui «esce 0 senza aver letto»
+  // era rimasto aperto (DECISIONI.md §18).
+  if (!batteriaHaEseguito(esito) && esito.errori.length === 0) {
+    record(ID.playwright, etichetta, "skipped",
+      `${dettaglio}\nnessun test eseguito: la batteria e' partita e non ha percorso nessun flusso (tutti saltati). Zero test passati non e' un verde: e' una verifica mancante`);
+    return;
+  }
+  record(ID.playwright, etichetta, esitoBatteriaVerde(esito) ? "pass" : "fail", dettaglio);
 }
 
 // 7. contratto d'uscita: cosa trova davvero chi viene dopo, e se l'handoff
