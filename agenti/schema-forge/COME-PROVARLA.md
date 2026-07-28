@@ -2,7 +2,10 @@
 
 Guida pratica: cosa fa l'agente, come vederlo lavorare su questa macchina, e un
 caso d'uso completo dal brief al gate. Ogni comando qui sotto è stato **eseguito**
-durante i collaudi del 25 e 26 luglio 2026 — non sono esempi ipotetici.
+durante i collaudi del 25-26 luglio 2026 e le due tornate di correzioni del
+27-28 — non sono esempi ipotetici. Dove un'uscita è cambiata fra una data e
+l'altra, sono riportate **entrambe con la loro data**: il §2.4 è lo stato di
+oggi, il §4 è quello che c'era prima e perché è cambiato.
 
 Riferimenti: `README.md` (manuale), `STATO.md` (cosa è aperto),
 `COLLAUDO-2026-07-26.md` (il verbale che spiega perché un gate verde non basta).
@@ -64,8 +67,6 @@ nascere rosso finché non lo si fa: è l'unica prova che le policy funzionano.
 
 `pass` · `fail` · `skipped` (= **verifica mancante**, il gate resta rosso).
 
-| # | Passo | Cosa becca |
-|---|---|---|
 | # | `id` (`--json`) | Passo | Cosa becca |
 |---|---|---|---|
 | 1 | `sqlfluff` | `sqlfluff` | formato SQL — e i file che sqlfluff **salta** perché troppo grandi: quelli sono `MANC`, non `OK` |
@@ -76,7 +77,7 @@ nascere rosso finché non lo si fa: è l'unica prova che le policy funzionano.
 | 6 | `audit-rls` | audit RLS | tabelle nude, policy assenti o permissive, **policy mai attaccate da un test**, **colonna di privilegio scrivibile**, **macchina a stati senza vincolo su `insert`**, viste e funzioni pericolose, FK e colonne di policy senza indice |
 | 7 | `pgtap` | pgTAP | le policy verificate impersonando i ruoli — **si contano i file**, una cartella vuota è `MANC` |
 | 8 | `tipi` | tipi TypeScript | disallineamento fra schema e codice |
-| 9 | `contratto-uscita` | contratto d'uscita | `.sqlfluff`, `squawk.toml`, handoff senza segnaposto |
+| 9 | `contratto-uscita` | contratto d'uscita | `.sqlfluff`, `squawk.toml`, handoff senza segnaposto **e con la riga `Gate:` che dichiara il verdetto vero** |
 
 Uscita: `0` verde · `1` rosso · `2` errore di esecuzione.
 
@@ -163,12 +164,12 @@ node "../agenti/schema-forge/scripts/verify.mjs" --json      # per l'orchestrato
 node "../agenti/schema-forge/scripts/verify.mjs" --skip-reset --db-url postgresql://...
 ```
 
-Uscita reale del banco VetCare, rilanciata il 2026-07-27 **dopo** le sette regole
-nuove e il passo `db advisors` (dettaglio dell'audit accorciato qui, sono dodici
-righe uguali):
+Uscita reale del banco VetCare, **stato attuale** (rilancio del 2026-07-28, dopo
+le tre regole del blocco n°1 e i test negativi; dettaglio dell'audit accorciato
+qui, sono dodici righe uguali):
 
 ```
-GATE SCHEMA: VERDE (0 falliti, 0 verifiche mancanti su 9 passi)
+GATE SCHEMA: ROSSO (2 falliti, 0 verifiche mancanti su 9 passi)
 
 OK    sqlfluff (formato SQL)
 OK    squawk (operazioni pericolose)
@@ -176,21 +177,32 @@ OK    supabase db reset (applicazione reale)
         6 migrazioni applicate + seed
 OK    supabase db lint
 OK    supabase db advisors
-        [WARN] multiple_permissive_policies (20): public.animals, public.clinics, public.diagnoses, …
-OK    audit RLS
+        [WARN] multiple_permissive_policies (20): public.animals, public.clinics, …
+FAIL  audit RLS
         schemi esposti: public, graphql_public · postgresql://postgres:postgres@127.0.0.1:57322/postgres
         [issue] public.species → "specie_visibili_a_tutti": policy con `using (true)`: RLS attiva ma senza filtro
-        [issue] public.e_staff(): funzione `security definer` eseguibile da PUBLIC (quindi da `anon`): e' un endpoint pubblico che scavalca la RLS
+        [block] public.staff.job_title: colonna che decide gli accessi, scrivibile dal proprietario della riga
+        [issue] public.visits.status: macchina a stati vincolata solo in `update`
+        [issue] public.e_staff(): funzione `security definer` eseguibile da PUBLIC (quindi da `anon`)
         …altre dieci funzioni nella stessa condizione…
-OK    pgTAP (test delle policy)
+FAIL  pgTAP (test delle policy)
+        Failed tests: 22-23
 OK    tipi TypeScript
 OK    contratto d'uscita (configurazioni + handoff)
 ```
 
-Undici di quelle righe **prima non c'erano**: le funzioni `security definer` di
-questo banco sono sempre state chiamabili da `anon`, ma nessuno strumento lo
-diceva. Sono `issue`, non `block`: il gate resta verde e le scrive — che è
-esattamente il punto del §5 qui sotto.
+**Il rosso è il risultato, non un regresso**, ed è il motivo per cui questo banco
+non è stato buttato come gli altri (`DECISIONI.md` §12 e §19). Lo stesso schema,
+con lo stesso seed, chiudeva **VERDE 8/8** il 26 luglio mentre
+`/code-inquisition` ci riproduceva sedici difetti con comandi reali. Le due righe
+`FAIL` sono due di quei difetti, trovati da due strade indipendenti — le regole
+del catalogo e i test negativi — che concordano senza sapersi. Portarlo a verde
+richiede di correggere lo **schema del banco**, che è lavoro sul banco e non
+sull'agente: vedi §4.
+
+Le undici righe sulle funzioni `security definer` **prima non c'erano**: sono
+sempre state chiamabili da `anon`, ma nessuno strumento lo diceva. Sono `issue`,
+non `block`, e il gate le scrive comunque.
 
 Le due righe di dettaglio dell'audit RLS — **quali schemi** e **quale database** —
 non sono decorative: con due stack Supabase accesi sono l'unica cosa che ti dice
@@ -219,27 +231,42 @@ database di un altro cliente e ha risposto «nessun bloccante».
 supabase gen types typescript --local > src/lib/database.types.ts
 ```
 
-In PowerShell la redirezione `>` scrive **UTF-16 con CRLF**: il confronto byte a
-byte del passo 7 fallisce sempre, e il gate resta rosso senza un motivo vero.
+In PowerShell la redirezione `>` scrive **UTF-16 con CRLF**. Dal 2026-07-28 il
+passo 8 normalizza BOM e fine riga prima di confrontare, quindi i CRLF non fanno
+più nascere rosso il gate; l'**UTF-16 sì**, ed è giusto così — un `.ts` in UTF-16
+non è un file che il resto della catena sa leggere, e il rosso parla di un
+problema vero. Genera i tipi da Git Bash e la questione non si pone.
 
 ### 2.7 Vedere il gate diventare rosso
 
 Il modo migliore di capire un gate è romperlo. Tre rotture che ho verificato:
 
 ```bash
-# tabella nuda → passo 5 rosso
+# tabella nuda → passo 6 (audit RLS) rosso
 psql "$DB" -c "create table public.nuda (id uuid primary key);"
 
-# distruttivo non dichiarato → passo 2 rosso
+# distruttivo non dichiarato → passo 2 (squawk) rosso
 echo "drop table public.species;" > supabase/migrations/29990101000000_boom.sql
 
-# cartella dei test assente → passo 6 `skipped` = verifica mancante = gate rosso
+# test spariti → passo 7 (pgTAP) `skipped` = verifica mancante = gate rosso
 mv supabase/tests supabase/tests-off
+
+# handoff che dichiara un verdetto che non è quello vero → passo 9 rosso
+sed -i 's/^Gate: ROSSO/Gate: VERDE/' docs/handoff/07-schema-forge.md
 ```
 
-Occhio all'ultima: la cartella **assente** dà `skipped` e il gate è rosso, ma una
-cartella **vuota** dà `pass`. Cancellare i test rende il gate più verde. È il
-punto aperto n°4 di `STATO.md`.
+**Cancellare i test non rende il gate più verde.** Questa guida diceva il
+contrario fino al 2026-07-27, ed era vero: una cartella `supabase/tests/`
+**vuota** faceva uscire `supabase test db` con 0 (`Result: NOTESTS`) e il passo
+diventava `pass`, mentre la cartella *assente* dava `skipped`. Cioè il modo più
+rapido di far salire il gate era buttare i test. Adesso si contano i **file
+`.sql`**: cartella assente, vuota o piena di file non-SQL valgono tutte
+`MANCANTE`, e il gate resta rosso. Vedi `DECISIONI.md` §18.
+
+L'ultima rottura è la più istruttiva: il passo `contratto-uscita` legge
+l'handoff e pretende che la riga `Gate:` dichiari lo stesso verdetto che il gate
+sta chiudendo. Un handoff ottimista è un difetto che arriva a valle con un
+timbro sopra.
 
 ---
 
@@ -338,7 +365,9 @@ giro.
 
 ### 3.5 `types`, `handoff`, poi `verify`
 
-In quest'ordine, o i passi 7 e 8 nascono rossi. Gate **VERDE 8/8**.
+In quest'ordine, o i passi 8 e 9 nascono rossi. Gate **VERDE 8/8** — *il 26
+luglio, quando i passi erano otto e `db advisors` non esisteva ancora*. Sullo
+stesso schema il gate di oggi chiude ROSSO: è il §4.
 
 ### 3.6 `evolve` — un distruttivo autorizzato
 
@@ -454,7 +483,7 @@ di questo banco:
 
 | Sintomo | Causa | Rimedio |
 |---|---|---|
-| passo tipi sempre rosso | PowerShell scrive UTF-16 + CRLF | genera i tipi da **Git Bash** |
+| passo tipi sempre rosso | PowerShell scrive UTF-16 (i CRLF li normalizza il gate dal 28/07, l'UTF-16 no) | genera i tipi da **Git Bash** |
 | `psql` non trovato | non è nel PATH | `%USERPROFILE%\scoop\apps\postgresql\current\bin` |
 | `sqlfluff`/`squawk` non trovati | non nel PATH | `%APPDATA%\Python\Python314\Scripts` |
 | `db reset` fallisce con 502 | analytics acceso | `[analytics] enabled = false` |

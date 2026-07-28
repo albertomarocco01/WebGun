@@ -43,10 +43,11 @@ Ordine operativo pensato per un progetto reale (es. e-commerce da zero).
 5. 🟢 **Code Inquisition**  
    **Cosa fa:** Un vero e proprio tribunale di esperti AI che esamina il codice a fondo (sicurezza, performance, architettura). Non modifica direttamente il codice, ma convoca un gruppo di agenti specializzati che si confrontano e verificano le accuse tramite strumenti reali. Elimina i falsi positivi e produce un report chiaro (con verdetto, problemi provati e piano d'azione da attuare).  
    **Come si installa:**  
-   Devi copiare la cartella direttamente nelle skill di Claude Code:  
-   *Su Windows (PowerShell):* `Copy-Item -Recurse -Force code-inquisition "$env:USERPROFILE\.claude\skills\"`  
-   *Su macOS/Linux:* `cp -r code-inquisition ~/.claude/skills/`  
-   *(Dopo la copia, riavvia Claude Code).*  
+   In questo repo si espone con una **junction**, come le altre skill (`DECISIONI.md` §7): due copie divergono, un link no.  
+   *Su Windows (PowerShell), dalla radice del repo:* `New-Item -ItemType Junction -Path ".claude\skills\code-inquisition" -Target (Resolve-Path "agenti\code-inquisition").Path`  
+   *Su macOS/Linux:* `ln -s "$PWD/agenti/code-inquisition" .claude/skills/code-inquisition`  
+   Tutte insieme: `powershell -ExecutionPolicy Bypass -File scripts/installa-skill.ps1`.  
+   *(Dopo l'installazione, riavvia Claude Code).*  
    **Come si usa / lancia:**  
    Tramite Claude Code invoca:  
    `/code-inquisition <percorso_o_file> --focus <argomento>`  
@@ -66,15 +67,17 @@ Ordine operativo pensato per un progetto reale (es. e-commerce da zero).
 
 7. 🟢 **Schema Forge**  
    **Cosa fa:** Progetta lo schema del database: tabelle, relazioni, vincoli, indici, RLS e seed. Si parte da qui perché in un e-commerce i dati (prodotti, ordini, utenti) sono le fondamenta. Non scrive SQL prima di aver riformulato il dominio in italiano e aver ottenuto conferma (*Specchio del dominio*); nessuna migrazione è valida finché non è stata applicata davvero su un database pulito e non ha passato la batteria deterministica.  
-   **Prerequisiti:** Supabase CLI con Docker attivo, `psql`, e consigliati `pipx install sqlfluff squawk-cli`. Uno strumento assente vale **MANCANTE**, mai `pass`.  
+   **Prerequisiti:** Supabase CLI **v2.81.3+** con Docker attivo (sotto quella versione il passo `db advisors` è una verifica mancante e il gate resta rosso), `psql`, e consigliati `pipx install sqlfluff squawk-cli`. Uno strumento assente vale **MANCANTE**, mai `pass`.  
    **Come si installa:**  
-   Vive in `agenti/schema-forge/` di questo repo, esposta a Claude Code da una junction:  
+   Vive in `agenti/schema-forge/` di questo repo, esposta a Claude Code da una junction. Da PowerShell nella radice del repo, oppure tutte insieme con `scripts/installa-skill.ps1`:  
    `New-Item -ItemType Junction -Path ".claude\skills\schema-forge" -Target (Resolve-Path "agenti\schema-forge").Path`  
    **Come si usa / lancia:**  
-   - in conversazione: `/schema-forge`, poi `model` → `forge` → `seed` → `types` → `handoff` → `verify`
+   - in conversazione: `/schema-forge`, poi `model` → `forge` → `seed` → **`test`** → `types` → `handoff` → `verify`
+   - `test` scrive i pgTAP negativi e **non è opzionale**: una tabella con policy di scrittura che nessun test attacca è un `block` del gate
+   - `verify` è **ultimo**: tipi e handoff si producono prima, o il gate nasce rosso per come è ordinato il flusso
    - il gate a mano, dalla radice del progetto generato: `node <skill>/scripts/verify.mjs`
-   - solo l'audit di sicurezza: `node <skill>/scripts/rls-audit.mjs --json`
-   - manuale completo: `agenti/schema-forge/README.md`
+   - solo l'audit di sicurezza — **sempre con `--db-url`**, o punta alla porta 54322 che con due stack accesi è il database di un altro progetto: `node <skill>/scripts/rls-audit.mjs --db-url "$DB" --schemas public --json`
+   - manuale completo: `agenti/schema-forge/README.md` · guida pratica: `agenti/schema-forge/COME-PROVARLA.md`
 8. 🔴 **Fly UI**  
    Libreria di componenti e interfacce utente veloci. Costruisce le pagine sopra lo schema dati già definito, senza reinventare i componenti ogni volta.
 9. 🟢 **Sites Effects**  

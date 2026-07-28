@@ -93,7 +93,7 @@ Ci lavora un team: ogni agente ha un proprietario che lo sviluppa e lo mantiene.
 |---|---|---|---|---|
 | code-maniac | Skill Claude Code | 🟢 | finzidev | https://github.com/finzidev/code-maniac |
 | code-inquisition | Skill Claude Code | 🟢 | finzidev | esterno (finzidev, URL non noto) |
-| schema-forge | Skill Claude Code | 🟢 | Alberto | questo repo |
+| schema-forge | Skill Claude Code | 🟢\* | Alberto | questo repo |
 | site-doctor | Skill Claude Code | 🔵 | — | questo repo |
 | brief-smith | Skill Claude Code | 🔵 | — | questo repo |
 | preventivo-smith | Skill Claude Code | 🔵 | — | questo repo |
@@ -111,6 +111,20 @@ Ci lavora un team: ogni agente ha un proprietario che lo sviluppa e lo mantiene.
 | sites-effects | Libreria | 🟢 | — | esterno |
 
 Il proprietario è chi sviluppa e mantiene l'agente; `—` significa non ancora assegnato. Ogni agente lo ripete nel proprio `agenti/<nome>/STATO.md`.
+
+\* **schema-forge è 🟢 come strumento, non come agente pronto alla consegna.** Il gate è collaudato su database reale (143 test, 9 passi, due collaudi avversari), ma `agenti/schema-forge/STATO.md` lo dichiara **non ancora usabile su un progetto cliente**: restano aperti i punti 11-13 e 15, e non esiste ancora nessun consumatore a valle su cui provare l'analisi di impatto di `evolve`. Chi lo usa legga prima `agenti/schema-forge/COME-PROVARLA.md` §4, *Cosa NON dimostra un gate verde*.
+
+I dieci agenti 🔵 sono **scaffold**: `SKILL.md` di una ventina di righe con il gate di chiusura scritto e le sezioni operative a `TODO`, `references/` e `scripts/` vuote. Hanno il contratto d'uscita, non il come.
+
+## Installazione delle skill
+
+Claude Code carica le skill da `.claude/skills/`, che è una cartella di junction verso `agenti/` (gitignorata: la fonte di verità è `agenti/`). Dopo un clone:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/installa-skill.ps1
+```
+
+Installa **schema-forge** e **code-inquisition** — le uniche due di questo repo che sono skill vere. `code-maniac` e `bugbay` si installano dai repo di origine (vedi [Fonte di verità](#fonte-di-verità)); gli scaffold non si installano finché sono scaffold, perché una skill che non fa niente in mezzo a quelle che funzionano è rumore.
 
 ## Fonte di verità
 

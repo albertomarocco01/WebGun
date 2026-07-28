@@ -73,13 +73,14 @@ Il collaudo del 2026-07-24 aveva lasciato il gate `verify` rosso su `sqlfluff` (
 
 Scelta: **la configurazione**, in `agenti/schema-forge/resources/config/` (`.sqlfluff` e `squawk.toml`), passata agli strumenti da `verify.mjs` con percorsi risolti sulla cartella della skill, e copiata nel progetto generato dal comando `forge`.
 
-Motivo: un passo non bloccante è un passo che nessuno guarda. Un rosso che tutti imparano a ignorare non è più un controllo, è rumore — e il giorno in cui segnala una cosa vera nessuno se ne accorge. La configurazione, invece, costringe a **scrivere la motivazione** di ogni esenzione: nel file, sulla riga sopra la regola disattivata. Le esenzioni sono tre e nessuna nasconde un difetto reale:
+Motivo: un passo non bloccante è un passo che nessuno guarda. Un rosso che tutti imparano a ignorare non è più un controllo, è rumore — e il giorno in cui segnala una cosa vera nessuno se ne accorge. La configurazione, invece, costringe a **scrivere la motivazione** di ogni esenzione: nel file, sulla riga sopra la regola disattivata. Le esenzioni sono **quattro** e nessuna nasconde un difetto reale:
 
 - `PG01` / `require-concurrent-index-creation` — `create index concurrently` non può stare nella transazione con cui il CLI Supabase applica una migrazione: la regola chiede una cosa impossibile in questo contesto;
-- `RF04` limitata a `name` e `label` — parole chiave **non riservate** in Postgres, legali senza virgolette, e sono i nomi imposti da `references/pattern-ecommerce.md`. La regola resta attiva su tutto il resto;
+- `RF04` limitata a `name`, `label`, `role` e `summary` — parole chiave **non riservate** in Postgres, legali senza virgolette. Le prime due sono i nomi imposti da `references/pattern-ecommerce.md`; le altre due sono state aggiunte il 2026-07-27 dopo il collaudo veterinario, che aveva dovuto rinominare `staff.role` e `medical_records.summary` per un rilievo del linter e non per una ragione di modello. La regola resta attiva su tutto il resto;
+- `RF05` con `quoted_identifiers_policy = none` — esenta dai caratteri speciali i soli identificatori **quotati**, cioè i nomi di policy in italiano che le reference stesse prescrivono (`create policy "utente legge i propri ordini"`). Su un identificatore nudo la regola continua a scattare. Aggiunta il 2026-07-27: prima, chi copiava l'esempio della reference nasceva col gate rosso — 36 rilievi sul solo banco veterinario;
 - `prefer-robust-stmts` — `if not exists` su una migrazione versionata non la rende robusta: le fa ignorare in silenzio una deriva fra ambienti che deve invece farla fallire.
 
-- **Stato:** presa — il gate resta bloccante su tutti e sette i passi.
+- **Stato:** presa — il gate resta bloccante su tutti e **nove** i passi (erano sette quando questa voce è stata scritta; `db advisors` e il contratto d'uscita sono arrivati dopo).
 
 ### 9. Il denaro sta in `bigint` di centesimi, non in `integer`
 
@@ -125,7 +126,7 @@ Motivo: un banco che resta in giro invecchia e diventa una fonte di verità fals
 
 Il logo di Schema Forge, che stava dentro `banco-prova/` per sbaglio, è stato spostato in `agenti/schema-forge/resources/branding/`.
 
-- **Stato:** presa.
+- **Stato:** presa — **con l'eccezione della §19**: un banco che è diventato il *caso di prova* di un difetto non è più usa e getta, e allora si traccia invece di buttarlo.
 
 ## Decisioni prese estendendo Schema Forge con la skill Supabase ufficiale (2026-07-27)
 
@@ -167,7 +168,7 @@ Le chiavi del JSON restano in inglese (`ok`, `steps`, `status`, `detail`, `count
 
 ### 16. Un test pgTAP che attacca ogni policy di scrittura è obbligatorio (`block`)
 
-È la risposta al blocco n°1: sullo schema che il gate dichiarava VERDE 9/9, `/code-inquisition` aveva riprodotto 16 difetti su 17. Nessuno strumento guarda la **semantica** di una policy — verificano che esista.
+È la risposta al blocco n°1: sullo schema che il gate dichiarava VERDE 8/8 (il 26 luglio, quando i passi erano otto), `/code-inquisition` aveva riprodotto 16 difetti su 17. Nessuno strumento guarda la **semantica** di una policy — verificano che esista.
 
 Scelta: `audit-lib.mjs` produce un **`block`** su ogni tabella con policy di `insert`/`update`/`delete`/`all` per cui nessun file di `supabase/tests/` tenta una scrittura **impersonando un ruolo**.
 
@@ -199,5 +200,37 @@ Tre passi potevano essere verdi senza aver guardato, tutti e tre riprodotti prim
 Scelta: il gate **misura la premessa prima di leggere l'esito**. Byte di ogni migrazione prima di lanciare sqlfluff; conteggio dei file `.sql` invece dell'esistenza della cartella; URL del database risolto prima di invocare l'audit. Dove la premessa manca, il passo è `skipped` — verifica mancante — e mai `pass`.
 
 Motivo: leggere gli avvisi in prosa dello strumento (l'avviso di sqlfluff esce su **stdout**, non su stderr come si credeva) fa dipendere il verdetto da come lo strumento formatta i suoi messaggi. Misurare la premessa non dipende da niente. È la generalizzazione della regola anti-simulazione: *uno strumento assente* era già `skipped`, adesso lo è anche *uno strumento presente che non ha letto l'input*.
+
+- **Stato:** presa.
+
+## Decisioni prese chiudendo l'audit multiagentico del repo (2026-07-28)
+
+### 19. L'handoff deve dichiarare il verdetto del gate, e il gate lo verifica
+
+Il passo `contratto-uscita` verificava che `docs/handoff/07-schema-forge.md` **esistesse** e non avesse segnaposto `{{…}}`. Nient'altro. Sul banco veterinario, dove il gate chiude ROSSO su due passi, l'handoff — fermo a due giorni prima — dichiarava «1 issue, 1 warn, nessun bloccante» e citava una tabella già droppata: il passo lo promuoveva `pass`.
+
+Il punto non è la svista. È che quel passo esiste **proprio** per far rispettare la clausola del `CLAUDE.md` («nessun handoff è valido senza scan pulito **oppure** residuo documentato»), e la faceva rispettare nella forma e non nella sostanza: verificava che il file ci fosse, non che dicesse la verità sul gate che lo stava verificando.
+
+Tre strade: lasciare la verifica a un umano (cioè a nessuno), pretendere che l'handoff elenchi ogni finding (illeggibile, e si sfalsa a ogni rilancio), oppure pretendere **il verdetto**.
+
+Scelta: **il verdetto, in una riga di forma fissa.** L'handoff contiene `Gate: VERDE` o `Gate: ROSSO`, e il passo la confronta con il verdetto degli **otto passi precedenti**. Se diverge, il passo fallisce e dice quale dei due è quello vero.
+
+Motivo della forma fissa: la prosa libera si può sempre leggere come si vuole, e un controllo su prosa libera è un controllo che non c'è. Una riga sì. Il regex tollera elenco, citazione e grassetto — sono tre modi di scrivere la stessa riga in markdown, non tre significati.
+
+**Non è un rosso strutturale.** Se il gate è rosso l'handoff dichiara rosso e il passo passa: dichiarare non è fallire. Il ciclo che ne esce — lancia, leggi, riscrivi l'handoff, rilancia — è esattamente quello che deve esistere, e converge in un giro.
+
+Quello che questa regola **non** fa: non verifica che i residui elencati siano quelli giusti, né che siano tutti. Un handoff che dichiara `Gate: ROSSO` e poi tace su cosa è rosso passa. Il verdetto è la cosa che un consumatore a valle legge per decidere se fidarsi, ed è la sola falsificabile senza reinventare la comprensione del testo.
+
+- **Stato:** presa — `SKILL.md` §Contratto d'uscita, `resources/templates/handoff-schema-forge.md` §6, 8 test in `verify.test.mjs`.
+
+### 20. Il banco veterinario si traccia, perché non è più un banco usa e getta
+
+La §12 dice che i banchi si buttano: un banco che resta in giro invecchia e diventa una fonte di verità falsa. Vale ancora, e `banco-prova/` e `banco-prova-pastificio/` sono stati buttati per quel motivo.
+
+`banco-prova-vetcare/` è un'altra cosa, e la differenza non era stata vista: **`STATO.md` lo tratta come il caso di prova permanente di uno schema difettoso** («il banco resta rosso apposta»). Ma era gitignorato e non tracciato — cioè la prova centrale dello stato attuale dell'agente esisteva su un disco solo, e nessuno poteva riprodurre il rosso né verificare che fosse rosso per i motivi dichiarati. Un'affermazione non riproducibile non è una prova, è un ricordo.
+
+Scelta: **si traccia**, con la regola `.gitignore` ristretta agli artefatti di runtime di Supabase (`supabase/.branches/`, `supabase/.temp/`). La regola generale `banco-prova*/` resta per i banchi effimeri che il prossimo agente creerà.
+
+Motivo: le due cose che la §12 voleva evitare — l'invecchiamento e la fonte di verità falsa — le risolve il fatto che il banco è **dentro il gate**, non fuori. Se invecchia, il gate lo dice al primo rilancio. Il pericolo della §12 era un banco che nessuno controlla più; questo è controllato a ogni tornata.
 
 - **Stato:** presa.

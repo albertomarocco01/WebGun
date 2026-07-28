@@ -4,9 +4,9 @@
 
 Agente Web Gun per lo **schema dati** dei progetti generati (Postgres/Supabase). È il primo agente costruttore della pipeline: Fly UI, Gestionale Crafter, Sanity Creator e AI Specialist costruiscono tutti sopra ciò che decide qui.
 
-**Stato:** v1.4 — collaudata su database reale e nel comportamento. **132 test** sugli script, gate a **9 passi**, ESLint 0 errori 0 warning, `knip` pulito. `jscpd` riporta **2 cloni**, entrambi dichiarati (§7).
+**Stato:** v1.5 — collaudata su database reale e nel comportamento. **143 test** sugli script, gate a **9 passi**, ESLint 0 errori 0 warning, `knip` pulito. `jscpd` riporta **2 cloni**, entrambi dichiarati (§7).
 
-> **Non ancora usabile su un progetto cliente**, ma il gate ha smesso di mentire. Il collaudo indipendente del 2026-07-26 aveva riprodotto **16 difetti su 17** — cinque Critical — su uno schema che il gate dichiarava **VERDE 9/9**. Dal 2026-07-27 quello stesso schema chiude **ROSSO**: l'audit blocca l'auto-promozione via colonna, segnala la macchina a stati aggirabile in `insert`, e **pretende un test pgTAP che attacchi ogni policy di scrittura** — scritti quei test, due asserzioni su 23 falliscono, e sono esattamente i due Critical. Resta vero che l'audit guarda la **forma** delle policy: la semantica la dimostrano i test negativi, e quelli li scrive l'agente. Dettagli in `STATO.md`, verbali in `COLLAUDO-2026-07-25.md` e `COLLAUDO-2026-07-26.md`.
+> **Non ancora usabile su un progetto cliente**, ma il gate ha smesso di mentire. Il collaudo indipendente del 2026-07-26 aveva riprodotto **16 difetti su 17** — cinque Critical — su uno schema che il gate dichiarava **VERDE 8/8** (i passi erano otto). Dal 2026-07-27 quello stesso schema chiude **ROSSO**: l'audit blocca l'auto-promozione via colonna, segnala la macchina a stati aggirabile in `insert`, e **pretende un test pgTAP che attacchi ogni policy di scrittura** — scritti quei test, due asserzioni su 23 falliscono, e sono esattamente i due Critical. Resta vero che l'audit guarda la **forma** delle policy: la semantica la dimostrano i test negativi, e quelli li scrive l'agente. Dettagli in `STATO.md`, verbali in `COLLAUDO-2026-07-25.md` e `COLLAUDO-2026-07-26.md`.
 
 ---
 
@@ -53,7 +53,7 @@ Si invocano in conversazione (`/schema-forge`, poi il comando).
 | `verify` | **il gate**: 9 passi deterministici su database vero | — |
 | `types` | rigenera `src/lib/database.types.ts` | no |
 | `evolve` | modifica di uno schema esistente, in expand-contract, con analisi di impatto | **sì** su ogni distruttivo |
-| `handoff` | scrive `docs/handoff/07-schema-forge.md` per l'agente successivo | no |
+| `handoff` | scrive `docs/handoff/07-schema-forge.md` per l'agente successivo, **riga `Gate:` col verdetto compresa** | no |
 
 ## 4. Il flusso, in ordine
 
@@ -66,7 +66,7 @@ Si invocano in conversazione (`/schema-forge`, poi il comando).
 6 seed
 7 test          i pgTAP negativi: il gate li PRETENDE, non li suggerisce
 8 types         PRIMA del gate, o il passo dei tipi è rosso per forza
-9 handoff       PRIMA del gate, che ne verifica l'esistenza
+9 handoff       PRIMA del gate, che ne verifica esistenza e verdetto dichiarato
 10 VERIFY       ultimo passo. Finché è rosso, lo schema non esiste
 ```
 
@@ -92,7 +92,7 @@ Nove passi, tre stati: `pass` · `fail` · `skipped` (= **verifica mancante**, i
 | 6 | `audit-rls` | **audit RLS** | tabelle nude, policy assenti o permissive, **policy mai attaccate da un test**, **colonne di privilegio scrivibili**, **macchine a stati senza vincolo su `insert`**, viste e funzioni pericolose, FK e colonne di policy senza indice |
 | 7 | `pgtap` | **pgTAP** | le policy verificate impersonando i ruoli — si contano i **file**: una cartella vuota è `MANC`, non `OK` |
 | 8 | `tipi` | tipi TypeScript | disallineamento fra schema e codice |
-| 9 | `contratto-uscita` | contratto d'uscita | `.sqlfluff`, `squawk.toml`, handoff scritto senza segnaposto |
+| 9 | `contratto-uscita` | contratto d'uscita | `.sqlfluff`, `squawk.toml`, handoff senza segnaposto **e con la riga `Gate:` che dichiara il verdetto vero** |
 
 Uscita: `0` gate verde · `1` gate rosso · `2` errore di esecuzione.
 
@@ -131,6 +131,7 @@ Undici funzioni di regola esportate da `audit-lib.mjs`, **ventiquattro verdetti*
 | `security definer` con `execute` a PUBLIC (il **default** di Postgres) | `issue` |
 | chiave esterna senza indice | `issue` |
 | tabella con RLS e policy ma **nessun `grant`** a `anon`/`authenticated` | `issue` |
+| RLS attiva ma **non forzata** (`force row level security`): `enable` non vale per il proprietario della tabella | `warn` |
 | `auth.uid()` non avvolto in `(select …)` · join dentro la policy · policy senza ruolo esplicito · colonna di policy senza indice | `warn` |
 
 Il caso che rende queste regole non banali: quando `with check` è **omesso** su `update`/`all`, Postgres **riusa `using`** come controllo sulla riga nuova. Quindi `for update using ((select auth.uid()) = user_id)` senza `with check` è **sicuro** — segnalarlo sarebbe un falso positivo sul codice corretto delle reference. È la composizione con `using (true)` a essere il buco, ed è quella che la regola guarda. Provato su Postgres reale, non dedotto.
@@ -172,7 +173,7 @@ supabase/seed.sql                  idempotente e deterministico
 supabase/tests/*.sql               test pgTAP delle policy
 src/lib/database.types.ts          tipi rigenerati — è ciò che consuma Fly UI
 .sqlfluff · squawk.toml            configurazioni del gate, copiate da `forge`
-docs/handoff/07-schema-forge.md    modello, decisioni, accessi, residui
+docs/handoff/07-schema-forge.md    modello, decisioni, accessi, residui, verdetto del gate
 docs/schema/ERD.md                 diagramma generato dallo schema reale
 docs/export/*.csv                  dati esportati prima di un distruttivo autorizzato
 ```

@@ -1,7 +1,7 @@
 # Stato — Schema Forge
 
-- **Stato attuale:** v1.4 — collaudata su Postgres reale (Supabase locale, Windows), **nel comportamento** (`COLLAUDO-2026-07-25.md`) e **corretta due volte**: gli otto punti del primo collaudo il 2026-07-26, nove dei quindici del secondo il 2026-07-27 (§Il gate ha smesso di essere verde su uno schema sfruttabile). Gli script hanno test propri (`node --test`, **132 verdi**), il gate `verify` ha **9 passi** e undici regole di audit.
-  **NON ancora usabile su un progetto cliente — ma il gate ha smesso di mentire.** Il secondo collaudo, indipendente e avversario (`COLLAUDO-2026-07-26.md`, dominio **non e-commerce**), aveva riprodotto con comandi reali **16 difetti su 17**, cinque Critical, su uno schema che il gate dichiarava **VERDE 9/9**. Su quello stesso schema il gate chiude ora **ROSSO**: `block` sull'auto-promozione di ruolo via colonna, `issue` sulla macchina a stati aggirabile in `insert`, e `block` su ogni tabella con policy di scrittura che nessun test pgTAP attacca. Scritti i test negativi, **2 asserzioni su 23 falliscono** — l'auto-promozione e la visita che nasce già `fatturata`. Resta vero che **l'audit guarda la forma delle policy**: la semantica la dimostrano i test negativi, e il gate verifica che esistano e passino, non che siano severi. Punti aperti ordinati per gravità in fondo.
+- **Stato attuale:** v1.5 — collaudata su Postgres reale (Supabase locale, Windows), **nel comportamento** (`COLLAUDO-2026-07-25.md`) e **corretta tre volte**: gli otto punti del primo collaudo il 2026-07-26, nove dei quindici del secondo il 2026-07-27, e i residui dell'audit multiagentico del repo il 2026-07-28 (§Cosa ha trovato l'audit del repo). Gli script hanno test propri (`node --test`, **143 verdi**), il gate `verify` ha **9 passi** e undici regole di audit.
+  **NON ancora usabile su un progetto cliente — ma il gate ha smesso di mentire.** Il secondo collaudo, indipendente e avversario (`COLLAUDO-2026-07-26.md`, dominio **non e-commerce**), aveva riprodotto con comandi reali **16 difetti su 17**, cinque Critical, su uno schema che il gate dichiarava **VERDE 8/8** (i passi erano otto: `db advisors` e' nato il giorno dopo). Su quello stesso schema il gate chiude ora **ROSSO**: `block` sull'auto-promozione di ruolo via colonna, `issue` sulla macchina a stati aggirabile in `insert`, e `block` su ogni tabella con policy di scrittura che nessun test pgTAP attacca. Scritti i test negativi, **2 asserzioni su 23 falliscono** — l'auto-promozione e la visita che nasce già `fatturata`. Resta vero che **l'audit guarda la forma delle policy**: la semantica la dimostrano i test negativi, e il gate verifica che esistano e passino, non che siano severi. Punti aperti ordinati per gravità in fondo.
 - **Proprietario:** Alberto
 - **Dipendenze:**
   - A monte: prompt-smith (richiesta professionale), brief-smith (entità e contenuti del cliente)
@@ -33,8 +33,8 @@ I due bug qui sopra erano vivi dal primo giorno ed erano stati trovati **a mano*
 - [x] **Booleani esenti dalla regola 6** — una colonna booleana usata in una policy e non indicizzata non produce più un `warn`: due valori distinti non giustificano un indice pieno, che rallenta ogni scrittura per niente. Sulle altre colonne il suggerimento propone anche l'indice parziale.
 - [x] **ERD: cardinalità 1:1 e qualificazione dello schema** — una FK il cui insieme di colonne è anche unico (o chiave primaria) rende `||--||`; un'entità fuori dagli schemi richiesti prende il nome qualificato (`auth_users`), così due tabelle omonime in schemi diversi non collidono. `profiles` compare ora come `auth_users ||--|| profiles`.
 - [x] **`verify.mjs`: un ritentativo su `supabase db reset`** — e solo su quello. Se il secondo tentativo riesce il passo è `pass`, ma il dettaglio dichiara *"riuscito al secondo tentativo"*: l'instabilità dell'ambiente resta visibile invece di sparire. Il dettaglio si stampa anche sui passi verdi, altrimenti quella riga non la leggerebbe nessuno.
-- [x] **Configurazioni dei linter** — `resources/config/.sqlfluff` e `resources/config/squawk.toml`, ogni esenzione con la motivazione sulla riga sopra. Il gate **non** è stato declassato: `verify.mjs` passa le configurazioni agli strumenti (percorsi risolti sulla cartella della skill) e `forge` le copia nel progetto generato. Vedi `DECISIONI.md` §8.
-- [x] **Denaro in `bigint` di centesimi** — `prefer-bigint-over-int` non è stata disattivata: aveva ragione. Corrette `references/modellazione.md` e `references/pattern-ecommerce.md`. Vedi `DECISIONI.md` §9.
+- [x] **Configurazioni dei linter** — `resources/config/.sqlfluff` e `resources/config/squawk.toml`, ogni esenzione con la motivazione sulla riga sopra. Il gate **non** è stato declassato: `verify.mjs` passa le configurazioni agli strumenti (percorsi risolti sulla cartella della skill) e `forge` le copia nel progetto generato. Vedi `../../DECISIONI.md` §8.
+- [x] **Denaro in `bigint` di centesimi** — `prefer-bigint-over-int` non è stata disattivata: aveva ragione. Corrette `references/modellazione.md` e `references/pattern-ecommerce.md`. Vedi `../../DECISIONI.md` §9.
 - [x] **Ricollaudo** — schema sporco: i 6 difetti tutti rilevati con la stessa gravità (4 block, 2 issue, 1 warn) più 4 nuovi `warn` su `force row level security` dove manca. Schema pulito aggiornato a `bigint` e a `force row level security`: **gate VERDE, 7 passi su 7**, zero rilievi residui di sqlfluff e squawk.
 
 ### Note operative (Windows)
@@ -53,7 +53,7 @@ Tutti e otto i punti aperti dal collaudo del comportamento sono chiusi. Ognuno *
 |---|---|---|---|
 | 1 | Un distruttivo autorizzato teneva il gate rosso per sempre | `references/migrazioni.md` §Il distruttivo autorizzato e il gate: ricetta completa `-- squawk-ignore`, più il richiamo in `SKILL.md` §Regole non negoziabili e §`evolve` | banco: `squawk` **OK**, gate **VERDE 8/8** con i due `drop column` di `evolve` in casa |
 | 2 | `verify.mjs` auditava solo `public` | `schemiEsposti()` legge `[api].schemas` da `supabase/config.toml` e li passa tutti a `rls-audit` | tabella nuda in schema `privato` esposto → `[block] privato.log_interno: RLS non attiva`, gate rosso (prima: `OK`) |
-| 3 | Nessuno verificava le configurazioni copiate né l'handoff | ottavo passo del gate, `contrattoUscita()`: `.sqlfluff`, `squawk.toml`, handoff esistente e senza segnaposto `{{` | 4 test unitari + passo verde sul banco |
+| 3 | Nessuno verificava le configurazioni copiate né l'handoff | ultimo passo del gate, `contrattoUscita()` (l'ottavo allora, il nono da quando c'e' `db advisors`): `.sqlfluff`, `squawk.toml`, handoff esistente e senza segnaposto `{{` | 4 test unitari + passo verde sul banco |
 | 4 | `erd.mjs --from-model` non esiste | `SKILL.md`: l'ERD dello Specchio è una **proposta** disegnata a mano (lì il database non c'è), quello di `docs/schema/ERD.md` è una **fotografia** generata. Se divergono ha ragione il secondo | — |
 | 5 | Il Flusso 1 metteva `verify` prima di `types` | Flusso 1 riordinato: forgia → seed → **tipi** → **handoff** → **verifica ultima**. Un rosso strutturale insegna a ignorare il rosso | il gate del banco è verde al primo colpo |
 | 6 | Voci mancanti nelle references | `pattern-ecommerce.md`: §Listini + `paid` fuori dalla catena col pagamento differito · `rls-supabase.md`: §La RLS è per riga, non per colonna + pattern 3b (tenant con ruoli di ambito diverso) · `migrazioni.md`: dati che smentiscono la richiesta, export prima del `drop`, backfill non meccanico = domanda di dominio · `SKILL.md` Flusso 1 passo 4: brief in conflitto col pattern → domanda dello Specchio | — |
@@ -95,7 +95,7 @@ verdi**. Il gate verifica che la RLS *esista*, non che *funzioni*.
 - ~~**`code-inquisition` non è mai stato eseguito** sui punti critici~~ — eseguito
   il 2026-07-26. Non era invocabile: `agenti/code-inquisition/` non era
   installato come skill. Creata la junction `.claude/skills/code-inquisition`
-  (stessa procedura di `DECISIONI.md` §7). Referto in `COLLAUDO-2026-07-26.md` §8.2.
+  (stessa procedura di `../../DECISIONI.md` §7). Referto in `COLLAUDO-2026-07-26.md` §8.2.
 - ~~**Il comando `rls` non è mai stato collaudato da solo**, né uno schema con
   viste materializzate~~ — collaudati entrambi. Entrambi hanno prodotto un
   difetto: vedi i punti 2 e 5 qui sotto.
@@ -112,7 +112,7 @@ verdi**. Il gate verifica che la RLS *esista*, non che *funzioni*.
    delle policy: la semantica la dimostrano i test negativi, e il gate verifica
    che esistano e passino, non che siano severi (vedi punto 16).
 2. ~~**`SKILL.md`:62 fa auditare il database sbagliato.**~~ — **chiuso il
-   2026-07-27**: il comando `rls` è stato **tolto** (`DECISIONI.md` §14). Le
+   2026-07-27**: il comando `rls` è stato **tolto** (`../../DECISIONI.md` §14). Le
    policy si scrivono in `forge`, si attaccano nel comando nuovo `test`, si
    verificano in `verify`. `rls-audit.mjs` resta lanciabile a mano e ora stampa
    sempre in testa **quale database** e **quali schemi** ha guardato.
@@ -164,15 +164,27 @@ verdi**. Il gate verifica che la RLS *esista*, non che *funzioni*.
    libera di cambiare), `contract`, `summary` per stato, `counts` per gravità
    dove ha senso. Documentato in `references/verifica-deterministica.md` §Il
    contratto `--json`, con un test che blocca gli id e il loro ordine.
-   `DECISIONI.md` §15.
-10. **`pattern-ecommerce.md`:29 non regge fuori dall'e-commerce.**
-    `profiles.id = auth.users.id` presuppone che ogni cliente sia un utente del
-    sito. Una clinica ha clienti che telefonano: seguendolo alla lettera, metà
-    della clientela non è rappresentabile.
+   `../../DECISIONI.md` §15.
+10. ~~**`pattern-ecommerce.md`:29 non regge fuori dall'e-commerce.**~~ — **chiuso
+    il 2026-07-28.** §Clienti presenta ora **due** modelli, non uno: `profiles.id
+    = auth.users.id` quando ogni cliente è per forza un utente, e `customers` con
+    `auth_user_id` **facoltativo** (`unique`, `on delete set null`) quando non lo
+    è. Scritta anche la conseguenza che si dimentica: con `auth_user_id is null`
+    nessuna policy per `authenticated` raggiunge la riga, perché `null = null`
+    non è vero e la riga sparisce **senza errore**. La domanda «il cliente ha per
+    forza un account?» è entrata fra le assunzioni **strutturali** di
+    `SKILL.md` §Modalità: senza risposta la pipeline si ferma.
 11. **Il gate non può vedere un seed non rieseguibile a caldo.** `db reset` parte
     sempre da un database pulito, quindi la regola di `modellazione.md`:67
     (`insert … select … where not exists` coi trigger di dominio) — che è
     **vera**, verificata sul campo — resta non verificabile dal gate.
+    **Correzione del 2026-07-28: non è "impossibile", è "non fatto".** La strada
+    c'è ed è corta — rieseguire `supabase/seed.sql` sul database **caldo** dentro
+    `passoReset`, subito dopo il reset riuscito, e fallire se solleva. Non è
+    stata implementata perché la regola della casa dice che una premessa si prova
+    su Postgres reale prima di diventare codice del gate, e provarla richiede un
+    banco vivo con Docker: scriverla senza provarla sarebbe esattamente il modo
+    in cui sono nate le tre premesse smentite di questo file. Costo: medio.
 12. **semgrep e gitleaks non sono installati**: sicurezza e segreti sugli script
     restano **MANCANTI**, non `PASS`. È anche l'unica difesa automatica contro
     una `service_role` finita nel client.
@@ -192,14 +204,39 @@ verdi**. Il gate verifica che la RLS *esista*, non che *funzioni*.
     percorsi con spazi (provato: con `cmd.exe /c` l'argomento con lo spazio
     arriva intero).
 15. **Diciotto voci mancanti nelle references** (`COLLAUDO-2026-07-26.md` §1.2),
-    ognuna con la frase esatta e il file esatto. Le sei più gravi non le aveva
-    colmate nemmeno l'auditor: ~~`revoke execute` sulle funzioni RPC~~ (chiuso il
-    2026-07-27: scritto nelle reference **e** diventato una regola dell'audit,
-    che sul banco ha trovato 11 funzioni scoperte) · macchina a
-    stati vincolata anche in `INSERT` · transizioni per **ogni** stato, non solo
-    il principale · trigger che scrive su tabella con RLS deve essere
-    `security definer` · audit trail con la colonna dell'attore · validazione
-    degli argomenti di un RPC `security definer`.
+    ognuna con la frase esatta e il file esatto. **Le sei più gravi sono chiuse
+    tutte**, le ultime cinque il 2026-07-28:
+    - ~~M12 `revoke execute` sulle funzioni RPC~~ — 2026-07-27, ed è diventata
+      anche una regola dell'audit (sul banco: 11 funzioni scoperte)
+    - ~~M13 macchina a stati vincolata anche in `INSERT`~~ — 2026-07-27,
+      `rls-supabase.md` §Macchine a stati + regola `issue` dell'audit
+    - ~~M14 transizioni per **ogni** stato, non solo il principale~~ —
+      `modellazione.md` §Vincoli: se un trigger difende un dato *guardando uno
+      stato*, quello stato va vincolato a sua volta, o la difesa si aggira in tre
+      mosse (indietro, modifica, avanti). Quella dimenticata è sempre l'entità di
+      servizio — fattura, spedizione, ticket — non quella di cui parla il brief
+    - ~~M15 trigger che scrive su tabella con RLS deve essere `security definer`~~
+      — `rls-supabase.md`, sezione propria: gira coi diritti del **chiamante**, e
+      il guasto non si vede come «l'audit non registra» ma come «il salvataggio
+      non funziona», perché il trigger è nella stessa transazione
+    - ~~M16 audit trail con la colonna dell'attore~~ — sezione propria: l'attore
+      lo scrive il **trigger** dal contesto di sessione, mai il client; e
+      «append-only» in un commento non è append-only, perché l'assenza di policy
+      non ferma `service_role` — serve un trigger `before update or delete`
+    - ~~M17 validazione degli argomenti di un RPC `security definer`~~ — sezione
+      propria: estremi, ordine, orizzonte, nullità; e le violazioni di vincolo si
+      catturano, perché il testo di un `exclusion_violation` contiene i valori
+      della riga in conflitto, cioè di una riga che il chiamante non poteva
+      leggere
+    - ~~M18 il `with check` circolare~~ — non era fra le sei, ma è della stessa
+      famiglia ed è la difesa che viene in mente per prima: una funzione `stable`
+      chiamata dal `with check` legge lo snapshot **precedente** all'`update` e
+      approva sempre. `rls-supabase.md` §Il caso peggiore, come quarta difesa che
+      **non** funziona
+
+    Restano aperte le voci non di sicurezza — M1-M4, M9, M11 — e le quattro nuove
+    righe della tabella §Errori classici sono dichiarate **sotto la riga di
+    separazione**: il gate non le guarda, e adesso c'è scritto quali e perché.
 
 ## Il gate ha smesso di essere verde su uno schema sfruttabile (2026-07-27, seconda tornata — chiusa il 2026-07-28)
 
@@ -215,7 +252,8 @@ sbagliate** (§Due premesse smentite). Fuori perimetro per scelta dichiarata: 10
 ### Il blocco n°1, chiuso su due strade
 
 Il collaudo del 2026-07-26 aveva riprodotto 16 difetti su 17 — cinque Critical —
-su uno schema che il gate dichiarava **VERDE 9/9**. Le due direzioni sono state
+su uno schema che il gate dichiarava **VERDE 8/8** — otto perche' `db advisors`
+non esisteva ancora. Le due direzioni sono state
 percorse entrambe, e si controllano a vicenda.
 
 **(a) Test pgTAP negativi obbligatori.** `audit-lib.mjs` produce un `block` su
@@ -274,7 +312,7 @@ OK    contratto d'uscita (configurazioni + handoff)
 ```
 
 **Il rosso è il risultato, non un regresso.** Lo stesso schema, con lo stesso
-seed, chiudeva VERDE 9/9 il giorno prima mentre `/code-inquisition` ci riproduceva
+seed, chiudeva VERDE 8/8 il giorno prima mentre `/code-inquisition` ci riproduceva
 sedici difetti. Portarlo a verde adesso richiede di **correggere lo schema del
 banco** — nuove migrazioni per il `grant` per colonna su `staff`, il vincolo sullo
 stato iniziale di `visits`, il `revoke execute` sulle undici funzioni — ed è
@@ -353,7 +391,7 @@ finirebbero i messaggi di `raise exception` e gli `interval '24 hours'`.
   scelta misurata, non una svista: pretendere `throws_ok` o «righe = 0» avrebbe
   segnalato come mancante il test negativo **corretto** già scritto sul banco, che
   asserisce che la visita è rimasta `prenotata` — conteggio **1**, non 0
-  (`DECISIONI.md` §16).
+  (`../../DECISIONI.md` §16).
 - **Le colonne di privilegio si riconoscono dal nome.** Una colonna `livello` che
   decide dei permessi non la vede nessuno. L'euristica è dichiarata nel messaggio
   del finding, non solo nei documenti.
@@ -361,7 +399,10 @@ finirebbero i messaggi di `raise exception` e gli `interval '24 hours'`.
 
 ## Regole nuove dalla skill Supabase ufficiale (2026-07-27)
 
-Installata `.claude/skills/supabase/SKILL.md` (skill ufficiale Supabase, v0.1.2) e
+Installata `.claude/skills/supabase/SKILL.md` (skill ufficiale Supabase; il
+frontmatter dichiara **0.1.2**, ma il `CHANGELOG.md` che le sta accanto arriva
+alla **0.1.5** del 2026-07-10 — era già vecchia il giorno dell'installazione, e
+prima di rifare il confronto va riscaricata: `skills-lock.json`) e
 confrontata con Schema Forge. Chiuse le lacune che valeva chiudere: **sei regole
 nuove** in `audit-lib.mjs` e un passo nuovo nel gate. Ogni premessa è stata
 **provata su Postgres reale** prima di scrivere la regola, e una premessa si è
@@ -450,7 +491,7 @@ qualcun altro**: `auth_users_exposed`, `policy_exists_rls_disabled`,
 
 ### Fuori perimetro, deciso e scritto
 
-- **Schemi dichiarativi** (`supabase/schemas/`): non adottati — vedi `DECISIONI.md` §13.
+- **Schemi dichiarativi** (`supabase/schemas/`): non adottati — vedi `../../DECISIONI.md` §13.
 - **Server MCP di Supabase**: `psql` + CLI coprono già tutto; MCP aggiungerebbe
   OAuth, un `.mcp.json` e una dipendenza di rete **dentro un gate deterministico**.
 - **Changelog di Supabase al gate**: no, renderebbe il gate non deterministico. È
@@ -478,11 +519,126 @@ qualcun altro**: `auth_users_exposed`, `policy_exists_rls_disabled`,
   `insert` + `select` + `update` è **solo documentazione** in
   `references/rls-supabase.md`, e su quella il gate verde non dice niente.
 
+## Cosa ha trovato l'audit del repo (2026-07-28, terza tornata)
+
+Cinque audit paralleli sul repo intero — non sulla skill soltanto. Il risultato
+più utile è che **i tre numeri di intestazione di questo file reggevano alla
+misura** (132 test, 9 passi, 11 regole: tutti riprodotti eseguendo), e che quasi
+tutto ciò che non reggeva stava **fuori** dal codice: nei documenti che lo
+descrivono. Un agente si giudica anche da lì — chi lo usa legge quelli.
+
+### Il buco vero: il gate promuoveva un handoff bugiardo
+
+`contrattoUscita` verificava che `docs/handoff/07-schema-forge.md` esistesse e
+non avesse segnaposto `{{…}}`. **Niente altro.** Sul banco veterinario — dove il
+gate chiude ROSSO su due passi — l'handoff dichiarava «1 issue, 1 warn, nessun
+bloccante», era fermo a due giorni prima e citava `reminders`, una tabella che
+l'`evolve` aveva già droppato. Il passo lo promuoveva `pass`.
+
+Non è una svista qualsiasi: quel passo esiste **per** far rispettare la clausola
+del `CLAUDE.md` («nessun handoff è valido senza scan pulito **oppure** residuo
+documentato»), e la faceva rispettare nella forma e non nella sostanza.
+
+**Correzione:** l'handoff deve contenere una riga `Gate: VERDE` o `Gate: ROSSO`,
+e il passo la confronta col verdetto degli **otto passi precedenti**. Se diverge,
+fallisce e dice quale dei due è quello vero. Non è un rosso strutturale —
+dichiarare rosso su un gate rosso **passa**. `../../DECISIONI.md` §19.
+
+Verificato sul file vero, non su una fixture: l'handoff del banco (riscritto con
+i due FAIL dentro) → `pass` col verdetto `ROSSO`, `fail` se gli si chiede di
+reggere un `VERDE`.
+
+### Tre robustezze del gate
+
+| Difetto | Prima | Dopo |
+|---|---|---|
+| `JSON.parse(audit.stdout)` nudo | un `rls-audit` morto a metà stampa faceva **crashare il gate**: nessun verdetto affatto | `leggiAudit()`: uscita non-JSON o senza `summary`/`findings` → `skipped`, verifica mancante |
+| confronto dei tipi byte a byte | un BOM o dei CRLF bastavano a far nascere rosso il passo 8 su Windows | `normalizzaTipi()`: si normalizza **solo** ciò che non porta significato. Un tipo diverso resta rosso, e un file UTF-16 pure |
+| «nessun file .sql» coi test annidati | messaggio falso a chi i test ce li ha, in sottocartelle | il conteggio che **decide** resta quello del primo livello (l'unico di cui si sa cosa faccia `supabase test db`); il ricorsivo entra solo nel messaggio |
+
+Un gate che crasha non è né verde né rosso: è **assente**, ed è il peggiore dei
+tre stati perché non lascia traccia.
+
+### Le cinque voci di sicurezza mancanti, scritte
+
+M14-M18 del residuo n°15, più M18-bis (il `with check` circolare). Tre sezioni
+nuove in `references/rls-supabase.md`, una regola in `references/modellazione.md`
+§Vincoli, e quattro righe nuove nella tabella §Errori classici — **sotto una riga
+di separazione**, perché il gate non le guarda e va detto quali.
+
+`references/pattern-ecommerce.md` §Clienti riscritta: due modelli invece di uno
+(residuo n°10, chiuso).
+
+### Documenti che dicevano il falso
+
+Il rilievo più grave non era un numero: **`COME-PROVARLA.md`:241 insegnava a
+bucare il gate.** «Una cartella vuota dà `pass`. Cancellare i test rende il gate
+più verde» — vero fino al 2026-07-27, corretto quel giorno nel **codice** e non
+nella guida. Una guida che insegna la scorciatoia che il gate ha chiuso è peggio
+di una guida assente.
+
+Gli altri, tutti verificati riga per riga:
+
+| Documento | Diceva | È |
+|---|---|---|
+| `../../DECISIONI.md` §8 | «bloccante su tutti e **sette** i passi» · «le esenzioni sono **tre**» · `RF04` su `name,label` | nove passi · quattro esenzioni (c'è `RF05`) · `name,label,role,summary` |
+| `../../HOWTORUN.md` | flusso senza il comando **`test`** · `rls-audit.mjs --json` **senza `--db-url`** · nessuna versione minima della CLI · code-inquisition installato con `Copy-Item` | `test` è obbligatorio (`block`) · senza `--db-url` è l'invocazione che nel collaudo ha auditato il database di un altro cliente · CLI ≥ 2.81.3 · junction, come le altre (`../../DECISIONI.md` §7) |
+| questo file, 5 punti | «VERDE **9/9**» per il collaudo del 26/07 | **8/8**: il nono passo (`db advisors`) è nato il giorno dopo |
+| questo file | `contrattoUscita` = «ottavo passo» · «**tre** devDependencies» seguite da quattro nomi · nove link `DECISIONI.md` relativi | nono passo · quattro · `../../DECISIONI.md` (il file sta nella radice del repo, non qui) |
+| `COME-PROVARLA.md` | uscita `VERDE 9/9` del banco al §2.4, smentita dal §4 quattro sezioni sotto · numerazione dei passi ferma a otto · doppia intestazione che rompeva la tabella | uscita `ROSSO` datata, numerazione allineata, tabella che si renderizza |
+
+### Il banco veterinario adesso si traccia
+
+Era gitignorato: la prova centrale dello stato dell'agente — «il gate chiude
+rosso, e per questi due motivi» — esisteva **su un disco solo**. Un'affermazione
+non riproducibile non è una prova, è un ricordo. Ora è in git (18 file, 188 KB,
+artefatti di runtime esclusi), con le configurazioni riallineate a quelle che la
+skill spedisce oggi: il suo `.sqlfluff` era la copia pre-27/07, cioè il banco
+girava con regole che la skill non ha più. `../../DECISIONI.md` §20.
+
+### Verifiche eseguite
+
+- **Test unitari: da 132 a 143 verdi.** Le otto asserzioni nuove sul contratto
+  d'uscita coprono anche i casi che rendono la regola non banale: `Gate:` dentro
+  un elenco, una citazione o del grassetto → riconosciuta; la parola `VERDE`
+  nella **prosa** → non riconosciuta, perché un controllo su prosa libera è un
+  controllo che non c'è.
+- **Guardiani**: ESLint **0 errori 0 warning**, `knip` pulito, `jscpd` 2 cloni
+  (gli stessi due dichiarati).
+- **Reference contro la configurazione della skill**: i blocchi SQL estratti dalle
+  quattro reference sono ora **20**, di cui **16 statement completi** che passano
+  `sqlfluff` con `resources/config/.sqlfluff`, zero rilievi. I 4 che restano
+  fuori sono frammenti che non sono statement e non finiranno mai in una
+  migrazione: l'elenco di colonne di `modellazione.md`, i due snippet pgTAP con
+  `set local request.jwt.claims`, e la coppia di espressioni `using (…)` di
+  `rls-supabase.md` §I quattro pattern (quest'ultima non era mai stata
+  dichiarata).
+- **Contratto d'uscita provato sul file vero** del banco, non su una fixture.
+
+### Cosa NON è stato fatto, e perché
+
+- **Il seed a caldo (punto 11)**: la strada è corta e scritta, ma provarla vuole
+  un banco vivo con Docker. La regola della casa — una premessa si prova su
+  Postgres reale prima di diventare codice del gate — vale anche quando la
+  correzione sembra ovvia. Sono state ovvie anche le tre premesse smentite.
+- **Il banco a verde**: le tre migrazioni che lo porterebbero lì sono elencate
+  nel suo handoff. Resta rosso apposta, ora però in modo riproducibile.
+- **`semgrep` e `gitleaks`** (punto 12): non installati, restano `MANCANTI`.
+- **`docs/schema/ERD.md` nel contratto d'uscita**: `SKILL.md`:123 lo elenca e
+  nessun passo lo verifica. Lasciato così **di proposito** e adesso dichiarato:
+  aggiungerlo renderebbe rosso ogni progetto che non ha ancora rigenerato il
+  diagramma, e un rosso strutturale insegna a ignorare il rosso.
+- **La deriva di `code-maniac`** fra `~/.claude/skills/` e `agenti/`: 15 file
+  diversi, fra cui `scan.mjs` e le due reference che il `CLAUDE.md` dichiara
+  canoniche. Non toccata: il README dichiara quella cartella uno **snapshot** del
+  repo di finzidev, quindi quale delle due copie sia quella buona non lo decide
+  questo repo. È la prima cosa da chiarire col proprietario.
+
 ## Guardiani sugli script della skill (2026-07-25)
 
 Gli script degli agenti passano sotto i guardiani **come qualsiasi altro codice** (CLAUDE.md, Regola dei guardiani). Predisposto il minimo perché la batteria giri sui soli `scripts/` della skill, senza trasformare il repo di regia in un progetto applicativo:
 
-- `agenti/schema-forge/package.json` — `"type": "module"`, `private: true`, tre devDependencies (`@eslint/js`, `eslint`, `jscpd`, `knip`)
+- `agenti/schema-forge/package.json` — `"type": "module"`, `private: true`, quattro devDependencies (`@eslint/js`, `eslint`, `jscpd`, `knip`)
 - `agenti/schema-forge/eslint.config.mjs` — `js.configs.recommended` più le soglie di complessità (`complexity 15`, `max-depth 4`, `max-params 4`)
 - `agenti/schema-forge/knip.jsonc` — entry point CLI dichiarati, ogni esenzione con la motivazione sulla riga sopra
 - `node_modules/` e `.jscpd/` in `.gitignore`: si reinstallano con `npm install` dalla cartella dell'agente
@@ -505,14 +661,16 @@ Scelte di stile discutibili **elencate e non toccate**: `pulisci`, `vero` e `rig
 
 ## Decisioni prese
 
-- Lo Specchio del dominio ha due modalità (interattiva / pipeline): in pipeline conferma l'orchestratore, ma il modello assunto viene **scritto** nell'handoff. I distruttivi restano sempre checkpoint umano. Risponde a `DECISIONI.md` §1 senza toccare code-maniac.
+- Lo Specchio del dominio ha due modalità (interattiva / pipeline): in pipeline conferma l'orchestratore, ma il modello assunto viene **scritto** nell'handoff. I distruttivi restano sempre checkpoint umano. Risponde a `../../DECISIONI.md` §1 senza toccare code-maniac.
 - La verifica passa dal database reale (`supabase db reset`), non dalla lettura dell'SQL: uno strumento assente produce `skipped`, mai `pass`.
 - Le regole stanno nelle `*-lib.mjs`, i gusci fanno solo I/O: una regola senza test è una regola che può essere spenta da un anno senza che nessuno lo sappia. Una regola nuova si aggiunge nella lib, col suo test.
-- I linter si configurano, il gate non si declassa (`DECISIONI.md` §8).
+- I linter si configurano, il gate non si declassa (`../../DECISIONI.md` §8).
 - **Interi a `bigint` per default, non solo il denaro** (`references/modellazione.md`): il tipo largo costa 4 byte per riga, allargarlo dopo è un `alter column type` sotto lock esclusivo. `integer` solo dove il limite è strutturale e dimostrabile, e si motiva.
 - **Gli script degli agenti passano sotto i guardiani come qualsiasi altro codice**: ogni agente che aggiunge uno script aggiunge il proprio `package.json`/`eslint.config.mjs` locale, altrimenti lo script non è consegnabile.
 - **Un distruttivo autorizzato si dichiara al gate**, non lo si aggira: `-- squawk-ignore <regola>` da solo sulla sua riga, motivazione nelle righe sopra, autorizzazione umana come precondizione. È il modo di registrare chi se n'è preso la responsabilità, non un interruttore per far passare il rosso.
 - **Il gate parla del database che ha davvero guardato**: schemi auditati e URL del database si stampano sempre nel dettaglio del passo. Un audit su metà database, o sul database di un altro progetto, non deve poter assomigliare a un audit completo.
 - **`verify` è l'ultimo passo, non il penultimo.** Tipi e handoff si producono prima: un gate che nasce rosso per come è ordinato il flusso insegna a ignorare il rosso.
 - **Uno strumento esterno nel gate fallisce solo su ciò che lo schema può correggere.** `supabase db advisors` gira con `--fail-on error`: i suoi `WARN` includono impostazioni di Auth del progetto, che nessuna migrazione tocca. Si registrano nel dettaglio, non nel verdetto. Vale come regola generale per ogni strumento che si aggiungerà.
+- **L'handoff dichiara il verdetto del gate, e il gate lo verifica.** Un passo che controlla la *forma* di un documento e non ciò che dice non fa rispettare la regola per cui esiste. La verifica è su una riga di forma fissa (`Gate: VERDE` / `Gate: ROSSO`) perché un controllo su prosa libera è un controllo che non c'è. Dichiarare rosso su un gate rosso **passa**: la regola vieta di mentire, non di consegnare un rosso.
+- **Un banco che è diventato un caso di prova non è più un banco usa e getta.** La §12 di `../../DECISIONI.md` resta valida per i banchi effimeri; `banco-prova-vetcare` si traccia, perché un'affermazione non riproducibile («il gate chiude rosso, e per questi due motivi») non è una prova ma un ricordo.
 - **Una premessa si prova sul database prima di diventare una regola.** Delle sette regole del 2026-07-27, una era stata proposta con la gravità sbagliata (`insert` senza `with check` come `block`) e una avrebbe prodotto falsi positivi sul codice corretto delle reference (`with check` omesso su `update`). Entrambe si vedono solo eseguendo l'SQL: leggere la documentazione non basta, e il gap analysis di un LLM nemmeno.
