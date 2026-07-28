@@ -414,6 +414,30 @@ test("un report senza `suites` non e' un report: la batteria non e' verde", () =
   assert.equal(esitoBatteriaVerde(esitoPlaywright({ nonSonoUnReport: true })), false);
 });
 
+// Un report malformato deve portare a un verdetto, mai a un'eccezione: il gate
+// che esplode esce 1 senza JSON, e chi automatizza non lo distingue da un gate
+// rosso. Le tre forme sono state misurate il 2026-07-28.
+test("un report malformato produce un verdetto, non un'eccezione", () => {
+  for (const rotto of [
+    { suites: [], errors: { message: "boom" } },
+    { suites: [], errors: "boom" },
+    { suites: [null], errors: [] },
+    { suites: [{ title: "a.spec.ts", specs: [null, { title: "x", tests: [null] }], suites: [] }], errors: [] },
+  ]) {
+    const esito = esitoPlaywright(rotto);
+    // niente eccezione, e nessuno di questi casi puo' finire in un verde:
+    // o non ha eseguito niente (MANCANTE), o il gate lo legge come rosso
+    assert.equal(batteriaHaEseguito(esito) && esitoBatteriaVerde(esito), false,
+      `verde su un report rotto: ${JSON.stringify(rotto)}`);
+  }
+});
+
+test("un `errors` che non e' una lista non diventa quattro errori del runner", () => {
+  const esito = esitoPlaywright({ suites: [], errors: "boom" });
+  assert.equal(esito.errori.length, 1);
+  assert.match(esito.errori[0], /non e' una lista/);
+});
+
 // La forma e' quella VERA, catturata il 2026-07-28 da `npx playwright test
 // --reporter=json` sul banco `palestra` con le sei spec marcate `test.skip`:
 // una suite per file, `tests[].status = "skipped"` e `results[].status` uguale.

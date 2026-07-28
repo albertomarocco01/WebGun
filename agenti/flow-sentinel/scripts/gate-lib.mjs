@@ -363,6 +363,14 @@ export function esitoPlaywright(report) {
   if (!report || !Array.isArray(report.suites)) {
     return { ...esito, errori: ["report senza `suites`: contratto del reporter JSON non rispettato"] };
   }
+  // `errors` che non e' una lista: si scandiva lo stesso, e una stringa veniva
+  // iterata carattere per carattere (quattro «errori del runner» inventati da
+  // un `errors: "boom"`), un oggetto faceva esplodere il gate con un TypeError
+  // non gestito — uscita 1 senza JSON, cioe' un gate rosso indistinguibile da
+  // un gate che non ha risposto. Misurato il 2026-07-28.
+  if (report.errors !== undefined && !Array.isArray(report.errors)) {
+    return { ...esito, errori: ["report con `errors` che non e' una lista: contratto del reporter JSON non rispettato"] };
+  }
   for (const messaggio of report.errors ?? []) {
     esito.errori.push(String(messaggio?.message ?? messaggio).trim().split("\n")[0]);
   }
@@ -371,10 +379,16 @@ export function esitoPlaywright(report) {
 }
 
 function visita(suites, antenati, esito) {
+  // Una voce nulla nell'albero faceva esplodere il gate con un TypeError non
+  // gestito: nessun JSON in uscita, e chi automatizza non distingue un gate
+  // rosso da un gate che non ha risposto. Un report malformato deve portare a
+  // MANCANTE, mai a un'eccezione.
   for (const suite of suites ?? []) {
+    if (!suite || typeof suite !== "object") continue;
     const percorso = [...antenati, suite.title].filter(Boolean);
     for (const spec of suite.specs ?? []) {
-      for (const t of spec.tests ?? []) registra([...percorso, spec.title].join(" › "), t.status, esito);
+      if (!spec || typeof spec !== "object") continue;
+      for (const t of spec.tests ?? []) registra([...percorso, spec.title].join(" › "), t?.status, esito);
     }
     visita(suite.suites, percorso, esito);
   }
