@@ -235,7 +235,13 @@ export function findingsCopertura(flussi, spec) {
 // sembra un test come gli altri. Uno `skip` senza motivo scritto accanto e'
 // meno grave ma nasce allo stesso modo: qualcuno lo ha messo «per un attimo».
 const SOLO = /\b(test|describe|it)(?:\.[a-z]+)*\.only\s*\(/;
-const SALTA = /\b(test|describe|it)(?:\.[a-z]+)*\.skip\s*\(/;
+// `.fixme` sta accanto a `.skip` perche' fa la stessa cosa — il test non gira —
+// e nasce dalla stessa mano: «e' rotto, lo aggiusto dopo». Mancava, e non era
+// un limite dichiarato da nessuna parte: misurato il 2026-07-28, una spec
+// aperta con `test.fixme(` non produceva nessun rilievo, `lint-spec` restava
+// verde e `spec-coverage` dichiarava COPERTO un flusso critico che nessun test
+// percorreva. Il tag `@flusso:` sta nel titolo: al gate la spec c'e' e attacca.
+const SALTA = /\b(test|describe|it)(?:\.[a-z]+)*\.(skip|fixme)\s*\(/;
 const COMMENTO = /^\s*(\/\/|\*|\/\*)/;
 
 export function regoleSpec(file, testo) {
@@ -253,11 +259,12 @@ export function regoleSpec(file, testo) {
         message: "`.only` committato: il resto della batteria non gira, e il verde che ne esce non ha guardato niente",
       });
     }
-    if (SALTA.test(linea) && !motivato(linee, i)) {
+    const salta = SALTA.exec(linea);
+    if (salta && !motivato(linee, i)) {
       findings.push({
         severity: "issue",
         object: `${file}:${i + 1}`,
-        message: "`.skip` senza motivazione scritta accanto: scrivi in un commento perche' e' saltato e quando rientra, o toglilo",
+        message: `\`.${salta[2]}\` senza motivazione scritta accanto: scrivi in un commento perche' e' saltato e quando rientra, o toglilo`,
       });
     }
   }

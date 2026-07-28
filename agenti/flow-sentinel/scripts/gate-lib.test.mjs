@@ -256,6 +256,23 @@ test("uno skip senza motivazione e' un issue", () => {
   assert.equal(findings[0]?.severity, "issue");
 });
 
+// `test.fixme` spegne il test esattamente come `test.skip`, e al gate la spec
+// resta li' col suo tag: il flusso risulta coperto. Misurato il 2026-07-28:
+// nessun rilievo, `lint-spec` verde, `spec-coverage` verde.
+test("`test.fixme` senza motivazione e' un issue come lo skip", () => {
+  const findings = regoleSpec("e2e/a.spec.ts",
+    'test.fixme("lo staff crea un corso @flusso:crea-corso", async ({ page }) => {});');
+  assert.equal(findings[0]?.severity, "issue");
+  assert.match(findings[0]?.message, /`\.fixme`/);
+});
+
+test("un `fixme` motivato nel commento sopra non produce rilievi", () => {
+  assert.deepEqual(
+    regoleSpec("e2e/a.spec.ts",
+      '// rotto da handoff 10, rientra col fix di Gestionale Crafter\ntest.fixme("x @flusso:a", async () => {});'),
+    []);
+});
+
 test("uno skip motivato in coda alla riga non produce rilievi", () => {
   assert.deepEqual(
     regoleSpec("e2e/a.spec.ts", "test.skip('x', async () => {}); // pagamenti non ancora collegati, rientra col PSP"),

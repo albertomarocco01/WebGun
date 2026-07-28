@@ -491,7 +491,7 @@ node <percorso-repo-webgun>/agenti/flow-sentinel/scripts/verify.mjs
 |---|---|---|
 | niente `waitForTimeout` | ESLint, passo `lint-spec` | un'attesa fissa scritta a mano con `setTimeout` |
 | nessuna variabile assegnata e mai letta | ESLint (`no-unused-vars`), passo `lint-spec` | un valore letto e confrontato con la cosa sbagliata |
-| nessun `.only`, ogni `.skip` motivato accanto | `regoleSpec`, passo `lint-spec` | uno skip motivato con «per ora» |
+| nessun `.only`, ogni `.skip` e ogni `.fixme` motivato accanto | `regoleSpec`, passo `lint-spec` | uno skip motivato con «per ora» |
 | ogni flusso dichiarato ha una spec che lo attacca | passo `spec-coverage` | il tag vale ovunque nel file, anche in un commento |
 | le spec dei flussi `positivo` e `ostile-scrittura` importano **e chiamano** `helpers/db` | passo `effetto-db` | se l'asserzione è quella giusta; basta una spec per flusso e una chiamata per file |
 | `retries` dichiarato e uguale a 1 | passo `contratto-uscita` | `workers`, `forbidOnly`, `trace`: nessuno li legge |

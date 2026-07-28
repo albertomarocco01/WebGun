@@ -145,7 +145,7 @@ test("checkout ospite @flusso:checkout-ospite", async ({ page }) => {
 });
 ```
 
-**`.skip` non motivato = `issue`.** Nasce come il `.only` — qualcuno lo mette «per un attimo» — ma non spegne il resto della batteria, e uno skip legittimo esiste. La motivazione vale se sta in coda alla riga, oppure sulla **prima riga non vuota sopra** (le righe vuote in mezzo non contano): sono i due posti dove un umano la scrive davvero.
+**`.skip` (e `.fixme`) non motivato = `issue`.** Nasce come il `.only` — qualcuno lo mette «per un attimo» — ma non spegne il resto della batteria, e uno skip legittimo esiste. `.fixme` è la stessa cosa scritta con l'altra parola dell'API di Playwright («è rotto, lo aggiusto dopo»): fino al collaudo del 2026-07-28 non lo guardava nessuno, e una spec aperta con `test.fixme(` lasciava `lint-spec` verde mentre `spec-coverage` dichiarava **coperto** un flusso critico che nessun test percorreva. La motivazione vale se sta in coda alla riga, oppure sulla **prima riga non vuota sopra** (le righe vuote in mezzo non contano): sono i due posti dove un umano la scrive davvero.
 
 Niente sopra, niente in coda — `issue`:
 
