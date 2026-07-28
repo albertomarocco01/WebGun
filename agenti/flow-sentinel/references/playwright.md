@@ -2,7 +2,7 @@
 
 Come si scrive una spec che il gate accetta e che, quando l'app si rompe, diventa rossa. Le regole qui sotto non sono stile: metà le fa rispettare `scripts/verify.mjs` e la sua configurazione ESLint, l'altra metà resta prosa e si controlla a mano — l'ultima sezione dice esattamente quale metà è quale, perché una convenzione che nessuno verifica va saputa, non creduta.
 
-Stack: Playwright + TypeScript contro Next.js (App Router) + Supabase **locale**. Mai contro produzione.
+Stack: Playwright + TypeScript contro Next.js (App Router) + Supabase **locale**. Mai contro produzione: un test che compra, cancella o scrive email su un ambiente vero non è un test, è un incidente.
 
 ## Dove vive la batteria, e perché i nomi non sono negoziabili
 
@@ -47,7 +47,7 @@ Il perché è tutto nel momento in cui il selettore si rompe. **Un selettore di 
 
 ## Attese: una condizione, mai un numero di millisecondi
 
-`waitForTimeout` è **vietato**, ed è l'unica convenzione di questo documento che il gate fa rispettare con ESLint. La regola sta in `resources/config/eslint-spec.config.mjs` e il passo `lint-spec` la applica alla cartella `e2e/` con `--no-config-lookup`, cioè ignorando la configurazione del progetto:
+`waitForTimeout` è **vietato**, ed è una delle due sole regole che il gate fa rispettare con ESLint — l'altra è in fondo a questa sezione. La regola sta in `resources/config/eslint-spec.config.mjs` e il passo `lint-spec` la applica alla cartella `e2e/` con `--no-config-lookup`, cioè ignorando la configurazione del progetto:
 
 ```js
 "no-restricted-syntax": ["error", {
@@ -79,6 +79,8 @@ await expect.poll(() => statoOrdine(idOrdine), {
 ```
 
 Nota onesta sul linter: il selettore intercetta la chiamata **attraverso una proprietà** (`page.waitForTimeout(…)`, `context.waitForTimeout(…)`), che è la forma in cui la si scrive. Un `await new Promise((r) => setTimeout(r, 500))` scritto a mano passa il linter — è la stessa attesa fissa, e la regola contro di essa resta prosa. Se ESLint non è installato nella skill (`npm install` in `agenti/flow-sentinel`), il passo `lint-spec` è MANCANTE — a meno che le regole scritte a mano non abbiano già trovato un `.only`, e allora è `fail`: si è guardato e si è trovato. In entrambi i casi il gate è rosso, perché non aver lintato le spec non è averle trovate pulite.
+
+L'altra regola della configurazione conviene saperla prima di incontrarla, perché rende rosso `lint-spec` su una riga che sembra innocua: **`@typescript-eslint/no-unused-vars` è `error`** (con `argsIgnorePattern: "^_"`). In una spec una variabile assegnata e mai letta è quasi sempre un'asserzione scritta a metà — il valore è stato preso dal database o dalla pagina, il confronto su quel valore no. Il resto della configurazione è `js.configs.recommended` più la raccomandazione di `typescript-eslint`, con `no-undef` spento: su un file `.ts` produce solo falsi positivi sui globali del runtime (`process`, `fetch`), che TypeScript conosce già coi suoi `@types/node`.
 
 ## Autenticazione: utenti veri, creati dal setup, sessioni salvate
 
@@ -114,7 +116,11 @@ export async function creaUtente(u: UtenteDiProva): Promise<string> {
 /** La sessione si conia passando dalla UI vera, non iniettando un token. */
 export async function salvaSessione(u: UtenteDiProva, percorso: string): Promise<void> {
   const browser = await chromium.launch();
-  const page = await browser.newPage({ baseURL: process.env.E2E_BASE_URL });
+  // stesso default di playwright.config.ts: il global-setup gira PRIMA che
+  // `use.baseURL` esista, e senza URL il `goto` relativo qui sotto non parte
+  const page = await browser.newPage({
+    baseURL: process.env.E2E_BASE_URL ?? "http://127.0.0.1:3000",
+  });
   await page.goto("/accesso");
   await page.getByLabel("Email").fill(u.email);
   await page.getByLabel("Password").fill(u.password);
@@ -124,7 +130,7 @@ export async function salvaSessione(u: UtenteDiProva, percorso: string): Promise
   await browser.close();
 }
 
-// ─────────── e2e/global-setup.ts (altro file) — `globalSetup` punta qui
+// ----------- e2e/global-setup.ts (altro file) — `globalSetup` punta qui
 import { creaUtente, salvaSessione, UTENTI } from "./helpers/auth";
 
 export default async function globalSetup(): Promise<void> {
@@ -140,7 +146,7 @@ Regole che ne discendono, ciascuna col suo motivo:
 - **Il flusso di login ha comunque la sua spec, che passa dalla UI vera.** Un file `storageState` è un token su disco: resta valido anche il giorno in cui la pagina di accesso smette di funzionare, e senza una spec dedicata quel guasto non ha nessuno che lo veda. La spec del login dichiara `test.use({ storageState: { cookies: [], origins: [] } })`, altrimenti eredita la sessione del setup e l'app la rimanda via da `/accesso` prima ancora del primo `fill`.
 - **La chiave amministrativa (`service_role`; sulle CLI Supabase recenti la secret key `sb_secret_…`) sta in `.env.e2e.local`, non committato**, si usa solo dentro `e2e/`, e non deve essere raggiungibile da `src/`. Non le si dà mai un nome che inizi per `NEXT_PUBLIC_`, e nessun file di `src/` importa da `e2e/`: un modulo che finisce nel grafo di un componente client finisce nel bundle, e un bundle è pubblico per definizione. Nessun passo del gate lo verifica — lo provano un `grep -r "SECRET" src/` che non trova niente e `code-maniac scan` (gitleaks).
 - **La UI si prova coi ruoli veri**: `anon` e utente autenticato, con il loro token. Impersonare con la chiave amministrativa per «arrivare più in fretta alla pagina» falsifica il flusso: quella chiave scavalca la RLS, quindi il test misura un mondo in cui le policy non esistono e resta verde anche quando ne manca una.
-- **`.gitignore`**: `.env.e2e.local`, `e2e/.auth/`, `playwright-report/`, `test-results/`.
+- **`.gitignore`**: `.env.e2e.local` ed `e2e/.auth/` perché sono una chiave amministrativa e delle sessioni vive — committarli è consegnare un accesso a chiunque legga il repo; `playwright-report/` e `test-results/` perché li riscrive ogni giro, e un diff pieno di screenshot rigenerati è un diff che nessuno rilegge.
 
 ## L'helper di effetto DB
 
@@ -150,6 +156,8 @@ Regole che ne discendono, ciascuna col suo motivo:
 // e2e/helpers/db.ts — l'unico client amministrativo del progetto.
 import { createClient } from "@supabase/supabase-js";
 
+// La porta e' quella di `[api].port` del PROGETTO, non un 54321 generico: con
+// due stack Supabase accesi il default punta allo stack di qualcun altro.
 const URL_SUPABASE = process.env.SUPABASE_URL ?? "http://127.0.0.1:58321";
 const CHIAVE_SEGRETA = process.env.SUPABASE_SECRET_KEY;
 if (!CHIAVE_SEGRETA) {
@@ -218,9 +226,11 @@ e riconosce la chiamata in due forme: `nome(` e `nome.metodo(`. Un import senza 
 Il controllo guarda la **forma, non la semantica**: sa che qualcosa ha guardato il database, non che l'asserzione sia quella giusta. È la stessa onestà che Schema Forge scrive sul suo audit RLS («verifica che la policy esista, non che funzioni»). In concreto, questo passa il gate e non prova niente:
 
 ```ts
-const n = await contaProdotti();   // letto e mai confrontato: il gate e' contento
+await contaProdotti();   // chiamato e mai confrontato: `effetto-db` e' soddisfatto
 await expect(page.getByText("Creato")).toBeVisible();
 ```
+
+La chiamata è nuda apposta: scriverla `const n = await contaProdotti();` soddisferebbe `effetto-db` allo stesso modo, ma la fermerebbe `no-unused-vars` nel passo `lint-spec` — due passi diversi, e il buco resta comunque aperto, perché nessuno dei due guarda l'asserzione.
 
 Due granularità da sapere, perché stringono meno di quanto sembri: il gate guarda il **file intero**, non il singolo test (una spec con due test in cui solo uno chiama l'helper passa), e per un flusso attaccato da più spec basta che **una** lo faccia. Ciò che chiude questi buchi non è un controllo statico più furbo — è il sabotaggio (`references/sabotaggio.md`): si rompe l'app in un punto noto e si guarda se la batteria diventa rossa.
 
@@ -336,6 +346,8 @@ test("il cliente non crea prodotti via API @flusso:scrittura-negata-cliente", as
 });
 ```
 
+Dove sta il token dipende da quale client lo ha scritto, e va guardato prima di copiare il blocco: `@supabase/supabase-js` nel browser lo tiene in `localStorage` (la forma qui sopra), mentre un'app App Router con `@supabase/ssr` lo tiene nei **cookie**, e allora si legge con `page.context().cookies()` filtrando i nomi `sb-…-auth-token`. Cambia la riga che lo recupera, non l'attacco: quello che conta è partire dal token **vero** dell'utente, perché un token coniato dal test lo rifiuta GoTrue prima ancora che la RLS entri in gioco — e il verde che ne uscirebbe direbbe che l'autenticazione funziona, non che la policy regge. È per questo che l'assenza del token è un fallimento esplicito (`.not.toBeNull()`) e non un test che prosegue.
+
 ## Struttura della spec
 
 Una spec per flusso, e **il tag `@flusso:<id>` nel titolo del test**, non nel nome del file. Nel titolo per due motivi concreti: due spec possono attaccare lo stesso flusso (il caso felice e quello degenere), e un file rinominato non deve rompere il contratto con `docs/flussi-critici.md`. Il titolo, in più, è ciò su cui lavora `npx playwright test --grep "@flusso:checkout-ospite"`: il tag serve anche a rilanciare un flusso solo mentre lo si aggiusta.
@@ -432,7 +444,7 @@ export default defineConfig({
 
 **Perché il gate non usa `webServer`.** Il passo `app-viva` deve misurare che l'app risponde **prima** che la batteria parta: è la premessa, e senza premessa l'esito della batteria non è un esito, è il rumore di un'app che non c'era (DECISIONI.md §18). Un runner che si accende l'app da solo rende quella premessa non misurabile: `verify.mjs` interroga l'URL, non trova niente, dichiara `app-viva` MANCANTE e salta `playwright` — cioè il gate resta rosso proprio mentre la batteria sarebbe passata. L'app la si accende prima, a mano o dallo script di avvio, e il gate la trova viva.
 
-**Cosa verifica `contratto-uscita` sulla configurazione**: che `playwright.config.ts` esista e che dichiari `retries` con valore `1`. La lettura è testuale (`/(^|[^\w.])retries\s*:\s*(\d+)/`) e prende la **prima** occorrenza nel file: quindi `retries: process.env.CI ? 1 : 0` risulta «non dichiarato» — non è un numero — e anche un commento che scriva un altro valore accanto alla parola farebbe fallire il passo. Si scrive il numero, e le ragioni si scrivono in prosa come sopra. Il passo controlla anche che `docs/handoff/12-flow-sentinel.md` esista, non contenga segnaposto `{{…}}` e dichiari una riga `Gate: VERDE` o `Gate: ROSSO` coerente con i sei passi precedenti (DECISIONI.md §19).
+**Cosa verifica `contratto-uscita` sulla configurazione**: che `playwright.config.ts` esista e che dichiari `retries` con valore `1`. La lettura è testuale (`/(^|[^\w.])retries\s*:\s*(\d+)/m`) e prende la **prima** occorrenza nel file: quindi `retries: process.env.CI ? 1 : 0` risulta «non dichiarato» — non è un numero — e anche un commento che scriva un altro valore accanto alla parola farebbe fallire il passo. Si scrive il numero, e le ragioni si scrivono in prosa come sopra. Il passo controlla anche che `docs/handoff/12-flow-sentinel.md` esista, non contenga segnaposto `{{…}}` e dichiari una riga `Gate: VERDE` o `Gate: ROSSO` coerente con i sei passi precedenti (DECISIONI.md §19).
 
 `workers: 1` costa secondi su una batteria di dieci flussi e toglie di mezzo una classe intera di rossi che non parlano dell'app. Se un giorno la serialità pesa davvero, la via d'uscita è contare con un filtro per spec (`contaProdotti(prefisso)`), non alzare i worker e sperare — e la deroga va scritta nell'handoff.
 
@@ -461,6 +473,7 @@ node <percorso-repo-webgun>/agenti/flow-sentinel/scripts/verify.mjs
 | Convenzione | Chi la fa rispettare | Cosa resta scoperto |
 |---|---|---|
 | niente `waitForTimeout` | ESLint, passo `lint-spec` | un'attesa fissa scritta a mano con `setTimeout` |
+| nessuna variabile assegnata e mai letta | ESLint (`no-unused-vars`), passo `lint-spec` | un valore letto e confrontato con la cosa sbagliata |
 | nessun `.only`, ogni `.skip` motivato accanto | `regoleSpec`, passo `lint-spec` | uno skip motivato con «per ora» |
 | ogni flusso dichiarato ha una spec che lo attacca | passo `spec-coverage` | il tag vale ovunque nel file, anche in un commento |
 | le spec dei flussi `positivo` e `ostile-scrittura` importano **e chiamano** `helpers/db` | passo `effetto-db` | se l'asserzione è quella giusta; basta una spec per flusso e una chiamata per file |

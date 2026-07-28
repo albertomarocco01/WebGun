@@ -85,6 +85,21 @@ test("la conferma si riconosce anche in grassetto dentro un elenco", () => {
     "ORCHESTRATORE il 2026-07-28");
 });
 
+// Buco vero, riprodotto il 2026-07-28: con `\s` nella classe dopo i due punti,
+// una riga `Confermato da:` VUOTA catturava la prima riga non vuota che seguiva
+// — l'intestazione del primo flusso — e il gate dichiarava confermato un
+// contratto che nessuno aveva firmato. E' il falso verde peggiore, perche' sta
+// sul passo che esiste apposta per impedirlo.
+test("una riga `Confermato da:` vuota NON e' una firma: pesca la riga dopo", () => {
+  const { confermatoDa, flussi } = leggiFlussi("# Flussi\n\nConfermato da:\n\n## `a-b` — positivo\n");
+  assert.equal(confermatoDa, null);
+  assert.equal(flussi.length, 1, "i flussi si leggono lo stesso: manca la firma");
+});
+
+test("una riga `Confermato da:` con soli spazi non e' una firma", () => {
+  assert.equal(leggiFlussi("Confermato da:   \nUMANO\n").confermatoDa, null);
+});
+
 test("un tipo sconosciuto e' un errore, e quel flusso non entra nell'elenco", () => {
   const { flussi, errori } = leggiFlussi("## `pippo` — ostile\n");
   assert.deepEqual(flussi, []);
@@ -439,6 +454,12 @@ test("dichiarare VERDE su un gate rosso fallisce, e il passo dice quale e' quell
   const esito = contrattoUscita("docs/handoff/12.md", "Gate: VERDE\n", CONFIG_PW, "ROSSO");
   assert.equal(esito.status, "fail");
   assert.match(esito.detail, /dichiara `Gate: VERDE` ma il gate chiude ROSSO/);
+});
+
+test("un `Gate:` lasciato a meta' non va a pescare la parola VERDE piu' sotto", () => {
+  const esito = contrattoUscita("docs/handoff/12.md", "# Handoff\n\nGate:\n\nIl banco era VERDE ieri.\n", CONFIG_PW, "VERDE");
+  assert.equal(esito.status, "fail");
+  assert.match(esito.detail, /non dichiara il verdetto/);
 });
 
 test("un handoff che non dichiara niente non e' un handoff", () => {

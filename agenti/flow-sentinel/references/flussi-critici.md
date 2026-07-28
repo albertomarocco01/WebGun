@@ -90,13 +90,17 @@ Il passo `effetto-db` verifica che almeno una delle spec che attaccano il flusso
 
 ```ts
 // e2e/checkout.spec.ts — la forma che il gate riconosce
-import { ordinePerEmail } from "./helpers/db";   // il percorso deve finire in `helpers/db`
-// ...
-const ordine = await ordinePerEmail("ospite@prova.local");  // importato E chiamato
-expect(ordine?.status).toBe("in_attesa");
+import { expect, test } from "@playwright/test";
+import { ordinePerEmail } from "./helpers/db"; // il percorso finisce in `helpers/db`, estensione facoltativa
+
+test("l'ospite completa il checkout @flusso:checkout-ospite", async ({ page }) => {
+  // ... i passi del flusso nel browser
+  const ordine = await ordinePerEmail("ospite@prova.local"); // importato E chiamato
+  expect(ordine?.status).toBe("in_attesa");
+});
 ```
 
-Un import senza chiamata non conta (un import non asserisce niente) e un percorso diverso da `helpers/db` non viene riconosciuto. Ciò che il gate **non** sa è se l'asserzione è quella giusta: una spec che chiama l'helper e poi confronta un valore irrilevante passa il passo. Quella distanza la chiude il **sabotaggio** (`references/sabotaggio.md`), che rompe l'app in un punto noto e pretende il rosso. La stessa onestà che Schema Forge scrive sul suo audit RLS: lo strumento guarda la forma, la semantica la dimostrano i test.
+Un import senza chiamata non conta (un import non asserisce niente) e un percorso che non finisce in `helpers/db` non viene riconosciuto: `./helpers/db.ts` e `../../e2e/helpers/db.js` valgono, `./helpers/database` no. Ciò che il gate **non** sa è se l'asserzione è quella giusta: una spec che chiama l'helper e poi confronta un valore irrilevante passa il passo. Quella distanza la chiude il **sabotaggio** (`references/sabotaggio.md`), che rompe l'app in un punto noto e pretende il rosso. La stessa onestà che Schema Forge scrive sul suo audit RLS: lo strumento guarda la forma, la semantica la dimostrano i test.
 
 ## Come si derivano i flussi ostili
 
@@ -203,7 +207,7 @@ Due modi di sbagliare che si comportano in modo diverso, e vale la pena conoscer
 
 Una conseguenza da tenere a mente scrivendo la prosa: **le intestazioni di sezione normali si scrivono con l'iniziale maiuscola.** Un `## note-operative` tutto minuscolo con un trattino dentro viene letto come un flusso `note` di tipo `operative` e fa fallire il passo. `## Note operative` no.
 
-Diagnosi rapida: se il dettaglio del gate dice «non dichiara nessun flusso» ma nel file le intestazioni ci sono, il tipo è sbagliato **in tutte** — in quel caso il passo esce `skipped` con quel messaggio e gli errori di tipo non vengono stampati.
+Diagnosi rapida: se il dettaglio del gate dice «non dichiara nessun flusso» ma nel file le intestazioni ci sono, allora **nessuna** è stata accettata, e le cause sono due — o non combaciano con il formato (`###`, una maiuscola, testo dopo il tipo), o combaciano tutte con un tipo sconosciuto. Nel secondo caso gli errori di tipo vengono calcolati e **buttati via**: l'elenco vuoto è una premessa che manca, e la premessa si legge prima dell'esito, quindi il passo esce `skipped` con quel solo messaggio. Si guardano le intestazioni una per una, non il messaggio.
 
 ### L'id stabile
 
@@ -224,7 +228,7 @@ Cosa il parser accetta:
 - la riga può stare **ovunque** nel documento; vale la prima che compare;
 - tollera l'elenco puntato, la citazione e il grassetto — `- **Confermato da:** ORCHESTRATORE (2026-07-28)` e `> Confermato da: …` valgono quanto la riga nuda, perché sono tre modi di scrivere la stessa riga in markdown;
 - le parole sono **esattamente** `Confermato da` seguite dai due punti (maiuscole e minuscole indifferenti): `Confermato dall'umano:` **non** combacia;
-- **dopo i due punti ci vuole qualcosa.** Una riga `Confermato da:` vuota non è una firma, e il gate la tratta come assente.
+- **la firma sta sulla stessa riga dei due punti.** Una riga `Confermato da:` lasciata vuota (o coi soli spazi) vale **come se non ci fosse**: il passo è MANCANTE. È una correzione fatta durante la costruzione, non un dettaglio di stile — la prima versione del parser ammetteva l'a capo fra i due punti e la firma, e allora una riga vuota catturava la prima riga non vuota che seguiva: il gate stampava `confermati da: ## \`accesso-staff\` — positivo` e usciva **verde su un contratto che nessuno aveva firmato**. Riprodotto il 2026-07-28 e chiuso ammettendo i soli spazi orizzontali, con due test che lo bloccano. Il caso conta perché una riga lasciata a metà è la forma tipica di un template non finito, cioè esattamente la situazione in cui la conferma non c'è stata.
 
 Tutto ciò che segue i due punti viene catturato e **ristampato nel dettaglio del passo**, anche quando il gate è verde: chi legge l'esito vede chi ha firmato senza aprire il file. È la stessa regola con cui Schema Forge stampa sempre quale database ha guardato (`DECISIONI.md` §11): una verifica non deve poter assomigliare a una verifica diversa.
 

@@ -16,7 +16,7 @@ export default [
     languageOptions: {
       ecmaVersion: 2024,
       sourceType: "module",
-      globals: { console: "readonly", process: "readonly", fetch: "readonly", AbortSignal: "readonly" },
+      globals: { console: "readonly", process: "readonly", fetch: "readonly", AbortSignal: "readonly", URL: "readonly" },
     },
     rules: {
       complexity: ["warn", 15],

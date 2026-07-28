@@ -22,20 +22,20 @@
 // CRLF e, se il file e' passato da PowerShell, il BOM. Nessuna delle due porta
 // significato, ed entrambe hanno gia' fatto nascere rosso un passo verde
 // (Schema Forge, confronto dei tipi byte a byte). Si tolgono qui, una volta.
-export const righe = (testo) =>
+const righe = (testo) =>
   senzaBom(testo).split(/\r?\n/);
 
-export const senzaBom = (testo) => String(testo ?? "").replace(/^\uFEFF/, "");
+const senzaBom = (testo) => String(testo ?? "").replace(/^\uFEFF/, "");
 
 /** I tre tipi di flusso. L'ordine e' quello di `references/flussi-critici.md`. */
-export const TIPI_FLUSSO = Object.freeze(["positivo", "ostile-lettura", "ostile-scrittura"]);
+const TIPI_FLUSSO = Object.freeze(["positivo", "ostile-lettura", "ostile-scrittura"]);
 
 /**
  * I tipi che DEVONO asserire l'effetto sul database.
  * `ostile-lettura` non c'e' apposta: un attacco in lettura non cambia niente,
  * quindi non c'e' stato da confrontare — il rifiuto della rotta e' l'asserzione.
  */
-export const TIPI_CON_EFFETTO_DB = Object.freeze(["positivo", "ostile-scrittura"]);
+const TIPI_CON_EFFETTO_DB = Object.freeze(["positivo", "ostile-scrittura"]);
 
 /** Un rilievo per riga, nella forma in cui lo legge un umano nel dettaglio. */
 export const dettaglioFindings = (findings) =>
@@ -62,8 +62,14 @@ export const statoDaFindings = (findings) =>
 // scrivere lo stesso separatore in markdown, non tre significati.
 const INTESTAZIONE_FLUSSO = /^##\s+`?([a-z0-9][a-z0-9-]*)`?\s*[—–-]\s*([a-z-]+)\s*$/;
 
-// Tollera elenco puntato, citazione e grassetto — come la riga `Gate:`.
-const RIGA_CONFERMA = /^[\s>*_-]*Confermato da[\s*_]*:[\s*_]*(.+?)[\s*_]*$/im;
+// Tollera elenco puntato, citazione e grassetto — come la riga `Gate:`: sono
+// tre modi di scrivere la stessa riga in markdown, non tre significati.
+// Gli spazi ammessi sono SOLO orizzontali. Con `\s` la classe includeva l'a
+// capo, e una riga `Confermato da:` VUOTA catturava la prima riga non vuota
+// che seguiva — cioe' l'intestazione del primo flusso: il gate dichiarava
+// confermato un contratto che nessuno aveva firmato. Riprodotto il 2026-07-28
+// e chiuso ammettendo i soli spazi orizzontali, con due test che lo bloccano.
+const RIGA_CONFERMA = /^[ \t>*_-]*Confermato da[ \t*_]*:[ \t*_]*(\S.*?)[ \t*_]*$/im;
 
 export function leggiFlussi(testo) {
   const flussi = [];
@@ -346,7 +352,7 @@ export function formaEseguibile(nome, cercaPercorso, piattaforma = process.platf
 // ----------------------------------------------- lettura del `config.toml`
 // Tre chiavi in tutto: nessun parser TOML fra le dipendenze di uno script che
 // deve girare ovunque con `node` e basta.
-export function valoreToml(testoConfig, sezione, chiave) {
+function valoreToml(testoConfig, sezione, chiave) {
   let dentro = false;
   const cerca = new RegExp(`^\\s*${chiave}\\s*=\\s*(.+)$`);
   const linee = righe(testoConfig);
@@ -431,7 +437,10 @@ export const verdettoDa = (passi) =>
 
 // Una riga sola, in una forma sola: un controllo su prosa libera e' un
 // controllo che non c'e' (DECISIONI.md §19).
-const RIGA_VERDETTO = /^[\s>*_-]*Gate[\s*_]*:[\s*_]*(VERDE|ROSSO)\b/im;
+// Stessa cautela della riga `Confermato da:`: solo spazi orizzontali, o un
+// `Gate:` lasciato a meta' andrebbe a pescare la parola VERDE tre righe piu'
+// sotto, in una frase che parla d'altro.
+const RIGA_VERDETTO = /^[ \t>*_-]*Gate[ \t*_]*:[ \t*_]*(VERDE|ROSSO)\b/im;
 
 /** `retries: 1` — ne' 0 (rosso strutturale) ne' 2 (un flaky su tre invisibile). */
 const RIGA_RETRIES = /(^|[^\w.])retries\s*:\s*(\d+)/m;
