@@ -26,6 +26,7 @@ import {
   findingsEffettoDb,
   formaEseguibile,
   leggiFlussi,
+  primoEseguibile,
   regoleSpec,
   righeDaPsql,
   schemiEsposti,
@@ -371,6 +372,29 @@ test("psql su Windows lascia il \\r in coda: le righe si leggono pulite", () => 
 });
 
 // ------------------------------------------------- shim .cmd su Windows
+
+// `where npx` elenca DUE file: lo script di shell senza estensione (per Git
+// Bash) e lo shim `.cmd`. Prendere la prima riga era un guasto vero, misurato
+// sul banco: `spawnSync` non sa eseguire lo script di shell, e il passo
+// `playwright` diceva «report JSON non interpretabile» su una macchina dove
+// `npx playwright test` funziona.
+test("fra le righe di `where` si sceglie quella eseguibile, non la prima", () => {
+  assert.equal(
+    primoEseguibile("C:\\Program Files\\nodejs\\npx\r\nC:\\Program Files\\nodejs\\npx.cmd\r\n"),
+    "C:\\Program Files\\nodejs\\npx.cmd");
+});
+
+test("con un solo `.exe` si prende quello, senza cercare altro", () => {
+  assert.equal(primoEseguibile("C:\\scoop\\psql.exe\n"), "C:\\scoop\\psql.exe");
+});
+
+test("se nessuna riga ha un'estensione eseguibile (Linux) si prende la prima", () => {
+  assert.equal(primoEseguibile("/usr/bin/psql\n/usr/local/bin/psql\n"), "/usr/bin/psql");
+});
+
+test("uscita vuota di `where`: nessun percorso, non una stringa vuota", () => {
+  assert.equal(primoEseguibile(""), null);
+});
 
 test("su Windows uno shim .cmd si lancia con cmd.exe /c, non con shell:true", () => {
   assert.deepEqual(formaEseguibile("npx", () => "C:\\Program Files\\nodejs\\npx.cmd", "win32"),

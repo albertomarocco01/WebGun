@@ -315,6 +315,25 @@ export const esitoBatteriaVerde = (esito) =>
  * NON si usa `shell: true`: li' gli argomenti vengono concatenati invece che
  * passati come vettore, e questo gate passa percorsi con spazi e SQL intero.
  */
+const ESTENSIONE_ESEGUIBILE = /\.(exe|cmd|bat|com)$/i;
+
+/**
+ * Quale riga di `where` e' davvero lanciabile.
+ *
+ * npm installa DUE file per ogni comando: uno script di shell senza estensione
+ * (per Git Bash) e uno shim `.cmd` (per Windows). `where npx` li elenca in
+ * quest'ordine, e la prima riga — quella senza estensione — Windows non sa
+ * eseguirla: `spawnSync` fallisce senza stdout. Misurato il 2026-07-28 sul
+ * banco: il passo `playwright` risultava «report JSON non interpretabile» su
+ * una macchina dove `npx playwright test` funziona benissimo.
+ * Il guasto andava nella direzione sicura (MANCANTE, mai un falso verde), la
+ * diagnosi no: incolpava Playwright di un problema di PATHEXT.
+ */
+export function primoEseguibile(uscitaWhere) {
+  const trovate = righe(uscitaWhere).map((r) => r.trim()).filter(Boolean);
+  return trovate.find((r) => ESTENSIONE_ESEGUIBILE.test(r)) ?? trovate[0] ?? null;
+}
+
 export function formaEseguibile(nome, cercaPercorso, piattaforma = process.platform) {
   if (piattaforma !== "win32") return { file: nome, prefisso: [] };
   const trovato = cercaPercorso(nome);

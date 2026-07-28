@@ -35,6 +35,7 @@ import {
   findingsEffettoDb,
   formaEseguibile,
   leggiFlussi,
+  primoEseguibile,
   regoleSpec,
   righeDaPsql,
   schemiEsposti,
@@ -98,7 +99,7 @@ const leggiSeCe = (relativo) => {
 function dove(nome) {
   const res = spawnSync(process.platform === "win32" ? "where" : "which", [nome], { encoding: "utf8" });
   if (res.error || res.status !== 0) return null;
-  return (res.stdout ?? "").split(/\r?\n/).map((r) => r.trim()).find(Boolean) ?? null;
+  return primoEseguibile(res.stdout);
 }
 
 function has(cmd) {
@@ -345,6 +346,13 @@ function passoPlaywright(ctx) {
     return;
   }
   const res = run("npx", ["playwright", "test", "--reporter=json"]);
+  // il guasto va nella direzione sicura (MANCANTE), ma la diagnosi deve dire
+  // COSA e' andato storto: «report non interpretabile» su un errore di
+  // esecuzione incolpa Playwright di un problema che sta altrove
+  if (res.error) {
+    record(ID.playwright, etichetta, "skipped", `la batteria non e' stata lanciata: ${res.error.message}`);
+    return;
+  }
   const { parsed, errore } = estraiOggettoJson(res.stdout || res.stderr || "");
   if (errore) {
     record(ID.playwright, etichetta, "skipped", `report JSON di Playwright non interpretabile: ${errore}`);
