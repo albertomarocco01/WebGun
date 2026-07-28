@@ -475,14 +475,29 @@ function valoreToml(testoConfig, sezione, chiave) {
   let dentro = false;
   const cerca = new RegExp(`^\\s*${chiave}\\s*=\\s*(.+)$`);
   const linee = righe(testoConfig);
-  for (const linea of linee) {
-    const intestazione = /^\s*\[([^\]]+)\]/.exec(linea);
+  for (let i = 0; i < linee.length; i++) {
+    const intestazione = /^\s*\[([^\]]+)\]/.exec(linee[i]);
     if (intestazione) {
       dentro = intestazione[1].trim() === sezione;
       continue;
     }
-    const trovata = dentro && cerca.exec(linea);
-    if (trovata) return trovata[1];
+    const trovata = dentro && cerca.exec(linee[i]);
+    if (!trovata) continue;
+    // Un array TOML puo' stare su piu' righe, ed e' come lo scrive chi ne
+    // elenca tre. Guardando solo il resto della riga, `schemas = [` valeva `[`
+    // e `schemiEsposti` ripiegava su `["public"]` IN SILENZIO: il gate
+    // interrogava un solo schema e stampava «schemi esposti: public» come se
+    // fosse la verita' del progetto. E' il difetto W9 del collaudo di Schema
+    // Forge (2026-07-26), ereditato con la forma della funzione e riprodotto
+    // qui il 2026-07-28. Un audit parziale non deve poter assomigliare a un
+    // audit completo (DECISIONI.md §11).
+    let valore = trovata[1];
+    if (valore.includes("[") && !valore.includes("]")) {
+      for (let j = i + 1; j < linee.length && !valore.includes("]"); j++) {
+        valore += ` ${linee[j].trim()}`;
+      }
+    }
+    return valore;
   }
   return null;
 }

@@ -509,6 +509,18 @@ test("senza [api].schemas vale il default documentato di Supabase", () => {
   assert.deepEqual(schemiEsposti("[db]\nport = 58322\n"), ["public"]);
 });
 
+// W9 del collaudo di Schema Forge (2026-07-26), ereditato con la forma della
+// funzione e riprodotto qui il 2026-07-28: un array TOML su piu' righe e'
+// validissimo, ed e' come lo scrive chi ne elenca tre. Il ripiego silenzioso su
+// `public` faceva interrogare un solo schema e stampare «schemi esposti:
+// public» come se fosse la verita' del progetto.
+test("gli schemi si leggono anche se l'array e' scritto su piu' righe", () => {
+  const config = '[api]\nenabled = true\nport = 59321\nschemas = [\n  "public",\n  "graphql_public",\n  "catalogo",\n]\n\n[db]\nport = 59322\n';
+  assert.deepEqual(schemiEsposti(config), ["public", "graphql_public", "catalogo"]);
+  assert.equal(urlDbProgetto(config), "postgresql://postgres:postgres@127.0.0.1:59322/postgres",
+    "la chiave dopo l'array multiriga si legge ancora");
+});
+
 // ------------------------------------------------------ premessa del seed
 
 test("il conteggio delle righe virgoletta gli identificatori", () => {
