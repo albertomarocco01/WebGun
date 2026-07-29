@@ -1,0 +1,215 @@
+/**
+ * progetto-lib.mjs — Le regole del CONTRATTO del progetto, senza I/O.
+ *
+ * Qui sta cio' che risponde a due domande che nessun linter pone:
+ *   «di quali tabelle il cliente puo' davvero occuparsi?» (§entita ancorate)
+ *   «l'handoff dice la verita' sul gate che lo sta verificando?» (§contratto)
+ *
+ * Importa `dentroGraffe` da `audit-lib.mjs` invece di riscriverlo: e' una
+ * decisione, non una svista. Schema Forge tiene le sue due librerie
+ * indipendenti e paga otto righe di duplicazione; qui le due librerie fanno
+ * parte dello stesso audit e girano sempre insieme, quindi la dipendenza non
+ * accoppia niente che fosse separato.
+ */
+
+import { conBarre, dentroGraffe, perRegExp } from "./audit-lib.mjs";
+
+// ─── le tabelle vere: quelle dei tipi generati ───────────────────────────────
+// L'elenco delle entita' non lo dichiara l'agente: verrebbe da se' stesso, e un
+// gate che verifica cio' che l'agente ha deciso non verifica niente. La fonte e'
+// `src/lib/database.types.ts`, che lo rigenera `supabase gen types` DALLO
+// SCHEMA REALE — cioe' da schema-forge, a monte.
+export function tabelleDaiTipi(testo, schema = "public") {
+  const codice = String(testo ?? "");
+  const inizioSchema = new RegExp(`(^|\\s)${perRegExp(schema)}\\s*:\\s*\\{`, "m").exec(codice);
+  if (!inizioSchema) return [];
+
+  const apertura = codice.indexOf("{", inizioSchema.index);
+  const blocco = dentroGraffe(codice, apertura);
+
+  const inizioTabelle = /\bTables\s*:\s*\{/.exec(blocco);
+  if (!inizioTabelle) return [];
+
+  const bloccoTabelle = dentroGraffe(blocco, blocco.indexOf("{", inizioTabelle.index));
+  return chiaviDiPrimoLivello(bloccoTabelle);
+}
+
+/** Le chiavi al primo livello di un blocco `{ ... }`. `[_ in never]: never` —
+ *  la forma che Supabase genera per uno schema vuoto — non e' una tabella. */
+export function chiaviDiPrimoLivello(blocco) {
+  const chiavi = [];
+  let livello = 0;
+  const re = /[{}]|(^|[,{\s])["']?([A-Za-z_][\w]*)["']?\s*:/g;
+  let m;
+  while ((m = re.exec(blocco)) !== null) {
+    if (m[0] === "{") livello += 1;
+    else if (m[0] === "}") livello -= 1;
+    else if (livello === 1 && m[2] && m[2] !== "never") chiavi.push(m[2]);
+  }
+  return [...new Set(chiavi)];
+}
+
+// ─── la configurazione del progetto ──────────────────────────────────────────
+// E' il `supabase/config.toml` di questo agente: senza, il gate non sa nemmeno
+// dove sia il gestionale. Un default silenzioso (`src/app/admin`) farebbe
+// passare per «audit completo» un audit su una cartella inesistente.
+const CHIAVI_OBBLIGATORIE = ["adminRoot", "guardie", "entita"];
+
+export function validaConfig(oggetto) {
+  const errori = [];
+  if (!oggetto || typeof oggetto !== "object") {
+    return { errori: ["gestionale.config.json non e' un oggetto JSON"] };
+  }
+  for (const chiave of CHIAVI_OBBLIGATORIE) {
+    if (oggetto[chiave] === undefined) errori.push(`manca la chiave \`${chiave}\``);
+  }
+  if (Array.isArray(oggetto.guardie) && oggetto.guardie.length === 0) {
+    errori.push("`guardie` e' vuoto: senza il nome delle funzioni di guardia, la regola sulle rotte non puo' scattare mai");
+  }
+  if (oggetto.entita !== undefined && !Array.isArray(oggetto.entita)) {
+    errori.push("`entita` deve essere un elenco");
+  }
+  return { errori };
+}
+
+// ─── l'ancoraggio: nessuna tabella sparisce in silenzio ──────────────────────
+// La differenza fra le tabelle dello schema e le entita' gestite non si chiude
+// «perche' l'agente ha deciso cosi'»: o c'e' una vista, o c'e' una motivazione
+// scritta. Il terzo caso — la tabella dimenticata — e' quello che il cliente
+// scopre in produzione, quando gli serve.
+const MOTIVO_MINIMO = 20;
+
+export function regolaEntitaAncorate(tabelle, config, esisteRotta) {
+  const findings = [];
+  const gestite = new Map((config.entita ?? []).map((e) => [e.tabella, e]));
+  const escluse = new Map((config.escluse ?? []).map((e) => [e.tabella, e]));
+
+  for (const tabella of tabelle) {
+    const gestita = gestite.get(tabella);
+    if (gestita) {
+      if (!esisteRotta(gestita.rotta)) {
+        findings.push({
+          severity: "block",
+          object: tabella,
+          message: `entita' dichiarata gestita ma la rotta \`${gestita.rotta}\` non esiste sotto ${conBarre(config.adminRoot)}`,
+          hint: "genera la vista, oppure spostala fra le `escluse` con la motivazione",
+        });
+      }
+      continue;
+    }
+
+    const esclusa = escluse.get(tabella);
+    if (!esclusa) {
+      findings.push({
+        severity: "block",
+        object: tabella,
+        message: "tabella dello schema senza vista di gestione e senza motivazione: il cliente non ha modo di occuparsene, e nessuno ha deciso che vada bene cosi'",
+        hint: "o una vista CRUD, o una riga in `escluse` con il motivo scritto — la terza strada e' la tabella che si scopre mancante in produzione",
+      });
+      continue;
+    }
+
+    if (String(esclusa.motivo ?? "").trim().length < MOTIVO_MINIMO) {
+      findings.push({
+        severity: "block",
+        object: tabella,
+        message: "tabella esclusa senza una motivazione leggibile: un'esclusione senza motivo e' una dimenticanza con l'aria di una decisione",
+        hint: `scrivi perche' il cliente non deve gestirla (almeno ${MOTIVO_MINIMO} caratteri)`,
+      });
+    }
+  }
+
+  for (const [tabella] of gestite) {
+    if (!tabelle.includes(tabella)) {
+      findings.push({
+        severity: "block",
+        object: tabella,
+        message: "entita' dichiarata che nello schema non esiste: i tipi generati non la conoscono",
+        hint: "rigenera i tipi (`supabase gen types`) o correggi il nome. Se la tabella serve, la scrive schema-forge, non questo agente",
+      });
+    }
+  }
+
+  return findings;
+}
+
+// ─── il contratto d'uscita ───────────────────────────────────────────────────
+// Stessa forma di Schema Forge, e per lo stesso motivo: un passo che controlla
+// che un file ESISTA non fa rispettare la clausola del CLAUDE.md per cui e'
+// nato. Il verdetto dichiarato si confronta con quello misurato.
+export const HANDOFF = "docs/handoff/10-gestionale-crafter.md";
+
+const RIGA_VERDETTO = /^[\s>*_-]*Gate[\s*_]*:[\s*_]*(VERDE|ROSSO)\b/im;
+
+export function verdettoDa(passi) {
+  return passi.some((s) => s.status !== "pass") ? "ROSSO" : "VERDE";
+}
+
+export function contrattoUscita(esiste, leggi, verdettoPrima) {
+  if (!esiste(HANDOFF)) {
+    return {
+      status: "fail",
+      detail: `${HANDOFF} assente: il passaggio a valle non e' valido (comando \`handoff\`)`,
+    };
+  }
+
+  const testo = leggi(HANDOFF);
+  const mancanti = [];
+
+  if (testo.includes("{{")) {
+    mancanti.push(`${HANDOFF} contiene segnaposto {{...}} non compilati`);
+  }
+
+  const dichiarato = RIGA_VERDETTO.exec(testo)?.[1]?.toUpperCase() ?? null;
+  if (dichiarato === null) {
+    mancanti.push(
+      `${HANDOFF} non dichiara il verdetto del gate: serve una riga \`Gate: ${verdettoPrima}\`. Chi viene dopo non deve rilanciare il gate per sapere com'era chiuso`,
+    );
+  } else if (dichiarato !== verdettoPrima) {
+    mancanti.push(
+      `${HANDOFF} dichiara \`Gate: ${dichiarato}\` ma il gate chiude ${verdettoPrima}: l'handoff parla di un'altra esecuzione. Riscrivilo con i residui di QUESTA`,
+    );
+  }
+
+  return {
+    status: mancanti.length === 0 ? "pass" : "fail",
+    detail: mancanti.join("\n"),
+  };
+}
+
+// ─── il database del PROGETTO, non un altro ──────────────────────────────────
+// Stessa regola di Schema Forge, e per lo stesso incidente: la porta 54322 e'
+// il default, e su una macchina con due stack Supabase accesi e' il database di
+// un altro cliente. Precedenza: `--db-url` esplicito > `config.toml` > MAI
+// l'ambiente. Senza porta risolvibile non si audita alla cieca.
+export function urlDbProgetto(testoConfig) {
+  const valore = valoreToml(testoConfig, "db", "port");
+  const porta = valore && /^(\d+)/.exec(valore.trim());
+  return porta ? `postgresql://postgres:postgres@127.0.0.1:${porta[1]}/postgres` : null;
+}
+
+export function valoreToml(testoConfig, sezione, chiave) {
+  let dentro = false;
+  const cerca = new RegExp(`^\\s*${perRegExp(chiave)}\\s*=\\s*(.+)$`);
+
+  for (const riga of String(testoConfig ?? "").split(/\r?\n/)) {
+    const intestazione = /^\s*\[([^\]]+)\]/.exec(riga);
+    if (intestazione) {
+      dentro = intestazione[1].trim() === sezione;
+      continue;
+    }
+    if (!dentro) continue;
+    const trovata = cerca.exec(riga);
+    if (trovata) return trovata[1];
+  }
+
+  return null;
+}
+
+// ─── confronto dei tipi ──────────────────────────────────────────────────────
+// Si normalizza SOLO cio' che non porta significato (BOM, fine riga): su
+// Windows un CRLF fa nascere rosso un passo che non parla dello schema, e un
+// rosso strutturale insegna a ignorare il rosso.
+export function normalizzaTipi(testo) {
+  return String(testo ?? "").replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").trim();
+}

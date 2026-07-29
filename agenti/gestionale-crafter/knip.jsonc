@@ -1,0 +1,16 @@
+// Configurazione knip degli script di Gestionale Crafter.
+// Ogni esenzione ha la motivazione sulla riga sopra: un'esenzione senza motivo
+// scritto e' un'esenzione che nessuno rimettera' mai (DECISIONI.md §8).
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+
+  // I due script sono ENTRY POINT da riga di comando, non moduli importati:
+  // `verify.mjs` invoca `admin-audit.mjs` come processo separato, e l'audit si
+  // lancia anche a mano. Senza questa riga knip li dichiara file morti.
+  "entry": ["scripts/verify.mjs", "scripts/admin-audit.mjs", "scripts/*.test.mjs"],
+  "project": ["scripts/**/*.mjs"],
+
+  // eslint e jscpd non si importano: li ESEGUE `code-maniac scan` come binari.
+  // Toglierli dal package.json spegnerebbe due passi della batteria.
+  "ignoreDependencies": ["eslint", "jscpd"]
+}
