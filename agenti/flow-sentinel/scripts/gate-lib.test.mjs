@@ -1,0 +1,758 @@
+/**
+ * gate-lib.test.mjs — Le regole del gate, una per una.
+ *
+ * Runner nativo, zero dipendenze:  node --test "scripts/**\/*.test.mjs"
+ * (su Node 24 il percorso passato a `--test` e' un pattern glob, non una
+ * cartella: le virgolette servono.)
+ *
+ * Regola della casa: ogni regola ha il caso in cui SCATTA e quello in cui NON
+ * deve scattare. Il secondo e' quello che conta — una regola che scatta sempre
+ * e' rumore, e il rumore si impara a scavalcare.
+ */
+
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import {
+  contaGravita,
+  contrattoUscita,
+  copertura,
+  dettaglioPlaywright,
+  eSpec,
+  batteriaHaEseguito,
+  esitoBatteriaVerde,
+  esitoPlaywright,
+  estraiOggettoJson,
+  findingsCopertura,
+  findingsEffettoDb,
+  formaEseguibile,
+  leggiFlussi,
+  primoEseguibile,
+  regoleSpec,
+  righeDaPsql,
+  schemiEsposti,
+  sqlConteggioRighe,
+  sqlTabelleEsposte,
+  statoDaFindings,
+  tagDaSpec,
+  urlAppProgetto,
+  urlDbProgetto,
+  usaHelperDb,
+  verdettoDa,
+} from "./gate-lib.mjs";
+
+const BOM = "\uFEFF";
+
+// ------------------------------------------------ il contratto dei flussi
+
+const CONTRATTO = `# Flussi critici — Banco
+
+Confermato da: UMANO (P0, 2026-07-28)
+
+## \`accesso-staff\` — positivo
+
+Passi: apre /login, entra.
+
+## \`admin-negato-anon\` — ostile-lettura
+
+## \`scrittura-negata-cliente\` — ostile-scrittura
+`;
+
+test("il contratto si legge: id, tipi e riga di conferma", () => {
+  const { confermatoDa, flussi, errori } = leggiFlussi(CONTRATTO);
+  assert.equal(confermatoDa, "UMANO (P0, 2026-07-28)");
+  assert.deepEqual(flussi, [
+    { id: "accesso-staff", tipo: "positivo" },
+    { id: "admin-negato-anon", tipo: "ostile-lettura" },
+    { id: "scrittura-negata-cliente", tipo: "ostile-scrittura" },
+  ]);
+  assert.deepEqual(errori, []);
+});
+
+test("CRLF e BOM non rompono la lettura del contratto (Windows)", () => {
+  const { confermatoDa, flussi } = leggiFlussi(BOM + CONTRATTO.replace(/\n/g, "\r\n"));
+  assert.equal(confermatoDa, "UMANO (P0, 2026-07-28)");
+  assert.equal(flussi.length, 3);
+});
+
+test("senza riga `Confermato da:` il contratto non e' confermato", () => {
+  const { confermatoDa, flussi } = leggiFlussi(CONTRATTO.replace(/^Confermato da:.*$/m, ""));
+  assert.equal(confermatoDa, null);
+  assert.equal(flussi.length, 3, "i flussi si leggono lo stesso: manca la firma, non l'elenco");
+});
+
+test("la conferma si riconosce anche in grassetto dentro un elenco", () => {
+  assert.equal(leggiFlussi("- **Confermato da:** ORCHESTRATORE il 2026-07-28").confermatoDa,
+    "ORCHESTRATORE il 2026-07-28");
+});
+
+// Buco vero, riprodotto il 2026-07-28: con `\s` nella classe dopo i due punti,
+// una riga `Confermato da:` VUOTA catturava la prima riga non vuota che seguiva
+// — l'intestazione del primo flusso — e il gate dichiarava confermato un
+// contratto che nessuno aveva firmato. E' il falso verde peggiore, perche' sta
+// sul passo che esiste apposta per impedirlo.
+test("una riga `Confermato da:` vuota NON e' una firma: pesca la riga dopo", () => {
+  const { confermatoDa, flussi } = leggiFlussi("# Flussi\n\nConfermato da:\n\n## `a-b` — positivo\n");
+  assert.equal(confermatoDa, null);
+  assert.equal(flussi.length, 1, "i flussi si leggono lo stesso: manca la firma");
+});
+
+test("una riga `Confermato da:` con soli spazi non e' una firma", () => {
+  assert.equal(leggiFlussi("Confermato da:   \nUMANO\n").confermatoDa, null);
+});
+
+// Riprodotti il 2026-07-28 al collaudo: la riga vuota era chiusa, le sue due
+// varianti no. La prima e' il template della skill compilato a meta'.
+test("il segnaposto del template non e' una firma", () => {
+  assert.equal(
+    leggiFlussi("Confermato da: {{UMANO | ORCHESTRATORE}} ({{QUANDO}})\n\n## `a-b` — positivo\n").confermatoDa,
+    null);
+});
+
+test("la sola decorazione markdown non e' una firma", () => {
+  for (const riga of ["- **Confermato da:** ", "**Confermato da:**", "Confermato da: -", "Confermato da: ___"]) {
+    assert.equal(leggiFlussi(`${riga}\n`).confermatoDa, null, `ha firmato: ${riga}`);
+  }
+});
+
+test("una firma vera resta una firma, anche in grassetto dentro un elenco", () => {
+  assert.equal(leggiFlussi("- **Confermato da:** ORCHESTRATORE (2026-07-28)\n").confermatoDa,
+    "ORCHESTRATORE (2026-07-28)");
+  assert.equal(leggiFlussi("Confermato da: UMANO (Alberto, committente) il 2026-07-28\n").confermatoDa,
+    "UMANO (Alberto, committente) il 2026-07-28");
+});
+
+test("un tipo sconosciuto e' un errore, e quel flusso non entra nell'elenco", () => {
+  const { flussi, errori } = leggiFlussi("## `pippo` — ostile\n");
+  assert.deepEqual(flussi, []);
+  assert.match(errori[0], /tipo "ostile" sconosciuto/);
+});
+
+test("un id ripetuto e' un errore: un id stabile identifica un flusso solo", () => {
+  const { flussi, errori } = leggiFlussi("## `a` — positivo\n## `a` — ostile-lettura\n");
+  assert.equal(flussi.length, 1);
+  assert.match(errori[0], /id ripetuto/);
+});
+
+// Cio' che un documento CITA non e' cio' che dichiara. Quattro guasti dallo
+// stesso buco, riprodotti al collaudo del 2026-07-28. La forma e' quella vera:
+// un contratto che spiega il proprio formato con un esempio recintato.
+const CONTRATTO_CON_ESEMPIO = `# Flussi critici — Palestra
+
+Confermato da: UMANO (Alberto) il 2026-07-28
+
+Come si scrive un flusso:
+
+\`\`\`markdown
+## \`id-del-flusso\` — positivo
+\`\`\`
+
+<!-- promemoria: ## \`da-scrivere\` — ostile-lettura -->
+
+## \`prenota-corso\` — positivo
+## \`staff-negato\` — ostile-lettura
+`;
+
+test("un esempio recintato non dichiara flussi fantasma", () => {
+  const { flussi, errori } = leggiFlussi(CONTRATTO_CON_ESEMPIO);
+  assert.deepEqual(flussi.map((f) => f.id), ["prenota-corso", "staff-negato"]);
+  assert.deepEqual(errori, []);
+});
+
+test("un esempio recintato che riusa un id vero non e' un id ripetuto", () => {
+  const { flussi, errori } = leggiFlussi(
+    CONTRATTO_CON_ESEMPIO.replace("## `id-del-flusso` — positivo", "## `prenota-corso` — positivo"));
+  assert.deepEqual(errori, [], "il doppione sta nell'esempio, non nell'elenco");
+  assert.equal(flussi.length, 2);
+});
+
+test("una firma che esiste solo dentro un esempio non firma niente", () => {
+  const soloEsempio = CONTRATTO_CON_ESEMPIO.replace("Confermato da: UMANO (Alberto) il 2026-07-28",
+    "```\nConfermato da: UMANO (esempio del template)\n```");
+  assert.equal(leggiFlussi(soloEsempio).confermatoDa, null);
+});
+
+test("un documento senza intestazioni di flusso non produce errori inventati", () => {
+  const { flussi, errori } = leggiFlussi("# Titolo\n\nProsa qualsiasi.\n## Sezione normale\n");
+  assert.deepEqual(flussi, []);
+  assert.deepEqual(errori, []);
+});
+
+// --------------------------------------------------- etichette e copertura
+
+test("le etichette `@flusso:` si estraggono dal titolo del test", () => {
+  assert.deepEqual(
+    tagDaSpec("test('crea un prodotto @flusso:crea-prodotto', async () => {});"),
+    ["crea-prodotto"]);
+});
+
+test("una spec senza etichetta non ne inventa una", () => {
+  assert.deepEqual(tagDaSpec("test('qualcosa', async () => {});"), []);
+});
+
+test("Playwright riconosce .spec.ts e .test.ts, non un helper", () => {
+  assert.equal(eSpec("login.spec.ts"), true);
+  assert.equal(eSpec("db.ts"), false);
+});
+
+const FLUSSI = [
+  { id: "accesso-staff", tipo: "positivo" },
+  { id: "admin-negato-anon", tipo: "ostile-lettura" },
+];
+
+test("un flusso dichiarato che nessuna spec attacca e' un block", () => {
+  const { findings } = findingsCopertura(FLUSSI, [{ file: "e2e/a.spec.ts", tags: ["accesso-staff"] }]);
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].severity, "block");
+  assert.match(findings[0].object, /admin-negato-anon/);
+});
+
+test("tutti i flussi coperti: nessun rilievo", () => {
+  const { findings } = findingsCopertura(FLUSSI, [
+    { file: "e2e/a.spec.ts", tags: ["accesso-staff"] },
+    { file: "e2e/b.spec.ts", tags: ["admin-negato-anon"] },
+  ]);
+  assert.deepEqual(findings, []);
+});
+
+test("un'etichetta senza flusso dichiarato e' un warn, non un block", () => {
+  const { findings } = findingsCopertura(FLUSSI, [
+    { file: "e2e/a.spec.ts", tags: ["accesso-staff"] },
+    { file: "e2e/b.spec.ts", tags: ["admin-negato-anon", "checkout-sparito"] },
+  ]);
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].severity, "warn");
+  assert.match(findings[0].message, /checkout-sparito/);
+});
+
+test("due spec sullo stesso flusso lo coprono, non lo duplicano", () => {
+  const { perFlusso } = copertura(FLUSSI, [
+    { file: "e2e/a.spec.ts", tags: ["accesso-staff"] },
+    { file: "e2e/b.spec.ts", tags: ["accesso-staff", "admin-negato-anon"] },
+  ]);
+  assert.deepEqual(perFlusso.get("accesso-staff"), ["e2e/a.spec.ts", "e2e/b.spec.ts"]);
+});
+
+// --------------------------------------------------- `.only` e skip muti
+
+test("`test.only` committato e' un block", () => {
+  const findings = regoleSpec("e2e/a.spec.ts", "test.only('x @flusso:a', async () => {});");
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].severity, "block");
+  assert.equal(findings[0].object, "e2e/a.spec.ts:1");
+});
+
+test("anche `test.describe.only` e' un block", () => {
+  const findings = regoleSpec("e2e/a.spec.ts", "test.describe.only('gruppo', () => {});");
+  assert.equal(findings[0]?.severity, "block");
+});
+
+test("`.only` NOMINATO in un commento non e' un `.only`", () => {
+  assert.deepEqual(regoleSpec("e2e/a.spec.ts", "// mai committare un test.only(...) qui\n"), []);
+});
+
+// Tre forme misurate il 2026-07-28, tutte sulla stessa cecita': il controllo
+// guardava solo l'INIZIO della riga.
+test("un test commentato via a blocco non e' un `.only` committato", () => {
+  const spec = 'import { test } from "@playwright/test";\n\n/*\ntest.only("vecchio caso @flusso:a", async () => {});\n*/\n\ntest("x @flusso:a", async () => {});\n';
+  assert.deepEqual(regoleSpec("e2e/a.spec.ts", spec), []);
+});
+
+test("`.only` nominato in un commento in coda a codice vero non e' un `.only`", () => {
+  assert.deepEqual(regoleSpec("e2e/a.spec.ts", "const x = 1; // mai committare test.only(...)\n"), []);
+});
+
+test("un `.only` dopo un commento di blocco chiuso sulla stessa riga e' un block", () => {
+  const findings = regoleSpec("e2e/a.spec.ts", '/* setup rapido */ test.only("x @flusso:a", async () => {});\n');
+  assert.equal(findings[0]?.severity, "block", "il codice viene dopo il commento, e gira");
+});
+
+test("uno skip senza motivazione e' un issue", () => {
+  const findings = regoleSpec("e2e/a.spec.ts", "test.skip('x', async () => {});");
+  assert.equal(findings[0]?.severity, "issue");
+});
+
+// `test.fixme` spegne il test esattamente come `test.skip`, e al gate la spec
+// resta li' col suo tag: il flusso risulta coperto. Misurato il 2026-07-28:
+// nessun rilievo, `lint-spec` verde, `spec-coverage` verde.
+test("`test.fixme` senza motivazione e' un issue come lo skip", () => {
+  const findings = regoleSpec("e2e/a.spec.ts",
+    'test.fixme("lo staff crea un corso @flusso:crea-corso", async ({ page }) => {});');
+  assert.equal(findings[0]?.severity, "issue");
+  assert.match(findings[0]?.message, /`\.fixme`/);
+});
+
+test("un `fixme` motivato nel commento sopra non produce rilievi", () => {
+  assert.deepEqual(
+    regoleSpec("e2e/a.spec.ts",
+      '// rotto da handoff 10, rientra col fix di Gestionale Crafter\ntest.fixme("x @flusso:a", async () => {});'),
+    []);
+});
+
+test("uno skip motivato in coda alla riga non produce rilievi", () => {
+  assert.deepEqual(
+    regoleSpec("e2e/a.spec.ts", "test.skip('x', async () => {}); // pagamenti non ancora collegati, rientra col PSP"),
+    []);
+});
+
+test("uno skip motivato nel commento sopra non produce rilievi", () => {
+  assert.deepEqual(
+    regoleSpec("e2e/a.spec.ts", "// il PSP di prova non risponde, riattivare a contratto firmato\ntest.skip('x', async () => {});"),
+    []);
+});
+
+test("una spec pulita non produce rilievi", () => {
+  assert.deepEqual(regoleSpec("e2e/a.spec.ts", "test('x @flusso:a', async () => {});"), []);
+});
+
+// ------------------------------------------------ l'helper di effetto DB
+
+test("import nominato e chiamata: l'helper e' usato", () => {
+  const u = usaHelperDb(`import { contaProdotti } from "./helpers/db";\nconst n = await contaProdotti();`);
+  assert.deepEqual({ importa: u.importa, chiama: u.chiama }, { importa: true, chiama: true });
+});
+
+test("import a namespace e chiamata di metodo: l'helper e' usato", () => {
+  const u = usaHelperDb(`import * as db from "../helpers/db.js";\nawait db.prodottoPerNome("x");`);
+  assert.deepEqual({ importa: u.importa, chiama: u.chiama }, { importa: true, chiama: true });
+});
+
+test("importato e mai chiamato non conta: un import non asserisce niente", () => {
+  const u = usaHelperDb(`import { contaProdotti } from "./helpers/db";\nawait expect(page).toHaveURL(/admin/);`);
+  assert.deepEqual({ importa: u.importa, chiama: u.chiama }, { importa: true, chiama: false });
+});
+
+// Misurato il 2026-07-28: commentando insieme import e asserzione, `effetto-db`
+// restava verde e ESLint taceva (un import commentato non e' una variabile
+// inutilizzata). La stessa cancellazione senza commenti produceva il `block`:
+// era il commento a portare il verde.
+test("un'asserzione commentata via non guarda il database", () => {
+  const spec = [
+    'import { expect, test } from "@playwright/test";',
+    '// import { corsoPerTitolo } from "./helpers/db";',
+    'test("x @flusso:a", async ({ page }) => {',
+    '  await expect(page.getByRole("status")).toHaveText("Corso creato");',
+    '  // const riga = await corsoPerTitolo("Spinning");',
+    "});",
+  ].join("\n");
+  const u = usaHelperDb(spec);
+  assert.deepEqual({ importa: u.importa, chiama: u.chiama }, { importa: false, chiama: false });
+});
+
+// Il caso vero: OGNI spec comincia con l'import di Playwright. Il ritaglio della
+// clausola partiva dal primo `import` del file e inghiottiva anche quei nomi,
+// quindi un `expect(...)` passava per una chiamata all'helper del database — la
+// regola verificava l'import e non la chiamata, sul passo che esiste apposta per
+// pretendere la chiamata.
+const SPEC_REALE = (corpo) => [
+  'import { test, expect } from "@playwright/test";',
+  'import { contaProdotti } from "./helpers/db";',
+  "",
+  'test("x @flusso:a", async ({ page }) => {',
+  corpo,
+  "});",
+].join("\n");
+
+test("con l'import di Playwright davanti, un `expect` non passa per una chiamata all'helper", () => {
+  const u = usaHelperDb(SPEC_REALE('  await expect(page.getByRole("status")).toHaveText("fatto");'));
+  assert.deepEqual({ importa: u.importa, chiama: u.chiama }, { importa: true, chiama: false });
+  assert.deepEqual(u.nomi, ["contaProdotti"], "solo i nomi importati DALL'helper");
+});
+
+test("con l'import di Playwright davanti, una chiamata vera all'helper si vede", () => {
+  const u = usaHelperDb(SPEC_REALE("  expect(await contaProdotti()).toBe(2);"));
+  assert.deepEqual({ importa: u.importa, chiama: u.chiama }, { importa: true, chiama: true });
+});
+
+test("una spec che importa solo Playwright non usa l'helper", () => {
+  const u = usaHelperDb(`import { test, expect } from "@playwright/test";`);
+  assert.equal(u.importa, false);
+});
+
+const SPEC_CON_DB = { file: "e2e/a.spec.ts", testo: `import { contaProdotti } from "./helpers/db";\nawait contaProdotti();` };
+const SPEC_SENZA_DB = { file: "e2e/a.spec.ts", testo: `import { expect } from "@playwright/test";\nawait expect(page).toHaveText("fatto");` };
+const perFlusso = (id) => new Map([[id, ["e2e/a.spec.ts"]]]);
+
+test("un flusso positivo che non guarda il database e' un block", () => {
+  const findings = findingsEffettoDb([{ id: "a", tipo: "positivo" }], [SPEC_SENZA_DB], perFlusso("a"));
+  assert.equal(findings[0]?.severity, "block");
+  assert.match(findings[0].message, /guarda la FORMA/);
+});
+
+test("un flusso positivo che chiama l'helper non produce rilievi", () => {
+  assert.deepEqual(findingsEffettoDb([{ id: "a", tipo: "positivo" }], [SPEC_CON_DB], perFlusso("a")), []);
+});
+
+test("un ostile in SCRITTURA deve mostrare che il database non e' cambiato", () => {
+  const findings = findingsEffettoDb([{ id: "a", tipo: "ostile-scrittura" }], [SPEC_SENZA_DB], perFlusso("a"));
+  assert.equal(findings[0]?.severity, "block");
+});
+
+test("un ostile in LETTURA non ha stato da confrontare: nessun rilievo", () => {
+  assert.deepEqual(findingsEffettoDb([{ id: "a", tipo: "ostile-lettura" }], [SPEC_SENZA_DB], perFlusso("a")), []);
+});
+
+test("un flusso senza spec non prende un secondo rilievo qui: e' gia' un block di copertura", () => {
+  assert.deepEqual(findingsEffettoDb([{ id: "a", tipo: "positivo" }], [], new Map([["a", []]])), []);
+});
+
+// --------------------------------------------------- l'esito della batteria
+
+const REPORT = {
+  errors: [],
+  suites: [{
+    title: "login.spec.ts",
+    specs: [
+      { title: "entra @flusso:accesso-staff", tests: [{ status: "expected" }] },
+      { title: "crea @flusso:crea-prodotto", tests: [{ status: "unexpected" }] },
+      { title: "avanza @flusso:avanza-stato", tests: [{ status: "flaky" }] },
+      { title: "rimandato", tests: [{ status: "skipped" }] },
+    ],
+    suites: [],
+  }],
+};
+
+test("l'esito distingue passati, falliti, saltati e passati al secondo tentativo", () => {
+  const esito = esitoPlaywright(REPORT);
+  assert.equal(esito.passati, 2, "il flaky e' passato, ma resta contato a parte");
+  assert.deepEqual(esito.falliti, ["login.spec.ts › crea @flusso:crea-prodotto"]);
+  assert.deepEqual(esito.alSecondoTentativo, ["login.spec.ts › avanza @flusso:avanza-stato"]);
+  assert.equal(esito.saltati.length, 1);
+});
+
+test("il secondo tentativo si dichiara anche quando il totale e' verde", () => {
+  const verde = { errors: [], suites: [{ title: "a.spec.ts", specs: [{ title: "x", tests: [{ status: "flaky" }] }], suites: [] }] };
+  const esito = esitoPlaywright(verde);
+  assert.equal(esitoBatteriaVerde(esito), true);
+  assert.match(dettaglioPlaywright(esito, 1), /SECONDO tentativo/);
+});
+
+test("una batteria tutta verde non parla di secondi tentativi", () => {
+  const verde = { errors: [], suites: [{ title: "a.spec.ts", specs: [{ title: "x", tests: [{ status: "expected" }] }], suites: [] }] };
+  assert.doesNotMatch(dettaglioPlaywright(esitoPlaywright(verde), 1), /SECONDO tentativo/);
+});
+
+test("le suite annidate (describe) entrano nel nome del test", () => {
+  const annidato = { errors: [], suites: [{ title: "a.spec.ts", specs: [], suites: [{ title: "area riservata", specs: [{ title: "x", tests: [{ status: "unexpected" }] }], suites: [] }] }] };
+  assert.deepEqual(esitoPlaywright(annidato).falliti, ["a.spec.ts › area riservata › x"]);
+});
+
+test("un errore del runner rende la batteria rossa anche senza test falliti", () => {
+  const esito = esitoPlaywright({ errors: [{ message: "Error: no tests found" }], suites: [] });
+  assert.equal(esitoBatteriaVerde(esito), false);
+  assert.match(dettaglioPlaywright(esito, 0), /errore del runner/);
+});
+
+test("un report senza `suites` non e' un report: la batteria non e' verde", () => {
+  assert.equal(esitoBatteriaVerde(esitoPlaywright({ nonSonoUnReport: true })), false);
+});
+
+// Un report malformato deve portare a un verdetto, mai a un'eccezione: il gate
+// che esplode esce 1 senza JSON, e chi automatizza non lo distingue da un gate
+// rosso. Le tre forme sono state misurate il 2026-07-28.
+test("un report malformato produce un verdetto, non un'eccezione", () => {
+  for (const rotto of [
+    { suites: [], errors: { message: "boom" } },
+    { suites: [], errors: "boom" },
+    { suites: [null], errors: [] },
+    { suites: [{ title: "a.spec.ts", specs: [null, { title: "x", tests: [null] }], suites: [] }], errors: [] },
+  ]) {
+    const esito = esitoPlaywright(rotto);
+    // niente eccezione, e nessuno di questi casi puo' finire in un verde:
+    // o non ha eseguito niente (MANCANTE), o il gate lo legge come rosso
+    assert.equal(batteriaHaEseguito(esito) && esitoBatteriaVerde(esito), false,
+      `verde su un report rotto: ${JSON.stringify(rotto)}`);
+  }
+});
+
+test("un `errors` che non e' una lista non diventa quattro errori del runner", () => {
+  const esito = esitoPlaywright({ suites: [], errors: "boom" });
+  assert.equal(esito.errori.length, 1);
+  assert.match(esito.errori[0], /non e' una lista/);
+});
+
+// La forma e' quella VERA, catturata il 2026-07-28 da `npx playwright test
+// --reporter=json` sul banco `palestra` con le sei spec marcate `test.skip`:
+// una suite per file, `tests[].status = "skipped"` e `results[].status` uguale.
+// Un frammento inventato avrebbe provato la fixture, non la regola (§4.3 del
+// verbale di costruzione).
+const REPORT_TUTTI_SALTATI = {
+  errors: [],
+  suites: [
+    { title: "accesso-socio.spec.ts", specs: [{ title: "il socio entra dalla UI vera @flusso:accesso-socio", tests: [{ status: "skipped", results: [{ status: "skipped" }] }] }], suites: [] },
+    { title: "prenota-corso.spec.ts", specs: [{ title: "il socio prenota un corso @flusso:prenota-corso", tests: [{ status: "skipped", results: [{ status: "skipped" }] }] }], suites: [] },
+  ],
+};
+
+test("una batteria in cui ogni test e' saltato NON ha eseguito niente", () => {
+  const esito = esitoPlaywright(REPORT_TUTTI_SALTATI);
+  assert.equal(esito.passati, 0);
+  assert.equal(esito.falliti.length, 0);
+  assert.equal(esito.saltati.length, 2);
+  // il tranello: non e' fallito niente, quindi «verde» direbbe di si'
+  assert.equal(esitoBatteriaVerde(esito), true, "e' proprio questo che rendeva il passo `pass`");
+  assert.equal(batteriaHaEseguito(esito), false, "e questo e' cio' che lo rende MANCANTE");
+});
+
+test("una batteria che ha eseguito anche un solo test ha guardato", () => {
+  const unoSolo = { errors: [], suites: [{ title: "a.spec.ts", specs: [
+    { title: "x", tests: [{ status: "expected" }] },
+    { title: "y", tests: [{ status: "skipped" }] },
+  ], suites: [] }] };
+  assert.equal(batteriaHaEseguito(esitoPlaywright(unoSolo)), true, "uno skip motivato resta legittimo");
+});
+
+test("una batteria tutta rossa ha eseguito: e' un difetto trovato, non una verifica mancante", () => {
+  const rossa = { errors: [], suites: [{ title: "a.spec.ts", specs: [{ title: "x", tests: [{ status: "unexpected" }] }], suites: [] }] };
+  assert.equal(batteriaHaEseguito(esitoPlaywright(rossa)), true);
+});
+
+test("il JSON si estrae anche se lo strumento ci mette del rumore attorno", () => {
+  const { parsed } = estraiOggettoJson('Running 5 tests...\n{"suites":[]}\nDone.');
+  assert.deepEqual(parsed, { suites: [] });
+});
+
+test("un'uscita che non contiene JSON e' un errore, non un report vuoto", () => {
+  const { errore, parsed } = estraiOggettoJson("Error: browserType.launch: Executable doesn't exist");
+  assert.equal(parsed, undefined);
+  assert.match(errore, /non interpretabile/);
+});
+
+// -------------------------------------------------- il progetto, non i default
+
+const CONFIG = `project_id = "banco"
+
+[api]
+port = 58321
+schemas = ["public", "graphql_public"]
+
+[db]
+port = 58322
+
+[auth]
+site_url = "http://127.0.0.1:3100"
+`;
+
+test("il database e' quello del progetto, letto da [db].port", () => {
+  assert.equal(urlDbProgetto(CONFIG), "postgresql://postgres:postgres@127.0.0.1:58322/postgres");
+});
+
+test("senza [db].port non si indovina la 54322 di un altro progetto", () => {
+  assert.equal(urlDbProgetto("[api]\nport = 58321\n"), null);
+});
+
+test("l'URL dell'app e' quello dichiarato dal progetto in [auth].site_url", () => {
+  assert.equal(urlAppProgetto(CONFIG), "http://127.0.0.1:3100");
+});
+
+test("un commento in coda e la barra finale non entrano nell'URL", () => {
+  assert.equal(urlAppProgetto(`[auth]\nsite_url = "http://127.0.0.1:3100/"  # porta del banco\n`),
+    "http://127.0.0.1:3100");
+});
+
+test("senza [auth].site_url il gate non inventa un localhost:3000", () => {
+  assert.equal(urlAppProgetto("[db]\nport = 58322\n"), null);
+});
+
+test("un site_url che non e' un URL http non passa per un URL", () => {
+  assert.equal(urlAppProgetto(`[auth]\nsite_url = "env(SITE_URL)"\n`), null);
+});
+
+test("gli schemi esposti si leggono da [api].schemas", () => {
+  assert.deepEqual(schemiEsposti(CONFIG), ["public", "graphql_public"]);
+});
+
+test("senza [api].schemas vale il default documentato di Supabase", () => {
+  assert.deepEqual(schemiEsposti("[db]\nport = 58322\n"), ["public"]);
+});
+
+// W9 del collaudo di Schema Forge (2026-07-26), ereditato con la forma della
+// funzione e riprodotto qui il 2026-07-28: un array TOML su piu' righe e'
+// validissimo, ed e' come lo scrive chi ne elenca tre. Il ripiego silenzioso su
+// `public` faceva interrogare un solo schema e stampare «schemi esposti:
+// public» come se fosse la verita' del progetto.
+test("gli schemi si leggono anche se l'array e' scritto su piu' righe", () => {
+  const config = '[api]\nenabled = true\nport = 59321\nschemas = [\n  "public",\n  "graphql_public",\n  "catalogo",\n]\n\n[db]\nport = 59322\n';
+  assert.deepEqual(schemiEsposti(config), ["public", "graphql_public", "catalogo"]);
+  assert.equal(urlDbProgetto(config), "postgresql://postgres:postgres@127.0.0.1:59322/postgres",
+    "la chiave dopo l'array multiriga si legge ancora");
+});
+
+// ------------------------------------------------------ premessa del seed
+
+test("il conteggio delle righe virgoletta gli identificatori", () => {
+  assert.equal(sqlConteggioRighe(["public.prodotti", "public.ordini"]),
+    'select coalesce(sum(c), 0) from (select count(*) as c from "public"."prodotti" union all select count(*) as c from "public"."ordini") as t');
+});
+
+test("un apostrofo nel nome dello schema non esce dalla stringa SQL", () => {
+  assert.match(sqlTabelleEsposte(["pub'lic"]), /'pub''lic'/);
+});
+
+test("psql su Windows lascia il \\r in coda: le righe si leggono pulite", () => {
+  assert.deepEqual(righeDaPsql("public.prodotti\r\npublic.ordini\r\n\r\n"), ["public.prodotti", "public.ordini"]);
+});
+
+// ------------------------------------------------- shim .cmd su Windows
+
+// `where npx` elenca DUE file: lo script di shell senza estensione (per Git
+// Bash) e lo shim `.cmd`. Prendere la prima riga era un guasto vero, misurato
+// sul banco: `spawnSync` non sa eseguire lo script di shell, e il passo
+// `playwright` diceva «report JSON non interpretabile» su una macchina dove
+// `npx playwright test` funziona.
+test("fra le righe di `where` si sceglie quella eseguibile, non la prima", () => {
+  assert.equal(
+    primoEseguibile("C:\\Program Files\\nodejs\\npx\r\nC:\\Program Files\\nodejs\\npx.cmd\r\n"),
+    "C:\\Program Files\\nodejs\\npx.cmd");
+});
+
+test("con un solo `.exe` si prende quello, senza cercare altro", () => {
+  assert.equal(primoEseguibile("C:\\scoop\\psql.exe\n"), "C:\\scoop\\psql.exe");
+});
+
+test("se nessuna riga ha un'estensione eseguibile (Linux) si prende la prima", () => {
+  assert.equal(primoEseguibile("/usr/bin/psql\n/usr/local/bin/psql\n"), "/usr/bin/psql");
+});
+
+test("uscita vuota di `where`: nessun percorso, non una stringa vuota", () => {
+  assert.equal(primoEseguibile(""), null);
+});
+
+test("su Windows uno shim .cmd si lancia con cmd.exe /c, non con shell:true", () => {
+  assert.deepEqual(formaEseguibile("npx", () => "C:\\Program Files\\nodejs\\npx.cmd", "win32"),
+    { file: "cmd.exe", prefisso: ["/c", "C:\\Program Files\\nodejs\\npx.cmd"] });
+});
+
+test("su Windows un .exe si lancia col percorso pieno", () => {
+  assert.deepEqual(formaEseguibile("psql", () => "C:\\scoop\\psql.exe", "win32"),
+    { file: "C:\\scoop\\psql.exe", prefisso: [] });
+});
+
+test("fuori da Windows il nome nudo basta", () => {
+  assert.deepEqual(formaEseguibile("psql", () => { throw new Error("non si cerca"); }, "linux"),
+    { file: "psql", prefisso: [] });
+});
+
+// ------------------------------------------------------- gravita' e verdetto
+
+test("un block rende rosso il passo, un issue no", () => {
+  assert.equal(statoDaFindings([{ severity: "issue" }, { severity: "warn" }]), "pass");
+  assert.equal(statoDaFindings([{ severity: "issue" }, { severity: "block" }]), "fail");
+  assert.deepEqual(contaGravita([{ severity: "issue" }, { severity: "block" }, { severity: "block" }]),
+    { block: 2, issue: 1, warn: 0 });
+});
+
+test("una verifica mancante rende ROSSO il verdetto come un fallimento", () => {
+  assert.equal(verdettoDa([{ status: "pass" }, { status: "pass" }]), "VERDE");
+  assert.equal(verdettoDa([{ status: "pass" }, { status: "skipped" }]), "ROSSO");
+  assert.equal(verdettoDa([{ status: "fail" }]), "ROSSO");
+});
+
+// ------------------------------------------------------- contratto d'uscita
+
+const CONFIG_PW = "export default defineConfig({ retries: 1, forbidOnly: !!process.env.CI });";
+const HANDOFF_ROSSO = "# Handoff\n\n**Gate: ROSSO** (1 falliti, 0 verifiche mancanti su 7 passi)\n";
+
+test("dichiarare ROSSO su un gate rosso PASSA: dichiarare non e' fallire", () => {
+  assert.equal(contrattoUscita("docs/handoff/12.md", HANDOFF_ROSSO, CONFIG_PW, "ROSSO").status, "pass");
+});
+
+test("dichiarare VERDE su un gate rosso fallisce, e il passo dice quale e' quello vero", () => {
+  const esito = contrattoUscita("docs/handoff/12.md", "Gate: VERDE\n", CONFIG_PW, "ROSSO");
+  assert.equal(esito.status, "fail");
+  assert.match(esito.detail, /dichiara `Gate: VERDE` ma il gate chiude ROSSO/);
+});
+
+// `references/sabotaggio.md` prescrive di incollare l'uscita del gate
+// nell'handoff: quella citazione contiene una riga `Gate:` che NON e' una
+// dichiarazione. Misurato il 2026-07-28: vinceva lei, e un handoff che
+// dichiarava VERDE su un gate ROSSO passava — sul passo che esiste per
+// impedire proprio quello.
+test("la riga `Gate:` citata da un'esecuzione precedente non e' una dichiarazione", () => {
+  const handoff = "# Handoff\n\nIeri il gate chiudeva cosi':\n\n```\nGate: ROSSO (2 falliti)\n```\n\n**Gate: VERDE** (0 falliti)\n";
+  const esito = contrattoUscita("docs/handoff/12.md", handoff, CONFIG_PW, "ROSSO");
+  assert.equal(esito.status, "fail");
+  assert.match(esito.detail, /dichiara `Gate: VERDE` ma il gate chiude ROSSO/);
+});
+
+test("uno snippet CI dentro un recinto non e' un segnaposto non compilato", () => {
+  const handoff = "# Handoff\n\n```yaml\n  env:\n    CHIAVE: ${{ secrets.CHIAVE }}\n```\n\n**Gate: VERDE**\n";
+  assert.equal(contrattoUscita("docs/handoff/12.md", handoff, CONFIG_PW, "VERDE").status, "pass");
+});
+
+test("un segnaposto nella prosa dell'handoff resta un segnaposto", () => {
+  const esito = contrattoUscita("docs/handoff/12.md", "# Handoff\n\nFlussi: {{N}}\n\nGate: VERDE\n", CONFIG_PW, "VERDE");
+  assert.equal(esito.status, "fail");
+  assert.match(esito.detail, /segnaposto/);
+});
+
+test("un `Gate:` lasciato a meta' non va a pescare la parola VERDE piu' sotto", () => {
+  const esito = contrattoUscita("docs/handoff/12.md", "# Handoff\n\nGate:\n\nIl banco era VERDE ieri.\n", CONFIG_PW, "VERDE");
+  assert.equal(esito.status, "fail");
+  assert.match(esito.detail, /non dichiara il verdetto/);
+});
+
+test("un handoff che non dichiara niente non e' un handoff", () => {
+  const esito = contrattoUscita("docs/handoff/12.md", "# Handoff\n\nTutto bene.\n", CONFIG_PW, "VERDE");
+  assert.equal(esito.status, "fail");
+  assert.match(esito.detail, /non dichiara il verdetto/);
+});
+
+test("l'handoff assente e' un fallimento, non una verifica mancante", () => {
+  const esito = contrattoUscita("docs/handoff/12.md", null, CONFIG_PW, "VERDE");
+  assert.equal(esito.status, "fail");
+  assert.match(esito.detail, /assente/);
+});
+
+test("i segnaposto {{...}} non compilati bocciano l'handoff", () => {
+  const esito = contrattoUscita("docs/handoff/12.md", "Gate: VERDE\n\nFlussi: {{ELENCO}}\n", CONFIG_PW, "VERDE");
+  assert.equal(esito.status, "fail");
+  assert.match(esito.detail, /segnaposto/);
+});
+
+test("BOM e CRLF nell'handoff non fanno fallire un handoff corretto", () => {
+  assert.equal(contrattoUscita("docs/handoff/12.md", BOM + HANDOFF_ROSSO.replace(/\n/g, "\r\n"), CONFIG_PW, "ROSSO").status, "pass");
+});
+
+test("`retries: 2` boccia: un test che passa una volta su tre resterebbe invisibile", () => {
+  const esito = contrattoUscita("docs/handoff/12.md", HANDOFF_ROSSO, "export default { retries: 2 }", "ROSSO");
+  assert.equal(esito.status, "fail");
+  assert.match(esito.detail, /retries: 2/);
+});
+
+// Due falsi verdi misurati il 2026-07-28 sul config VERO del banco. Il secondo
+// e' stato verificato eseguendo il runner: globale 1 + progetto 3 = quattro
+// tentativi.
+test("un commento che nomina `retries: 1` non copre un `retries: 3` vero", () => {
+  const config = "export default defineConfig({\n  // retries: 1 e' la regola del gate (references/playwright.md)\n  retries: 3,\n});\n";
+  const esito = contrattoUscita("docs/handoff/12.md", "Gate: VERDE\n", config, "VERDE");
+  assert.equal(esito.status, "fail");
+  assert.match(esito.detail, /retries: 3/);
+});
+
+test("`retries` alzato dentro `projects` boccia: scavalca quello globale", () => {
+  const config = 'export default defineConfig({\n  retries: 1,\n  projects: [{ name: "chromium", retries: 3 }],\n});\n';
+  const esito = contrattoUscita("docs/handoff/12.md", "Gate: VERDE\n", config, "VERDE");
+  assert.equal(esito.status, "fail");
+  assert.match(esito.detail, /scavalca la globale/);
+});
+
+test("`retries: 1` dichiarato due volte (globale e progetto) va bene", () => {
+  const config = 'export default defineConfig({\n  retries: 1,\n  projects: [{ name: "chromium", retries: 1 }],\n});\n';
+  assert.equal(contrattoUscita("docs/handoff/12.md", "Gate: VERDE\n", config, "VERDE").status, "pass");
+});
+
+test("`retries` non dichiarato boccia: il default cambia il significato del verde", () => {
+  const esito = contrattoUscita("docs/handoff/12.md", HANDOFF_ROSSO, "export default { forbidOnly: true }", "ROSSO");
+  assert.match(esito.detail, /non dichiara `retries`/);
+});
+
+test("senza playwright.config.ts la batteria non e' rilanciabile da chi viene dopo", () => {
+  const esito = contrattoUscita("docs/handoff/12.md", HANDOFF_ROSSO, null, "ROSSO");
+  assert.equal(esito.status, "fail");
+  assert.match(esito.detail, /playwright\.config\.ts assente/);
+});
+
+test("handoff coerente e configurazione in regola: passo verde", () => {
+  assert.equal(contrattoUscita("docs/handoff/12.md", "Gate: VERDE\n", CONFIG_PW, "VERDE").status, "pass");
+});
