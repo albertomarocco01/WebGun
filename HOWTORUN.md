@@ -100,8 +100,14 @@ Ordine operativo pensato per un progetto reale (es. e-commerce da zero).
 
 ## FASE 4 — Test e performance
 
-12. 🔵 **Flow Sentinel**  
-   Genera ed esegue test End-to-End con Playwright sui flussi critici (carrello, checkout, login) prima del lancio. Se il checkout si rompe, lo scopre lui e non il cliente.
+12. 🟢 **Flow Sentinel**  
+   **Cosa fa:** genera ed esegue test End-to-End Playwright sui flussi critici dichiarati in `docs/flussi-critici.md` del progetto generato — un contratto che conferma l'umano (**STOP**), non l'agente. Ogni flusso di scrittura asserisce l'**effetto nel database**, non solo la pagina; i flussi ostili (`ostile-lettura`, `ostile-scrittura`) provano dal browser che i confini d'accesso reggono. Gate a 7 passi con id stabili.  
+   **Prerequisiti:** Node ≥ 20, Supabase CLI + Docker, il progetto generato con le sue `node_modules`, `@playwright/test` e i browser (`npx playwright install chromium`).  
+   **Come si installa:** junction come le altre, da `scripts/installa-skill.ps1`.  
+   **Come si usa / lancia:**
+   - in conversazione: `/flow-sentinel`, poi `map` (**STOP**: conferma umana dei flussi) → `forge` → `run` → `verify` → `handoff`; dopo una migrazione dello schema: `evolve`
+   - il gate a mano, dalla radice del progetto generato: `node <skill>/scripts/verify.mjs`
+   - verbali: `agenti/flow-sentinel/COSTRUZIONE-2026-07-28.md` · `COLLAUDO-2026-07-28.md`
 13. 🔵 **Speed Demon**  
    Ottimizza velocità, SEO, metatag e performance puntando al 100/100 Lighthouse. Va lanciato a sito completo, perché ottimizzare prima è lavoro sprecato.
 

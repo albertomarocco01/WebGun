@@ -12,14 +12,17 @@
 
 $ErrorActionPreference = "Stop"
 
-# Solo le skill VERE. Gli otto agenti scaffold (brief-smith, site-doctor, …) non
+# Solo le skill VERE. I sette agenti scaffold (brief-smith, site-doctor, …) non
 # si installano finche' sono scheletri: una skill con quattro sezioni `TODO`
 # nell'elenco di Claude Code e' rumore che si somiglia tutto, e la prima volta
 # che ne invochi una scopri che non fa niente.
 # `gestionale-crafter` e' entrato in elenco il 2026-07-28, quando ha smesso di
 # essere uno scaffold: SKILL.md completo, quattro reference, gate a 7 passi con
 # 105 test, due collaudi su banchi reali.
-$skill = @("schema-forge", "gestionale-crafter", "code-inquisition")
+# `flow-sentinel` e' entrato lo stesso giorno: costruito e collaudato in modo
+# indipendente (103 test, 10 difetti trovati e corretti), verbali nel suo
+# COSTRUZIONE-2026-07-28.md e COLLAUDO-2026-07-28.md.
+$skill = @("schema-forge", "gestionale-crafter", "flow-sentinel", "code-inquisition")
 
 # code-maniac NON e' in elenco di proposito: il README lo dichiara uno SNAPSHOT
 # del repo di finzidev, quindi la fonte di verita' non e' questa cartella. Va

@@ -51,8 +51,8 @@ Ci lavora un team: ogni agente ha un proprietario che lo sviluppa e lo mantiene.
 
 ### FASE 4 — Test e performance
 
-12. 🔵 **Flow Sentinel**
-    Genera ed esegue test End-to-End con Playwright sui flussi critici (carrello, checkout, login) prima del lancio. Se il checkout si rompe, lo scopre lui e non il cliente.
+12. 🟢\*\*\* **Flow Sentinel**
+    Genera ed esegue test End-to-End con Playwright sui flussi critici prima del lancio. Tre leggi: il contratto dei flussi lo conferma un umano (`docs/flussi-critici.md`, con STOP), giudica il browser su app vera e database seminato, e un test che non può fallire non è un test — ogni flusso di scrittura asserisce l'effetto nel database, i flussi ostili provano i confini d'accesso dal browser. Se il checkout si rompe, lo scopre lui e non il cliente.
 13. 🔵 **Speed Demon**
     Ottimizza velocità, SEO, metatag e performance puntando al 100/100 Lighthouse. Va lanciato a sito completo, perché ottimizzare prima è lavoro sprecato.
 
@@ -98,7 +98,7 @@ Ci lavora un team: ogni agente ha un proprietario che lo sviluppa e lo mantiene.
 | gestionale-crafter | Skill Claude Code | 🟢\*\* | Alberto | questo repo |
 | ai-specialist | Skill Claude Code | 🔵 | — | questo repo |
 | speed-demon | Skill Claude Code | 🔵 | — | questo repo |
-| flow-sentinel | Skill Claude Code | 🔵 | — | questo repo |
+| flow-sentinel | Skill Claude Code | 🟢\*\*\* | Alberto | questo repo |
 | cyber-shield | Skill Claude Code | 🔵 | — | questo repo |
 | launchpad | Skill Claude Code | 🔵 | — | questo repo |
 | prompt-smith | Skill Claude Code | 🔴 | — | esterno (in arrivo) |
@@ -113,7 +113,9 @@ Il proprietario è chi sviluppa e mantiene l'agente; `—` significa non ancora 
 
 \*\* **gestionale-crafter è 🟢 come strumento, non come agente pronto alla consegna.** Due collaudi su banchi reali il 2026-07-28 (e-commerce e accademia musicale), 105 test sugli script, gate a 7 passi, 6 difetti piantati su 6 rilevati e zero falsi positivi sul gemello pulito. Ma `agenti/gestionale-crafter/STATO.md` lo dichiara **non ancora usabile su un progetto cliente**: il gate conta le guardie, non sa se chiedono il ruolo giusto — e questo è **misurato**, non temuto (`COLLAUDO-2026-07-28.md` §7.2). Chi lo usa legga prima `COME-PROVARLA.md` §4, *Cosa NON dimostra un gate verde*.
 
-Gli otto agenti 🔵 sono **scaffold**: `SKILL.md` di una ventina di righe con il gate di chiusura scritto e le sezioni operative a `TODO`, `references/` e `scripts/` vuote. Hanno il contratto d'uscita, non il come.
+\*\*\* **flow-sentinel è 🟢 come strumento, non come agente pronto alla consegna.** Costruito e collaudato in modo indipendente il 2026-07-28: 103 test sugli script, gate a 7 passi con id stabili, 10 difetti trovati dal collaudo avversario e corretti uno per commit (7 erano falsi verdi). Ma `agenti/flow-sentinel/STATO.md` lo dichiara **non ancora provato su un progetto cliente**: i suoi due banchi sono nati per collaudarlo, e il contratto dei flussi l'ha confermato chi lo costruiva, non un committente. Verbali: `COSTRUZIONE-2026-07-28.md` · `COLLAUDO-2026-07-28.md`.
+
+I sette agenti 🔵 sono **scaffold**: `SKILL.md` di una ventina di righe con il gate di chiusura scritto e le sezioni operative a `TODO`, `references/` e `scripts/` vuote. Hanno il contratto d'uscita, non il come.
 
 ## Installazione delle skill
 
@@ -123,7 +125,7 @@ Claude Code carica le skill da `.claude/skills/`, che è una cartella di junctio
 powershell -ExecutionPolicy Bypass -File scripts/installa-skill.ps1
 ```
 
-Installa **schema-forge**, **gestionale-crafter** e **code-inquisition** — le sole di questo repo che sono skill vere. `code-maniac` e `bugbay` si installano dai repo di origine (vedi [Fonte di verità](#fonte-di-verità)); gli scaffold non si installano finché sono scaffold, perché una skill che non fa niente in mezzo a quelle che funzionano è rumore.
+Installa **schema-forge**, **gestionale-crafter**, **flow-sentinel** e **code-inquisition** — le sole di questo repo che sono skill vere. `code-maniac` e `bugbay` si installano dai repo di origine (vedi [Fonte di verità](#fonte-di-verità)); gli scaffold non si installano finché sono scaffold, perché una skill che non fa niente in mezzo a quelle che funzionano è rumore.
 
 ## Fonte di verità
 
