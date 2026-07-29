@@ -1,0 +1,47 @@
+# Configurazione sqlfluff di Schema Forge.
+#
+# Il gate NON viene declassato: sqlfluff resta bloccante. Qui si dichiara solo
+# quali regole di default sono in conflitto con convenzioni SCRITTE della skill,
+# e perche'. Ogni disattivazione ha la sua motivazione sulla riga sopra: una
+# regola spenta senza motivo scritto e' una regola che nessuno rimettera' mai.
+#
+# Uso:  sqlfluff lint --dialect postgres --config <questo file> supabase/migrations
+# Il comando `forge` la copia nella radice del progetto generato, cosi' il gate
+# e' riproducibile anche fuori dalla skill.
+
+[sqlfluff]
+dialect = postgres
+
+# PG01 "CREATE INDEX should use CONCURRENTLY to avoid locking the table".
+# `create index concurrently` non puo' stare dentro una transazione, e il CLI
+# Supabase applica ogni migrazione dentro una transazione: la regola chiede una
+# cosa impossibile in questo contesto. Su una tabella appena creata, per giunta,
+# non c'e' traffico da non bloccare. Su una tabella grande e gia' in produzione
+# l'indice si crea fuori migrazione, a mano — vedi references/migrazioni.md,
+# tabella delle operazioni pericolose.
+exclude_rules = PG01
+
+# RF04 "Keywords should not be used as identifiers".
+# `name`, `label`, `role` e `summary` sono parole chiave NON RISERVATE in
+# Postgres: legali come identificatori senza virgolette. Le prime due sono i
+# nomi imposti da references/pattern-ecommerce.md; `role` e `summary` sono i
+# nomi delle colonne negli esempi di references/rls-supabase.md, e senza
+# l'esenzione la configurazione della skill bocciava la skill stessa (verificato
+# il 2026-07-27: RF04 su entrambe). Si esentano quattro parole, non si spegne la
+# regola: su una parola davvero riservata continua a scattare.
+[sqlfluff:rules:references.keywords]
+ignore_words = name,label,role,summary
+
+# RF05 "Do not use special characters in identifiers".
+# I nomi di policy di questa skill sono frasi italiane fra virgolette doppie
+# («create policy "membri leggono l'organizzazione"»): sono identificatori
+# QUOTATI, cioe' una scelta esplicita di chi scrive, e sono la forma che usano
+# le reference e i progetti generati. Verificato il 2026-07-27: gli esempi di
+# references/rls-supabase.md facevano scattare RF05 tre volte, cioe' la
+# configurazione della skill bocciava il codice corretto della skill.
+# Si esentano SOLO i quotati: su un identificatore nudo con caratteri strani la
+# regola continua a scattare, ed e' li' che serve. sqlfluff non sa distinguere
+# un nome di policy dagli altri identificatori: e' la manopola piu' stretta che
+# lo strumento offre.
+[sqlfluff:rules:references.special_chars]
+quoted_identifiers_policy = none

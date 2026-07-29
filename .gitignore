@@ -26,3 +26,21 @@ node_modules/
 # File di lock di Word: nasce quando `Web Gun.docx` e' aperto, sparisce quando
 # si chiude. Non e' contenuto, e' uno stato della macchina.
 ~$*
+
+# Eccezioni dei banchi di gestionale-crafter (stessa logica della §20: un banco
+# che e' il CASO DI PROVA di un'affermazione non e' usa e getta, perche'
+# un'affermazione non riproducibile non e' una prova ma un ricordo).
+#   banco-prova-negozio    il gate VERDE 7/7 e l'esperimento `evolve`
+#   banco-prova-accademia  il collaudo avversario e i rilievi del tribunale
+#   banco-sporco           i sei difetti piantati, 6 su 6 rilevati
+# Si tracciano i SORGENTI: `node_modules/` e' gia' escluso sopra, gli artefatti
+# di runtime di Supabase li esclude il `supabase/.gitignore` di ogni banco.
+!banco-prova-negozio/
+!banco-prova-accademia/
+banco-prova-*/.next/
+banco-sporco/.next/
+# Le chiavi locali dei banchi restano fuori: sono di uno stack di sviluppo e non
+# sono segrete, ma un `.env` tracciato e' l'abitudine sbagliata da cui nasce
+# quello vero.
+banco-prova-*/.env*
+banco-sporco/.env*
