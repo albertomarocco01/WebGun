@@ -82,8 +82,19 @@ Ordine operativo pensato per un progetto reale (es. e-commerce da zero).
    Libreria di componenti e interfacce utente veloci. Costruisce le pagine sopra lo schema dati già definito, senza reinventare i componenti ogni volta.
 9. 🟢 **Sites Effects**  
    Libreria con UI degli effetti applicabili ai siti. Aggiunge animazioni e microinterazioni sopra l'interfaccia base per dare carattere al sito.
-10. 🔵 **Gestionale Crafter**  
-   Crea il pannello gestionale / backoffice. Per un e-commerce: gestione prodotti, ordini, magazzino e clienti.
+10. 🟢 **Gestionale Crafter**  
+   **Cosa fa:** Crea il pannello gestionale / backoffice sopra lo schema di Schema Forge. Per un e-commerce: prodotti, ordini, magazzino, clienti — più i testi delle sezioni del sito, che il cliente cambia da solo (l'eredità del CMS cancellato). Non genera una vista finché non ha riformulato *chi amministra cosa* e ottenuto conferma (*Specchio del gestionale*); nessuna rotta admin senza controllo di autenticazione e ruolo; nessun accesso ai dati che aggiri le RLS — la chiave `service_role` non entra nel progetto.  
+   **Prerequisiti:** Node ≥ 20, Supabase CLI + Docker (per i tipi e il catalogo dei permessi), `psql`, e il progetto generato con le sue `node_modules`: senza, i passi `tsc` e `a11y` sono **verifiche mancanti** e il gate resta rosso.  
+   **Come si installa:**  
+   Vive in `agenti/gestionale-crafter/` di questo repo, esposta a Claude Code da una junction. Da PowerShell nella radice del repo, oppure tutte insieme con `scripts/installa-skill.ps1`:  
+   `New-Item -ItemType Junction -Path ".claude\skills\gestionale-crafter" -Target (Resolve-Path "agenti\gestionale-crafter").Path`  
+   **Come si usa / lancia:**
+   - in conversazione: `/gestionale-crafter`, poi `specchio` (**STOP**) → `scaffold` → `viste` → `contenuti` → `audit` → `handoff` → `verify`
+   - `verify` è **ultimo**: tipi e handoff si producono prima, o il gate nasce rosso per come è ordinato il flusso
+   - il gate a mano, dalla radice del progetto generato: `node <skill>/scripts/verify.mjs`
+   - solo l'audit di accesso e permessi: `node <skill>/scripts/admin-audit.mjs --db-url "$DB"`
+   - dopo un gate verde, sulla superficie critica: `/code-inquisition src/modules/admin src/app/admin --focus security`
+   - guida pratica: `agenti/gestionale-crafter/COME-PROVARLA.md` · verbale: `agenti/gestionale-crafter/COLLAUDO-2026-07-28.md`
 11. 🔵 **AI Specialist**  
    Integra assistenti IA, RAG e agenti autonomi nel sito: ad esempio il chatbot che guida i clienti dell'e-commerce tra prodotti e ordini.
 

@@ -1,4 +1,4 @@
-# installa-skill.ps1 — espone le skill di `agenti/` a Claude Code.
+﻿# installa-skill.ps1 — espone le skill di `agenti/` a Claude Code.
 #
 # Claude Code carica le skill da `.claude/skills/`, ma la fonte di verita' e'
 # `agenti/`. Due copie divergono (e' successo: la copia globale di code-maniac
@@ -12,11 +12,14 @@
 
 $ErrorActionPreference = "Stop"
 
-# Solo le skill VERE. I nove agenti scaffold (brief-smith, site-doctor, …) non
+# Solo le skill VERE. Gli otto agenti scaffold (brief-smith, site-doctor, …) non
 # si installano finche' sono scheletri: una skill con quattro sezioni `TODO`
 # nell'elenco di Claude Code e' rumore che si somiglia tutto, e la prima volta
 # che ne invochi una scopri che non fa niente.
-$skill = @("schema-forge", "code-inquisition")
+# `gestionale-crafter` e' entrato in elenco il 2026-07-28, quando ha smesso di
+# essere uno scaffold: SKILL.md completo, quattro reference, gate a 7 passi con
+# 105 test, due collaudi su banchi reali.
+$skill = @("schema-forge", "gestionale-crafter", "code-inquisition")
 
 # code-maniac NON e' in elenco di proposito: il README lo dichiara uno SNAPSHOT
 # del repo di finzidev, quindi la fonte di verita' non e' questa cartella. Va

@@ -234,3 +234,54 @@ Scelta: **si traccia**, con la regola `.gitignore` ristretta agli artefatti di r
 Motivo: le due cose che la §12 voleva evitare — l'invecchiamento e la fonte di verità falsa — le risolve il fatto che il banco è **dentro il gate**, non fuori. Se invecchia, il gate lo dice al primo rilancio. Il pericolo della §12 era un banco che nessuno controlla più; questo è controllato a ogni tornata.
 
 - **Stato:** presa.
+
+## Decisioni prese costruendo Gestionale Crafter (2026-07-28)
+
+### 21. Fly UI non esiste: componenti scritti a mano, dietro una cucitura
+
+Lo scaffold di gestionale-crafter dichiarava una dipendenza da **fly-ui** per i componenti delle viste. `agenti/fly-ui/` non esiste, e l'agente è segnato 🔴 («me lo devono mandare») da prima di questo lavoro. Tre strade: fermarsi e aspettare, inventare una libreria di componenti dentro questo agente, oppure scrivere i componenti nel progetto generato.
+
+Scelta: **componenti Tailwind scritti a mano nel progetto generato**, raccolti in `src/components/ui/` e usati **solo** da lì — le pagine importano `Tabella`, `Campo`, `Bottone`, mai classi sparse nel markup di dominio. È la **cucitura**: quando Fly UI arriverà si riscrive il corpo di quei tre file, non le venti pagine che li usano.
+
+Motivo per non inventare una libreria qui: sarebbe un secondo prodotto dentro un agente che ne ha già uno, e il giorno in cui Fly UI arriva ci si ritrova con due librerie da riconciliare. Motivo per non fermarsi: il backoffice è la fase 10 della pipeline e Fly UI è la 8 — aspettare significa non consegnare niente.
+
+La deroga si scrive **due volte**: in `docs/PROGETTO.md` e in `docs/DEBITO-TECNICO.md` del progetto generato, con il rientro previsto («alla nascita di `agenti/fly-ui`»). Non basta scriverla qui: chi apre il progetto fra sei mesi legge quelli.
+
+- **Stato:** presa — si chiude quando Fly UI esiste.
+
+### 22. Su Supabase i `grant` scritti nelle migrazioni sono no-op, e il `grant` per colonna non restringe da solo
+
+Misurato il 2026-07-28 su Postgres 18 con Supabase CLI 2.95.4 (`pg_default_acl`): Supabase applica `alter default privileges in schema public grant all on tables to anon, authenticated, service_role`. Quindi ogni tabella nuova nasce con `arwdDxtm` per **entrambi** i ruoli del client, e:
+
+1. ogni `grant select, insert, update … to authenticated` scritto in una migrazione **non cambia niente**: il privilegio c'era già;
+2. `grant update (colonna) to authenticated` **non restringe niente** senza un `revoke` prima, perché il permesso per colonna è **additivo**.
+
+Non è un'argomentazione: sul banco il test pgTAP ha visto il magazziniere eseguire `update public.staff set ruolo = 'titolare'` **sulla propria riga** e diventare titolare — con la riga `grant update (full_name, phone)` regolarmente scritta nella migrazione.
+
+Scelta: **prima si revoca, poi si concede**, e la forma completa entra nelle reference di gestionale-crafter (`references/form-e-permessi.md`). La segnalazione è stata riportata a schema-forge nel suo `STATO.md`, perché la migrazione la scrive lui.
+
+Nota utile a chi cercherà la verità nel catalogo: `information_schema.column_privileges` **non** serve a questo — espande il permesso di tabella su ogni colonna, quindi mostra la stessa riga nei due casi opposti. La distinzione sta in `pg_class.relacl` (tabella) + `pg_attribute.attacl` (colonna), ed è lì che l'audit legge.
+
+- **Stato:** presa.
+
+### 23. Un route handler non esegue i layout: la guardia della sezione non lo protegge
+
+Misurato sul banco con `next dev` acceso e senza cookie di sessione: `GET /admin` risponde **307** verso la pagina di accesso (la guardia del `layout.tsx` gira), `GET /admin/stato` — un `route.ts` nella **stessa** cartella protetta — risponde **200**.
+
+Scelta: la regola dell'audit distingue i due casi. Le pagine ereditano la guardia dal layout; **i route handler devono chiamarla da soli**, e per loro non esiste un posto più in alto dove metterla.
+
+Il dettaglio che vale più della regola: in quella risposta 200 il corpo era `{"clienti":null}`. A non far uscire i dati è stata la **RLS di schema-forge**, non l'applicazione — il client portava la chiave anonima senza sessione. Con un client `service_role` la stessa rotta avrebbe consegnato l'anagrafica intera. È il motivo per cui la Legge n°3 di gestionale-crafter ha **due metà** (guardia sulla rotta *e* nessuna scorciatoia sulla RLS): quel giorno una delle due aveva un buco, e a reggere è stata l'altra.
+
+- **Stato:** presa.
+
+### 24. I contenuti editabili dal cliente sono di Gestionale Crafter
+
+Sanity Creator è stato cancellato dalla pipeline (commit del 2026-07-28). Il bisogno che copriva — il cliente cambia da solo i testi e le immagini delle sezioni del sito — non è sparito con l'agente.
+
+Scelta: **se lo prende gestionale-crafter**, dichiarato nello `SKILL.md` §Cosa fa e coperto da `references/contenuti-editabili.md`. I contenuti vivono in una tabella Supabase (uno *slot* per sezione, bozza e pubblicato distinti), la tabella la scrive **schema-forge** su richiesta, e il gestionale ne genera la vista.
+
+Il perimetro è dichiarato e **non** comprende un costruttore di pagine (blocchi componibili, pagine create dal cliente, revisioni): quello è un prodotto, richiede un modello dati diverso e va preventivato. La scelta fra i due mondi è una domanda **strutturale** dello Specchio: metà dei clienti chiede il secondo e usa il primo, e l'errore da non fare è promettere il primo chiamandolo il secondo.
+
+Motivo per non lasciarlo scoperto: un bisogno senza proprietario non sparisce, si trasforma in testi scritti nel codice — cioè in una telefonata a noi ogni volta che il cliente vuole cambiare una parola.
+
+- **Stato:** presa.

@@ -44,8 +44,8 @@ Ci lavora un team: ogni agente ha un proprietario che lo sviluppa e lo mantiene.
    Libreria di componenti e interfacce utente veloci. Costruisce le pagine sopra lo schema dati già definito, senza reinventare i componenti ogni volta.
 9. 🟢 **Sites Effects**
    Libreria con UI degli effetti applicabili ai siti. Aggiunge animazioni e microinterazioni sopra l'interfaccia base per dare carattere al sito.
-10. 🔵 **Gestionale Crafter**
-    Crea il pannello gestionale / backoffice. Per un e-commerce: gestione prodotti, ordini, magazzino e clienti.
+10. 🟢\*\* **Gestionale Crafter**
+    Crea il pannello gestionale / backoffice sopra lo schema di Schema Forge: viste CRUD protette da autenticazione e ruolo, e i testi delle sezioni del sito che il cliente cambia da solo (l'eredità del CMS che la pipeline non ha più). Tre leggi: il modello prima delle viste (Specchio, con STOP), gli strumenti giudicano (gate a 7 passi su un progetto vero), nessuna rotta admin nuda e nessuna scorciatoia sulla RLS — la chiave `service_role` non entra nel progetto. Manuale: `agenti/gestionale-crafter/COME-PROVARLA.md`.
 11. 🔵 **AI Specialist**
     Integra assistenti IA, RAG e agenti autonomi nel sito: ad esempio il chatbot che guida i clienti dell'e-commerce tra prodotti e ordini.
 
@@ -95,7 +95,7 @@ Ci lavora un team: ogni agente ha un proprietario che lo sviluppa e lo mantiene.
 | site-doctor | Skill Claude Code | 🔵 | — | questo repo |
 | brief-smith | Skill Claude Code | 🔵 | — | questo repo |
 | preventivo-smith | Skill Claude Code | 🔵 | — | questo repo |
-| gestionale-crafter | Skill Claude Code | 🔵 | — | questo repo |
+| gestionale-crafter | Skill Claude Code | 🟢\*\* | Alberto | questo repo |
 | ai-specialist | Skill Claude Code | 🔵 | — | questo repo |
 | speed-demon | Skill Claude Code | 🔵 | — | questo repo |
 | flow-sentinel | Skill Claude Code | 🔵 | — | questo repo |
@@ -111,7 +111,9 @@ Il proprietario è chi sviluppa e mantiene l'agente; `—` significa non ancora 
 
 \* **schema-forge è 🟢 come strumento, non come agente pronto alla consegna.** Il gate è collaudato su database reale (143 test, 9 passi, due collaudi avversari), ma `agenti/schema-forge/STATO.md` lo dichiara **non ancora usabile su un progetto cliente**: restano aperti i punti 11-13 e 15, e non esiste ancora nessun consumatore a valle su cui provare l'analisi di impatto di `evolve`. Chi lo usa legga prima `agenti/schema-forge/COME-PROVARLA.md` §4, *Cosa NON dimostra un gate verde*.
 
-I nove agenti 🔵 sono **scaffold**: `SKILL.md` di una ventina di righe con il gate di chiusura scritto e le sezioni operative a `TODO`, `references/` e `scripts/` vuote. Hanno il contratto d'uscita, non il come.
+\*\* **gestionale-crafter è 🟢 come strumento, non come agente pronto alla consegna.** Due collaudi su banchi reali il 2026-07-28 (e-commerce e accademia musicale), 105 test sugli script, gate a 7 passi, 6 difetti piantati su 6 rilevati e zero falsi positivi sul gemello pulito. Ma `agenti/gestionale-crafter/STATO.md` lo dichiara **non ancora usabile su un progetto cliente**: il gate conta le guardie, non sa se chiedono il ruolo giusto — e questo è **misurato**, non temuto (`COLLAUDO-2026-07-28.md` §7.2). Chi lo usa legga prima `COME-PROVARLA.md` §4, *Cosa NON dimostra un gate verde*.
+
+Gli otto agenti 🔵 sono **scaffold**: `SKILL.md` di una ventina di righe con il gate di chiusura scritto e le sezioni operative a `TODO`, `references/` e `scripts/` vuote. Hanno il contratto d'uscita, non il come.
 
 ## Installazione delle skill
 
@@ -121,7 +123,7 @@ Claude Code carica le skill da `.claude/skills/`, che è una cartella di junctio
 powershell -ExecutionPolicy Bypass -File scripts/installa-skill.ps1
 ```
 
-Installa **schema-forge** e **code-inquisition** — le uniche due di questo repo che sono skill vere. `code-maniac` e `bugbay` si installano dai repo di origine (vedi [Fonte di verità](#fonte-di-verità)); gli scaffold non si installano finché sono scaffold, perché una skill che non fa niente in mezzo a quelle che funzionano è rumore.
+Installa **schema-forge**, **gestionale-crafter** e **code-inquisition** — le sole di questo repo che sono skill vere. `code-maniac` e `bugbay` si installano dai repo di origine (vedi [Fonte di verità](#fonte-di-verità)); gli scaffold non si installano finché sono scaffold, perché una skill che non fa niente in mezzo a quelle che funzionano è rumore.
 
 ## Fonte di verità
 

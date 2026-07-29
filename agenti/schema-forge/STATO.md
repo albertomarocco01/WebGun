@@ -674,3 +674,122 @@ Scelte di stile discutibili **elencate e non toccate**: `pulisci`, `vero` e `rig
 - **L'handoff dichiara il verdetto del gate, e il gate lo verifica.** Un passo che controlla la *forma* di un documento e non ciò che dice non fa rispettare la regola per cui esiste. La verifica è su una riga di forma fissa (`Gate: VERDE` / `Gate: ROSSO`) perché un controllo su prosa libera è un controllo che non c'è. Dichiarare rosso su un gate rosso **passa**: la regola vieta di mentire, non di consegnare un rosso.
 - **Un banco che è diventato un caso di prova non è più un banco usa e getta.** La §12 di `../../DECISIONI.md` resta valida per i banchi effimeri; `banco-prova-vetcare` si traccia, perché un'affermazione non riproducibile («il gate chiude rosso, e per questi due motivi») non è una prova ma un ricordo.
 - **Una premessa si prova sul database prima di diventare una regola.** Delle sette regole del 2026-07-27, una era stata proposta con la gravità sbagliata (`insert` senza `with check` come `block`) e una avrebbe prodotto falsi positivi sul codice corretto delle reference (`with check` omesso su `update`). Entrambe si vedono solo eseguendo l'SQL: leggere la documentazione non basta, e il gap analysis di un LLM nemmeno.
+
+## Il primo consumatore a valle: feedback da Gestionale Crafter (2026-07-28)
+
+Appendice **aggiunta**, non sostitutiva: sopra resta ciò che era vero prima.
+
+Il punto aperto n°13 di questo file dice: *«Nessun consumatore reale a valle. L'analisi di
+impatto di `evolve` ha girato di nuovo sul caso facile, senza codice applicativo. Fly UI e
+Gestionale Crafter non esistono ancora»*. Da oggi Gestionale Crafter esiste, e ha
+costruito un backoffice Next.js reale su uno schema prodotto eseguendo il Flusso 1 di
+questa skill (banco `banco-prova-negozio`, otto tabelle, gate **VERDE 9/9**). Quello che
+segue è ciò che si è visto **dal lato di chi consuma**.
+
+### Il contratto dei tipi: regge, ed è il controllo più forte della catena
+
+`src/lib/database.types.ts` ha funzionato esattamente come promesso. Nell'esperimento di
+`evolve` — rinomina di `site_content.body` in `corpo`, expand-contract completo — rigenerati
+i tipi e **senza toccare il codice applicativo**, il gate a valle ha chiuso rosso con
+**15 errori in 4 file**, e con il messaggio giusto:
+
+```
+error TS2339: Property 'body' does not exist on type
+  'SelectQueryError<"column 'body' does not exist on 'site_content'.">'
+```
+
+`supabase-js` scrive *quale* colonna non esiste più. Nessuna delle quattro rotture è
+arrivata a runtime. **L'analisi di impatto più affidabile di `evolve` è `tsc` sui tipi
+rigenerati**, non il grep.
+
+### Tre cose che l'analisi di impatto di `evolve` non fa, e dovrebbe
+
+1. **Il grep su un nome di colonna comune produce rumore.** `grep -rn "\bbody\b" src` sul
+   banco ha restituito, fra i consumatori veri, anche `<body className=…>` di
+   `src/app/layout.tsx`. Su `body`, `title`, `name`, `status` il rumore nasconde il segnale:
+   la procedura dovrebbe dire di **rigenerare i tipi e compilare**, e usare il grep solo per
+   ciò che i tipi non vedono (stringhe di `.select()`, nomi di campo nei `FormData`).
+2. **I test pgTAP sono un consumatore come il seed.** La procedura di `evolve` prescrive di
+   riallineare `seed.sql` («o il `db reset` successivo fallisce») e tace sui test. Dopo la
+   rinomina, due asserzioni del banco citavano ancora `body`: `throws_ok` catturava
+   l'eccezione **sbagliata** (colonna inesistente, non permesso negato) e il passo pgTAP
+   chiudeva rosso. Il gate l'ha visto — ma la procedura dovrebbe dirlo prima.
+3. **Nessun errore, ma un'osservazione:** l'`evolve` ha attraversato la catena intera —
+   analisi, expand, backfill, contract con `-- squawk-ignore`, export dei dati, riallineo del
+   seed — e i due linter sono rimasti verdi su tutti e 7 i file. La ricetta della §10 di
+   `DECISIONI.md` funziona su un progetto con codice sopra, non solo sul banco.
+
+### Il difetto vero: su Supabase i `grant` delle migrazioni sono no-op
+
+Misurato su Postgres 18 con la CLI 2.95.4, sul banco appena forgiato:
+
+```sql
+select defaclacl from pg_default_acl;
+→ {postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,
+   authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}
+```
+
+Supabase applica `alter default privileges in schema public grant all on tables to anon,
+authenticated, service_role`. Conseguenze, entrambe provate sul campo:
+
+1. ogni `grant select, insert, update … to authenticated` scritto in una migrazione **non
+   cambia niente**: il privilegio c'era già. Anche `anon` ha `insert/update/delete` su ogni
+   tabella nuova — a fermarlo è solo l'assenza di policy;
+2. **`grant update (colonna) … to authenticated` non restringe niente senza un `revoke`
+   prima**, perché il permesso per colonna è additivo. Sul banco, con la riga
+   `grant update (full_name, phone) on public.staff to authenticated` regolarmente scritta,
+   il test pgTAP ha visto il magazziniere eseguire `update public.staff set ruolo =
+   'titolare'` sulla **propria riga** e diventare titolare.
+
+`references/rls-supabase.md` §Il caso peggiore scrive la difesa n°2 nella forma giusta —
+`revoke update on public.staff from authenticated;` **poi** il `grant` per colonna — ma
+`SKILL.md` (comando `forge`) descrive solo il `grant`: *«il `grant` ad `anon`/`authenticated`
+— per colonna … su ogni tabella che contiene una colonna di privilegio»*. Chi legge la
+skill e non la reference scrive la riga inefficace. **Suggerimento: il `revoke` prima del
+`grant` va nella regola, non solo nell'esempio.**
+
+L'audit di questa skill, va detto, **il difetto lo trova**: rimesso il permesso di tabella
+intera, `rls-audit.mjs` risponde `[block] public.staff.ruolo: colonna che decide gli accessi,
+scrivibile dal proprietario della riga`. Il buco era nella *prescrizione*, non nel controllo.
+
+### Due punti ciechi dell'audit, trovati dal tribunale sul banco a valle
+
+`/code-inquisition` (tre esperti, 2026-07-28) ha confermato due difetti che
+`scripts/rls-audit.mjs` non vede, entrambi su schemi che il suo gate dichiara verdi:
+
+1. **`is_active` non è nell'euristica delle colonne di privilegio.** La regex di
+   `audit-lib.mjs` copre `ruolo|role|is_admin|is_staff|job_title|permessi…`, e su questo
+   schema l'interruttore di revoca si chiamava `is_active`: lo leggono `e_staff()` e
+   `ha_ruolo()`, era dentro il `grant update` per colonna, e chi veniva disattivato si
+   **riaccendeva da solo** con un `update` sulla propria riga. La regola non ha detto niente.
+   La prova che serve è già nel catalogo, e la regola sa già cercarla: la colonna compare nel
+   corpo di due funzioni che le policy chiamano — è lo stesso caso di `job_title`, con un
+   nome che l'elenco non contiene. **Suggerimento: aggiungere le forme dell'interruttore
+   (`is_active`, `attivo`, `abilitato`, `enabled`, `sospeso`, `is_enabled`) alle sole
+   colonne *provate nel catalogo*, non a quelle riconosciute per nome** — così il `block`
+   resta dove c'è la prova e non nasce rumore su `products.is_active`.
+2. **Una colonna di stato con `check (col in (…))` e nessun trigger non produce nessun
+   finding.** La regola 9 guarda le macchine a stati *che hanno un trigger* e verifica che
+   scatti anche in `insert`. Se il trigger non c'è affatto, la macchina vive solo
+   nell'applicazione — che non è un vincolo — e il gate tace. Sul banco dell'accademia lo
+   stato `ritirata` di `enrollments` era terminale **solo in TypeScript**: dal lato server
+   bastava dichiarare uno stato attuale diverso per resuscitare un'iscrizione ritirata.
+
+### Cosa questo consumatore chiede alla skill, in ordine di utilità
+
+1. il `revoke` prima del `grant` **nella regola** di `forge`, non solo nell'esempio della reference;
+2. `tsc` sui tipi rigenerati come passo prescritto dell'analisi di impatto di `evolve`, prima del grep;
+3. il riallineamento dei **test pgTAP** accanto a quello del seed, nella procedura di `evolve`;
+4. l'euristica delle colonne di privilegio estesa agli interruttori di attivazione, **solo dove la prova è nel catalogo**;
+5. un finding — anche solo `issue` — per una colonna di stato vincolata da un `check` di dominio e da nessun trigger.
+
+Nessuno di questi cinque punti è stato applicato qui: **questa skill non è stata toccata**.
+È il consumatore che riporta, il proprietario che decide.
+
+### Una deriva misurata, non corretta qui
+
+Il punto 12 di questo file dice *«semgrep e gitleaks non sono installati»*. Al 2026-07-28
+**`semgrep` c'è** (versione 1.171.0, misurata: `semgrep --version`); `gitleaks` no. La riga
+resta com'è perché è la fotografia di quel giorno e la correzione è del proprietario, ma
+chi la legge oggi sappia che metà di quella frase è invecchiata: sugli script di
+gestionale-crafter semgrep gira e produce sei rilievi dichiarati.
