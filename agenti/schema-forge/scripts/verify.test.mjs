@@ -271,6 +271,18 @@ test("handoff che tace il verdetto: fallisce, e dice quale riga serve", () => {
   assert.match(esito.detail, /Gate: ROSSO/);
 });
 
+test("riga `Gate:` vuota con VERDE a inizio riga seguente: non e' una firma", () => {
+  // La forma misurata del buco: `\s` nel regex comprendeva l'a capo, quindi una
+  // riga di template lasciata a meta' pescava il verdetto dalla riga dopo.
+  const esito = contrattoUscita(
+    seEsistono(...TUTTI),
+    () => "# Handoff\n\nGate:\nVERDE era l'esito che speravamo.\n",
+    "VERDE"
+  );
+  assert.equal(esito.status, "fail");
+  assert.match(esito.detail, /non dichiara il verdetto/);
+});
+
 test("handoff che dichiara VERDE su un gate ROSSO: fallisce (e' il caso del banco)", () => {
   const esito = contrattoUscita(
     seEsistono(...TUTTI),
