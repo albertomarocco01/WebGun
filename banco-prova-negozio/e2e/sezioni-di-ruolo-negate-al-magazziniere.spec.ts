@@ -6,21 +6,18 @@ import { SEED, ruoloDi } from "./helpers/db";
 // di /accedi. Un cookie costruito a mano proverebbe la RLS, non la guardia.
 test.use({ storageState: "e2e/.auth/magazziniere.json" });
 
-/** Il cruscotto, col `?motivo=...` che nessuno legge. Nessun segmento dopo `/admin`. */
+/** Il cruscotto, con o senza il `?motivo=...`. Nessun segmento dopo `/admin`. */
 const CRUSCOTTO = /\/admin(\?[^/]*)?$/;
 
 /**
  * Le impronte sono stringhe che SOLO la sezione negata sa produrre.
  *
- * Attenzione alla parola «Personale» da sola: e' anche l'etichetta di una voce
- * del menu, quindi sta nel corpo di OGNI pagina sotto `/admin` — cruscotto
- * lecito compreso (vedi il secondo test). Cercarla nuda nel corpo servito
- * renderebbe rosso un rifiuto perfettamente riuscito, che e' il modo piu'
- * rapido per far disattivare la batteria. Nel corpo si cerca percio' il testo
- * che il menu non puo' fabbricare (la didascalia della tabella, i dati del
- * personale), e la parola nuda si asserisce sotto, come intestazione di primo
- * livello: e' li' che «Personale sezione» e «Personale voce di menu» si
- * distinguono davvero.
+ * La parola «Personale» da sola non basta: dal 2026-07-30 il menu e' filtrato
+ * per ruolo e al magazziniere quella voce non compare piu', ma la cautela resta
+ * scritta perche' la stessa impronta con la sessione di un titolare tornerebbe
+ * ambigua. Nel corpo si cerca percio' il testo che un menu non puo' fabbricare
+ * (la didascalia della tabella, i dati del personale), e la parola nuda si
+ * asserisce sotto come intestazione di primo livello.
  */
 const SEZIONI_NEGATE = [
   {
@@ -39,6 +36,10 @@ const SEZIONI_NEGATE = [
     ],
   },
 ] as const;
+
+/** Quello che il magazziniere deve poter aprire, e quello che non deve vedere. */
+const VOCI_ATTESE = ["Prodotti", "Categorie", "Ordini", "Clienti"] as const;
+const VOCI_NEGATE = ["Contenuti", "Personale"] as const;
 
 test.beforeAll(async () => {
   // Premessa, non cortesia: `cambio-ruolo-titolare` promuove e ripristina questa
@@ -87,7 +88,23 @@ test("le sezioni di altri ruoli non vengono servite al magazziniere @flusso:sezi
   }
 });
 
-test("il menu promette al magazziniere le due sezioni che gli nega @flusso:sezioni-di-ruolo-negate-al-magazziniere", async ({
+/**
+ * Il difetto che questo test fissava e' stato CHIUSO il 2026-07-30, ed e' andata
+ * esattamente come la versione precedente aveva previsto per iscritto: «il
+ * giorno in cui il menu verra' filtrato, questo test diventa rosso: e' il
+ * segnale che il difetto e' stato chiuso e che la spec va aggiornata».
+ *
+ * Prima il menu era una lista fissa e offriva al magazziniere due porte che la
+ * guardia gli chiudeva in faccia, con `/admin` che nemmeno leggeva il
+ * `?motivo=ruolo-insufficiente`: il rifiuto era muto. Ora menu e guardia leggono
+ * la stessa `SEZIONI` (`src/modules/admin/guardia.ts`) e il cruscotto scrive
+ * perche' ha detto di no.
+ *
+ * Le due meta' vanno asserite insieme: il link sparito NON e' la difesa — la
+ * rotta si raggiunge scrivendola — quindi il test finisce provando che, tolta
+ * la voce, il rifiuto vero e' ancora al suo posto.
+ */
+test("il menu offre al magazziniere solo cio' che puo' aprire, e il rifiuto e' scritto @flusso:sezioni-di-ruolo-negate-al-magazziniere", async ({
   page,
 }) => {
   await page.goto("/admin");
@@ -97,19 +114,25 @@ test("il menu promette al magazziniere le due sezioni che gli nega @flusso:sezio
   // per cui quei due link sono legittimi.
   await expect(menu.getByText("Marco Bellini · magazziniere")).toBeVisible();
 
-  // DIFETTO NOTO, fissato qui come comportamento corrente e non come desiderio:
-  // il menu e' una lista fissa, non filtrata per ruolo, quindi offre al
-  // magazziniere due porte che la guardia gli chiude in faccia — e `/admin` non
-  // legge `searchParams`, percio' del `?motivo=ruolo-insufficiente` non resta
-  // nulla a schermo: nessun messaggio spiega il rifiuto, e non se ne asserisce
-  // nessuno. Vedi `docs/handoff/12-flow-sentinel.md` §Problemi noti (il menu
-  // arriva da `src/app/admin/layout.tsx`, handoff 10-gestionale-crafter).
-  // Il giorno in cui il menu verra' filtrato, questo test diventa rosso: e' il
-  // segnale che il difetto e' stato chiuso e che la spec va aggiornata.
+  for (const voce of VOCI_ATTESE) {
+    await expect(
+      menu.getByRole("link", { name: voce, exact: true }),
+      `«${voce}» manca dal menu: il filtro per ruolo ha tolto anche cio' che il magazziniere puo' aprire`,
+    ).toBeVisible();
+  }
+
+  for (const voce of VOCI_NEGATE) {
+    await expect(
+      menu.getByRole("link", { name: voce, exact: true }),
+      `il menu offre ancora «${voce}» al magazziniere, che la guardia gli nega`,
+    ).toHaveCount(0);
+  }
+
+  // Tolta la voce, resta la porta. Si bussa scrivendo l'indirizzo.
+  await page.goto("/admin/personale");
+  await expect(page).toHaveURL(/\/admin\?motivo=ruolo-insufficiente$/);
   await expect(
-    menu.getByRole("link", { name: "Contenuti", exact: true }),
-  ).toBeVisible();
-  await expect(
-    menu.getByRole("link", { name: "Personale", exact: true }),
-  ).toBeVisible();
+    page.getByRole("status"),
+    "il rifiuto e' tornato muto: `/admin` non racconta il `?motivo=` che la guardia gli ha scritto nell'URL",
+  ).toContainText("non e' aperta al tuo ruolo");
 });

@@ -1,7 +1,7 @@
 import { Bottone } from "@/components/ui/Bottone";
 import { Campo, Modulo } from "@/components/ui/Campo";
 import { Cella, Riga, Tabella } from "@/components/ui/Tabella";
-import { registraCliente } from "@/modules/clienti/azioni";
+import { aggiornaCliente, registraCliente } from "@/modules/clienti/azioni";
 import { elencoClienti } from "@/modules/clienti/query";
 
 export default async function Clienti() {
@@ -25,6 +25,39 @@ export default async function Clienti() {
           ))}
         </Tabella>
       </div>
+
+      {/* La porta che mancava all'azione `aggiornaCliente`, che fino al
+          2026-07-30 era un endpoint POST senza percorso d'interfaccia. Un
+          modulo per riga, come in `/admin/personale`. */}
+      {clienti.map((c) => (
+        <div key={c.id} className="border-t border-slate-200 pt-4">
+          <h2 className="text-lg font-semibold">{c.full_name}</h2>
+          <Modulo azione={aggiornaCliente}>
+            <input type="hidden" name="id" value={c.id} />
+            <Campo
+              nome="full_name"
+              suffisso={c.id}
+              etichetta="Nome e cognome"
+              valore={c.full_name}
+              obbligatorio
+            />
+            <Campo
+              nome="email"
+              suffisso={c.id}
+              etichetta="Email"
+              tipo="email"
+              valore={c.email}
+            />
+            <Campo
+              nome="phone"
+              suffisso={c.id}
+              etichetta="Telefono"
+              valore={c.phone}
+            />
+            <Bottone>Salva i recapiti</Bottone>
+          </Modulo>
+        </div>
+      ))}
 
       <div>
         <h2 className="text-lg font-semibold">Nuovo cliente</h2>

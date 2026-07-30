@@ -48,6 +48,44 @@ values
  '', '', '', '')
 on conflict (id) do nothing;
 
+-- ------------------------------------------------------- identita' degli utenti
+--
+-- Un utente Supabase vero ha sempre la sua riga in `auth.identities`: la scrive
+-- GoTrue quando l'utente nasce dall'API. Un seed che inserisce in `auth.users` a
+-- mano e si ferma li' produce un utente a meta' — l'accesso a password funziona
+-- lo stesso (GoTrue cerca in `auth.users`), quindi il difetto resta invisibile
+-- finche' non si tocca OAuth, il collegamento di identita' o `getUserIdentities`,
+-- e a quel punto sembra un guasto del provider.
+-- Residuo dichiarato da Flow Sentinel in `docs/handoff/12-flow-sentinel.md` §3.1,
+-- chiuso il 2026-07-30.
+--
+-- `email` NON si scrive: e' una colonna generata (`generated always as
+-- (lower(identity_data->>'email'))`), e nominarla fa fallire l'insert.
+-- `provider_id` per il provider `email` e' l'id dell'utente in forma di testo.
+insert into auth.identities (
+    provider_id, user_id, identity_data, provider,
+    last_sign_in_at, created_at, updated_at
+)
+select
+    u.id::text,
+    u.id,
+    jsonb_build_object(
+        'sub', u.id::text,
+        'email', u.email,
+        'email_verified', true,
+        'phone_verified', false
+    ),
+    'email',
+    now(), now(), now()
+from auth.users u
+where u.id in (
+    '00000000-0000-0000-0000-0000000000a1',
+    '00000000-0000-0000-0000-0000000000a2',
+    '00000000-0000-0000-0000-0000000000a3',
+    '00000000-0000-0000-0000-0000000000c1'
+)
+on conflict do nothing;
+
 -- ----------------------------------------------------------------- personale
 insert into public.staff (id, auth_user_id, full_name, phone, ruolo) values
 ('11111111-1111-1111-1111-111111111001',

@@ -68,10 +68,11 @@ export default async function SchedaProdotto({
               <Cella>{euro(v.price_cents)}</Cella>
               <Cella>{v.quantity}</Cella>
               <Cella>
+                {/* Solo `id`. `sku` e `size` non si modificano da qui, quindi
+                    non viaggiano: un campo nascosto che l'azione riscrive e' un
+                    campo modificabile con un aspetto rassicurante. */}
                 <Modulo azione={aggiornaVariante}>
                   <input type="hidden" name="id" value={v.id} />
-                  <input type="hidden" name="sku" value={v.sku} />
-                  <input type="hidden" name="size" value={v.size} />
                   <Campo
                     nome="prezzo_euro"
                     suffisso={v.id}

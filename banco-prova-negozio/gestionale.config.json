@@ -2,7 +2,7 @@
   "contract": 1,
   "adminRoot": "src/app/admin",
   "rottaPubblicaDiAccesso": "src/app/accedi",
-  "guardie": ["richiediStaff", "richiediRuolo"],
+  "guardie": ["richiediStaff", "richiediRuolo", "richiediSezione"],
   "azioniPubbliche": ["src/modules/admin/accesso.ts"],
   "moduliClientSupabase": [
     "src/lib/supabase/server.ts",

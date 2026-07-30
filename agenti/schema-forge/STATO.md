@@ -836,9 +836,11 @@ perché) e riverificato con `supabase db reset` da pulito: login `HTTP 200`.
 1. **Il generatore di seed non deve scrivere `auth.users` a mano** senza le quattro colonne
    dei token a `''`. È una riga di template, e vale per ogni progetto con autenticazione:
    oggi il difetto nasce in ogni seed che questa skill produce.
-2. **`auth.identities` non viene mai scritta.** L'accesso a password non ne ha bisogno, ma un
-   utente Supabase vero ha sempre la sua riga di identità: senza, OAuth e il collegamento di
-   identità partono rotti. Dichiarato, non corretto.
+2. ~~**`auth.identities` non viene mai scritta.**~~ — **sanata nel banco** poche ore dopo, il
+   2026-07-30: il seed la popola con una `select` da `auth.users`, e la batteria lo asserisce
+   (`identitaDi`, spec `accesso-staff`). Resta da portare nel **template** di questa skill:
+   oggi il difetto rinasce in ogni seed che la skill produce. Nota di implementazione che è
+   costata un rosso: la colonna `email` è `generated always`, nominarla fa fallire l'`insert`.
 3. **Un passo di gate che tenti un accesso vero** chiuderebbe la classe alla radice — un
    `POST /auth/v1/token` con un utente del seed, che è deterministico e non richiede browser.
    È l'unico modo perché questa skill smetta di consegnare progetti in cui non si entra.
@@ -849,3 +851,50 @@ Il sabotaggio di Flow Sentinel ha concesso `update (ruolo) on staff to authentic
 misurato che **il magazziniere si promuove titolare e la RLS non lo ferma**. È la stessa cosa
 che il collaudo di gestionale-crafter aveva scoperto, ora riprodotta da un terzo agente con
 un metodo diverso: su Supabase la difesa è il `grant` per colonna, non la policy.
+
+### Il difetto più grave di tutti: il progetto si è rotto da fermo (2026-07-30, sera)
+
+Rilanciando la batteria sul banco **senza aver toccato una riga di applicazione**, nove test
+sono diventati rossi con lo stesso messaggio:
+
+```
+403 {"code":"42501","message":"permission denied for table staff",
+     "hint":"Grant the required privileges to the current role with:
+             GRANT SELECT ON public.staff TO service_role;"}
+```
+
+La causa non è nel progetto. La CLI Supabase è passata da **2.95.4 a 2.110.0**, e con lei i
+privilegi di default:
+
+```sql
+select defaclacl from pg_default_acl;   -- proprietario `postgres`
+PRIMA:  {postgres=arwdDxtm, anon=arwdDxtm, authenticated=arwdDxtm, service_role=arwdDxtm}
+ADESSO: {postgres=arwdDxtm, anon=Dxtm, authenticated=Dxtm, service_role=Dxtm}
+```
+
+`Dxtm` è TRUNCATE, REFERENCES, TRIGGER, MAINTAIN. Sono spariti `select`, `insert`, `update`,
+`delete` per **tutti e tre** i ruoli.
+
+**Perché `anon` e `authenticated` sono sopravvissuti.** Perché la §Il difetto vero qui sopra
+aveva prodotto `permessi_espliciti.sql`, che glieli **riconcede uno per uno** dopo il
+`revoke`. Quella migrazione ha salvato il progetto da un cambiamento che non poteva prevedere,
+e lo ha fatto per il motivo giusto: aveva sostituito un default con una riga scritta.
+`service_role` non era nell'elenco — non è un ruolo del client, e aveva tutto per grazia del
+default. Cambiato il default, non gli è rimasto niente.
+
+**Cosa questo chiede alla skill, ed è la richiesta più importante dell'intero file:**
+
+1. **`permessi_espliciti` deve comprendere `service_role`.** Oggi il template scrive il
+   `revoke`/`grant` per `anon` e `authenticated` e tace sul ruolo di servizio, esattamente come
+   taceva questo banco. Ogni progetto già generato ha lo stesso buco latente.
+2. **La versione della CLI e dell'immagine Postgres non è versionata da nessuna parte.** Un
+   progetto Web Gun dichiara le sue dipendenze npm al patch e lascia libera la cosa che decide
+   i permessi del suo database. Va fissata, così un aggiornamento è una decisione.
+3. **Nessuno dei nove passi del gate se n'è accorto**, e non è un difetto del gate: lo schema è
+   corretto, le policy sono corrette, i test pgTAP passano — girano tutti come `postgres` o con
+   `set role`, mai con la chiave di servizio. Se ne accorge solo chi **usa** quella chiave, e
+   in questa pipeline la usa un solo strumento: le asserzioni di effetto di Flow Sentinel.
+   Un passo che interroghi PostgREST **con la chiave di servizio** chiuderebbe la classe.
+
+La regola generale, che vale oltre questo caso: **su Supabase un privilegio che non hai
+scritto non è un privilegio che hai** — e da oggi si sa che non lo è nemmeno domani.

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { esigiRigaToccata } from "@/lib/scritture";
 import { clientServer } from "@/lib/supabase/server";
 import { richiediRuolo, richiediStaff } from "@/modules/admin/guardia";
 
@@ -22,15 +23,17 @@ export async function aggiornaRecapiti(dati: FormData) {
     throw new Error("puoi modificare solo i tuoi recapiti");
   }
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("staff")
     .update({
       full_name: String(dati.get("full_name") ?? ""),
       phone: String(dati.get("phone") ?? "") || null,
     })
-    .eq("id", String(dati.get("id") ?? ""));
+    .eq("id", bersaglio)
+    .select("id");
 
   if (error) throw new Error(error.message);
+  esigiRigaToccata(data, "persona non trovata: ricarica la pagina");
   revalidatePath("/admin/personale");
 }
 

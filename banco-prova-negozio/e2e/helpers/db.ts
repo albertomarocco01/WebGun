@@ -64,7 +64,14 @@ export function clientAnonimo() {
 /** `last_sign_in_at` letto dall'admin API: lo scrive il server di Auth. */
 export async function ultimoAccesso(email: string): Promise<number | null> {
   const { data, error } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
-  if (error) throw new Error(`ultimoAccesso(${email}): ${error.message}`);
+  // `error.message` dell'admin API puo' essere vuoto, e il messaggio diventava
+  // `ultimoAccesso(...): ` — una diagnosi che non dice niente. Meglio l'oggetto
+  // intero che il nulla (residuo §4.2 dell'handoff 12, chiuso il 2026-07-30).
+  if (error) {
+    throw new Error(
+      `ultimoAccesso(${email}): ${error.message || JSON.stringify(error)}`,
+    );
+  }
   const utente = data.users.find((u) => u.email === email);
   if (!utente?.last_sign_in_at) return null;
   return new Date(utente.last_sign_in_at).getTime();
@@ -120,6 +127,7 @@ export const SEED = {
   staffTitolare: "11111111-1111-1111-1111-111111111001",
   staffMagazziniere: "11111111-1111-1111-1111-111111111002",
   staffRedattore: "11111111-1111-1111-1111-111111111003",
+  clienteSenzaAccount: "22222222-2222-2222-2222-222222222002",
 } as const;
 
 // Funzioni piccole e nominate, una per domanda: il nome finisce nel messaggio
@@ -161,6 +169,57 @@ export async function contaClienti(): Promise<number> {
     .select("id", { count: "exact", head: true });
   if (error) throw new Error(`contaClienti: ${error.message}`);
   return count ?? 0;
+}
+
+export async function clientePerId(
+  id: string,
+): Promise<{ full_name: string; email: string | null; phone: string | null } | null> {
+  const { data, error } = await admin
+    .from("customers")
+    .select("full_name, email, phone")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(`clientePerId(${id}): ${error.message}`);
+  return data;
+}
+
+/** Riporta il telefono di un cliente, per il ripristino di fine spec. */
+export async function forzaTelefonoCliente(
+  id: string,
+  telefono: string | null,
+): Promise<void> {
+  const { error } = await admin
+    .from("customers")
+    .update({ phone: telefono })
+    .eq("id", id);
+  if (error) throw new Error(`forzaTelefonoCliente(${id}): ${error.message}`);
+}
+
+/**
+ * Quante identita' ha l'utente in `auth.identities`, via l'admin API.
+ *
+ * Due chiamate e non una, per un motivo misurato il 2026-07-30: `listUsers`
+ * **non idrata `identities`** e restituisce sempre `[]`, anche con quattro righe
+ * vere nella tabella. Solo `getUserById` le carica. Chiedere la lista e contare
+ * di li' produceva un rosso che accusava il seed di un buco che non c'era — il
+ * genere di rosso che insegna a non fidarsi della batteria.
+ */
+export async function identitaDi(email: string): Promise<number | null> {
+  const { data, error } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
+  if (error) {
+    throw new Error(`identitaDi(${email}): ${error.message || JSON.stringify(error)}`);
+  }
+  const utente = data.users.find((u) => u.email === email);
+  if (!utente) return null;
+
+  const { data: pieno, error: erroreUtente } =
+    await admin.auth.admin.getUserById(utente.id);
+  if (erroreUtente) {
+    throw new Error(
+      `identitaDi(${email}): ${erroreUtente.message || JSON.stringify(erroreUtente)}`,
+    );
+  }
+  return (pieno.user?.identities ?? []).length;
 }
 
 export async function statoOrdine(id: string): Promise<string | null> {

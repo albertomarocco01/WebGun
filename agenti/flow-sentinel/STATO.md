@@ -2,10 +2,16 @@
 
 - **Stato attuale:** costruita (P1), **collaudata in modo indipendente** (P2) il 2026-07-28, e
   **usata su un consumatore reale** (P3) il 2026-07-30 sul banco `banco-prova-negozio`
-  (Bottega Nord), costruito da altri due agenti. Batteria **15/15 verde**, gate **VERDE 7/7**.
+  (Bottega Nord), costruito da altri due agenti. Batteria **16/16 verde**, gate **VERDE 7/7**.
   P3 ha trovato **un difetto bloccante dell'app** che due gate verdi a monte non avevano visto
   — nessuno riusciva ad accedere al gestionale — e **un falso verde della skill**: `app-viva`
   ha dichiarato viva l'app di un altro progetto. Verbale: `COLLAUDO-P3-2026-07-30.md`.
+  **Secondo passaggio la sera stessa**, dopo che i costruttori avevano chiuso i cinque difetti
+  riportati: batteria riestesa a **11 flussi / 16 test**, e un difetto nuovo che non era di
+  nessun codice — `service_role` aveva perso i permessi perche' la CLI Supabase era passata da
+  2.95.4 a 2.110.0 cambiando `alter default privileges`. **Un progetto fermo si e' rotto da
+  solo**, e l'ha visto solo chi usa la chiave per misurare. Dettagli:
+  `banco-prova-negozio/docs/handoff/14-flow-sentinel.md`.
   Dettagli della costruzione originale:
   `SKILL.md` confermata in P0 e **non modificata** da nessuna delle due fasi; esistono le
   **4 references**, il gate `verify.mjs` a **7 passi** con id stabili, le regole pure in
@@ -45,7 +51,7 @@
 | Test degli script | **106 verdi** (79 dopo P1, +24 in P2, +3 in P3 su `ambienteBatteria`) | `node --test "scripts/**/*.test.mjs"` |
 | References | 4 | `references/`, 1288 righe dopo P1, corrette in tre punti da P2 |
 | Template | 3 | `flussi-critici.md`, `handoff-flow-sentinel.md`, `eslint-spec.config.mjs` |
-| Banchi su cui il gate e' girato | **3**, di tre domini — e il terzo scritto da **altri agenti** | `banco-prova-flow/` (5 flussi, 5 spec) · `banco-prova-collaudo-fs/` (6 flussi, 6 spec) · **`banco-prova-negozio/` (10 flussi, 10 spec, 15 test, gate 7/7)** |
+| Banchi su cui il gate e' girato | **3**, di tre domini — e il terzo scritto da **altri agenti** | `banco-prova-flow/` (5 flussi, 5 spec) · `banco-prova-collaudo-fs/` (6 flussi, 6 spec) · **`banco-prova-negozio/` (11 flussi, 11 spec, 16 test, gate 7/7)** |
 | Difetti piantati e rilevati | 5 su 5 (P1) + 3 su 3 (P2, classi nuove) | `COSTRUZIONE` §3.2 · `COLLAUDO` §4 |
 | Premesse tolte e riconosciute mancanti | 3 su 3 | `COSTRUZIONE-2026-07-28.md` §MANCANTE |
 | Forme ostili provate sulle regole pure | 79, con input della forma vera | `COLLAUDO-2026-07-28.md` §6 |
@@ -155,6 +161,18 @@ silenzio, tre crash su report malformati, e tre rossi sbagliati su codice commen
    guardiani lo chiede sui punti critici; qui il punto critico e' la chiave amministrativa negli helper
    del progetto generato, e su quello il gate non ha nessun controllo automatico — solo la prosa di
    `references/playwright.md`. `semgrep` e `gitleaks` non sono installati: MANCANTI, non PASS.
-8. **Il banco e' usa e getta e gitignorato.** Le prove stanno nel verbale, non su disco: rifare il banco
+8. **Il gate non ha nessun passo che usi la chiave di servizio.** *(Numero in coda per non
+   spostare le citazioni degli altri punti; per gravita' starebbe subito dopo il n°2.)*
+   Il 2026-07-30, sul banco
+   di P3, `service_role` ha perso `select/insert/update/delete` su tutte le tabelle perche' era
+   cambiata la versione della CLI Supabase — e i **tre** gate della pipeline sono rimasti verdi,
+   perche' nessuno dei tre usa quella chiave: schema-forge gira come `postgres` o con
+   `set role`, gestionale-crafter legge il codice, e `app-viva` di questa skill chiede solo un
+   HTTP sotto il 500. Rossa e' diventata la **batteria**, che con quella chiave misura l'effetto
+   dei flussi. E' un buon esito — il rosso e' arrivato — ma dipende dal fatto che il progetto
+   abbia una batteria: su un progetto senza spec la stessa rottura sarebbe invisibile a tutti e
+   tre i gate. Un passo che interroghi PostgREST **con la chiave di servizio** chiuderebbe la
+   classe, e costa una `curl`.
+9. **Il banco e' usa e getta e gitignorato.** Le prove stanno nel verbale, non su disco: rifare il banco
    richiede di rileggere `COSTRUZIONE-2026-07-28.md`. E' la §12 di DECISIONI.md applicata alla lettera;
    se P2 lo trasformasse nel caso di prova di un difetto, varrebbe la §20 e andrebbe tracciato.

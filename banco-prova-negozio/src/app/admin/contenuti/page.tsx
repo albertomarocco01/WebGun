@@ -5,7 +5,7 @@ import {
   CampoTesto,
   Modulo,
 } from "@/components/ui/Campo";
-import { richiediRuolo } from "@/modules/admin/guardia";
+import { richiediSezione } from "@/modules/admin/guardia";
 import { aggiornaContenuto } from "@/modules/contenuti/azioni";
 import { elencoContenuti } from "@/modules/contenuti/query";
 
@@ -14,7 +14,7 @@ import { elencoContenuti } from "@/modules/contenuti/query";
  * Il permesso e' del redattore e del titolare, come nella policy della tabella.
  */
 export default async function Contenuti() {
-  await richiediRuolo("redattore", "titolare");
+  await richiediSezione("/admin/contenuti");
   const contenuti = await elencoContenuti();
 
   return (

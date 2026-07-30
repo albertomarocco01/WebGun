@@ -3,16 +3,7 @@ import type { ReactNode } from "react";
 
 import { Bottone } from "@/components/ui/Bottone";
 import { esci } from "@/modules/admin/accesso";
-import { richiediStaff } from "@/modules/admin/guardia";
-
-const VOCI = [
-  { href: "/admin/prodotti", testo: "Prodotti" },
-  { href: "/admin/categorie", testo: "Categorie" },
-  { href: "/admin/ordini", testo: "Ordini" },
-  { href: "/admin/clienti", testo: "Clienti" },
-  { href: "/admin/contenuti", testo: "Contenuti" },
-  { href: "/admin/personale", testo: "Personale" },
-];
+import { richiediStaff, sezioniPer } from "@/modules/admin/guardia";
 
 /**
  * La guardia della sezione: gira sul server prima di ogni pagina figlia, e
@@ -26,6 +17,11 @@ export default async function AdminLayout({
 }) {
   const persona = await richiediStaff();
 
+  // Il menu mostra solo le sezioni che la guardia lascia davvero aprire: stessa
+  // fonte, `SEZIONI`. Un menu che offre una porta chiusa non e' un dettaglio di
+  // stile — insegna a chi lavora che il gestionale sbaglia a caso.
+  const voci = sezioniPer(persona.ruolo);
+
   return (
     <div className="mx-auto flex max-w-6xl gap-8 p-6">
       <nav aria-label="Sezioni del gestionale" className="w-48 shrink-0">
@@ -33,7 +29,7 @@ export default async function AdminLayout({
           {persona.full_name} · {persona.ruolo}
         </p>
         <ul className="flex flex-col gap-1 text-sm">
-          {VOCI.map((voce) => (
+          {voci.map((voce) => (
             <li key={voce.href}>
               <Link href={voce.href} className="hover:underline">
                 {voce.testo}

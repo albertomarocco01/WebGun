@@ -77,6 +77,18 @@ titolo nell'intestazione. La spec ripristina il titolo originale.
 che il `grant update` per colonna non comprende `ruolo`. La spec ripristina
 `magazziniere`.
 
+## `modifica-cliente` — positivo
+
+1. Con la sessione del magazziniere, apri `/admin/clienti`.
+2. Nel modulo del cliente senza account (Pietro Gallo), cambia il «Telefono».
+3. Premi «Salva i recapiti».
+
+**Effetto atteso sul database:** `customers.phone` di quella riga vale il nuovo
+numero e `full_name` **non** e' cambiato. Il flusso nasce il 2026-07-30 insieme
+alla vista che lo rende percorribile: `aggiornaCliente` esisteva senza che
+nessuna pagina la importasse — un endpoint POST senza porta davanti — ed era
+elencata qui sotto fra i non coperti. La spec ripristina il numero del seed.
+
 ## `admin-negato-anon` — ostile-lettura
 
 1. Senza nessuna sessione, naviga su `/admin`, `/admin/clienti` e
@@ -103,13 +115,20 @@ account autorizzato.
 ## `sezioni-di-ruolo-negate-al-magazziniere` — ostile-lettura
 
 1. Con la sessione del magazziniere, naviga su `/admin/contenuti` e
-   `/admin/personale` — le due sezioni che il menu mostra a tutti.
+   `/admin/personale` — le due sezioni riservate ad altri ruoli.
+2. Torna su `/admin` e guarda il menu.
 
 **Rifiuto atteso:** entrambe le navigazioni finiscono su `/admin` e il corpo
-servito non contiene «Contenuti del sito», «Personale», «Sara Conti» ne'
-«0161 000001». Non si asserisce nessun messaggio a schermo: `/admin` non legge
-`searchParams`, quindi il motivo del rifiuto non compare da nessuna parte —
-ed e' un difetto dell'app, riportato nell'handoff.
+servito non contiene «Contenuti del sito», «Personale del negozio», «Sara Conti»
+ne' «0161 000001». Il menu offre le quattro voci che quel ruolo puo' aprire e
+**non** le due che gli sono negate, e il cruscotto raggiunto per rifiuto scrive
+il perche' («non e' aperta al tuo ruolo»).
+
+Dal 2026-07-30 le due meta' si asseriscono insieme, e non e' pignoleria: il link
+sparito **non e' la difesa** — la rotta si raggiunge scrivendola — quindi la
+spec finisce sempre bussando alla porta. Fino a quel giorno il menu era una
+lista fissa che offriva a ogni ruolo anche cio' che la guardia negava, e
+`/admin` non leggeva `searchParams`: il rifiuto era corretto e **muto**.
 
 ## `ruolo-non-scrivibile-dal-magazziniere` — ostile-scrittura
 
@@ -146,6 +165,6 @@ sparire. Nessuno di questi ha una spec, e il gate non li conta.
 |---|---|
 | Carrello e checkout | **Non esistono in questo progetto**: `src/app` ha solo `/`, `/accedi` e `/admin/*`. Gestionale Crafter ha costruito il backoffice, non la vetrina. Il flusso piu' tipico di Flow Sentinel qui non e' rimandato: non c'e'. |
 | Persona con riga `staff` ma `is_active = false` | Il seed non ha nessuno disattivato e nessuna vista chiama `cambia_stato_attivo`: il secondo ramo del rifiuto di `richiediStaff` non ha percorso da browser. Buco reale, segnalato dal critico di completezza. |
-| `aggiornaVariante` che riscrive `sku` e `size` da campo nascosto | Serve una POST forgiata, non un clic. E' il campo nascosto piu' pericoloso del progetto ed e' nell'handoff come difetto, non come flusso. |
-| `aggiornaCliente` e `creaContenuto` | Azioni server **orfane**: nessuna vista le importa. Restano endpoint POST raggiungibili, ma non hanno percorso d'interfaccia da percorrere. |
+| POST forgiata su un campo nascosto | **Classe ridotta, non chiusa**, il 2026-07-30: `aggiornaVariante` non scrive piu' `sku` e `size` (non viaggiano piu' nel modulo) e tutte e otto le scritture verificano quante righe hanno toccato, quindi un `id` inventato non e' piu' un successo silenzioso. Resta che l'`id` arriva dal client: per provarlo servirebbe forgiare la POST, che non e' un clic. |
+| Errore di un'azione server visto a schermo | `src/app/error.tsx` esiste dal 2026-07-30, quindi un errore ora atterra su una pagina con un testo. Ma dall'interfaccia non c'e' modo di **provocare** un errore senza forgiare una richiesta: nessun percorso di clic porta li'. La pagina c'e', il flusso per raggiungerla no. |
 | Transizione di stato illegale dall'interfaccia | Il `select` offre solo le mosse legali e il form sparisce quando non ce ne sono: il rifiuto si puo' provare solo forgiando la POST. La difesa e' comunque doppia (azione + trigger) ed e' coperta dai test pgTAP di schema-forge. |

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { esigiRigaToccata } from "@/lib/scritture";
 import { clientServer } from "@/lib/supabase/server";
 import { richiediStaff } from "@/modules/admin/guardia";
 import { TRANSIZIONI } from "@/modules/ordini/query";
@@ -38,9 +39,10 @@ export async function avanzaOrdine(dati: FormData) {
     .select("id");
 
   if (error) throw new Error(error.message);
-  if ((data ?? []).length === 0) {
-    throw new Error("l'ordine è cambiato nel frattempo: ricarica la pagina");
-  }
+  esigiRigaToccata(
+    data,
+    "l'ordine è cambiato nel frattempo: ricarica la pagina",
+  );
 
   revalidatePath("/admin/ordini");
 }

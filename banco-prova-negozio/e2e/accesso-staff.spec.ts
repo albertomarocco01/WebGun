@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { UTENTI, salvaSessione } from "./helpers/auth";
-import { ultimoAccesso } from "./helpers/db";
+import { identitaDi, ultimoAccesso } from "./helpers/db";
 
 /**
  * Flusso `accesso-staff` — la premessa di tutti gli altri flussi autenticati.
@@ -59,6 +59,17 @@ test("il titolare entra dalla pagina di accesso e il server di Auth lo registra 
         "last_sign_in_at non e' avanzato: nessuna credenziale verificata dal server di Auth, la sessione e' solo lato client",
     })
     .toBeGreaterThan(prima);
+
+  // L'utente dev'essere INTERO, non solo funzionante. Un seed che scrive
+  // `auth.users` a mano e si ferma li' produce un utente senza riga in
+  // `auth.identities`: l'accesso a password gira lo stesso, quindi il difetto
+  // non si vede finche' qualcuno non aggiunge un provider esterno — e a quel
+  // punto sembra un guasto di OAuth. Sanato nel seed il 2026-07-30, asserito
+  // qui perche' un residuo chiuso senza asserzione torna al primo `db reset`.
+  expect(
+    await identitaDi(UTENTI.titolare.email),
+    "nessuna riga in `auth.identities`: l'utente entra ma e' a meta', e OAuth non lo riconoscerebbe",
+  ).toBeGreaterThan(0);
 });
 
 test("dopo l'uscita il gestionale torna a essere negato @flusso:accesso-staff", async ({

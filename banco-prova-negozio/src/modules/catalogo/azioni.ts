@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { esigiRigaToccata } from "@/lib/scritture";
 import { clientServer } from "@/lib/supabase/server";
 import { richiediStaff } from "@/modules/admin/guardia";
 
@@ -30,7 +31,7 @@ export async function aggiornaProdotto(dati: FormData) {
   await richiediStaff();
   const supabase = await clientServer();
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("products")
     .update({
       name: String(dati.get("name") ?? ""),
@@ -38,9 +39,11 @@ export async function aggiornaProdotto(dati: FormData) {
       description: String(dati.get("description") ?? ""),
       is_published: dati.get("is_published") === "on",
     })
-    .eq("id", String(dati.get("id") ?? ""));
+    .eq("id", String(dati.get("id") ?? ""))
+    .select("id");
 
   if (error) throw new Error(error.message);
+  esigiRigaToccata(data, "prodotto non trovato: ricarica la pagina");
   revalidatePath("/admin/prodotti");
 }
 
@@ -48,15 +51,27 @@ export async function eliminaProdotto(dati: FormData) {
   await richiediStaff();
   const supabase = await clientServer();
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("products")
     .delete()
-    .eq("id", String(dati.get("id") ?? ""));
+    .eq("id", String(dati.get("id") ?? ""))
+    .select("id");
 
   if (error) throw new Error(error.message);
+  esigiRigaToccata(data, "prodotto non trovato: forse l'ha gia' tolto qualcun altro");
   revalidatePath("/admin/prodotti");
 }
 
+/**
+ * Del modulo delle varianti si scrivono SOLO prezzo e giacenza, che sono gli
+ * unici due campi che l'interfaccia offre.
+ *
+ * `sku` e `size` viaggiavano in due `<input type="hidden">` e finivano
+ * nell'`update`: una POST forgiata riscriveva codice e taglia di qualunque
+ * variante, senza che nessuna schermata lo permettesse. Un campo nascosto non
+ * e' un dato del server, e' un dato del client con un aspetto rassicurante:
+ * cio' che non si modifica non si rimanda indietro.
+ */
 export async function aggiornaVariante(dati: FormData) {
   await richiediStaff();
   const supabase = await clientServer();
@@ -65,17 +80,17 @@ export async function aggiornaVariante(dati: FormData) {
   // resta un intero, e un intero non ha errori di arrotondamento.
   const euro = Number(dati.get("prezzo_euro") ?? 0);
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("product_variants")
     .update({
-      sku: String(dati.get("sku") ?? ""),
-      size: String(dati.get("size") ?? ""),
       price_cents: Math.round(euro * 100),
       quantity: Number(dati.get("quantity") ?? 0),
     })
-    .eq("id", String(dati.get("id") ?? ""));
+    .eq("id", String(dati.get("id") ?? ""))
+    .select("id");
 
   if (error) throw new Error(error.message);
+  esigiRigaToccata(data, "variante non trovata: ricarica la pagina");
   revalidatePath("/admin/prodotti");
 }
 

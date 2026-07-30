@@ -1,7 +1,7 @@
 import { Bottone } from "@/components/ui/Bottone";
 import { Campo, CampoScelta, Modulo } from "@/components/ui/Campo";
 import { Cella, Riga, Tabella } from "@/components/ui/Tabella";
-import { richiediRuolo } from "@/modules/admin/guardia";
+import { richiediSezione } from "@/modules/admin/guardia";
 import { aggiornaRecapiti, cambiaRuolo } from "@/modules/personale/azioni";
 import { elencoPersonale } from "@/modules/personale/query";
 
@@ -18,7 +18,7 @@ const RUOLI = [
  * dal `grant` per colonna — e sarebbe auto-promozione se il grant ci fosse.
  */
 export default async function Personale() {
-  await richiediRuolo("titolare");
+  await richiediSezione("/admin/personale");
   const personale = await elencoPersonale();
 
   return (
