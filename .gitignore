@@ -44,3 +44,6 @@ banco-sporco/.next/
 # quello vero.
 banco-prova-*/.env*
 banco-sporco/.env*
+
+# backup del documento di regia
+*.docx.bak
