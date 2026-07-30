@@ -288,6 +288,13 @@ test("legge title, description e canonical dall'HTML servito", () => {
     description: "Maglieria di lana",
     canonical: "https://bottreganord.it/",
     robots: null,
+    // gli elenchi completi accanto al primo valore: chi CONTA e' `findingsSeo`,
+    // qui si legge soltanto
+    titoli: ["Bottega Nord — maglieria"],
+    descrizioni: ["Maglieria di lana"],
+    canonici: ["https://bottreganord.it/"],
+    robotsTutti: [],
+    xRobots: null,
   });
 });
 

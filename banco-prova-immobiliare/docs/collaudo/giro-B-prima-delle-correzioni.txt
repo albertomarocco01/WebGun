@@ -1,0 +1,26 @@
+GATE PERFORMANCE: ROSSO (2 falliti, 1 verifiche mancanti su 7 passi)
+
+OK    contratto delle pagine e delle soglie
+        4 pagine · form factor: desktop · deroghe scritte: 1
+        confermato da: UMANO — Alberto Marocco (sviluppatore, collaudo avversario) (2026-07-30)
+MANC  rete E2E di Flow Sentinel
+        il progetto non ha `docs/flussi-critici.md`: nessuna batteria E2E da rilanciare. Speed Demon modifica codice gia' collaudato da altri, e senza rete ogni ottimizzazione e' una scommessa
+OK    build di produzione (non dev server)
+        http://127.0.0.1:3200 (HTTP 200) · nessuno degli indizi di dev server nell'HTML servito
+OK    misura Lighthouse (mediana di N giri)
+        home (/) · 3/3 giri: performance 77±0 · accessibility 100±0 · best-practices 96±0 · seo 100±0
+        immobili (/immobili) · 3/3 giri: performance 75±8 · accessibility 100±0 · best-practices 96±0 · seo 92±0
+        agenzia (/agenzia) · 3/3 giri: performance 100±0 · accessibility 95±0 · best-practices 96±0 · seo 91±0
+        riservata (/riservata) · 3/3 giri: performance 100±0 · accessibility 100±0 · best-practices 96±0 · seo 100±0
+FAIL  soglie dichiarate
+        3 bloccanti, 1 derogate
+        [block] pagina home · performance: 77 sotto la soglia 85 e nessuna deroga scritta nel contratto: o si ottimizza, o si scrive perche' non si puo'
+        [warn] pagina immobili · performance: 75 sotto la soglia 80, con deroga scritta: «Le tre fotografie sono i file originali dei proprietari e il mandante ha chiesto per iscritto di non ritagliarle. Arrivare alla soglia senza ricomprimerle richiederebbe di mostrarne una sola sopra la piega: cambia cosa si vede. Rivedibile quando arriveranno gli scatti del fotografo, previsti per settembre.»
+        [block] pagina immobili · seo: 92 sotto la soglia 100 e nessuna deroga scritta nel contratto: o si ottimizza, o si scrive perche' non si puo'
+        [block] pagina agenzia · seo: 91 sotto la soglia 100 e nessuna deroga scritta nel contratto: o si ottimizza, o si scrive perche' non si puo'
+OK    metatag nell'HTML servito
+        title, description e canonical presenti su 4 pagine
+FAIL  contratto d'uscita (handoff)
+        [block] docs/handoff/<n>-speed-demon.md: handoff assente: chi viene dopo non sa cosa e' stato ottimizzato ne' a che prezzo (comando `handoff`)
+
+Una verifica mancante non e' una verifica superata: il gate resta rosso.

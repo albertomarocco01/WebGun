@@ -20,8 +20,15 @@ Confermato da: {{UMANO (nome, ruolo) | ORCHESTRATORE}} ({{AAAA-MM-GG}})
 
 <!--
 SINTASSI. La riga qui sopra e' obbligatoria: senza, o col segnaposto ancora
-dentro, il passo `contratto-performance` e' una VERIFICA MANCANTE, non un passo
-superato.
+dentro, il passo `contratto-performance` chiude ROSSO.
+
+Cosa il gate rifiuta, di preciso: i segnaposti (`{{...}}`, `TODO`, `da
+compilare`, `da decidere`) e le firme che non nominano nessuno (`—`, `-`, `?`).
+Un nome proprio con il suo ruolo e' una firma valida — fino al 2026-07-30 non lo
+era: la regola pretendeva la parola letterale `UMANO` o `ORCHESTRATORE`, e
+`Confermato da: Elena Barbieri (titolare)` veniva rifiutata. Cioe' l'unica
+modalita' che passava era quella senza nessun nome, ed era l'opposto di quel che
+questo commento chiede da sempre.
 
 Il difetto che previene e' concreto e si e' gia' visto in questa pipeline: un
 elenco di pagine deciso dall'agente e' l'opinione dell'agente su cosa contasse, e
@@ -50,19 +57,38 @@ Misurato il: {{AAAA-MM-GG}} — {{macchina o CI, e cosa ci girava sopra}}
 
 <!--
 SINTASSI le sei righe qui sopra, nell'ordine, ognuna sulla sua riga.
-Il gate ne usa due:
-  - `Metodo:` deve contenere «build di produzione» e il numero di giri. Un
-    contratto che non dichiara il metodo rende `misura` non interpretabile: due
-    numeri presi in due modi diversi non sono confrontabili, e il delta
-    prima/dopo dell'handoff sarebbe aritmetica su unita' diverse.
-  - `URL misurato:` e' l'URL che il passo `build-produzione` interroga quando non
-    gli si passa `--url`. Precedenza: flag esplicito > questa riga > MAI
-    l'ambiente e MAI un `localhost:3000` scritto dentro il gate. Un default nel
-    codice e' il modo esatto in cui si finisce per misurare l'app di ieri,
-    rimasta accesa su 3000, e chiamarla baseline (stesso precedente di Flow
-    Sentinel sulla porta del database).
-Le altre quattro righe sono prosa obbligatoria: non le legge nessuno strumento,
-le legge chi rifara' la misura fra un mese e deve rifarla nello stesso modo.
+Il gate ne legge TRE, e quali siano e' stato corretto il 2026-07-30 dopo il
+collaudo avversario: fino a quel giorno questo commento ne prometteva due, e
+nessuna delle due veniva letta davvero.
+
+  - `Metodo: ... profilo mobile|desktop` — l'ultima parola della riga dice al
+    passo `misura` con quale profilo lanciare Lighthouse. Mobile e desktop sono
+    due macchine diverse: cambiano CPU emulata, rete emulata e finestra, e sullo
+    stesso codice il punteggio si sposta di parecchio. Se manca, si assume
+    `mobile`, che e' il default di Lighthouse, e il gate lo scrive nel dettaglio
+    invece di tacerlo. In alternativa si puo' scrivere una riga `Form factor:
+    mobile|desktop`, che vince su questa perche' e' piu' esplicita.
+    Il resto della riga — «build di produzione», il numero di giri — e' prosa:
+    che si stia misurando una build e non una dev server lo verifica il passo
+    `build-produzione` sull'HTML servito, che e' una prova; il numero di giri lo
+    decide `--giri`. Una dichiarazione scritta qui non sarebbe ne' l'una ne'
+    l'altro.
+  - `URL misurato:` e' l'URL che il gate interroga quando non gli si passa
+    `--url`. Precedenza: flag esplicito > questa riga > MAI l'ambiente e MAI un
+    `localhost:3000` scritto dentro il gate. Un default nel codice e' il modo
+    esatto in cui si finisce per misurare l'app di ieri, rimasta accesa su 3000,
+    e chiamarla baseline (stesso precedente di Flow Sentinel sulla porta del
+    database). Questa riga non e' un default: e' un valore che qualcuno ha
+    scritto e firmato in un file di questo progetto.
+  - `Dispersione massima ammessa: N` — la soglia oltre la quale una misura non
+    e' bassa, e' MANCANTE (`references/misurazione.md` §78). Il gate ne ha una
+    di ripiego, 5 punti, e la usa solo se questa riga non c'e'. Fino al
+    2026-07-30 ne aveva una cablata a 10 e questa riga non la leggeva nessuno:
+    un contratto firmato che dichiarava 5 vedeva accettata come buona una misura
+    che ballava di 8.
+
+Le altre tre righe sono prosa obbligatoria: non le legge nessuno strumento, le
+legge chi rifara' la misura fra un mese e deve rifarla nello stesso modo.
 -->
 
 Perche' il metodo sta scritto qui e non in un commento del commit:
@@ -132,6 +158,21 @@ questo file.
 
 **Perche' conta:** {{una o due righe: cosa perde il progetto se questa pagina e' lenta}}
 **Tipo:** {{pubblica | autenticata (sessione: {{quale}})}}
+
+<!--
+RESIDUO DICHIARATO, misurato il 2026-07-30. La riga `Tipo:` **il gate non la
+legge**: il passo `seo-meta` tratta ogni pagina dichiarata come pubblica, quindi
+su una pagina `autenticata` pretende `title`, `description` e `canonical` e
+considera un `noindex` un difetto — mentre su quella pagina il `noindex` e' la
+cosa giusta. Sull'esempio compilato in fondo a questo file, `admin-ordini`
+produrrebbe un rosso che descrive il contrario della verita'.
+
+Finche' resta cosi': una pagina autenticata **si dichiara in §Pagine escluse
+dalla misura**, non come sezione di pagina. Ci si perde la misura di
+performance del backoffice, ed e' il prezzo di non avere ancora una sessione
+dentro Lighthouse (`references/misurazione.md` §pagine autenticate).
+-->
+
 
 | Categoria | Soglia | Baseline (mediana di {{N}}) | Dispersione | Misura finale |
 |---|---|---|---|---|
@@ -360,6 +401,12 @@ e mostra 48 schede con immagine. E' la pagina dove il peso delle immagini si
 somma.
 **Tipo:** pubblica
 
+Soglia `performance` a 80 e non a 85 come la home, per decisione della titolare:
+le 48 fotografie sono il catalogo, e chiederle piu' leggere sarebbe stato
+chiederle piu' piccole. E' una decisione presa **prima** della misura, quindi
+non e' una deroga — la differenza fra le due sta nel momento in cui il numero e'
+stato deciso, non nel numero.
+
 | Categoria | Soglia | Baseline (mediana di 3) | Dispersione | Misura finale |
 |---|---|---|---|---|
 | `performance` | >= 80 | 64 | ±5 | 88 |
@@ -386,29 +433,6 @@ galleria piu' pesante del catalogo, quindi e' il caso peggiore, non quello medio
 
 **Metriche di laboratorio (mediana):** LCP 3,8 s → 2,4 s · TBT 340 ms → 70 ms · CLS 0,05 → 0,00 · FCP 1,6 s → 1,2 s
 
-## `admin-ordini` — /admin/ordini
-
-**Perche' conta:** ci si passa mezz'ora al giorno per preparare le consegne. Non
-la vedono i motori e non la vede un cliente: conta la reattivita' della tabella,
-non il punteggio.
-**Tipo:** autenticata (sessione: staff, `e2e/.auth/staff.json`)
-
-| Categoria | Soglia | Baseline (mediana di 3) | Dispersione | Misura finale |
-|---|---|---|---|---|
-| `performance` | >= 60 | 74 | ±3 | 81 |
-| `accessibility` | >= 95 | 97 | ±0 | 97 |
-| `best-practices` | >= 95 | 100 | ±0 | 100 |
-| `seo` | non misurata | — | — | — |
-
-Soglia `performance` a 60 per decisione della titolare: l'amministrazione si usa
-da desktop sulla rete del vivaio, e alzare la soglia avrebbe significato
-paginare una tabella che si preferisce vedere intera. E' una decisione presa
-prima della misura, quindi non e' una deroga.
-`seo` non misurata: la rotta e' `noindex` e dietro autenticazione, un punteggio
-SEO qui non descriverebbe niente.
-
-**Metriche di laboratorio (mediana):** LCP 2,2 s → 1,7 s · TBT 180 ms → 110 ms · CLS 0,00 → 0,00 · FCP 1,1 s → 0,9 s
-
 ## Deroghe
 
 | Pagina | Categoria | Soglia | Misurato | Motivo scritto | Confermata da |
@@ -427,6 +451,15 @@ SEO qui non descriverebbe niente.
 - `/accesso` — modulo di due campi, nessuna immagine, `noindex`, la usa solo lo
   staff. Rientra il giorno in cui ospitera' la registrazione dei clienti, che e'
   in ROADMAP.
+- `/admin/ordini` e tutto `/admin/*` — dietro autenticazione. Ci si passa
+  mezz'ora al giorno e la reattivita' della tabella conta, ma Lighthouse
+  arriverebbe alla pagina di accesso e misurerebbe quella: servirebbe una
+  sessione dentro il browser della misura, e il gate non ce l'ha
+  (`references/misurazione.md` §pagine autenticate). Dichiararle come sezioni di
+  pagina qui sopra le farebbe trattare come pubbliche dal passo `seo-meta`, che
+  pretenderebbe `canonical` e considererebbe un difetto il loro `noindex` —
+  esattamente il contrario del vero. Rientrano quando la misura sapra' portarsi
+  dietro una sessione.
 - `/grazie` — pagina di conferma dopo l'invio del modulo, raggiunta a sessione
   gia' vinta. Esclusa per decisione della titolare del 2026-07-24. Rientra se
   diventera' la pagina di conferma di un ordine con pagamento.

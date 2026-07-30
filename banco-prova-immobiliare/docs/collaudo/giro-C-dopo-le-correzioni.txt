@@ -1,0 +1,33 @@
+--url assente: uso l'indirizzo dichiarato in docs/performance.md → http://127.0.0.1:3200
+GATE PERFORMANCE: ROSSO (4 falliti, 1 verifiche mancanti su 7 passi)
+
+OK    contratto delle pagine e delle soglie
+        4 pagine · form factor: desktop · deroghe scritte: 1
+        confermato da: Alberto Marocco (sviluppatore, collaudo avversario) (2026-07-30)
+MANC  rete E2E di Flow Sentinel
+        il progetto non ha `docs/flussi-critici.md`: nessuna batteria E2E da rilanciare. Speed Demon modifica codice gia' collaudato da altri, e senza rete ogni ottimizzazione e' una scommessa
+OK    build di produzione (non dev server)
+        http://127.0.0.1:3200 (HTTP 200) · nessuno degli indizi di dev server nell'HTML servito
+FAIL  misura Lighthouse (mediana di N giri)
+        dispersione massima ammessa: 5 punti (dichiarata nel contratto)
+        home (/) · 3/3 giri: performance 77±0 · accessibility 100±0 · best-practices 96±0 · seo 100±0
+        immobili (/immobili) · 3/3 giri: performance 67±8 · accessibility 100±0 · best-practices 96±0 · seo 92±0
+        agenzia (/agenzia) · 3/3 giri: performance 100±0 · accessibility 95±0 · best-practices 96±0 · seo 91±0
+        SCARTATA — riservata (/riservata) → http://127.0.0.1:3200/contatti: Lighthouse ha misurato un'altra pagina, il punteggio non e' di quella dichiarata
+FAIL  soglie dichiarate
+        5 bloccanti, 0 derogate
+        [block] pagina home · performance: 77 sotto la soglia 85 e nessuna deroga scritta nel contratto: o si ottimizza, o si scrive perche' non si puo'
+        [block] pagina immobili · performance: misura inaffidabile, non bassa: dispersione 8 punti su 3 giri (massimo ammesso 5): la macchina ha ballato piu' del guadagno di mezza ottimizzazione, la misura va rifatta
+        [block] pagina immobili · seo: 92 sotto la soglia 100 e nessuna deroga scritta nel contratto: o si ottimizza, o si scrive perche' non si puo'
+        [block] pagina agenzia · seo: 91 sotto la soglia 100 e nessuna deroga scritta nel contratto: o si ottimizza, o si scrive perche' non si puo'
+        [block] pagina riservata: dichiarata nel contratto e mai misurata: una pagina che il gate non guarda e' una pagina che nessuno guarda
+FAIL  metatag nell'HTML servito
+        [block] pagina immobili: dichiara lo stesso `canonical` di `home` (http://127.0.0.1:3200): al massimo una delle due e' l'originale, l'altra sta chiedendo di uscire dall'indice
+        [warn] pagina immobili: `canonical` punta a `/` e non a `/immobili`: se e' voluto (una variante che si dichiara copia) va scritto nel contratto, altrimenti questa pagina sparisce dall'indice pur essendo perfetta
+        [block] pagina agenzia: manca `title` nell'HTML servito di `/agenzia`
+        [block] pagina riservata: `/riservata` rimanda a `/contatti`: i tag e i punteggi che se ne ricavano sono di un'altra pagina. O si dichiara la destinazione, o la pagina esiste davvero
+FAIL  contratto d'uscita (handoff)
+        [block] docs/handoff/<n>-speed-demon.md: handoff assente: chi viene dopo non sa cosa e' stato ottimizzato ne' a che prezzo (comando `handoff`)
+
+Una verifica mancante non e' una verifica superata: il gate resta rosso.
+uscita=1

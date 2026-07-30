@@ -33,7 +33,8 @@ import {
   contaGravita,
   contrattoUscita,
   dettaglioFindings,
-  eDevServer,
+  DISPERSIONE_MASSIMA,
+  eLaMiaBuild,
   findingsBudget,
   findingsContratto,
   findingsSeo,
@@ -135,11 +136,18 @@ function esegui(cmd, args, opzioni = {}) {
  * rete in un rilievo sui metatag, cioe' un rosso che punta all'imputato
  * sbagliato.
  */
-async function preleva(url, tentativi = 2) {
+async function preleva(url, { tentativi = 2, segui = false } = {}) {
   for (let i = 0; i < tentativi; i++) {
     try {
-      const risposta = await fetch(url, { redirect: "follow" });
-      return { stato: risposta.status, corpo: await risposta.text() };
+      const risposta = await fetch(url, { redirect: segui ? "follow" : "manual" });
+      return {
+        stato: risposta.status,
+        corpo: await risposta.text(),
+        intestazioni: risposta.headers,
+        // `Location` c'e' solo sui 3xx: e' cio' che distingue «questa pagina»
+        // da «un'altra pagina con lo stesso indirizzo dichiarato».
+        rimandoA: risposta.status >= 300 && risposta.status < 400 ? risposta.headers.get("location") : null,
+      };
     } catch {
       if (i === tentativi - 1) return null;
       await new Promise((r) => setTimeout(r, 500));
@@ -208,7 +216,10 @@ const PASSI = [
     id: ID.build,
     nome: "build di produzione (non dev server)",
     async esegui(ctx, args) {
-      const risposta = await preleva(args.url);
+      // Qui il rimando si segue: la domanda del passo e' «cosa sta servendo
+      // questo indirizzo», e la risposta la da' il documento che arriva. E'
+      // sulle PAGINE dichiarate che seguire un rimando falsifica la misura.
+      const risposta = await preleva(args.url, { segui: true });
       if (!risposta) {
         return record(this.id, this.nome, "skipped",
           `nessuna risposta da ${args.url}: avvia la build con \`npm run build && npm run start\` prima del gate`);
@@ -223,9 +234,26 @@ const PASSI = [
           indizi.map((i) => `  indizio: ${i.nome} — ${i.perche}`).join("\n") +
           "\nI numeri di `next dev` non sono numeri: niente minificazione, compilazione a richiesta, cache fredda diversa a ogni giro.");
       }
+      // E' l'app di QUESTO progetto, o solo un'app? Vedi `eLaMiaBuild`.
+      const buildId = leggiSeCe(join(".next", "BUILD_ID"))?.trim();
+      if (!buildId) {
+        return record(this.id, this.nome, "skipped",
+          `${args.url} (HTTP ${risposta.stato}) non e' una dev server, ma non si e' potuto verificare che sia l'app di QUESTO progetto: manca \`.next/BUILD_ID\`.\n` +
+          "Costruisci con `npm run build` dalla radice del progetto prima del gate. Il 2026-07-30, su questa macchina, la porta che un contratto firmato dichiarava serviva il sito di un'altra azienda.");
+      }
+      if (!eLaMiaBuild(risposta.corpo, buildId)) {
+        return record(this.id, this.nome, "fail",
+          `${args.url} (HTTP ${risposta.stato}) risponde, ma NON e' l'app di questo progetto.\n` +
+          `  build id di ${PROGETTO}: ${buildId}\n` +
+          "  non compare da nessuna parte nell'HTML servito da quell'indirizzo.\n" +
+          "Sta rispondendo un'altra applicazione sulla stessa porta. Misurarla darebbe numeri plausibili di un sito che non e' questo.");
+      }
       ctx.baseUrl = args.url;
+      // Il build id si stampa SEMPRE, anche sul verde: un gate che ha guardato
+      // un'altra app non deve poter assomigliare a un gate che ha guardato la
+      // tua (DECISIONI.md §11, precedente di Flow Sentinel su `app-viva`).
       return record(this.id, this.nome, "pass",
-        `${args.url} (HTTP ${risposta.stato}) · nessuno degli indizi di dev server nell'HTML servito`);
+        `${args.url} (HTTP ${risposta.stato}) · build id ${buildId} · nessuno degli indizi di dev server nell'HTML servito`);
     },
   },
 
@@ -244,22 +272,42 @@ const PASSI = [
       }
 
       ctx.misure = new Map();
+      // La soglia di dispersione la dichiara il CONTRATTO; il numero cablato e'
+      // solo il ripiego quando non l'ha dichiarata (misurazione.md §78).
+      const sogliaDispersione = ctx.contratto.dispersioneMassima ?? DISPERSIONE_MASSIMA;
       const righe = [];
+      const dirotate = [];
+      let nonMisurate = 0;
       for (const pagina of ctx.contratto.pagine) {
         const url = unisci(ctx.baseUrl, pagina.percorso);
         const giri = [];
+        let dirottamento = null;
         for (let i = 0; i < args.giri; i++) {
-          const punteggi = giroLighthouse(url, ctx.contratto.formFactor);
-          if (punteggi) giri.push(punteggi);
+          const esito = giroLighthouse(url, ctx.contratto.formFactor);
+          if (!esito) continue;
+          if (!stessaPagina(esito.urlRichiesto, esito.urlFinale)) {
+            dirottamento = esito.urlFinale;
+            break;
+          }
+          giri.push(esito.punteggi);
+        }
+        if (dirottamento) {
+          // Non e' una misura bassa: e' la misura di un'altra pagina. Scartarla
+          // e' l'unica cosa onesta, e dirlo qui evita che il numero finisca nel
+          // contratto accanto al nome sbagliato.
+          dirotate.push(`${pagina.id} (${pagina.percorso}) → ${dirottamento}`);
+          nonMisurate++;
+          continue;
         }
         if (giri.length === 0) {
           righe.push(`${pagina.id}: nessun giro riuscito su ${args.giri}`);
+          nonMisurate++;
           continue;
         }
         const perCategoria = {};
         for (const categoria of CATEGORIE) {
           const valori = giri.map((g) => g[categoria]).filter((v) => v !== null && v !== undefined);
-          if (valori.length > 0) perCategoria[categoria] = misuraStabile(valori);
+          if (valori.length > 0) perCategoria[categoria] = misuraStabile(valori, sogliaDispersione);
         }
         ctx.misure.set(pagina.id, perCategoria);
         righe.push(
@@ -269,9 +317,17 @@ const PASSI = [
               .join(" · "),
         );
       }
-      const nessuna = ctx.misure.size === 0;
-      return record(this.id, this.nome, nessuna ? "skipped" : "pass",
-        righe.join("\n") + (nessuna ? "\nnessuna pagina misurata" : ""));
+      const dettaglio = [
+        `dispersione massima ammessa: ${sogliaDispersione} punti (${ctx.contratto.dispersioneMassima ? "dichiarata nel contratto" : "ripiego della casa: il contratto non la dichiara"})`,
+        ...righe,
+        ...dirotate.map((d) => `SCARTATA — ${d}: Lighthouse ha misurato un'altra pagina, il punteggio non e' di quella dichiarata`),
+      ];
+      // Una pagina dichiarata e non misurata NON lascia il passo verde: prima
+      // bastava che una sola pagina fosse riuscita perche' il passo dicesse
+      // `pass` e il residuo finisse in una riga di dettaglio.
+      const stato = ctx.misure.size === 0 ? "skipped" : nonMisurate > 0 ? "fail" : "pass";
+      return record(this.id, this.nome, stato,
+        dettaglio.join("\n") + (ctx.misure.size === 0 ? "\nnessuna pagina misurata" : ""));
     },
   },
 
@@ -282,11 +338,22 @@ const PASSI = [
       if (!ctx.contratto || !ctx.misure) {
         return record(this.id, this.nome, "skipped", "senza misura non ci sono soglie da confrontare");
       }
+      // Senza nemmeno una soglia letta questo passo non ha niente da fare, e
+      // dirlo e' obbligatorio: prima chiudeva `pass` con «ogni pagina
+      // dichiarata rispetta la sua soglia» dopo averne lette ZERO. Misurato il
+      // 2026-07-30 su un contratto scritto seguendo il template, che il gate
+      // non sapeva leggere: quattro `block` sul passo del contratto e, due
+      // righe sotto, un verde che diceva il contrario.
+      const soglieLette = ctx.contratto.pagine.reduce((n, p) => n + Object.keys(p.soglie).length, 0);
+      if (soglieLette === 0) {
+        return record(this.id, this.nome, "skipped",
+          "nessuna soglia letta dal contratto: non c'e' niente da confrontare, e un verde qui direbbe il contrario di cio' che e' successo");
+      }
       const findings = findingsBudget(ctx.contratto.pagine, ctx.misure, ctx.contratto.deroghe);
       const g = contaGravita(findings);
       return record(this.id, this.nome, statoDaFindings(findings),
         findings.length === 0
-          ? "ogni pagina dichiarata rispetta la sua soglia"
+          ? `${soglieLette} soglie confrontate: ogni pagina dichiarata rispetta la sua`
           : `${g.block} bloccanti, ${g.warn} derogate\n${dettaglioFindings(findings)}`);
     },
   },
@@ -299,10 +366,15 @@ const PASSI = [
         return record(this.id, this.nome, "skipped", "senza contratto o senza app non c'e' HTML da leggere");
       }
       const perPagina = new Map();
+      const redirezioni = new Map();
       const nonLette = [];
       for (const pagina of ctx.contratto.pagine) {
+        // `segui: false`, che e' il default: seguire un 307 verso `/accedi`
+        // significherebbe leggere i metatag della pagina di accesso credendo
+        // di leggere quelli di `/admin` (seo.md §296).
         const risposta = await preleva(unisci(ctx.baseUrl, pagina.percorso));
-        if (risposta && risposta.stato < 400) perPagina.set(pagina.id, metatagDaHtml(risposta.corpo));
+        if (risposta && risposta.rimandoA) redirezioni.set(pagina.id, risposta.rimandoA);
+        else if (risposta && risposta.stato < 400) perPagina.set(pagina.id, metatagDaHtml(risposta.corpo, risposta.intestazioni));
         else nonLette.push(`${pagina.id} (${pagina.percorso})${risposta ? ` HTTP ${risposta.stato}` : " nessuna risposta"}`);
       }
 
@@ -315,10 +387,10 @@ const PASSI = [
           `HTML non letto per: ${nonLette.join(" · ")}\nnon si sa se i metatag ci sono: la verifica non e' stata fatta, non e' fallita`);
       }
 
-      const findings = findingsSeo(ctx.contratto.pagine, perPagina);
+      const findings = findingsSeo(ctx.contratto.pagine, perPagina, redirezioni);
       return record(this.id, this.nome, statoDaFindings(findings),
         findings.length === 0
-          ? `title, description e canonical presenti su ${perPagina.size} pagine`
+          ? `title unico, description e canonical proprio su ${perPagina.size} pagine · nessun noindex nel corpo ne' nelle intestazioni`
           : dettaglioFindings(findings));
     },
   },
@@ -385,11 +457,30 @@ function giroLighthouse(url, formFactor) {
       const score = report.categories?.[categoria]?.score;
       punteggi[categoria] = typeof score === "number" ? Math.round(score * 100) : null;
     }
-    return punteggi;
+    // `references/misurazione.md` §256 prescriveva gia' questo confronto: «in
+    // ogni JSON si confrontano `requestedUrl` e `finalDisplayedUrl`; se
+    // differiscono, la misura riguarda un'altra pagina». Il gate leggeva solo
+    // `categories` e buttava via le due righe che glielo dicevano. Misurato il
+    // 2026-07-30 sul banco `banco-prova-immobiliare`:
+    //   requestedUrl      http://127.0.0.1:3200/riservata
+    //   finalDisplayedUrl http://127.0.0.1:3200/contatti
+    //   performance 100 · seo 100      → scritti accanto a `riservata`
+    return {
+      punteggi,
+      urlRichiesto: report.requestedUrl ?? null,
+      urlFinale: report.finalDisplayedUrl ?? report.mainDocumentUrl ?? null,
+    };
   } catch {
     return null;
   }
 }
+
+/** Due URL sono la stessa pagina se differiscono solo per la barra finale. */
+const stessaPagina = (a, b) => {
+  if (!a || !b) return true;
+  const pulisci = (u) => u.replace(/\/+$/, "");
+  return pulisci(a) === pulisci(b);
+};
 
 // ------------------------------------------------------------------- verdetto
 export function riepilogo(passi) {
@@ -437,10 +528,22 @@ async function main() {
     console.error(`Nessuna cartella docs/ in ${PROGETTO}: lancia il gate dalla radice del progetto.`);
     process.exit(2);
   }
+  // Precedenza promessa dal template e finalmente rispettata: flag esplicito >
+  // riga `URL misurato:` del contratto > niente. L'ambiente non entra mai, e
+  // nessun indirizzo e' cablato qui dentro: quello che si legge l'ha scritto e
+  // firmato un umano in `docs/performance.md`.
+  if (!args.url) {
+    const testo = leggiSeCe(CONTRATTO);
+    const dichiarato = testo ? leggiContratto(testo).urlDichiarato : null;
+    if (dichiarato) {
+      args.url = dichiarato;
+      console.error(`--url assente: uso l'indirizzo dichiarato in ${CONTRATTO} → ${dichiarato}`);
+    }
+  }
   if (!args.url) {
     console.error(
-      "Manca --url. Il gate NON indovina un `localhost:3000`: e' cosi' che si misura l'app di un altro progetto e si stampa `pass`.\n" +
-      "Avvia la build con `npm run build && npm run start -- -p <porta>` e passa quell'indirizzo.",
+      "Manca --url, e il contratto non dichiara nessuna riga `URL misurato:`. Il gate NON indovina un `localhost:3000`: e' cosi' che si misura l'app di un altro progetto e si stampa `pass`.\n" +
+      "Avvia la build con `npm run build && npm run start -- -p <porta>` e passa quell'indirizzo, oppure scrivilo nel contratto.",
     );
     process.exit(2);
   }

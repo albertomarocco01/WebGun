@@ -29,6 +29,7 @@ Stack di riferimento: **Next.js (App Router) + Tailwind** servito da `next build
 - **Nessuna ottimizzazione che tocchi l'accessibilità.** Non si toglie un `alt` per pesare meno, non si spegne il focus visibile per «pulire», non si rimuove testo per ridurre il DOM. La regola 5 della costituzione non è derogabile alla 7.
 - **Speed Demon non cambia cosa fa il sito.** Se un'ottimizzazione richiede di togliere una funzione, la funzione la toglie chi l'ha messa, con la sua motivazione. Qui si cambia **come** il sito fa le cose, non **cosa** fa.
 - **Un punteggio sotto la soglia si giustifica per iscritto o è un `block`.** «È lento perché il server è lento» va nel contratto prima della misura, non nell'handoff dopo.
+- **Una pagina che rimanda altrove non è quella pagina.** Si dichiara `/riservata`, l'app risponde 307 verso `/contatti`, Lighthouse segue e il browser segue: il punteggio e i metatag che ne escono sono di `/contatti`, e finiscono nel contratto accanto al nome sbagliato. Misurato il 2026-07-30 (`requestedUrl` ≠ `finalDisplayedUrl`, `performance 100` attribuita a una pagina che non esiste come documento). O si dichiara la destinazione, o la pagina esiste davvero.
 
 ## Modalità: interattiva vs pipeline
 
@@ -74,9 +75,9 @@ In pipeline lo Specchio non sparisce: l'elenco assunto viene **scritto** nell'ha
 | `contratto-performance` | contratto delle pagine e delle soglie | `docs/performance.md` esiste, dichiara almeno una pagina con la sua soglia, ed è **firmato** | il file non c'è, o la riga `Confermato da:` manca o è il segnaposto del template |
 | `rete-verde` | la batteria E2E di Flow Sentinel | il gate di Flow Sentinel chiude verde **adesso** | il progetto non ha `docs/flussi-critici.md` o la skill non è raggiungibile |
 | `build-produzione` | cosa stiamo misurando | l'URL sotto misura **non** è una dev server, e risponde | l'app non risponde |
-| `misura` | Lighthouse sulle pagine dichiarate | N giri per pagina, **mediana** e **dispersione** | `lighthouse` o Chrome non installati |
-| `budget` | le soglie dichiarate | ogni pagina rispetta la sua soglia, o ha una **deroga scritta nel contratto** | — (senza misura il passo non esiste: dipende da `misura`) |
-| `seo-meta` | metatag nell'HTML **servito** | `title`, `description` e `canonical` su ogni pagina pubblica dichiarata | l'app non risponde |
+| `misura` | Lighthouse sulle pagine dichiarate | N giri per pagina, **mediana** e **dispersione** contro la soglia dichiarata nel contratto; una pagina il cui `finalDisplayedUrl` non è quello richiesto viene **scartata**, non misurata | `lighthouse` o Chrome non installati |
+| `budget` | le soglie dichiarate | ogni pagina rispetta la sua soglia, o ha una **deroga scritta nel contratto** | il contratto non dichiara nessuna soglia leggibile, o manca la misura |
+| `seo-meta` | metatag nell'HTML **servito**, letto senza seguire i rimandi | `title` e `canonical` **unici** (si contano, non si cercano), `canonical` che non appartiene a un'altra pagina, `description`, nessun `noindex` né nel corpo né in `X-Robots-Tag` | l'app non risponde |
 | `contratto-uscita` | handoff | l'handoff esiste e la sua riga `Gate:` combacia col verdetto di **questa** esecuzione | l'handoff non c'è |
 
 **Uno strumento assente vale `MANCANTE`, non `PASS`.** Un gate rosso per verifiche mancanti resta rosso: è la regola della casa, e qui conta doppio perché senza Lighthouse questo agente non ha niente da dire.
@@ -99,6 +100,9 @@ In pipeline lo Specchio non sparisce: l'elenco assunto viene **scritto** nell'ha
 - **Che le pagine dichiarate siano quelle giuste.** Come per l'elenco dei flussi di Flow Sentinel: il gate legge la firma, non la sua verità. Una baseline perfetta sulle pagine sbagliate è comunque da buttare.
 - **Che le ottimizzazioni reggano al contenuto vero.** Il banco ha dati di seed: dieci prodotti, non diecimila. Una pagina che vola con dieci righe può crollare con la lista vera, e nessun numero preso qui lo dice.
 - **Che il costo dichiarato sia il costo vero.** «Il lampo bianco è accettabile» è un giudizio di chi conferma, non una misura.
+- **Che una pagina autenticata sia trattata come tale.** Il gate **non legge la riga `Tipo:`** del contratto: tratta ogni pagina dichiarata come pubblica, quindi su una rotta dietro autenticazione pretende `canonical` e considera un difetto il suo `noindex`, che invece è la cosa giusta. Finché è così, le rotte autenticate si dichiarano in §Pagine escluse dalla misura, e la loro reattività resta non misurata.
+- **Che il `canonical` punti alla pagina giusta.** Il gate sa dire che c'è, che è **uno solo**, e che due pagine dichiarate non ne condividono uno. Quale di due varianti sia la principale è una decisione di prodotto (`references/seo.md` §356): se è sbagliata in un modo che nessuna delle due regole intercetta, il gate è verde su un errore che costa l'indicizzazione di una sezione.
+- **Che il sito abbia una `sitemap.ts` e un `robots.ts`.** Nessun passo li guarda: il gate controlla i metatag di pagina e ignora i due file che dicono a un motore di ricerca cosa esiste.
 
 ## Contratto d'uscita (cosa trova chi viene dopo)
 

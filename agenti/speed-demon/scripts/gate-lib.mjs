@@ -49,22 +49,47 @@ const RIGA_CONFERMA = /^[ \t>*_-]*Confermato da[ \t*_]*:[ \t*_]*(.+)$/im;
  * Flow Sentinel ha misurato il caso il 2026-07-28: un template compilato a
  * meta' passava il gate perche' la riga c'era. Una firma che nomina entrambe le
  * possibilita' (`{{UMANO | ORCHESTRATORE}}`) non ha scelto niente.
+ *
+ * CORRETTO il 2026-07-30, collaudo avversario. La regola pretendeva anche la
+ * parola letterale `UMANO` o `ORCHESTRATORE`, e cosi' RIFIUTAVA la firma che il
+ * template stesso insegna a scrivere:
+ *
+ *   Confermato da: Elena Barbieri (titolare) (2026-07-24)   → rifiutata
+ *   Confermato da: ORCHESTRATORE (2026-07-30)               → accettata
+ *
+ * Il template chiede nome e ruolo «perche' fra sei mesi *confermato dal
+ * cliente* non identifica nessuno», quindi l'unica modalita' che il gate
+ * accettava era quella senza nessun nome: la modalita' **interattiva** della
+ * SKILL — quella con un umano che dice si' — non poteva passare il suo stesso
+ * gate. A tenere fuori il segnaposto basta il controllo sui segnaposti; il
+ * resto va letto da chi legge, che e' l'unico a poter dire se «Elena Barbieri
+ * (titolare)» sia davvero chi decide.
  */
 const firmaVera = (firma) =>
-  !/\{\{|\}\}|\bTODO\b|\bda compilare\b/i.test(firma) &&
-  /\b(UMANO|ORCHESTRATORE)\b/.test(firma);
+  !/\{\{|\}\}|\bTODO\b|\bda compilare\b|\bda decidere\b|^[-—?.\s]+$/i.test(firma) &&
+  /\p{L}{3}/u.test(firma);
 
 /** `## `<id>` — <percorso>` : l'intestazione di una pagina misurata. */
 const INTESTAZIONE_PAGINA =
   /^##\s+`([a-z0-9][a-z0-9-]*)`\s+[—-]\s+(\S+)\s*$/;
 
-/** `| performance | 90 |` dentro la sezione della pagina. */
+/**
+ * `| performance | 90 |` dentro la sezione della pagina.
+ *
+ * CORRETTO il 2026-07-30. Prima pretendeva la categoria nuda e il valore nudo,
+ * e il template scrive tutt'e due diversamente:
+ *
+ *   template:  | `performance` | >= 85 | 71 | ±4 | 93 |   → nessuna soglia letta
+ *   banco:     | performance   | 95 |                     → letta
+ *
+ * Un contratto scritto seguendo il template usciva con zero soglie su ogni
+ * pagina, cioe' quattro `block` che parlavano del sito quando il difetto era
+ * nella punteggiatura. Gli apici inversi e il `>=` sono ORNAMENTO: il numero e'
+ * lo stesso, e le colonne che seguono (baseline, dispersione, misura finale)
+ * non riguardano questa regola.
+ */
 const RIGA_SOGLIA =
-  /^\|\s*(performance|accessibility|best-practices|seo)\s*\|\s*(\d{1,3})\s*\|/i;
-
-/** `| <id-pagina> | <categoria> | <motivo> |` nella tabella delle deroghe. */
-const RIGA_DEROGA =
-  /^\|\s*`?([a-z0-9][a-z0-9-]*)`?\s*\|\s*(performance|accessibility|best-practices|seo)\s*\|\s*(.+?)\s*\|\s*$/i;
+  /^\|\s*`?(performance|accessibility|best-practices|seo)`?\s*\|\s*(?:>=|≥|>)?\s*(\d{1,3})\s*(?:\/\s*100)?\s*\|/i;
 
 export const CATEGORIE = Object.freeze([
   "performance",
@@ -72,6 +97,57 @@ export const CATEGORIE = Object.freeze([
   "best-practices",
   "seo",
 ]);
+
+/** Le celle di una riga di tabella markdown, senza i due bordi. */
+const celle = (linea) =>
+  linea.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+
+const eSeparatore = (linea) => /^\|[\s:|-]+\|?\s*$/.test(linea.trim());
+
+/**
+ * La tabella delle deroghe si legge DALLA SUA INTESTAZIONE, non da una forma
+ * fissa.
+ *
+ * CORRETTO il 2026-07-30. La regola precedente pretendeva esattamente tre
+ * colonne e prendeva come motivo «tutto fino all'ultima barra». Su un banco
+ * andava bene; sulla tabella a sei colonne del template — quella con soglia,
+ * misurato e firma — succedevano due cose insieme:
+ *
+ *   | `immobili` | `performance` | >= 80 | 74 | motivo | firma |  → nessuna deroga letta
+ *   | `immobili` | performance   | >= 80 | 74 | motivo | firma |  → motivo = ">= 80 | 74 | motivo | firma"
+ *
+ * cioe' o la deroga spariva (e la pagina tornava `block` con la sua
+ * giustificazione scritta due righe piu' sotto), o veniva letta con un motivo
+ * che conteneva tre colonne altrui. Leggere l'intestazione costa venti righe e
+ * smette di legare il gate a un numero di colonne.
+ */
+function derogheDaTabella(righeTabella) {
+  const deroghe = [];
+  let indici = null;
+  for (const linea of righeTabella) {
+    if (eSeparatore(linea)) continue;
+    const c = celle(linea);
+    if (!indici) {
+      const dove = (parola) => c.findIndex((x) => new RegExp(parola, "i").test(x));
+      const pagina = dove("pagina");
+      const categoria = dove("categoria");
+      const motivo = dove("motivo");
+      // Senza le tre colonne obbligatorie questa non e' l'intestazione della
+      // tabella delle deroghe: si aspetta la prossima riga invece di indovinare
+      // le posizioni, perche' indovinare qui significa attribuire una deroga a
+      // una pagina che non l'ha chiesta.
+      if (pagina >= 0 && categoria >= 0 && motivo >= 0) indici = { pagina, categoria, motivo };
+      continue;
+    }
+    const pagina = (c[indici.pagina] ?? "").replace(/`/g, "").trim();
+    const categoria = (c[indici.categoria] ?? "").replace(/`/g, "").trim().toLowerCase();
+    const motivo = (c[indici.motivo] ?? "").trim();
+    // Una deroga senza motivo scritto e' una soglia tolta, non una deroga.
+    if (!pagina || !CATEGORIE.includes(categoria) || motivo.replace(/[-—\s]/g, "").length === 0) continue;
+    deroghe.push({ pagina, categoria, motivo });
+  }
+  return deroghe;
+}
 
 /**
  * Legge il contratto `docs/performance.md`.
@@ -83,7 +159,7 @@ export const CATEGORIE = Object.freeze([
  */
 export function leggiContratto(testo) {
   const pagine = [];
-  const deroghe = [];
+  const righeDeroghe = [];
   const errori = [];
   const visti = new Set();
   const proprio = senzaZoneCitate(testo);
@@ -130,30 +206,57 @@ export function leggiContratto(testo) {
       continue;
     }
 
-    if (inDeroghe) {
-      const deroga = RIGA_DEROGA.exec(linea);
-      // La riga di separazione `|---|---|` non e' una deroga, e il motivo non
-      // puo' essere vuoto: una deroga senza motivo scritto e' una soglia tolta.
-      if (deroga && !/^-+$/.test(deroga[3]) && deroga[3].replace(/-/g, "").trim().length > 0) {
-        deroghe.push({
-          pagina: deroga[1],
-          categoria: deroga[2].toLowerCase(),
-          motivo: deroga[3].trim(),
-        });
-      }
-    }
+    if (inDeroghe && /^\s*\|/.test(linea)) righeDeroghe.push(linea);
   }
 
   const conferma = RIGA_CONFERMA.exec(proprio);
   const firma = conferma ? conferma[1].trim() : null;
+  const dispersione = RIGA_DISPERSIONE.exec(proprio);
+  const url = RIGA_URL_MISURATO.exec(proprio);
   return {
     confermatoDa: firma && firmaVera(firma) ? firma : null,
     formFactor: formFactorDa(proprio),
+    // `null` = il contratto non l'ha dichiarata, e chi chiama usa il default
+    // della casa. Zero non e' un valore ammissibile e va trattato come assente:
+    // una dispersione massima di zero renderebbe MANCANTE ogni misura.
+    dispersioneMassima: dispersione && Number(dispersione[1]) > 0 ? Number(dispersione[1]) : null,
+    urlDichiarato: url ? url[1] : null,
     pagine,
-    deroghe,
+    deroghe: derogheDaTabella(righeDeroghe),
     errori,
   };
 }
+
+/**
+ * `Dispersione massima ammessa: 5 punti di categoria`.
+ *
+ * AGGIUNTA il 2026-07-30. `references/misurazione.md` §78 dice: «se la
+ * dispersione supera **la soglia dichiarata nel contratto**, la misura non e'
+ * bassa: e' MANCANTE», e §118 e §216 fissano la convenzione della casa a
+ * **5 punti**. Il gate ne aveva uno **cablato a 10** e non leggeva la riga:
+ * quindi un contratto firmato che dichiarava 5 vedeva accettata una misura che
+ * ballava di 8, e nessuno dei due numeri era sbagliato per iscritto.
+ *
+ * Misurato sul banco `banco-prova-immobiliare` il 2026-07-30:
+ *   immobili (/immobili) · performance 74±6  → contratto: MANCANTE · gate: pass
+ */
+const RIGA_DISPERSIONE =
+  /^[ \t>*_-]*Dispersione massima ammessa[ \t*_]*:[ \t*_]*(\d{1,3})\b/im;
+
+/**
+ * `URL misurato: http://127.0.0.1:3200`.
+ *
+ * AGGIUNTA il 2026-07-30. Il template lo prometteva gia' — «Precedenza: flag
+ * esplicito > questa riga > MAI l'ambiente e MAI un `localhost:3000` scritto
+ * dentro il gate» — e il gate non l'ha mai letta: senza `--url` usciva con
+ * codice 2 anche quando l'indirizzo stava scritto e firmato nel contratto.
+ *
+ * La precedenza resta quella promessa, e il divieto che l'ha generata resta
+ * intatto: qui non si indovina niente, si legge un valore che un umano ha
+ * firmato in un file del progetto.
+ */
+const RIGA_URL_MISURATO =
+  /^[ \t>*_-]*URL misurato[ \t*_]*:[ \t*_]*[`<]?(https?:\/\/[^\s`<>]+)/im;
 
 /**
  * Mobile e desktop sono due misure diverse, non due viste della stessa: cambiano
@@ -168,8 +271,22 @@ export function leggiContratto(testo) {
  */
 const RIGA_FORM_FACTOR = /^[ \t>*_-]*Form factor[ \t*_]*:[ \t*_]*(mobile|desktop)\b/im;
 
+/**
+ * La stessa dichiarazione, nella forma che usa il template: una riga `Metodo:`
+ * che finisce con «profilo desktop».
+ *
+ * AGGIUNTA il 2026-07-30. Il template non contiene la riga `Form factor:` —
+ * scrive `Metodo: build di produzione · 3 giri · mediana · profilo desktop` —
+ * quindi ogni contratto scritto seguendolo cadeva sul ripiego `mobile` mentre
+ * dichiarava desktop. Sono due macchine diverse: le soglie decise guardando un
+ * profilo venivano confrontate con i numeri dell'altro, e il gate stampava
+ * `form factor: mobile` senza che nessuno avesse motivo di rileggerlo.
+ */
+const RIGA_PROFILO = /^[ \t>*_-]*Metodo[ \t*_]*:.*\bprofilo\s+(mobile|desktop)\b/im;
+
 export function formFactorDa(testo) {
-  const trovata = RIGA_FORM_FACTOR.exec(senzaZoneCitate(testo));
+  const proprio = senzaZoneCitate(testo);
+  const trovata = RIGA_FORM_FACTOR.exec(proprio) ?? RIGA_PROFILO.exec(proprio);
   return trovata ? trovata[1].toLowerCase() : "mobile";
 }
 
@@ -226,7 +343,20 @@ export function dispersione(numeri) {
   return Math.max(...numeri) - Math.min(...numeri);
 }
 
-export const DISPERSIONE_MASSIMA = 10;
+/**
+ * Il ripiego, quando il contratto non dichiara la sua.
+ *
+ * Era **10**, e non corrispondeva a niente di scritto: `references/misurazione.md`
+ * §118 e §216 fissano la convenzione della casa a **5 punti**, e la riga
+ * `Dispersione massima ammessa:` del template propone 5. Portato a 5 il
+ * 2026-07-30: un gate che ammette il doppio dell'oscillazione che la sua stessa
+ * documentazione dichiara accettabile promuove a risultato un rumore che i suoi
+ * documenti chiamano rumore.
+ *
+ * Resta una convenzione, non una misura: il numero vero si tara per progetto
+ * (misurazione.md §118) e si scrive nel contratto, che ora viene letto.
+ */
+export const DISPERSIONE_MASSIMA = 5;
 
 /**
  * Legge n°3: un numero solo non e' una misura.
@@ -271,6 +401,9 @@ export function findingsBudget(pagine, misure, deroghe) {
   const derogata = (pagina, categoria) =>
     deroghe.find((d) => d.pagina === pagina && d.categoria === categoria);
   const findings = [];
+  // Le deroghe SERVITE: quelle che hanno davvero coperto una soglia mancata.
+  // Il resto sono avanzi, e un avanzo qui sembra valido.
+  const servite = new Set();
 
   for (const pagina of pagine) {
     const misurate = misure.get(pagina.id);
@@ -302,6 +435,7 @@ export function findingsBudget(pagine, misure, deroghe) {
       }
       if (m.mediana < soglia) {
         const d = derogata(pagina.id, categoria);
+        if (d) servite.add(d);
         findings.push({
           severity: d ? "warn" : "block",
           object: `pagina ${pagina.id} · ${categoria}`,
@@ -311,6 +445,29 @@ export function findingsBudget(pagine, misure, deroghe) {
         });
       }
     }
+  }
+
+  // Le deroghe che non hanno coperto niente.
+  //
+  // AGGIUNTO il 2026-07-30. Il template lo prometteva gia' — «riga di deroga che
+  // nomina una pagina non dichiarata qui sopra: `warn`» — e il gate non
+  // guardava affatto le deroghe che nessuna pagina aveva usato. Sono due casi e
+  // fanno lo stesso danno: una giustificazione scritta che sembra valida e non
+  // copre piu' niente. Il primo nasce da una pagina rinominata o tolta
+  // dall'elenco, il secondo da un'ottimizzazione riuscita che nessuno ha
+  // festeggiato cancellando la scusa. Misurati tutti e due su
+  // `banco-prova-immobiliare` il 2026-07-30, il secondo su `immobili ·
+  // performance` dopo che `next/image` l'ha portata da 75 a 100.
+  const dichiarate = new Set(pagine.map((p) => p.id));
+  for (const d of deroghe) {
+    if (servite.has(d)) continue;
+    findings.push({
+      severity: "warn",
+      object: `deroga ${d.pagina} · ${d.categoria}`,
+      message: dichiarate.has(d.pagina)
+        ? `non copre niente: \`${d.pagina}\` rispetta la soglia di \`${d.categoria}\`. Una giustificazione che non giustifica piu' va tolta, o fra sei mesi qualcuno la leggera' come vera`
+        : `nomina una pagina che il contratto non dichiara: e' l'avanzo di una pagina rinominata o tolta dall'elenco. Chi decide cosa farne e' chi ha firmato la lista`,
+    });
   }
   return findings;
 }
@@ -375,6 +532,36 @@ export function indiziDevServer(html) {
 
 export const eDevServer = (html) => indiziDevServer(html).length > 0;
 
+/**
+ * L'app che risponde a quell'indirizzo e' quella di QUESTO progetto?
+ *
+ * `--url` obbligatorio impedisce al gate di **indovinare** una porta. Non
+ * impedisce di sbagliarla, e la differenza e' stata misurata il 2026-07-30 su
+ * questa macchina, per caso, mentre si rilanciava il gate su
+ * `banco-prova-negozio`:
+ *
+ *   3000 → Desktop\\Baldisport\\sito-web-baldisport
+ *   3001 → Desktop\\Alberto Marocco
+ *   3100 → Desktop\\GMSolar\\site        ← la porta che il contratto di
+ *                                          Bottega Nord dichiara nel suo
+ *                                          `Comando:`, occupata da un altro
+ *                                          progetto
+ *
+ * Un `--url http://127.0.0.1:3100` scritto in buona fede, copiato dal contratto
+ * firmato, avrebbe misurato un sito di un'altra azienda e stampato numeri
+ * plausibili. Nessuno dei sette passi se ne sarebbe accorto: la build era di
+ * produzione, l'app rispondeva, i metatag c'erano.
+ *
+ * Il discriminante e' il build id di Next, che sta in `.next/BUILD_ID` nel
+ * progetto e nei percorsi degli asset dell'HTML servito. Misurato negli stessi
+ * minuti: il build id del progetto compare 1 volta nel suo HTML e 0 volte in
+ * quello dell'altro progetto. `references/misurazione.md` §211 lo scriveva gia'
+ * fra le cose da annotare accanto all'URL misurato — non era mai stato usato
+ * per verificare niente.
+ */
+export const eLaMiaBuild = (html, buildId) =>
+  typeof buildId === "string" && buildId.length > 0 && senzaBom(html ?? "").includes(buildId);
+
 // -------------------------------------------------------------------- SEO
 /**
  * I metatag si leggono nell'HTML **servito**, non nel sorgente e non nel DOM.
@@ -384,24 +571,84 @@ export const eDevServer = (html) => indiziDevServer(html).length > 0;
  * diverso da quello che si crede. Qui si guarda cio' che esce dal server, che
  * e' esattamente cio' che vede chi indicizza.
  */
-export function metatagDaHtml(html) {
-  const testo = senzaBom(html ?? "");
-  const titolo = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(testo);
-  const descrizione =
-    /<meta[^>]+name=["']description["'][^>]*content=["']([^"']*)["']/i.exec(testo) ??
-    /<meta[^>]+content=["']([^"']*)["'][^>]*name=["']description["']/i.exec(testo);
-  const canonical =
-    /<link[^>]+rel=["']canonical["'][^>]*href=["']([^"']*)["']/i.exec(testo) ??
-    /<link[^>]+href=["']([^"']*)["'][^>]*rel=["']canonical["']/i.exec(testo);
-  const robots =
-    /<meta[^>]+name=["']robots["'][^>]*content=["']([^"']*)["']/i.exec(testo);
+/**
+ * Un `<svg>` inline non e' la testa del documento.
+ *
+ * `references/seo.md` §313 lo dice da sempre: «un `<title>` dentro un `<svg>`
+ * inline e' un altro elemento in un altro spazio di nomi e viene catturato
+ * dalla stessa espressione». Era vero: misurato il 2026-07-30 su
+ * `/agenzia` del banco `banco-prova-immobiliare`, una pagina **senza titolo**
+ * nella testa e con un'icona telefono accessibile nel corpo:
+ *
+ *   title letto = "Telefono"   → passo `seo-meta`: pass
+ *
+ * Il `<title>` dell'icona ce l'aveva messo l'accessibilita': e' la cosa giusta
+ * da fare, ed era l'unica prova che il gate stesse guardando il posto sbagliato.
+ */
+const senzaSvg = (html) => html.replace(/<svg\b[\s\S]*?<\/svg>/gi, "");
 
-  const pulisci = (m) => (m ? m[1].trim() : null);
+/** `href="x"`, `href='x'` o `href=x`: l'ordine e le virgolette sono liberi. */
+const attributo = (tag, nome) => {
+  const m = new RegExp(`\\b${nome}=(?:"([^"]*)"|'([^']*)'|([^\\s">]+))`, "i").exec(tag);
+  return m ? (m[1] ?? m[2] ?? m[3] ?? "").trim() : null;
+};
+
+const meta = (html, nome) =>
+  [...html.matchAll(/<meta\b[^>]*>/gi)]
+    .map((m) => m[0])
+    .filter((t) => (attributo(t, "name") ?? "").toLowerCase() === nome)
+    .map((t) => attributo(t, "content"))
+    .filter((v) => v);
+
+/**
+ * I metatag si leggono nell'HTML **servito**, e si CONTANO.
+ *
+ * RISCRITTA il 2026-07-30. La versione precedente cercava la **prima**
+ * occorrenza di ciascun tag con un'espressione regolare che pretendeva anche
+ * l'ordine degli attributi. `references/seo.md` §309 e §313 descrivevano gia'
+ * tutti e tre i difetti che ne uscivano, e il collaudo li ha misurati:
+ *
+ *   - due `<title>` nello stesso documento: il gate leggeva il primo e taceva.
+ *     Succede quando un componente rende un `<title>` che React issa nella
+ *     testa accanto a quello di `metadata`;
+ *   - due `rel=canonical`: Google li ignora **entrambi**, quindi due canonical
+ *     corretti valgono come nessuno — e il gate leggeva il primo e diceva pass;
+ *   - `<meta content="noindex" name="robots">`, che e' HTML legale: l'ordine
+ *     inverso era gestito per `description` e per `canonical` (c'era anche il
+ *     test) e NON per `robots`. Una pagina davvero esclusa dall'indice passava
+ *     come pubblica.
+ *
+ * Adesso gli attributi si estraggono tag per tag senza assumerne l'ordine, e
+ * ogni campo torna anche col suo elenco completo: chi decide sta in
+ * `findingsSeo`, qui si legge soltanto.
+ *
+ * `intestazioni` sono quelle della risposta HTTP: `X-Robots-Tag` vale quanto il
+ * metatag e sta fuori dal corpo (seo.md §311).
+ */
+export function metatagDaHtml(html, intestazioni = null) {
+  const testo = senzaSvg(senzaBom(html ?? ""));
+  const titoli = [...testo.matchAll(/<title[^>]*>([\s\S]*?)<\/title>/gi)]
+    .map((m) => m[1].trim())
+    .filter(Boolean);
+  const canonici = [...testo.matchAll(/<link\b[^>]*>/gi)]
+    .map((m) => m[0])
+    .filter((t) => (attributo(t, "rel") ?? "").toLowerCase() === "canonical")
+    .map((t) => attributo(t, "href"))
+    .filter(Boolean);
+  const descrizioni = meta(testo, "description");
+  const robots = meta(testo, "robots");
+  const xRobots = intestazioni?.get?.("x-robots-tag") ?? null;
+
   return {
-    title: pulisci(titolo) || null,
-    description: pulisci(descrizione) || null,
-    canonical: pulisci(canonical) || null,
-    robots: pulisci(robots) || null,
+    title: titoli[0] ?? null,
+    description: descrizioni[0] ?? null,
+    canonical: canonici[0] ?? null,
+    robots: robots[0] ?? null,
+    titoli,
+    descrizioni,
+    canonici,
+    robotsTutti: robots,
+    xRobots: xRobots || null,
   };
 }
 
@@ -409,9 +656,27 @@ export function metatagDaHtml(html) {
  * `pagine` sono quelle **pubbliche** dichiarate nel contratto: una pagina dietro
  * autenticazione non ha bisogno di essere indicizzabile, e anzi non deve.
  */
-export function findingsSeo(pagine, metatagPerPagina) {
+export function findingsSeo(pagine, metatagPerPagina, redirezioni = new Map()) {
   const findings = [];
+  const chiPossiede = new Map();
+
   for (const pagina of pagine) {
+    // Una pagina che rimanda altrove non ha metatag da leggere: quelli
+    // leggibili sono di un'altra pagina. seo.md §296 prescrive
+    // `redirect: "manual"` con questa esatta motivazione, e il gate seguiva i
+    // rimandi. Misurato il 2026-07-30: `/riservata` dichiarata nel contratto,
+    // `/contatti` letta e misurata, `performance 100` scritta accanto al nome
+    // della pagina sbagliata.
+    const dove = redirezioni.get(pagina.id);
+    if (dove) {
+      findings.push({
+        severity: "block",
+        object: `pagina ${pagina.id}`,
+        message: `\`${pagina.percorso}\` rimanda a \`${dove}\`: i tag e i punteggi che se ne ricavano sono di un'altra pagina. O si dichiara la destinazione, o la pagina esiste davvero`,
+      });
+      continue;
+    }
+
     const tag = metatagPerPagina.get(pagina.id);
     if (!tag) {
       findings.push({
@@ -430,17 +695,81 @@ export function findingsSeo(pagine, metatagPerPagina) {
         });
       }
     }
+
+    // Contare, non trovare (seo.md §309). Due titoli sono un difetto; due
+    // canonical valgono come nessuno, perche' Google li ignora entrambi.
+    for (const [campo, elenco, conseguenza] of [
+      ["title", tag.titoli, "il motore ne sceglie uno e non sai quale"],
+      ["canonical", tag.canonici, "Google li ignora ENTRAMBI: due canonical corretti valgono come nessuno"],
+    ]) {
+      if (Array.isArray(elenco) && elenco.length > 1) {
+        findings.push({
+          severity: "block",
+          object: `pagina ${pagina.id}`,
+          message: `${elenco.length} \`${campo}\` nell'HTML servito di \`${pagina.percorso}\` (${elenco.map((v) => `«${v}»`).join(", ")}): ${conseguenza}`,
+        });
+      }
+    }
+
     // Il difetto SEO piu' comune di un sito con backoffice non e' un tag che
     // manca: e' un `noindex` messo per sbaglio su una pagina che deve vendere.
-    if (tag.robots && /noindex/i.test(tag.robots)) {
-      findings.push({
-        severity: "block",
-        object: `pagina ${pagina.id}`,
-        message: `\`robots: ${tag.robots}\` su una pagina dichiarata pubblica: e' esclusa dall'indice, e nessun punteggio SEO lo dice`,
-      });
+    // L'intestazione vale quanto il metatag e sta fuori dal corpo (seo.md §311).
+    for (const [origine, valore] of [
+      ["robots", tag.robots],
+      ["X-Robots-Tag", tag.xRobots],
+    ]) {
+      if (valore && /noindex/i.test(valore)) {
+        findings.push({
+          severity: "block",
+          object: `pagina ${pagina.id}`,
+          message: `\`${origine}: ${valore}\` su una pagina dichiarata pubblica: e' esclusa dall'indice, e nessun punteggio SEO lo dice`,
+        });
+      }
+    }
+
+    // Due pagine che dichiarano lo stesso canonical: al massimo una delle due
+    // e' l'originale, e l'altra si sta cancellando dall'indice. E' il difetto
+    // che seo.md §119 dice di cercare confrontando pagine diverse — «guardando
+    // solo la home il difetto e' invisibile, perche' la home il canonical
+    // giusto ce l'ha». Misurato sul banco: `/immobili` con `canonical` a `/`.
+    const mio = percorsoNormalizzato(tag.canonical);
+    if (mio) {
+      const gia = chiPossiede.get(mio);
+      if (gia) {
+        findings.push({
+          severity: "block",
+          object: `pagina ${pagina.id}`,
+          message: `dichiara lo stesso \`canonical\` di \`${gia}\` (${tag.canonical}): al massimo una delle due e' l'originale, l'altra sta chiedendo di uscire dall'indice`,
+        });
+      } else {
+        chiPossiede.set(mio, pagina.id);
+      }
+      // Un canonical che punta altrove puo' essere legittimo — una variante che
+      // si dichiara copia della principale — quindi e' un `warn`, non un
+      // `block`: quale delle due sia la principale e' una decisione di
+      // prodotto (seo.md §356), e il gate non la puo' prendere.
+      const suo = percorsoNormalizzato(pagina.percorso);
+      if (suo && mio !== suo) {
+        findings.push({
+          severity: "warn",
+          object: `pagina ${pagina.id}`,
+          message: `\`canonical\` punta a \`${mio}\` e non a \`${suo}\`: se e' voluto (una variante che si dichiara copia) va scritto nel contratto, altrimenti questa pagina sparisce dall'indice pur essendo perfetta`,
+        });
+      }
     }
   }
   return findings;
+}
+
+/** Il percorso di un URL assoluto o relativo, senza barra finale. */
+function percorsoNormalizzato(valore) {
+  if (!valore) return null;
+  try {
+    const p = new URL(valore, "http://banco.invalido").pathname.replace(/\/+$/, "");
+    return p || "/";
+  } catch {
+    return null;
+  }
 }
 
 // ------------------------------------------ eseguibili risolti su Windows

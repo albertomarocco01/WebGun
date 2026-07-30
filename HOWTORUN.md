@@ -108,8 +108,15 @@ Ordine operativo pensato per un progetto reale (es. e-commerce da zero).
    - in conversazione: `/flow-sentinel`, poi `map` (**STOP**: conferma umana dei flussi) → `forge` → `run` → `verify` → `handoff`; dopo una migrazione dello schema: `evolve`
    - il gate a mano, dalla radice del progetto generato: `node <skill>/scripts/verify.mjs`
    - verbali: `agenti/flow-sentinel/COSTRUZIONE-2026-07-28.md` · `COLLAUDO-2026-07-28.md`
-13. 🔵 **Speed Demon**  
-   Ottimizza velocità, SEO, metatag e performance puntando al 100/100 Lighthouse. Va lanciato a sito completo, perché ottimizzare prima è lavoro sprecato.
+13. 🟢 **Speed Demon**  
+   **Cosa fa:** misura un sito già costruito e già testato su una **build di produzione** (mai `next dev`), propone le ottimizzazioni **col loro costo** (**STOP** allo Specchio), le applica **una alla volta** rimisurando e rilanciando la batteria E2E, e verifica i metatag nell'**HTML servito**. Le pagine che contano, le soglie e il metodo stanno in `docs/performance.md` del progetto generato, firmato da chi decide. Gate a 7 passi con id stabili.  
+   **Prerequisiti:** Node ≥ 20, **Chrome** e `lighthouse` raggiungibile (`npx lighthouse`), il progetto generato costruito (`npm run build`) e servito su una **porta dedicata**, e la skill `flow-sentinel` raggiungibile per il passo `rete-verde`. Ognuno assente vale MANCANTE, mai PASS.  
+   **Come si installa:** junction come le altre, da `scripts/installa-skill.ps1`.  
+   **Come si usa / lancia:**
+   - in conversazione: `/speed-demon`, poi `measure` → `plan` (**STOP**: conferma delle ottimizzazioni e del loro costo) → `tune` → `handoff` → `verify`
+   - il gate a mano, dalla radice del progetto generato: `node <skill>/scripts/verify.mjs --url http://127.0.0.1:<porta>`
+   - **la porta va guardata, non supposta.** Il gate non indovina un `localhost:3000`, e dal 2026-07-30 verifica anche che l'app a quell'indirizzo sia **quella di questo progetto**, confrontando il `.next/BUILD_ID`: su questa macchina la 3100 — la porta che un contratto firmato dichiarava — era occupata dal sito di un'altra azienda. Chi occupa una porta si guarda con `Get-NetTCPConnection -LocalPort <porta> -State Listen`
+   - verbali: `agenti/speed-demon/COSTRUZIONE-2026-07-30.md` · `COLLAUDO-AVVERSARIO-2026-07-30.md`
 
 ## FASE 5 — Sicurezza e conformità
 

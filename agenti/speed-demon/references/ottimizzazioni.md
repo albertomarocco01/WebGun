@@ -396,7 +396,19 @@ Da verificare sulla versione installata: in Next 15 il Client Router Cache ha `s
 
 **Costo.** Richieste, banda dell'utente (su rete mobile a consumo si scaricano pagine mai aperte) e carico sul server. Spegnendolo: la navigazione torna a costare un viaggio, e su un sito da sfogliare si sente.
 
-**Cosa può diventare rosso.** Praticamente niente, con due eccezioni da conoscere. Una spec che conta le richieste di rete cambia esito. E un prefetch aggressivo può **mascherare** un difetto: la pagina successiva è già in cache, la spec la trova pronta, e la lentezza vera si vede solo in produzione a cache fredda.
+**Cosa può diventare rosso.** Praticamente niente, con **tre** eccezioni da conoscere. Una spec che conta le richieste di rete cambia esito. Un prefetch aggressivo può **mascherare** un difetto: la pagina successiva è già in cache, la spec la trova pronta, e la lentezza vera si vede solo in produzione a cache fredda.
+
+E la terza, che smentisce l'avvertimento in testa a questa voce e che è stata **misurata** il 2026-07-30 su `banco-prova-immobiliare`: **se le rotte prefetchate non esistono, il prefetch costa punteggio.** Una lista con tre `<Link>` verso schede di dettaglio non ancora costruite produce tre richieste RSC che tornano `404`, e i 404 finiscono nella console del browser:
+
+```
+best-practices = 96
+  FALLITO peso 1 — errors-in-console
+     "Failed to load resource: 404" — /immobili/borgo-alto?_rsc=…
+     "Failed to load resource: 404" — /immobili/casa-vigna?_rsc=…
+     "Failed to load resource: 404" — /immobili/rustico-noce?_rsc=…
+```
+
+Quattro punti di `best-practices`, su una pagina che a occhio non ha niente che non va: i link ci sono, cliccarli porterebbe a una 404 che nessuno ha ancora cliccato. È il prefetch a *scoprire in anticipo* un link rotto e a scriverlo nel punteggio. La lettura giusta non è «togliere il prefetch»: è che **la voce ha reso visibile un difetto dell'applicazione**, cioè una lista che rimanda a pagine che non esistono. Toglierlo lo nasconderebbe di nuovo.
 
 ---
 
