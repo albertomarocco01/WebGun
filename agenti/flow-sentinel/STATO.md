@@ -1,6 +1,12 @@
 # Stato — Flow Sentinel
 
-- **Stato attuale:** costruita (P1) e **collaudata in modo indipendente** (P2), entrambe il 2026-07-28.
+- **Stato attuale:** costruita (P1), **collaudata in modo indipendente** (P2) il 2026-07-28, e
+  **usata su un consumatore reale** (P3) il 2026-07-30 sul banco `banco-prova-negozio`
+  (Bottega Nord), costruito da altri due agenti. Batteria **15/15 verde**, gate **VERDE 7/7**.
+  P3 ha trovato **un difetto bloccante dell'app** che due gate verdi a monte non avevano visto
+  — nessuno riusciva ad accedere al gestionale — e **un falso verde della skill**: `app-viva`
+  ha dichiarato viva l'app di un altro progetto. Verbale: `COLLAUDO-P3-2026-07-30.md`.
+  Dettagli della costruzione originale:
   `SKILL.md` confermata in P0 e **non modificata** da nessuna delle due fasi; esistono le
   **4 references**, il gate `verify.mjs` a **7 passi** con id stabili, le regole pure in
   `scripts/gate-lib.mjs` con **103 test verdi** (`node --test`), i **3 template** e la configurazione
@@ -27,17 +33,17 @@
 | P0 | progettazione SKILL.md | qui | fatta, confermata dall'umano il 2026-07-28 |
 | P1 | references, scripts (gate + lib pura + test), banco minimo usa e getta, sabotaggio provato | branch `agente/flow-sentinel` | **fatta il 2026-07-28** |
 | P2 | collaudo avversario indipendente su dominio diverso: caccia ai falsi verdi del gate | chat dedicata, vergine | **fatta il 2026-07-28** — 10 difetti, `COLLAUDO-2026-07-28.md` |
-| P3 | primo consumatore reale: batteria su Bottega Nord (`banco-prova-negozio`), dopo l'handoff di gestionale-crafter | chat dedicata | da fare |
+| P3 | primo consumatore reale: batteria su Bottega Nord (`banco-prova-negozio`), dopo l'handoff di gestionale-crafter | chat dedicata | **fatta il 2026-07-30** — 15/15 verde, gate 7/7, 2 difetti veri, `COLLAUDO-P3-2026-07-30.md` |
 
 ## Cosa esiste, misurato
 
 | Cosa | Numero | Come e' stato misurato |
 |---|---|---|
 | Passi del gate | 7 | `verify.mjs --json`, `summary.passi` |
-| Test degli script | **103 verdi** (79 dopo P1, +24 di regressione in P2) | `node --test "scripts/**/*.test.mjs"` |
+| Test degli script | **106 verdi** (79 dopo P1, +24 in P2, +3 in P3 su `ambienteBatteria`) | `node --test "scripts/**/*.test.mjs"` |
 | References | 4 | `references/`, 1288 righe dopo P1, corrette in tre punti da P2 |
 | Template | 3 | `flussi-critici.md`, `handoff-flow-sentinel.md`, `eslint-spec.config.mjs` |
-| Banchi su cui il gate e' girato | 2, di due domini e due mani | `banco-prova-flow/` (5 flussi, 5 spec) · `banco-prova-collaudo-fs/` (6 flussi, 6 spec) |
+| Banchi su cui il gate e' girato | **3**, di tre domini — e il terzo scritto da **altri agenti** | `banco-prova-flow/` (5 flussi, 5 spec) · `banco-prova-collaudo-fs/` (6 flussi, 6 spec) · **`banco-prova-negozio/` (10 flussi, 10 spec, 15 test, gate 7/7)** |
 | Difetti piantati e rilevati | 5 su 5 (P1) + 3 su 3 (P2, classi nuove) | `COSTRUZIONE` §3.2 · `COLLAUDO` §4 |
 | Premesse tolte e riconosciute mancanti | 3 su 3 | `COSTRUZIONE-2026-07-28.md` §MANCANTE |
 | Forme ostili provate sulle regole pure | 79, con input della forma vera | `COLLAUDO-2026-07-28.md` §6 |
@@ -118,22 +124,29 @@ silenzio, tre crash su report malformati, e tre rossi sbagliati su codice commen
 
 ## Punti aperti — ordinati per gravita'
 
-1. **Nessun consumatore reale.** I due banchi sono stati scritti da chi scriveva anche le regole, e i
-   flussi critici li ha proposti l'agente: il gate non ha mai giudicato il lavoro di qualcun altro, ed
-   e' esattamente li' che Schema Forge ha trovato i suoi difetti veri. Lo chiude P3 (Bottega Nord).
-2. **`evolve` non e' mai stato collaudato.** Nessun flusso aggiunto o tolto dopo la conferma: il diff
+> **Quattro punti chiusi da P3** il 2026-07-30 — il consumatore reale (era il n°1), `lint-spec`
+> senza dipendenze (n°3, chiuso operativamente: resta da scrivere il README), `psql` nel PATH (n°4,
+> c'e' e il passo interroga il database davvero) e l'URL preso da `[auth].site_url` (n°5, che non e'
+> piu' un timore: e' stato **misurato** come falso verde e **corretto**). Dettaglio in
+> `COLLAUDO-P3-2026-07-30.md` §6.
+
+1. **`evolve` non e' mai stato collaudato.** Nessun flusso aggiunto o tolto dopo la conferma: il diff
    delle rotte, l'etichetta orfana sul campo e la rinomina in un giro solo restano non provati.
-3. **`lint-spec` e' MANCANTE senza `npm install` nella cartella della skill.** ESLint viaggia con la
-   skill (DECISIONI.md §8), quindi su una macchina nuova il primo giro del gate e' rosso finche' non si
-   installano le dipendenze. E' corretto — MANCANTE non e' PASS — ma va scritto nel README della skill,
-   che non esiste ancora.
-4. **`app-viva` richiede `psql` nel PATH.** Senza, il passo e' MANCANTE e il gate resta rosso. Su questa
-   macchina `psql` sta in `%USERPROFILE%\scoop\apps\postgresql\current\bin` e non e' nel PATH di default:
-   e' la stessa nota operativa di Schema Forge, e non e' stata risolta, e' stata scritta.
-5. **L'URL dell'app viene da `[auth].site_url`.** E' la sola riga che un progetto Web Gun dichiara
-   davvero, ma e' nata per l'autenticazione: un progetto che la usa per altro (un dominio di produzione
-   in un config locale) manderebbe il gate a interrogare un'app remota. Il flag `--url` ha la precedenza
-   e il passo stampa sempre l'URL che ha interrogato, quindi l'errore e' visibile — non impedito.
+   Dopo P3 e' il punto piu' grave: e' l'unico comando della skill che nessuno ha mai eseguito.
+2. **Il gate puo' ancora dire `app-viva` verde su un'app estranea, quando la batteria non esiste.**
+   P3 ha chiuso la classe dove conta: `verify.mjs` **impone** ora alla batteria l'URL che ha appena
+   interrogato (`ambienteBatteria`), quindi un'app sbagliata produce una batteria rossa invece di un
+   verde silenzioso. Ma su un progetto senza spec il passo vede ancora solo «qualcuno risponde a
+   quell'indirizzo». Difesa residua: l'URL stampato sempre, anche sul verde.
+3. **La reference prescrive una rotta di accesso che non esiste.** `references/playwright.md` scrive
+   `goto("/accesso")`; il progetto reale ha `/accedi`. Non ha fatto danni — la spec la scrive chi
+   guarda l'app — ma e' una forma inventata dentro un documento che altrove e' preciso al carattere.
+4. **La reference non dice cosa fare quando gli utenti di prova sono dati di dominio.** Prescrive che
+   li crei il global-setup con l'admin API e «MAI il seed». Su Bottega Nord sono righe di `staff`
+   legate a `auth_user_id` scritti nel seed: ricrearli li duplicherebbe, e «riallinearli» con
+   `updateUserById` avrebbe **riparato in silenzio** il difetto bloccante che P3 ha trovato — cioe' la
+   batteria avrebbe aggiustato la premessa che doveva misurare. La deroga e' stata dichiarata nel
+   banco; la reference tace.
 6. **Nessuna regola statica sui flussi `ostile-lettura`.** Vedi sopra: e' una scelta dichiarata (non
    c'e' stato da confrontare), non una dimenticanza, ma resta un buco che solo la prosa difende.
 7. **`code-inquisition` non e' mai stato lanciato sugli script di questa skill.** La Regola dei

@@ -793,3 +793,51 @@ Il punto 12 di questo file dice *«semgrep e gitleaks non sono installati»*. Al
 resta com'è perché è la fotografia di quel giorno e la correzione è del proprietario, ma
 chi la legge oggi sappia che metà di quella frase è invecchiata: sugli script di
 gestionale-crafter semgrep gira e produce sei rilievi dichiarati.
+
+## Il secondo consumatore a valle: feedback da Flow Sentinel (2026-07-30)
+
+### Il difetto: un seed che scrive `auth.users` a mano rende il sito inaccessibile
+
+Sul banco `banco-prova-negozio`, il seed generato da questa skill inseriva le righe di
+`auth.users` lasciando `confirmation_token`, `recovery_token`, `email_change` e
+`email_change_token_new` a **NULL**. GoTrue legge quelle colonne in una `string` di Go:
+
+```
+error finding user: sql: Scan error on column index 3, name "confirmation_token":
+converting NULL to string is unsupported
+```
+
+Risultato: **HTTP 500 su ogni `signInWithPassword`, per ogni utente**. Il gestionale era
+inaccessibile a chiunque, dal primo giorno, su un progetto che questa skill aveva chiuso
+con **Gate: VERDE 9/9**.
+
+**Perché il gate non poteva vederlo, e non è un'accusa ma una misura del suo perimetro.**
+Lo schema è corretto: tabelle, vincoli, policy, `db lint`, `db advisors`, pgTAP — tutto
+verde, e giustamente. Il gate prova le RLS con `set role` e pgTAP, che parlano a Postgres
+**senza passare da GoTrue**. Nessuno dei nove passi tenta un accesso vero. Il difetto non
+sta nello schema: sta nel **seed**, ed è visibile solo a chi prova a entrare.
+
+L'ha trovato Flow Sentinel nei primi minuti della sua fase `map`, misurando la premessa
+prima di scrivere una riga di spec. Verbale: `../flow-sentinel/COLLAUDO-P3-2026-07-30.md` §1.1.
+
+**Corretto sul banco** (le quattro colonne a stringa vuota, con il commento che spiega il
+perché) e riverificato con `supabase db reset` da pulito: login `HTTP 200`.
+
+### Cosa questo chiede alla skill
+
+1. **Il generatore di seed non deve scrivere `auth.users` a mano** senza le quattro colonne
+   dei token a `''`. È una riga di template, e vale per ogni progetto con autenticazione:
+   oggi il difetto nasce in ogni seed che questa skill produce.
+2. **`auth.identities` non viene mai scritta.** L'accesso a password non ne ha bisogno, ma un
+   utente Supabase vero ha sempre la sua riga di identità: senza, OAuth e il collegamento di
+   identità partono rotti. Dichiarato, non corretto.
+3. **Un passo di gate che tenti un accesso vero** chiuderebbe la classe alla radice — un
+   `POST /auth/v1/token` con un utente del seed, che è deterministico e non richiede browser.
+   È l'unico modo perché questa skill smetta di consegnare progetti in cui non si entra.
+
+### Conferma indipendente sul `grant` per colonna
+
+Il sabotaggio di Flow Sentinel ha concesso `update (ruolo) on staff to authenticated` e ha
+misurato che **il magazziniere si promuove titolare e la RLS non lo ferma**. È la stessa cosa
+che il collaudo di gestionale-crafter aveva scoperto, ora riprodotta da un terzo agente con
+un metodo diverso: su Supabase la difesa è il `grant` per colonna, non la policy.
