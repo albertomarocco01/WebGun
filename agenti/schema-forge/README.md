@@ -2,9 +2,9 @@
 
 # Schema Forge — manuale d'uso
 
-Agente Web Gun per lo **schema dati** dei progetti generati (Postgres/Supabase). È il primo agente costruttore della pipeline: Fly UI, Gestionale Crafter e AI Specialist costruiscono tutti sopra ciò che decide qui.
+Agente Web Gun per lo **schema dati** dei progetti generati (Postgres/Supabase). È il primo agente costruttore della pipeline: Gestionale Crafter e AI Specialist costruiscono sopra ciò che decide qui — **Fly UI no, perché non esiste** (`DECISIONI.md` §21).
 
-**Stato:** v1.5 — collaudata su database reale e nel comportamento. **143 test** sugli script, gate a **9 passi**, ESLint 0 errori 0 warning, `knip` pulito. `jscpd` riporta **2 cloni**, entrambi dichiarati (§7).
+**Stato:** v1.5 — collaudata su database reale e nel comportamento. **144 test** sugli script, gate a **9 passi**, ESLint 0 errori 0 warning, `knip` pulito. `jscpd` riporta **2 cloni**, entrambi dichiarati (§7).
 
 > **Non ancora usabile su un progetto cliente**, ma il gate ha smesso di mentire. Il collaudo indipendente del 2026-07-26 aveva riprodotto **16 difetti su 17** — cinque Critical — su uno schema che il gate dichiarava **VERDE 8/8** (i passi erano otto). Dal 2026-07-27 quello stesso schema chiude **ROSSO**: l'audit blocca l'auto-promozione via colonna, segnala la macchina a stati aggirabile in `insert`, e **pretende un test pgTAP che attacchi ogni policy di scrittura** — scritti quei test, due asserzioni su 23 falliscono, e sono esattamente i due Critical. Resta vero che l'audit guarda la **forma** delle policy: la semantica la dimostrano i test negativi, e quelli li scrive l'agente. Dettagli in `STATO.md`, verbali in `COLLAUDO-2026-07-25.md` e `COLLAUDO-2026-07-26.md`.
 

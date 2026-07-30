@@ -9,15 +9,17 @@
   Dettagli della costruzione originale:
   `SKILL.md` confermata in P0 e **non modificata** da nessuna delle due fasi; esistono le
   **4 references**, il gate `verify.mjs` a **7 passi** con id stabili, le regole pure in
-  `scripts/gate-lib.mjs` con **103 test verdi** (`node --test`), i **3 template** e la configurazione
+  `scripts/gate-lib.mjs` con **103 test verdi allora** (**106 oggi**, §Cosa esiste), i **3 template** e la configurazione
   ESLint delle spec. Il gate e' stato **eseguito davvero** su due banchi Next.js + Supabase locale,
   scritti da due mani diverse: `banco-prova-flow/` (P1, e-commerce) e `banco-prova-collaudo-fs/`
   (P2, palestra) — **VERDE 7 su 7 su entrambi**, e rosso ogni volta che qualcosa e' stato rotto apposta.
 - **Il collaudo avversario ha trovato dieci difetti**, tutti misurati prima di essere corretti, tutti
   con un test di regressione e un commit ciascuno. Sette erano **falsi verdi**: il gate diceva verde
   senza aver guardato. Verbale con le uscite incollate: `COLLAUDO-2026-07-28.md`.
-  **NON ancora usabile su un progetto cliente:** i due banchi restano scritti da chi scriveva anche le
-  regole, e i flussi critici li ha proposti l'agente. Punti aperti in fondo, ordinati per gravita'.
+  **NON ancora usabile su un progetto cliente:** P3 ha tolto il primo dei due dubbi — il terzo banco
+  l'hanno scritto **altri agenti**, non chi scriveva le regole — ma il secondo resta intero: i flussi
+  critici li ha proposti l'agente e confermati l'orchestratore, mai un committente. Punti aperti in
+  fondo, ordinati per gravita'.
 - **Proprietario:** Alberto
 - **Dipendenze:**
   - A monte: gestionale-crafter e fly-ui (l'app da testare), schema-forge (il modello di accesso del suo

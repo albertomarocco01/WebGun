@@ -1,6 +1,6 @@
 # Stato — Schema Forge
 
-- **Stato attuale:** v1.5 — collaudata su Postgres reale (Supabase locale, Windows), **nel comportamento** (`COLLAUDO-2026-07-25.md`) e **corretta tre volte**: gli otto punti del primo collaudo il 2026-07-26, nove dei quindici del secondo il 2026-07-27, e i residui dell'audit multiagentico del repo il 2026-07-28 (§Cosa ha trovato l'audit del repo). Gli script hanno test propri (`node --test`, **143 verdi**), il gate `verify` ha **9 passi** e undici regole di audit.
+- **Stato attuale:** v1.5 — collaudata su Postgres reale (Supabase locale, Windows), **nel comportamento** (`COLLAUDO-2026-07-25.md`) e **corretta tre volte**: gli otto punti del primo collaudo il 2026-07-26, nove dei quindici del secondo il 2026-07-27, e i residui dell'audit multiagentico del repo il 2026-07-28 (§Cosa ha trovato l'audit del repo). Gli script hanno test propri (`node --test`, **144 verdi** — il 144° è nato con la firma del gate, commit `a92b4f1`), il gate `verify` ha **9 passi** e undici regole di audit.
   **NON ancora usabile su un progetto cliente — ma il gate ha smesso di mentire.** Il secondo collaudo, indipendente e avversario (`COLLAUDO-2026-07-26.md`, dominio **non e-commerce**), aveva riprodotto con comandi reali **16 difetti su 17**, cinque Critical, su uno schema che il gate dichiarava **VERDE 8/8** (i passi erano otto: `db advisors` e' nato il giorno dopo). Su quello stesso schema il gate chiude ora **ROSSO**: `block` sull'auto-promozione di ruolo via colonna, `issue` sulla macchina a stati aggirabile in `insert`, e `block` su ogni tabella con policy di scrittura che nessun test pgTAP attacca. Scritti i test negativi, **2 asserzioni su 23 falliscono** — l'auto-promozione e la visita che nasce già `fatturata`. Resta vero che **l'audit guarda la forma delle policy**: la semantica la dimostrano i test negativi, e il gate verifica che esistano e passino, non che siano severi. Punti aperti ordinati per gravità in fondo.
 - **Proprietario:** Alberto
 - **Dipendenze:**
@@ -188,9 +188,17 @@ verdi**. Il gate verifica che la RLS *esista*, non che *funzioni*.
 12. **semgrep e gitleaks non sono installati**: sicurezza e segreti sugli script
     restano **MANCANTI**, non `PASS`. È anche l'unica difesa automatica contro
     una `service_role` finita nel client.
-13. **Nessun consumatore reale a valle.** L'analisi di impatto di `evolve` ha
-    girato di nuovo sul caso facile, senza codice applicativo. Fly UI e
-    Gestionale Crafter non esistono ancora.
+13. ~~**Nessun consumatore reale a valle.**~~ — **chiuso il 2026-07-28**,
+    riconfermato il 2026-07-30. Gestionale Crafter esiste e ha costruito un
+    backoffice reale sopra uno schema di questa skill; l'analisi di impatto di
+    `evolve` ha girato **con codice applicativo sopra** — rinomina di
+    `site_content.body` in `corpo`, expand-contract completo — e il controllo
+    più forte si è rivelato `tsc` sui tipi rigenerati: **15 errori in 4 file**,
+    nessuna rottura arrivata a runtime. I tre limiti misurati della procedura
+    stanno nell'appendice §Il primo consumatore a valle. Il 2026-07-30 il banco
+    ha preso anche una batteria E2E (flow-sentinel, 15/15): da lì è arrivato il
+    difetto del seed, §Il secondo consumatore a valle. **Fly UI** invece non
+    esiste e non esisterà: deroga in `DECISIONI.md` §21.
 14. ~~**`has()` non vede gli shim `.cmd` su Windows**~~ — **chiuso il
     2026-07-27**. Misurato: `spawnSync("finto-cli", ["--version"])` senza shell
     dà **ENOENT** (non consulta PATHEXT), e col **percorso pieno** dà **EINVAL** —
