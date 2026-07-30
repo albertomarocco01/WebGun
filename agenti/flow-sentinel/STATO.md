@@ -17,7 +17,7 @@
   modifica e' del 2026-07-30, quando il collaudo di `evolve` ha scoperto che quella procedura
   copriva un caso su quattro (`COLLAUDO-EVOLVE-2026-07-30.md` §4); esistono le
   **4 references**, il gate `verify.mjs` a **7 passi** con id stabili, le regole pure in
-  `scripts/gate-lib.mjs` con **103 test verdi allora** (**106 oggi**, §Cosa esiste), i **3 template** e la configurazione
+  `scripts/gate-lib.mjs` con **103 test verdi allora** (**108 oggi**, §Cosa esiste), i **3 template** e la configurazione
   ESLint delle spec. Il gate e' stato **eseguito davvero** su due banchi Next.js + Supabase locale,
   scritti da due mani diverse: `banco-prova-flow/` (P1, e-commerce) e `banco-prova-collaudo-fs/`
   (P2, palestra) — **VERDE 7 su 7 su entrambi**, e rosso ogni volta che qualcosa e' stato rotto apposta.
@@ -30,8 +30,10 @@
   fondo, ordinati per gravita'.
 - **Proprietario:** Alberto
 - **Dipendenze:**
-  - A monte: gestionale-crafter e fly-ui (l'app da testare), schema-forge (il modello di accesso del suo
-    handoff e' la fonte dei flussi ostili; seed e utenti), ai-specialist se presente
+  - A monte: gestionale-crafter (l'app da testare), schema-forge (il modello di accesso del suo
+    handoff e' la fonte dei flussi ostili; seed e utenti), ai-specialist se presente.
+    **Fly UI non esiste** (`../../DECISIONI.md` §21): non c'e' nessuna libreria di
+    componenti a monte, i componenti li scrive a mano chi costruisce il progetto
   - A valle: speed-demon (ottimizza con la batteria come rete di sicurezza), cyber-shield (parte dai
     flussi ostili dichiarati), launchpad (non pubblica su gate rosso)
 - **Guardiani:** ESLint **0 errori 0 warning**, `knip` pulito, `jscpd` **0 cloni** su `scripts/`.
@@ -53,7 +55,7 @@
 | Test degli script | **108 verdi** (79 dopo P1, +24 in P2, +3 in P3 su `ambienteBatteria`, +2 col collaudo di `evolve`) | `node --test "scripts/**/*.test.mjs"` |
 | References | 4 | `references/`, 1288 righe dopo P1, corrette in tre punti da P2 |
 | Template | 3 | `flussi-critici.md`, `handoff-flow-sentinel.md`, `eslint-spec.config.mjs` |
-| Banchi su cui il gate e' girato | **3**, di tre domini — e il terzo scritto da **altri agenti** | `banco-prova-flow/` (5 flussi, 5 spec) · `banco-prova-collaudo-fs/` (6 flussi, 6 spec) · **`banco-prova-negozio/` (11 flussi, 11 spec, 16 test, gate 7/7)** |
+| Banchi su cui il gate e' girato | **3**, di tre domini — e il terzo scritto da **altri agenti** | `banco-prova-flow/` (5 flussi, 5 spec) · `banco-prova-collaudo-fs/` (6 flussi, 6 spec) · **`banco-prova-negozio/` (11 flussi, 11 spec, 16 test, gate 7/7)**. Nessuno dei tre e' piu' su disco: i primi due erano usa e getta, il terzo e' stato cancellato il 2026-07-30 (`../../DECISIONI.md` §25) e torna con `git checkout 67f9001 -- banco-prova-negozio` |
 | Difetti piantati e rilevati | 5 su 5 (P1) + 3 su 3 (P2, classi nuove) | `COSTRUZIONE` §3.2 · `COLLAUDO` §4 |
 | Premesse tolte e riconosciute mancanti | 3 su 3 | `COSTRUZIONE-2026-07-28.md` §MANCANTE |
 | Forme ostili provate sulle regole pure | 79, con input della forma vera | `COLLAUDO-2026-07-28.md` §6 |
@@ -170,7 +172,9 @@ silenzio, tre crash su report malformati, e tre rossi sbagliati su codice commen
 7. **`code-inquisition` non e' mai stato lanciato sugli script di questa skill.** La Regola dei
    guardiani lo chiede sui punti critici; qui il punto critico e' la chiave amministrativa negli helper
    del progetto generato, e su quello il gate non ha nessun controllo automatico — solo la prosa di
-   `references/playwright.md`. `semgrep` e `gitleaks` non sono installati: MANCANTI, non PASS.
+   `references/playwright.md`. `gitleaks` non e' installato: MANCANTE, non PASS. `semgrep` **c'e'**
+   (`semgrep --version` → `1.171.0`) e su questi script non e' mai stato puntato: disponibile e non
+   usato, che e' un residuo diverso e peggiore di uno strumento che manca.
 8. **Il gate non ha nessun passo che usi la chiave di servizio.** *(Numero in coda per non
    spostare le citazioni degli altri punti; per gravita' starebbe subito dopo il n°2.)*
    Il 2026-07-30, sul banco
@@ -183,6 +187,11 @@ silenzio, tre crash su report malformati, e tre rossi sbagliati su codice commen
    abbia una batteria: su un progetto senza spec la stessa rottura sarebbe invisibile a tutti e
    tre i gate. Un passo che interroghi PostgREST **con la chiave di servizio** chiuderebbe la
    classe, e costa una `curl`.
-9. **Il banco e' usa e getta e gitignorato.** Le prove stanno nel verbale, non su disco: rifare il banco
-   richiede di rileggere `COSTRUZIONE-2026-07-28.md`. E' la §12 di DECISIONI.md applicata alla lettera;
-   se P2 lo trasformasse nel caso di prova di un difetto, varrebbe la §20 e andrebbe tracciato.
+9. **Nessuno dei tre banchi e' su disco, e le prove stanno nei verbali.** I due di P1 e P2 erano usa e
+   getta e gitignorati; `banco-prova-negozio` — l'unico consumatore reale che questa skill abbia mai
+   avuto — e' stato tracciato dal 2026-07-28 e **cancellato dal disco il 2026-07-30** (`../../DECISIONI.md`
+   §25): i suoi sorgenti sono nel commit `67f9001`, ma le chiavi che la batteria legge (`.env.e2e.local`,
+   `e2e/.auth/`) erano gitignorate di proposito, quindi rilanciarla non e' un `git checkout` — e' `npm
+   install`, `supabase start` e ricreare le chiavi. Lo stesso lavoro di prima, adesso dichiarato invece
+   che presunto. **Nessun banco vivo significa che «batteria 16/16, gate 7/7» oggi non e' verificabile in
+   un comando**: e' un'affermazione datata in `COLLAUDO-P3-2026-07-30.md`, non un fatto che si rilancia.

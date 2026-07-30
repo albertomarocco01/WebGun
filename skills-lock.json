@@ -1,6 +1,9 @@
 {
   "version": 1,
   "nota": "Registra la skill Supabase ufficiale contro cui Schema Forge e' stato allineato il 2026-07-27 (STATO.md §Regole nuove dalla skill Supabase ufficiale). NON e' verificato da nessuno script: `.claude/skills/` e' gitignorata, quindi dopo un clone il file a cui punta `skillPath` non esiste. Dice CONTRO COSA e' stato fatto il confronto, non garantisce che l'installazione sia quella. Il frontmatter della copia installata dichiara 0.1.2 mentre il CHANGELOG che le sta accanto arriva alla 0.1.5 (2026-07-10): era gia' vecchia il giorno dell'installazione, e prima di rifare il confronto conviene riscaricarla.",
+  "notaSullHash": "Fino al 2026-07-30 `computedHash` valeva 19fca56d…255f86 e la copia su disco ne misurava un altro: nessuno lo aveva mai ricalcolato, e l'unico numero falsificabile del file non corrispondeva a niente. Ora e' quello misurato, con accanto il comando che lo produce. Se `comandoDiVerifica` stampa una riga diversa da `computedHash`, la copia installata NON e' quella contro cui il confronto e' stato fatto, e va riscaricata prima di fidarsi di qualunque conclusione dello STATO.md di Schema Forge.",
+  "comandoDiVerifica": "sha256sum .claude/skills/supabase/SKILL.md",
+  "misuratoIl": "2026-07-30",
   "skills": {
     "supabase": {
       "source": "supabase/agent-skills",
@@ -8,7 +11,8 @@
       "skillPath": "skills/supabase/SKILL.md",
       "versioneDichiarata": "0.1.2",
       "changelogArrivaA": "0.1.5",
-      "computedHash": "19fca56d93a6d212c6373ad921dcaeddf2ff13e3558e6bfd6e63acb063255f86"
+      "byte": 12091,
+      "computedHash": "f207aef0962817121512de305dd10b00ed2604292f3251bdafc0ae4bd98c3f6f"
     }
   }
 }

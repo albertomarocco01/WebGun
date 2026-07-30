@@ -19,8 +19,8 @@
     schema-forge (l'app da misurare) · brief-smith (quali pagine contano)
   - A valle: cyber-shield e site-doctor (verifiche finali sul sito ottimizzato),
     launchpad (non pubblica su gate rosso)
-  - **Fly UI non esiste** (`DECISIONI.md` §21): non c'e' nessuna libreria di
-    componenti da ottimizzare, i componenti sono scritti a mano nel progetto.
+  - **Fly UI non esiste** (`../../DECISIONI.md` §21): non c'e' nessuna libreria
+    di componenti da ottimizzare, i componenti sono scritti a mano nel progetto.
 - **Guardiani:** code-maniac e code-inquisition valutano gli script di questa
   skill come qualsiasi altro codice. Nessuno dei due li ha mai visti: punto 5.
 
@@ -80,7 +80,7 @@ E la prima esecuzione vera di `plan` e `tune` su guadagni misurati: home
 | Test degli script | **73 verdi** | `node --test "scripts/**/*.test.mjs"` |
 | References | 3 | `misurazione.md` · `ottimizzazioni.md` · `seo.md` |
 | Template | 2 | `performance.md` (il contratto) · `handoff-speed-demon.md` |
-| Banchi su cui il gate e' girato | **2** | `banco-prova-negozio` · `banco-prova-immobiliare` |
+| Banchi su cui il gate e' girato | **2** | `banco-prova-negozio` · `banco-prova-immobiliare` — **cancellati dal disco il 2026-07-30** (`../../DECISIONI.md` §25): tornano con `git checkout 67f9001 -- <banco>` |
 | Difetti dell'app trovati | 3 (negozio) + 4 (immobiliare) | handoff 15 §2 · handoff 01 §1 |
 | Difetti della skill trovati dai collaudi | 4 + **17** | i due verbali |
 
@@ -106,12 +106,33 @@ E la prima esecuzione vera di `plan` e `tune` su guadagni misurati: home
 4. **Nessun passo su `sitemap.ts` e `robots.ts`.** Il gate controlla i metatag di
    pagina e ignora i due file che dicono a un motore di ricerca cosa esiste.
 5. **`code-inquisition` non e' mai stato lanciato sugli script di questa skill**,
-   e `semgrep`/`gitleaks` non sono installati: MANCANTI, non PASS. Il collaudo
-   avversario ha fatto crescere `gate-lib.mjs` e `verify.mjs`, quindi c'e' piu'
-   codice mai passato ai guardiani di prima.
+   e `gitleaks` non e' installato: MANCANTI, non PASS. `semgrep` invece **c'e'**
+   (`semgrep --version` → `1.171.0`) e non e' mai stato puntato su questi file:
+   e' una verifica disponibile e non fatta, che e' peggio di una mancante perche'
+   non costa niente. La riga precedente dichiarava mancante anche semgrep, ed era
+   falsa gia' quando e' stata scritta — `schema-forge/STATO.md` l'aveva misurato
+   presente due giorni prima. Il collaudo avversario ha fatto crescere
+   `gate-lib.mjs` e `verify.mjs`, quindi c'e' piu' codice mai passato ai guardiani
+   di prima.
 6. **Nessuna misura di campo.** Lighthouse e' un laboratorio. CrUX e RUM sono
    un'altra cosa e questa skill non li guarda.
-7. **Il guadagno di `next/image` e' misurato su rumore, non su fotografie.** Le
+7. **L'ambiente di misura si dichiara, non si verifica.** *(Numero in coda per
+   non spostare le citazioni degli altri punti; per gravita' starebbe subito
+   dopo il n°2.)* Due regole scritte nelle references non esistono nel codice, ed
+   e' lo stesso ceppo dei sei difetti che il collaudo avversario ha trovato
+   proprio cosi'. La prima: `references/misurazione.md` prometteva «o `CHROME_PATH`
+   e' impostata, o il passo e' `MANCANTE`» — `verify.mjs` non legge mai
+   `process.env.CHROME_PATH`, quindi due giri possono partire con due Chrome
+   diversi e il gate non se ne accorge. La seconda: la stessa reference prescrive
+   Lighthouse **bloccato a una versione esatta** nella cartella della skill, come
+   ESLint per Flow Sentinel; in `agenti/speed-demon/` non c'e' nessun
+   `package.json` e il passo lancia `npx --yes lighthouse`, cioe' quello che
+   trova. I pesi delle categorie cambiano fra versioni maggiori: due misure di
+   giorni diversi possono differire per il lavoro fatto o per lo strumento, e
+   oggi il gate non sa dire quale delle due. Le due righe sono state corrette per
+   dire il vero il 2026-07-30; il controllo che le renderebbe verificabili non
+   c'e'.
+8. **Il guadagno di `next/image` e' misurato su rumore, non su fotografie.** Le
    immagini di `banco-prova-immobiliare` sono pixel casuali con seme fisso:
    incomprimibili per costruzione, quindi il guadagno viene quasi tutto dal
    ridimensionamento e dalla compressione con perdita. Su foto vere la

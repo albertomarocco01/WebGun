@@ -12,17 +12,26 @@
 
 $ErrorActionPreference = "Stop"
 
-# Solo le skill VERE. I sette agenti scaffold (brief-smith, site-doctor, …) non
-# si installano finche' sono scheletri: una skill con quattro sezioni `TODO`
-# nell'elenco di Claude Code e' rumore che si somiglia tutto, e la prima volta
-# che ne invochi una scopri che non fa niente.
+# Solo le skill VERE. I sei agenti scaffold (brief-smith, preventivo-smith,
+# site-doctor, ai-specialist, cyber-shield, launchpad) non si installano finche'
+# sono scheletri: una skill con quattro sezioni `TODO` nell'elenco di Claude Code
+# e' rumore che si somiglia tutto, e la prima volta che ne invochi una scopri che
+# non fa niente. Erano sette fino al 2026-07-30, quando speed-demon ha smesso di
+# esserlo: il numero qui sopra si scala insieme all'array qui sotto.
 # `gestionale-crafter` e' entrato in elenco il 2026-07-28, quando ha smesso di
 # essere uno scaffold: SKILL.md completo, quattro reference, gate a 7 passi con
 # 105 test, due collaudi su banchi reali.
 # `flow-sentinel` e' entrato lo stesso giorno: costruito e collaudato in modo
-# indipendente (103 test, 10 difetti trovati e corretti), verbali nel suo
-# COSTRUZIONE-2026-07-28.md e COLLAUDO-2026-07-28.md.
-$skill = @("schema-forge", "gestionale-crafter", "flow-sentinel", "code-inquisition")
+# indipendente (108 test al 2026-07-30), verbali nel suo COSTRUZIONE-2026-07-28.md,
+# COLLAUDO-2026-07-28.md e COLLAUDO-P3-2026-07-30.md.
+# `speed-demon` e' entrato il 2026-07-30, e per due giorni e' stato il caso di
+# scuola del difetto che questo file deve evitare: HOWTORUN.md e README.md
+# dichiaravano «junction come le altre, da scripts/installa-skill.ps1» mentre
+# l'elenco qui sotto non lo conteneva. Chi seguiva il manuale non installava
+# niente e non lo sapeva, perche' lo script non ha modo di accorgersi di una
+# skill che nessuno gli ha nominato. Quando una skill smette di essere uno
+# scaffold, questa riga si tocca **insieme** ai due documenti.
+$skill = @("schema-forge", "gestionale-crafter", "flow-sentinel", "speed-demon", "code-inquisition")
 
 # code-maniac NON e' in elenco di proposito: il README lo dichiara uno SNAPSHOT
 # del repo di finzidev, quindi la fonte di verita' non e' questa cartella. Va

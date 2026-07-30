@@ -126,7 +126,7 @@ Motivo: un banco che resta in giro invecchia e diventa una fonte di verità fals
 
 Il logo di Schema Forge, che stava dentro `banco-prova/` per sbaglio, è stato spostato in `agenti/schema-forge/resources/branding/`.
 
-- **Stato:** presa — **con l'eccezione della §19**: un banco che è diventato il *caso di prova* di un difetto non è più usa e getta, e allora si traccia invece di buttarlo.
+- **Stato:** presa — **con l'eccezione della §20**, ristretta dalla §25. Fra il 2026-07-28 e il 2026-07-30 l'eccezione si era allargata fino a coprire tutti e cinque i banchi, cioè aveva smesso di essere un'eccezione. La §25 le ha rimesso un criterio falsificabile — *si traccia il banco che un clone pulito sa rilanciare* — e ha rimandato gli altri quattro alla regola scritta qui sopra.
 
 ## Decisioni prese estendendo Schema Forge con la skill Supabase ufficiale (2026-07-27)
 
@@ -233,7 +233,7 @@ Scelta: **si traccia**, con la regola `.gitignore` ristretta agli artefatti di r
 
 Motivo: le due cose che la §12 voleva evitare — l'invecchiamento e la fonte di verità falsa — le risolve il fatto che il banco è **dentro il gate**, non fuori. Se invecchia, il gate lo dice al primo rilancio. Il pericolo della §12 era un banco che nessuno controlla più; questo è controllato a ogni tornata.
 
-- **Stato:** presa.
+- **Stato:** presa, e **ristretta dalla §25 del 2026-07-30**. Questa voce parlava di un banco; nei due giorni successivi la stessa motivazione è stata usata per tracciarne altri quattro senza estendere la voce, finché l'eccezione non ha coperto tutti i casi che la §12 doveva regolare. La §25 la riporta a uno solo — questo — con il criterio che qui era implicito e non scritto: *un banco si traccia se un clone pulito lo sa rilanciare*. `banco-prova-vetcare` lo soddisfa (gli manca solo ciò che `supabase start` riscrive), gli altri quattro no.
 
 ## Decisioni prese costruendo Gestionale Crafter (2026-07-28)
 
@@ -285,3 +285,82 @@ Il perimetro è dichiarato e **non** comprende un costruttore di pagine (blocchi
 Motivo per non lasciarlo scoperto: un bisogno senza proprietario non sparisce, si trasforma in testi scritti nel codice — cioè in una telefonata a noi ogni volta che il cliente vuole cambiare una parola.
 
 - **Stato:** presa.
+
+## Decisioni prese ripulendo la regia (2026-07-30)
+
+### 25. Un banco si tiene solo se un clone pulito lo sa rilanciare
+
+Il 2026-07-28 la §20 era stata estesa in silenzio da tre a quattro banchi: il verbale
+`agenti/gestionale-crafter/COLLAUDO-2026-07-28.md` §Una nota sul `.gitignore` traccia anche
+`banco-prova-negozio`, `banco-prova-accademia` e `banco-sporco`, e il 2026-07-30 il collaudo
+avversario di Speed Demon ha aggiunto `banco-prova-immobiliare` con la stessa motivazione. A
+quel punto tutti e cinque i banchi erano tracciati, l'eccezione era diventata la regola, e la
+§12 — «i banchi si buttano, i verbali restano» — non aveva più nessun caso a cui applicarsi.
+
+Il motivo scritto nel 2026-07-28 era: «le affermazioni *6 difetti su 6*, *zero falsi positivi*
+e *l'audit non vede la guardia sbagliata* valgono finché qualcuno può rilanciarle». È il
+criterio giusto, e **misurato non regge per quei banchi**. `git status --ignored` sui cinque:
+
+```
+banco-prova-vetcare       18 tracciati · ignorati: supabase/.branches/, supabase/.temp/
+banco-prova-negozio       85 tracciati · ignorati: .env.e2e.local, .env.local, e2e/.auth/,
+                                                   node_modules/, .next/, playwright-report/, …
+banco-prova-accademia     48 tracciati · ignorati: .env.local, node_modules/, …
+banco-sporco              40 tracciati · ignorati: nessuno (ma non ha package.json)
+banco-prova-immobiliare   25 tracciati · ignorati: node_modules/, .next/, public/, next-env.d.ts
+```
+
+Da un clone pulito, `banco-prova-negozio` e `banco-prova-accademia` **non si rilanciano**: gli
+mancano le chiavi che il loro gate legge, e sono gitignorate di proposito — giustamente. Non
+sono prove riproducibili: sono prove riproducibili **su questa macchina**, che è la definizione
+di ricordo che la §12 voleva evitare. `banco-sporco` è sorgente puro senza `package.json`, e la
+sua affermazione centrale — «zero falsi positivi sul gemello pulito» — ha bisogno del gemello,
+cioè di `banco-prova-negozio`: tenerne uno solo conserva la metà che da sola non prova niente.
+`banco-prova-vetcare` invece si rilancia: ciò che gli manca (`supabase/.branches/`,
+`supabase/.temp/`) lo riscrive `supabase start`, e tutto quello che il gate legge è tracciato.
+
+Scelta: **resta `banco-prova-vetcare`, gli altri quattro si cancellano dal disco** — sono nel
+commit `67f9001`, che li contiene tutti e cinque, e uno qualsiasi torna con:
+
+```
+git checkout 67f9001 -- banco-prova-negozio     # o accademia, sporco, immobiliare
+```
+
+Motivo per cancellarli davvero invece di lasciarli lì: pesavano **1,4 GB** su disco
+(`banco-prova-negozio` 582 MB, `banco-prova-immobiliare` 451 MB, `banco-prova-accademia`
+382 MB — quasi tutto `node_modules`), e cinque cartelle `banco-*` accanto ad `agenti/` fanno
+sembrare questo repo un monorepo di applicazioni invece che una regia. Ma il motivo vero è
+quello della §12: un banco che nessuno rilancia invecchia in silenzio, e il primo che ci guarda
+dentro crede di leggere lo stato dell'arte.
+
+**Cosa questa decisione costa, detto prima che qualcuno lo scopra dopo.** I verbali di
+gestionale-crafter, flow-sentinel (P3, `evolve`) e speed-demon citano file dentro quei banchi:
+quei riferimenti ora puntano nella storia, non nell'albero di lavoro. Chi vuole rileggerli fa
+il `git checkout` qui sopra. E la batteria E2E di `banco-prova-negozio` — l'unico consumatore
+reale che flow-sentinel abbia mai avuto — non è più a portata di un comando: per rifarla serve
+`npm install`, `supabase start` e ricreare `.env.e2e.local`, che è esattamente lo stesso lavoro
+che serviva ieri, solo dichiarato invece che presunto.
+
+- **Stato:** presa. La §12 torna a essere la regola e la §20 torna a essere l'eccezione, con un
+  criterio falsificabile invece che con un giudizio: **si traccia il banco che un clone pulito
+  sa rilanciare**. Oggi ne risponde uno solo.
+
+### 26. `webgun_content.txt` si genera, non si scrive
+
+`Web Gun.docx` è il documento madre e si modifica in Word; `webgun_content.txt` esiste solo
+perché un `.docx` è binario e git non lo sa confrontare (§3). Finché la copia di testo si è
+aggiornata a mano, la coppia si è spezzata senza che nessuno se ne accorgesse: al 2026-07-30 il
+`.docx` dichiarava Gestionale Crafter e Flow Sentinel «[Ce l'ho]» e il `.txt` li dichiarava
+ancora «[Da creare]». Cioè l'unico dei due file che si può leggere in un diff — e quindi
+l'unico che qualcuno legge davvero — era quello sbagliato, e lo era da due giorni.
+
+Scelta: `scripts/estrai-docx.ps1`, quindici righe su `System.IO.Compression`, rigenera il
+`.txt` dal `.docx`. Dopo ogni modifica in Word si rilancia; il `.txt` non si tocca a mano.
+
+Un paragrafo per riga, non un run per riga come faceva l'estrazione precedente: Word spezza un
+run a metà parola quando ci passa sopra il correttore, e il `.txt` tracciato ne portava la
+cicatrice (`// BUTCHER DA METTE` e `REEEEEEEE` su due righe).
+
+- **Stato:** presa. Non c'è nessun controllo automatico che i due file siano allineati: se il
+  `.docx` cambia e nessuno rilancia lo script, il `.txt` torna a mentire. È un residuo noto, e
+  il posto giusto dove chiuderlo è un gate della regia, che oggi non esiste.

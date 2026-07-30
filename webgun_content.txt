@@ -1,118 +1,63 @@
 WEB GUN — Pipeline Agenti
 Ordine operativo pensato per un progetto reale (es. e-commerce da zero)
-Legenda:  
-VERDE = ce l'ho
-   ·   
-ROSSO = me lo devono mandare
-   ·   
-BLU = da creare
+Legenda:  VERDE = ce l'ho   ·   ROSSO = me lo devono mandare   ·   BLU = da creare
 FASE 0 — Commerciale / Raccolta materiali
-1. 
-Brief Smith
-   [In arrivo dagli amici]
+1. Brief Smith   [In arrivo dagli amici]
 Raccoglie automaticamente dal cliente logo, palette colori, immagini, testi e informazioni. È il carburante iniziale: tutto quello che Web Gun deve sapere prima di sparare.
-2. 
-Preventivo Smith
-   [Da creare]
+2. Preventivo Smith   [Da creare]
 Calcola e genera il preventivo dettagliato con tempistiche e costi. Utile prima di iniziare, così il cliente firma e la pipeline parte con requisiti chiari.
 FASE 1 — Ingresso della richiesta
-3. 
-Prompt Smith
-   [In arrivo dagli amici]
+3. Prompt Smith   [In arrivo dagli amici]
 Il cancello d'ingresso: trasforma gli appunti in italiano in un prompt professionale in inglese e lo smista agli agenti specializzati. È l'orchestratore della richiesta.
 FASE 2 — Guardiani del codice (SEMPRE ATTIVI)
 Si attivano da subito e vigilano su tutto quello che gli agenti costruttori producono, per tutta la durata del progetto.
-4. 
-Code Maniac
-   [Ce l'ho]
+4. Code Maniac   [Ce l'ho]
 Impone da subito la struttura modulare e i commenti standard in testa a ogni file: così ogni agente (e Claude stesso) capisce un file al volo senza leggerlo tutto. Ottimizza e riorganizza in continuo, non solo alla fine.
-5. 
-Code Inquisition
-   [Ce l'ho]
+5. Code Inquisition   [Ce l'ho]
 Audit profondo e continuo della qualità del codice: controlla il lavoro di ogni agente costruttore man mano che produce, prima che gli errori si accumulino.
-6. 
-Bug Bay
-   [Ce l'ho]   // BUTCHER DA METTEREEEEEEEE
+6. Bug Bay   [Ce l'ho] // BUTCHER DA METTEREEEEEEEE
 Rilevatore automatico di bug, attivo su ogni procedimento della pipeline. Intercetta i problemi appena nascono, quando costano poco da sistemare.
 FASE 3 — Costruzione (dati → interfaccia → funzioni)
-7. 
-Schema Forge
-   [Ce l'ho]   // FATTO — v1.3, collaudata e in uso
-Progetta lo schema del database: tabelle, relazioni, vincoli, indici, RLS e seed. Si parte da qui perché in un e-commerce i dati (prodotti, ordini, utenti) sono le fondamenta. Tre leggi: il modello prima del DDL (riformula il dominio in italiano e si ferma finché non ottiene conferma), il database è il giudice (nessuna migrazione è valida se non è stata applicata davvero su un database pulito e passata a otto controlli deterministici), nessuna tabella nuda (RLS attiva alla nascita: su Supabase una tabella senza RLS è pubblicata su internet). Evolve gli schemi esistenti in expand-contract, con analisi di impatto sui dati veri e checkpoint umano su ogni distruttivo.
-8. 
-Fly UI
-   [In arrivo dagli amici]
+7. Schema Forge   [Ce l'ho]   // FATTO — v1.3, collaudata e in uso
+Progetta lo schema del database: tabelle, relazioni, vincoli, indici, RLS e seed. Si parte da qui perché in un e-commerce i dati (prodotti, ordini, utenti) sono le fondamenta. Tre leggi: il modello prima del DDL (riformula il dominio in italiano e si ferma finché non ottiene conferma), il database è il giudice (nessuna migrazione è valida se non è stata applicata davvero su un database pulito e passata a nove controlli deterministici), nessuna tabella nuda (RLS attiva alla nascita: su Supabase una tabella senza RLS è pubblicata su internet). Evolve gli schemi esistenti in expand-contract, con analisi di impatto sui dati veri e checkpoint umano su ogni distruttivo.
+8. Fly UI   [In arrivo dagli amici]   // NON esiste: i componenti si scrivono a mano dietro src/components/ui (deroga DECISIONI.md §21)
 Libreria di componenti e interfacce utente veloci. Costruisce le pagine sopra lo schema dati già definito, senza reinventare i componenti ogni volta.
-9. 
-Sites Effects
-   [Ce l'ho]
+9. Sites Effects   [Ce l'ho]
 Libreria con UI degli effetti applicabili ai siti. Aggiunge animazioni e microinterazioni sopra l'interfaccia base per dare carattere al sito.
-10. 
-Gestionale Crafter
-   [Da creare]
+10. Gestionale Crafter   [Ce l'ho]   // FATTO — v1.0, due collaudi (e-commerce e accademia), 105 test, gate 7/7
 Crea il pannello gestionale / backoffice (dal flow sulla foto, non era nel documento). Per un e-commerce: gestione prodotti, ordini, magazzino e clienti.
-11. 
-AI Specialist
-   [Da creare]
+11. AI Specialist   [Da creare]
 Integra assistenti IA, RAG e agenti autonomi nel sito: ad esempio il chatbot che guida i clienti dell'e-commerce tra prodotti e ordini. (Nel documento era duplicato: unificato in una voce sola.)
 FASE 4 — Test e performance
-12. 
-Flow Sentinel
-   [Da creare]
+12. Flow Sentinel   [Ce l'ho]   // FATTO — costruita, collaudata e usata su un progetto vero (P3): 108 test, gate 7/7
 Genera ed esegue test End-to-End con Playwright sui flussi critici (carrello, checkout, login) prima del lancio. Se il checkout si rompe, lo scopre lui e non il cliente.
-13. 
-Speed Demon
-   [Da creare]
-Ottimizza velocità, SEO, metatag e performance puntando al 100/100 Lighthouse. Va lanciato a sito completo, perché ottimizzare prima è lavoro sprecato.
+13. Speed Demon   [Ce l'ho]   // FATTO — costruita e collaudata in modo avversario il 30/07/2026: 73 test, gate 7/7, 17 difetti trovati nella skill stessa
+Ottimizza velocità, SEO, metatag e performance puntando al 100/100 Lighthouse. Va lanciato a sito completo, perché ottimizzare prima è lavoro sprecato. Tre leggi: si misura una build di produzione (mai un server di sviluppo, e il gate confronta il BUILD_ID per non misurare l'app di un altro progetto), ogni ottimizzazione si applica una alla volta rimisurando e rilanciando la batteria E2E, e le pagine che contano con le loro soglie stanno in un contratto firmato da chi decide. Verifica i metatag nell'HTML servito, non nel sorgente.
 FASE 5 — Sicurezza e conformità
-14. 
-Cyber Shield
-   [Da creare]
+14. Cyber Shield   [Da creare]
 Specializzato in cybersecurity: verifica vulnerabilità, permessi, esposizione di dati e configurazioni pericolose prima della messa online.
-15. 
-Site Doctor
-   [Da creare]
+15. Site Doctor   [Da creare]
 Scanner pre-produzione di conformità: cookie/GDPR e privacy, accessibilità (alt, contrasti, HTML semantico), Open Graph per le anteprime social, hreflang multilingua, favicon, robots.txt e sitemap. In pratica: il certificato di idoneità del sito prima del lancio.
 FASE 6 — Lancio e vendita
-16. 
-Launchpad
-   [Da creare]
+16. Launchpad   [Da creare]
 Deployment 1-click su Vercel/Cloudflare con DNS, domini e certificati SSL. L'ultimo miglio: dal codice al sito online.
-17. 
-DemonIAc
-   [Ce l'ho]
+17. DemonIAc   [Ce l'ho]
 Genera automaticamente video demo con Remotion da mostrare alle aziende. Opzionale nella pipeline: serve per vendere il risultato, non per costruirlo.
 ALTRI (fuori pipeline Web Gun)
 Progetti utili ma non parte della catena di produzione siti:
-•. 
-Maps Scraper
-   [Ce l'ho]
+•. Maps Scraper   [Ce l'ho]
 Trova aziende e attività in tutto il mondo, con o senza sito web, e invia email automaticamente. È il motore commerciale che procura i clienti a Web Gun.
-•. 
-Aisthenics
-   [Ce l'ho]
+•. Aisthenics   [Ce l'ho]
 Assistente per allenatori di Calisthenics con IA integrata.
-•. 
-Everything Scraper
-   [In arrivo dagli amici]
+•. Everything Scraper   [In arrivo dagli amici]
 Scraper online sempre attivo di qualsiasi prodotto: macchine, PC, telefoni…
-•. 
-Agent Crafter
-   [In arrivo dagli amici]
+•. Agent Crafter   [In arrivo dagli amici]
 Creatore e configuratore di agenti e assistenti IA su misura.
-•. 
-Super Teacher
-   [In arrivo dagli amici]
+•. Super Teacher   [In arrivo dagli amici]
 Gli chiedi un argomento e te lo spiega in modo ultra dettagliato.
-•. 
-Brainer
-   [In arrivo dagli amici]
+•. Brainer   [In arrivo dagli amici]
 Second brain personale.
-•. 
-Projentic
-   [In arrivo dagli amici]
+•. Projentic   [In arrivo dagli amici]
 (Descrizione mancante nel documento — da farsi spiegare dagli amici.)
-•. 
-Flowtastic
-   [In arrivo dagli amici]
+•. Flowtastic   [In arrivo dagli amici]
 (Descrizione mancante nel documento — da farsi spiegare dagli amici.)

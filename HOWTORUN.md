@@ -51,7 +51,8 @@ Ordine operativo pensato per un progetto reale (es. e-commerce da zero).
    **Come si usa / lancia:**  
    Tramite Claude Code invoca:  
    `/code-inquisition <percorso_o_file> --focus <argomento>`  
-   *(Esempio: `/code-inquisition ./mio-sito --focus sicurezza,affidabilità`)*. Se omesso, sarà la skill a chiederti su cosa concentrarsi.
+   I valori di `--focus` sono un elenco chiuso e sono **in inglese**: `security` | `performance` | `architecture` | `refactoring` | `ux` | `reliability` | `all` (`agenti/code-inquisition/SKILL.md` §48), separati da virgola.
+   *(Esempio: `/code-inquisition ./mio-sito --focus security,reliability`)*. Se omesso, sarà la skill a chiederti su cosa concentrarsi.
 
 6. 🟢 **Bug Bay**  
    **Cosa fa:** Debugging agentico installabile in qualsiasi webapp tramite l'inserimento di un singolo `<script>`. Lancia un daemon in locale che apre una console di triage per i bug segnalati via widget. Permette la risoluzione tramite AI mostrando in anteprima il `diff` del fix proposto (che puoi approvare con un commit o scartare). Essendo un approccio "hub-and-spoke", puoi aggregare i bug di più progetti su un DB centrale (es. Supabase), mantenendo l'esecuzione del fix in locale su ogni progetto.  
@@ -105,9 +106,10 @@ Ordine operativo pensato per un progetto reale (es. e-commerce da zero).
    **Prerequisiti:** Node ≥ 20, Supabase CLI + Docker, il progetto generato con le sue `node_modules`, `@playwright/test` e i browser (`npx playwright install chromium`).  
    **Come si installa:** junction come le altre, da `scripts/installa-skill.ps1`.  
    **Come si usa / lancia:**
-   - in conversazione: `/flow-sentinel`, poi `map` (**STOP**: conferma umana dei flussi) → `forge` → `run` → `verify` → `handoff`; dopo una migrazione dello schema: `evolve`
-   - il gate a mano, dalla radice del progetto generato: `node <skill>/scripts/verify.mjs`
-   - verbali: `agenti/flow-sentinel/COSTRUZIONE-2026-07-28.md` · `COLLAUDO-2026-07-28.md`
+   - in conversazione: `/flow-sentinel`, poi `map` (**STOP**: conferma umana dei flussi) → `forge` → `run` → **`handoff`** → **`verify`**; dopo una migrazione dello schema: `evolve`
+   - `verify` è **ultimo**, come per schema-forge e gestionale-crafter: uno dei sette passi controlla il contratto d'uscita, quindi scrivere l'handoff dopo il gate significa farlo nascere rosso per come è ordinato il flusso, e un rosso strutturale è quello che insegna a scavalcare i rossi veri. (Fino al 2026-07-30 questa riga insegnava l'ordine contrario, smentita dal Flusso 1 della sua stessa `SKILL.md`.)
+   - il gate a mano, dalla radice del progetto generato: `node <skill>/scripts/verify.mjs [--url <url>] [--db-url <url>]`. Senza le due opzioni l'app e il database si risolvono dal `supabase/config.toml` del progetto e l'ambiente non viene mai consultato — una `SUPABASE_DB_URL` rimasta da un altro progetto è il modo in cui il difetto nasce
+   - verbali: `agenti/flow-sentinel/COSTRUZIONE-2026-07-28.md` · `COLLAUDO-2026-07-28.md` · `COLLAUDO-P3-2026-07-30.md` (primo consumatore reale) · `COLLAUDO-EVOLVE-2026-07-30.md` (`evolve`, 5 casi su 5)
 13. 🟢 **Speed Demon**  
    **Cosa fa:** misura un sito già costruito e già testato su una **build di produzione** (mai `next dev`), propone le ottimizzazioni **col loro costo** (**STOP** allo Specchio), le applica **una alla volta** rimisurando e rilanciando la batteria E2E, e verifica i metatag nell'**HTML servito**. Le pagine che contano, le soglie e il metodo stanno in `docs/performance.md` del progetto generato, firmato da chi decide. Gate a 7 passi con id stabili.  
    **Prerequisiti:** Node ≥ 20, **Chrome** e `lighthouse` raggiungibile (`npx lighthouse`), il progetto generato costruito (`npm run build`) e servito su una **porta dedicata**, e la skill `flow-sentinel` raggiungibile per il passo `rete-verde`. Ognuno assente vale MANCANTE, mai PASS.  

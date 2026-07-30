@@ -5,7 +5,7 @@
 - **Proprietario:** Alberto
 - **Dipendenze:**
   - A monte: prompt-smith (richiesta professionale), brief-smith (entità e contenuti del cliente)
-  - A valle: fly-ui (costruisce sulle tabelle e sui tipi generati), gestionale-crafter (CRUD), ai-specialist (RAG sui dati)
+  - A valle: gestionale-crafter (CRUD sulle tabelle e sui tipi generati), flow-sentinel (il modello di accesso di questo handoff è la fonte dei suoi flussi ostili), speed-demon (misura l'app costruita sopra), ai-specialist (RAG sui dati). **Fly UI non esiste**: deroga in `../../DECISIONI.md` §21, e questa riga lo elencava a valle
 - **Guardiani:** code-maniac e code-inquisition valutano l'SQL e gli script come qualsiasi altro codice.
 
 ## Collaudo del 2026-07-24 (banco di prova Supabase locale)
@@ -72,6 +72,10 @@ Entrambi **veri**, entrambi capaci di rendere silenziosamente inutile il gate. T
 ### Banchi di prova rimossi
 
 `banco-prova/` e `banco-prova-pastificio/` sono stati **cancellati il 2026-07-26**, a collaudo chiuso: erano progetti Supabase usa e getta e si rigenerano con `supabase init`. Restano i verbali (`COLLAUDO-2026-07-25.md`) e ciò che il collaudo ha prodotto — regole nelle references, test negli script. Il logo della skill, che stava dentro `banco-prova/`, è ora in `resources/branding/`.
+
+`banco-prova-negozio/` — quello del consumatore a valle, otto tabelle, gate VERDE 9/9 — è stato **cancellato il 2026-07-30** dalla §25 di `../../DECISIONI.md`, con lo stesso criterio applicato in forma falsificabile: un banco si tiene solo se un clone pulito lo sa rilanciare, e a quello mancavano le chiavi gitignorate che il suo gate legge. Sta nel commit `67f9001` e torna con `git checkout 67f9001 -- banco-prova-negozio`.
+
+**`banco-prova-vetcare/` resta, ed è l'unico.** È il caso di prova permanente di uno schema difettoso: il gate ci chiude ROSSO su due passi, e tutto ciò che il gate legge è tracciato — ciò che manca (`supabase/.branches/`, `supabase/.temp/`) lo riscrive `supabase start`. È il solo banco del repo su cui «il gate chiude rosso, e per questi due motivi» sia ancora un'affermazione che si rilancia invece che una che si ricorda.
 
 ## Collaudo indipendente del 2026-07-26 (`COLLAUDO-2026-07-26.md`)
 
@@ -196,9 +200,10 @@ verdi**. Il gate verifica che la RLS *esista*, non che *funzioni*.
     più forte si è rivelato `tsc` sui tipi rigenerati: **15 errori in 4 file**,
     nessuna rottura arrivata a runtime. I tre limiti misurati della procedura
     stanno nell'appendice §Il primo consumatore a valle. Il 2026-07-30 il banco
-    ha preso anche una batteria E2E (flow-sentinel, 15/15): da lì è arrivato il
+    ha preso anche una batteria E2E (flow-sentinel, 16/16 la sera dello stesso
+    giorno, 15/15 quando questa riga è stata scritta): da lì è arrivato il
     difetto del seed, §Il secondo consumatore a valle. **Fly UI** invece non
-    esiste e non esisterà: deroga in `DECISIONI.md` §21.
+    esiste e non esisterà: deroga in `../../DECISIONI.md` §21.
 14. ~~**`has()` non vede gli shim `.cmd` su Windows**~~ — **chiuso il
     2026-07-27**. Misurato: `spawnSync("finto-cli", ["--version"])` senza shell
     dà **ENOENT** (non consulta PATHEXT), e col **percorso pieno** dà **EINVAL** —
@@ -725,7 +730,7 @@ rigenerati**, non il grep.
 3. **Nessun errore, ma un'osservazione:** l'`evolve` ha attraversato la catena intera —
    analisi, expand, backfill, contract con `-- squawk-ignore`, export dei dati, riallineo del
    seed — e i due linter sono rimasti verdi su tutti e 7 i file. La ricetta della §10 di
-   `DECISIONI.md` funziona su un progetto con codice sopra, non solo sul banco.
+   `../../DECISIONI.md` funziona su un progetto con codice sopra, non solo sul banco.
 
 ### Il difetto vero: su Supabase i `grant` delle migrazioni sono no-op
 

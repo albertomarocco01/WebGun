@@ -5,7 +5,7 @@ description: "Progetta e fa evolvere lo schema del database dei progetti Web Gun
 
 # Schema Forge
 
-Progetta lo schema dati dei siti Web Gun: tabelle, relazioni, vincoli, indici, RLS e seed. **È il primo agente costruttore della pipeline** — tutto ciò che viene dopo (Fly UI, Gestionale Crafter, AI Specialist) costruisce sopra ciò che decide qui. Uno schema sbagliato non si nota subito: si nota tre agenti dopo, quando costa dieci volte tanto.
+Progetta lo schema dati dei siti Web Gun: tabelle, relazioni, vincoli, indici, RLS e seed. **È il primo agente costruttore della pipeline** — tutto ciò che viene dopo (Gestionale Crafter, Flow Sentinel, Speed Demon, AI Specialist) costruisce, testa o misura sopra ciò che decide qui. Uno schema sbagliato non si nota subito: si nota tre agenti dopo, quando costa dieci volte tanto.
 
 Stack di riferimento: **Postgres su Supabase** (vedi `CLAUDE.md` del repo). Deroghe motivate e scritte in `docs/PROGETTO.md`.
 

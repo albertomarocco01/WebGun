@@ -68,6 +68,15 @@ Dopo **ogni fase di costruzione**:
 
 1. Lanciare `code-maniac scan` (batteria deterministica: lint, tipi, complessità, codice morto, duplicati, segreti).
 2. Sui punti critici (auth, pagamenti, dati utente, deploy) lanciare `/code-inquisition --scope diff`.
-3. **Nei progetti con database**, lanciare anche `node agenti/schema-forge/scripts/verify.mjs` dalla radice del progetto generato: applica le migrazioni su un database pulito reale e ci passa sopra la batteria (db lint, `db advisors`, audit RLS, pgTAP, tipi). Il gate deve essere **verde** prima dell'handoff. Uno strumento assente vale `MANCANTE`, non `PASS`: un gate rosso per verifiche mancanti resta rosso.
+3. **Lanciare il gate di ogni agente che ha lavorato**, dalla radice del progetto generato. Non ce n'è uno solo: al 2026-07-30 ne esistono quattro, e ognuno prova una cosa che gli altri non guardano.
+
+   | Chi ha costruito | Comando | Passi | Cosa prova |
+   |---|---|---|---|
+   | schema-forge | `node <skill>/scripts/verify.mjs` | 9 | applica le migrazioni su un database pulito vero, poi db lint, `db advisors`, audit RLS, pgTAP, tipi |
+   | gestionale-crafter | `node <skill>/scripts/verify.mjs` | 7 | nessuna rotta admin senza guardia, permessi, `tsc`, a11y |
+   | flow-sentinel | `node <skill>/scripts/verify.mjs [--url] [--db-url]` | 7 | la batteria E2E è girata davvero contro l'app vera, e ogni flusso dichiarato ha una spec che lo attacca |
+   | speed-demon | `node <skill>/scripts/verify.mjs --url <url>` | 7 | si misura una build di produzione, ed è **quella di questo progetto** (confronto del `.next/BUILD_ID`) |
+
+   Il gate deve essere **verde** prima dell'handoff. Uno strumento assente vale `MANCANTE`, non `PASS`: un gate rosso per verifiche mancanti resta rosso.
 
 **Nessun handoff è valido** senza scan pulito **oppure** residuo documentato (nel file di handoff e in `docs/DEBITO-TECNICO.md`). Vale anche per il gate di `verify.mjs`.

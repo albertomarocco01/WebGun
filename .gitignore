@@ -3,29 +3,32 @@
 # gli stessi committati due volte.
 .claude/skills/
 
-# Banchi di prova: progetti Supabase usa e getta, si rigenerano con
-# `supabase init`. Quelli del collaudo di Schema Forge sono stati rimossi il
-# 2026-07-26; la regola resta perche' il prossimo agente ne creera' altri.
+# Banchi di prova: progetti usa e getta, si rigenerano con `supabase init` e
+# `create-next-app`. La regola resta perche' il prossimo agente ne creera' altri,
+# e perche' i banchi si buttano a collaudo chiuso (DECISIONI.md §12): quelli di
+# Schema Forge sono stati rimossi il 2026-07-26, e il 2026-07-30 la §25 ha buttato
+# `banco-prova-negozio`, `banco-prova-accademia`, `banco-sporco` e
+# `banco-prova-immobiliare` — 1,4 GB, tutti nel commit 67f9001 se servono ancora.
 banco-prova*/
+banco-sporco/
 
-# Eccezione: `banco-prova-vetcare` non e' usa e getta, e' il caso di prova
-# permanente di uno schema difettoso — il gate ci chiude ROSSO su due passi, ed
-# e' il modo in cui si verifica che le regole del blocco n°1 trovino ancora
-# quello che devono trovare. Un banco non tracciato rende quell'affermazione
-# non riproducibile: vedi DECISIONI.md §20.
-# Gli artefatti di runtime del CLI (`supabase/.branches`, `.temp`) li esclude
-# gia' il `supabase/.gitignore` del banco stesso, che `supabase init` scrive.
+# Unica eccezione (DECISIONI.md §20, ristretta dalla §25): `banco-prova-vetcare`
+# non e' usa e getta, e' il caso di prova permanente di uno schema difettoso — il
+# gate ci chiude ROSSO su due passi, ed e' il modo in cui si verifica che le
+# regole del blocco n°1 trovino ancora quello che devono trovare.
+#
+# Il criterio per cui questo resta e gli altri quattro no: **un clone pulito lo sa
+# rilanciare**. Tutto quello che il gate legge e' tracciato; ciò che manca
+# (`supabase/.branches/`, `supabase/.temp/`) lo riscrive `supabase start`, e lo
+# esclude gia' il `supabase/.gitignore` che `supabase init` scrive nel banco.
+# Gli altri avevano bisogno di chiavi gitignorate per girare: erano prove
+# riproducibili su una macchina sola, cioe' ricordi.
 !banco-prova-vetcare/
 
-# Stessa eccezione, stesso motivo (DECISIONI.md §20): `banco-prova-immobiliare`
-# non e' usa e getta, e' il banco del collaudo avversario di Speed Demon del
-# 2026-07-30. Contiene sei difetti piantati apposta e le quattro esecuzioni del
-# gate che li mostrano (`docs/collaudo/`), e il verbale
-# `agenti/speed-demon/COLLAUDO-AVVERSARIO-2026-07-30.md` li cita come prove. Un
-# banco non tracciato renderebbe quelle prove il ricordo di una macchina sola.
-# Restano fuori, per il suo `.gitignore`: `node_modules/`, `.next/` e
-# `public/foto/`, che sono 21 MB di rumore rigenerabile con `npm run foto`.
-!banco-prova-immobiliare/
+# Le chiavi locali dei banchi restano fuori: sono di uno stack di sviluppo e non
+# sono segrete, ma un `.env` tracciato e' l'abitudine sbagliata da cui nasce
+# quello vero.
+banco-prova-*/.env*
 
 # Dipendenze dei guardiani sugli script degli agenti (si reinstallano con
 # `npm install` dalla cartella dell'agente). Il repo di regia NON e' un
@@ -37,23 +40,8 @@ node_modules/
 # si chiude. Non e' contenuto, e' uno stato della macchina.
 ~$*
 
-# Eccezioni dei banchi di gestionale-crafter (stessa logica della §20: un banco
-# che e' il CASO DI PROVA di un'affermazione non e' usa e getta, perche'
-# un'affermazione non riproducibile non e' una prova ma un ricordo).
-#   banco-prova-negozio    il gate VERDE 7/7 e l'esperimento `evolve`
-#   banco-prova-accademia  il collaudo avversario e i rilievi del tribunale
-#   banco-sporco           i sei difetti piantati, 6 su 6 rilevati
-# Si tracciano i SORGENTI: `node_modules/` e' gia' escluso sopra, gli artefatti
-# di runtime di Supabase li esclude il `supabase/.gitignore` di ogni banco.
-!banco-prova-negozio/
-!banco-prova-accademia/
-banco-prova-*/.next/
-banco-sporco/.next/
-# Le chiavi locali dei banchi restano fuori: sono di uno stack di sviluppo e non
-# sono segrete, ma un `.env` tracciato e' l'abitudine sbagliata da cui nasce
-# quello vero.
-banco-prova-*/.env*
-banco-sporco/.env*
-
-# backup del documento di regia
+# Backup del documento di regia. `Web Gun.docx.bak` e' stato cancellato il
+# 2026-07-30: era la copia del 28/07, superata, e non e' mai stata tracciata —
+# cioe' era un backup che nessuno avrebbe potuto ripristinare da un clone.
+# Il documento si versiona in git, non in un `.bak` accanto.
 *.docx.bak
