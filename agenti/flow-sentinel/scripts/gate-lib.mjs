@@ -602,6 +602,31 @@ export function urlAppProgetto(testoConfig) {
   return /^https?:\/\//.test(url) ? url.replace(/\/+$/, "") : null;
 }
 
+/**
+ * L'ambiente con cui si lancia la batteria: l'URL che il passo `app-viva` ha
+ * appena interrogato viene IMPOSTO a Playwright come `E2E_BASE_URL`.
+ *
+ * Perche' imporlo invece di limitarsi a confrontarlo. Il gate risolve un URL
+ * (flag `--url`, altrimenti `[auth].site_url`) e la batteria ne risolveva un
+ * altro per conto suo: due verita' che nessuno metteva a confronto. Misurato il
+ * 2026-07-30 sul banco di Bottega Nord: la 3000 dichiarata era occupata da un
+ * ALTRO progetto, Next aveva spostato l'app sulla 3001, e `app-viva` e' uscito
+ * `pass` interrogando l'app di uno sconosciuto — accoppiata al database giusto,
+ * cosi' il verde sembrava coerente.
+ *
+ * Imporlo chiude la classe invece di segnalarla: la batteria non puo' piu'
+ * percorrere un'app diversa da quella di cui il gate ha misurato la premessa.
+ * Se quell'app e' di un altro progetto, ora e' la batteria a diventare rossa —
+ * un rosso rumoroso al posto di un verde silenzioso.
+ *
+ * Resta scoperto (dichiarato, non risolto): un gate lanciato quando la batteria
+ * non esiste ancora puo' ancora vedere `app-viva` verde su un'app estranea. Li'
+ * la difesa e' l'URL stampato sempre, anche sul verde.
+ */
+export function ambienteBatteria(urlApp, env = {}) {
+  return urlApp ? { ...env, E2E_BASE_URL: urlApp } : { ...env };
+}
+
 export function schemiEsposti(testoConfig) {
   const valore = valoreToml(testoConfig, "api", "schemas");
   if (valore === null) return ["public"];

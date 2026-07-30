@@ -45,6 +45,7 @@ import {
   statoDaFindings,
   tagDaSpec,
   urlAppProgetto,
+  ambienteBatteria,
   urlDbProgetto,
   verdettoDa,
 } from "./gate-lib.mjs";
@@ -346,7 +347,11 @@ function passoPlaywright(ctx) {
     record(ID.playwright, etichetta, "skipped", "@playwright/test non installato nel progetto: la batteria NON e' stata eseguita (`npm install`)");
     return;
   }
-  const res = run("npx", ["playwright", "test", "--reporter=json"]);
+  // La batteria percorre l'app di cui `app-viva` ha misurato la premessa, non
+  // una che risolve per conto suo: l'URL si impone (vedi `ambienteBatteria`).
+  const res = run("npx", ["playwright", "test", "--reporter=json"], {
+    env: ambienteBatteria(ctx.urlApp, process.env),
+  });
   // il guasto va nella direzione sicura (MANCANTE), ma la diagnosi deve dire
   // COSA e' andato storto: «report non interpretabile» su un errore di
   // esecuzione incolpa Playwright di un problema che sta altrove

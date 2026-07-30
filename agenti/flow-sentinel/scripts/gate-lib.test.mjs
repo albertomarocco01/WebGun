@@ -36,6 +36,7 @@ import {
   statoDaFindings,
   tagDaSpec,
   urlAppProgetto,
+  ambienteBatteria,
   urlDbProgetto,
   usaHelperDb,
   verdettoDa,
@@ -556,6 +557,27 @@ test("senza [auth].site_url il gate non inventa un localhost:3000", () => {
 
 test("un site_url che non e' un URL http non passa per un URL", () => {
   assert.equal(urlAppProgetto(`[auth]\nsite_url = "env(SITE_URL)"\n`), null);
+});
+
+// Regressione del 2026-07-30 (P3, banco Bottega Nord): il gate interrogava la
+// 3000 dichiarata — occupata da un altro progetto — e la batteria percorreva la
+// 3001 dove Next aveva spostato l'app. Due URL, nessun confronto, `app-viva`
+// verde su un'app di uno sconosciuto.
+test("l'URL che il gate ha interrogato viene imposto alla batteria", () => {
+  const env = ambienteBatteria("http://127.0.0.1:3001", { PATH: "/usr/bin" });
+  assert.equal(env.E2E_BASE_URL, "http://127.0.0.1:3001");
+  assert.equal(env.PATH, "/usr/bin", "il resto dell'ambiente non si perde");
+});
+
+test("un E2E_BASE_URL rimasto da un altro progetto NON ha la precedenza", () => {
+  const env = ambienteBatteria("http://127.0.0.1:3001", {
+    E2E_BASE_URL: "http://127.0.0.1:3000",
+  });
+  assert.equal(env.E2E_BASE_URL, "http://127.0.0.1:3001");
+});
+
+test("senza URL risolto la variabile non viene inventata", () => {
+  assert.equal(ambienteBatteria(null, { PATH: "/usr/bin" }).E2E_BASE_URL, undefined);
 });
 
 test("gli schemi esposti si leggono da [api].schemas", () => {
