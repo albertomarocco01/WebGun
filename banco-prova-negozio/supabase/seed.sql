@@ -8,28 +8,44 @@
 -- un ordine in ognuno dei due stati che il gestionale deve saper mostrare.
 
 -- ------------------------------------------------------------ utenti di auth
+--
+-- Le quattro colonne dei token si scrivono a stringa VUOTA, mai lasciate a
+-- NULL, e non e' un vezzo: GoTrue le legge in una `string` di Go, e su un NULL
+-- l'intero accesso muore con
+--   `Scan error on column index 3, name "confirmation_token":
+--    converting NULL to string is unsupported`
+-- cioe' HTTP 500 su ogni `signInWithPassword`, per ogni utente. Il database
+-- resta perfetto e il gestionale diventa inaccessibile: nessun controllo di
+-- schema se ne accorge, perche' non c'e' niente di sbagliato nello schema.
+-- Trovato il 2026-07-30 da Flow Sentinel (P3), che e' il primo verificatore
+-- della pipeline che prova ad ENTRARE invece di ispezionare.
 insert into auth.users (
     instance_id, id, aud, role, email, encrypted_password,
     email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
-    created_at, updated_at
+    created_at, updated_at,
+    confirmation_token, recovery_token, email_change, email_change_token_new
 )
 values
 ('00000000-0000-0000-0000-000000000000',
  '00000000-0000-0000-0000-0000000000a1', 'authenticated', 'authenticated',
  'titolare@bottreganord.it', crypt('password123', gen_salt('bf')), now(),
- '{"provider":"email","providers":["email"]}', '{}', now(), now()),
+ '{"provider":"email","providers":["email"]}', '{}', now(), now(),
+ '', '', '', ''),
 ('00000000-0000-0000-0000-000000000000',
  '00000000-0000-0000-0000-0000000000a2', 'authenticated', 'authenticated',
  'magazzino@bottreganord.it', crypt('password123', gen_salt('bf')), now(),
- '{"provider":"email","providers":["email"]}', '{}', now(), now()),
+ '{"provider":"email","providers":["email"]}', '{}', now(), now(),
+ '', '', '', ''),
 ('00000000-0000-0000-0000-000000000000',
  '00000000-0000-0000-0000-0000000000a3', 'authenticated', 'authenticated',
  'redazione@bottreganord.it', crypt('password123', gen_salt('bf')), now(),
- '{"provider":"email","providers":["email"]}', '{}', now(), now()),
+ '{"provider":"email","providers":["email"]}', '{}', now(), now(),
+ '', '', '', ''),
 ('00000000-0000-0000-0000-000000000000',
  '00000000-0000-0000-0000-0000000000c1', 'authenticated', 'authenticated',
  'anna.rossi@example.it', crypt('password123', gen_salt('bf')), now(),
- '{"provider":"email","providers":["email"]}', '{}', now(), now())
+ '{"provider":"email","providers":["email"]}', '{}', now(), now(),
+ '', '', '', '')
 on conflict (id) do nothing;
 
 -- ----------------------------------------------------------------- personale

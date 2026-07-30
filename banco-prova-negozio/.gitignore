@@ -1,0 +1,6 @@
+
+# batteria End-to-End (Flow Sentinel)
+.env.e2e.local
+e2e/.auth/
+playwright-report/
+test-results/
