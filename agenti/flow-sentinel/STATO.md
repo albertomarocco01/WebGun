@@ -13,7 +13,9 @@
   solo**, e l'ha visto solo chi usa la chiave per misurare. Dettagli:
   `banco-prova-negozio/docs/handoff/14-flow-sentinel.md`.
   Dettagli della costruzione originale:
-  `SKILL.md` confermata in P0 e **non modificata** da nessuna delle due fasi; esistono le
+  `SKILL.md` confermata in P0 e rimasta **non modificata** attraverso P1, P2 e P3 — la prima
+  modifica e' del 2026-07-30, quando il collaudo di `evolve` ha scoperto che quella procedura
+  copriva un caso su quattro (`COLLAUDO-EVOLVE-2026-07-30.md` §4); esistono le
   **4 references**, il gate `verify.mjs` a **7 passi** con id stabili, le regole pure in
   `scripts/gate-lib.mjs` con **103 test verdi allora** (**106 oggi**, §Cosa esiste), i **3 template** e la configurazione
   ESLint delle spec. Il gate e' stato **eseguito davvero** su due banchi Next.js + Supabase locale,
@@ -48,7 +50,7 @@
 | Cosa | Numero | Come e' stato misurato |
 |---|---|---|
 | Passi del gate | 7 | `verify.mjs --json`, `summary.passi` |
-| Test degli script | **106 verdi** (79 dopo P1, +24 in P2, +3 in P3 su `ambienteBatteria`) | `node --test "scripts/**/*.test.mjs"` |
+| Test degli script | **108 verdi** (79 dopo P1, +24 in P2, +3 in P3 su `ambienteBatteria`, +2 col collaudo di `evolve`) | `node --test "scripts/**/*.test.mjs"` |
 | References | 4 | `references/`, 1288 righe dopo P1, corrette in tre punti da P2 |
 | Template | 3 | `flussi-critici.md`, `handoff-flow-sentinel.md`, `eslint-spec.config.mjs` |
 | Banchi su cui il gate e' girato | **3**, di tre domini — e il terzo scritto da **altri agenti** | `banco-prova-flow/` (5 flussi, 5 spec) · `banco-prova-collaudo-fs/` (6 flussi, 6 spec) · **`banco-prova-negozio/` (11 flussi, 11 spec, 16 test, gate 7/7)** |
@@ -138,9 +140,17 @@ silenzio, tre crash su report malformati, e tre rossi sbagliati su codice commen
 > piu' un timore: e' stato **misurato** come falso verde e **corretto**). Dettaglio in
 > `COLLAUDO-P3-2026-07-30.md` §6.
 
-1. **`evolve` non e' mai stato collaudato.** Nessun flusso aggiunto o tolto dopo la conferma: il diff
-   delle rotte, l'etichetta orfana sul campo e la rinomina in un giro solo restano non provati.
-   Dopo P3 e' il punto piu' grave: e' l'unico comando della skill che nessuno ha mai eseguito.
+1. ~~**`evolve` non e' mai stato collaudato.**~~ — **chiuso il 2026-07-30**,
+   `COLLAUDO-EVOLVE-2026-07-30.md`. Cinque casi guidati sui file veri di Bottega Nord contro le
+   funzioni vere del gate: **5 su 5 combaciano** con la reference, e il caso del `warn` e' stato
+   rifatto sul processo intero (uscita **0**, gate VERDE, avviso stampato). Il gate e' l'unica
+   parte che ha retto senza correzioni. **Resta aperto cio' che il collaudo ha scoperto:** un
+   flusso che cambia nel **corpo** mantenendo lo stesso id il gate **non lo vede** — legge le
+   intestazioni, non i passi — ed e' il caso piu' frequente nella vita di un progetto, perche'
+   gli altri tre lasciano una traccia strutturale e questo no. Non e' correggibile senza
+   reinventare la comprensione del testo: e' fissato da un test di regressione che dichiara il
+   limite, e nella procedura la difesa e' l'agente. Manca anche l'esecuzione del **controllo
+   della data** di `Confermato da:`: ora e' nella procedura, ma nessuno script lo fa.
 2. **Il gate puo' ancora dire `app-viva` verde su un'app estranea, quando la batteria non esiste.**
    P3 ha chiuso la classe dove conta: `verify.mjs` **impone** ora alla batteria l'URL che ha appena
    interrogato (`ambienteBatteria`), quindi un'app sbagliata produce una batteria rossa invece di un

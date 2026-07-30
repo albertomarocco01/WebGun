@@ -226,6 +226,51 @@ test("un'etichetta senza flusso dichiarato e' un warn, non un block", () => {
   assert.match(findings[0].message, /checkout-sparito/);
 });
 
+// I tre casi che `references/flussi-critici.md` §Cosa fa `evolve` sull'elenco
+// promette a parole. I primi due hanno gia' il loro test qui sopra; il terzo —
+// la rinomina — non l'aveva, ed e' l'unico in cui le due gravita' devono
+// comparire INSIEME. Collaudati sui file veri del banco il 2026-07-30, prima
+// volta che `evolve` veniva eseguito da qualcuno.
+test("un id rinominato solo nel contratto e' un block E un warn insieme", () => {
+  // La spec porta ancora l'etichetta vecchia, il contratto dichiara la nuova.
+  const rinominati = [
+    { id: "accesso-staff", tipo: "positivo" },
+    { id: "admin-negato-al-visitatore", tipo: "ostile-lettura" },
+  ];
+  const { findings } = findingsCopertura(rinominati, [
+    { file: "e2e/a.spec.ts", tags: ["accesso-staff"] },
+    { file: "e2e/b.spec.ts", tags: ["admin-negato-anon"] },
+  ]);
+  const g = contaGravita(findings);
+  assert.equal(g.block, 1, "il nome nuovo non e' coperto da nessuna spec");
+  assert.equal(g.warn, 1, "il nome vecchio resta appeso a una spec");
+  // E' il motivo per cui una rinomina si fa in un giro solo: chiudere solo il
+  // block (aggiungendo la spec) lascerebbe il warn, e chiudere solo il warn
+  // (togliendo l'etichetta) lascerebbe il block.
+  assert.equal(statoDaFindings(findings), "fail");
+});
+
+test("un flusso che cambia nel CORPO, con lo stesso id, il gate non lo vede", () => {
+  // Non e' un difetto da correggere qui: e' un limite da tenere scritto. Il
+  // gate legge le intestazioni, non i passi. Un contratto in cui i passi di un
+  // flusso descrivono un percorso che la spec non fa piu' resta `pass`, e
+  // l'unica difesa e' che `evolve` lo legga una persona (o un agente) e
+  // confronti la prosa. Misurato il 2026-07-30 sul banco di Bottega Nord:
+  // passi ed effetto atteso stravolti sotto un'intestazione invariata → verde.
+  const contratto = (passi) => `Confermato da: ORCHESTRATORE (2026-07-30)
+
+## \`modifica-cliente\` — positivo
+
+${passi}
+`;
+  const prima = leggiFlussi(contratto("1. Cambia il telefono del cliente."));
+  const dopo = leggiFlussi(contratto("1. Cancella il cliente e ricrealo."));
+  assert.deepEqual(dopo.flussi, prima.flussi, "l'elenco letto e' identico");
+
+  const spec = [{ file: "e2e/c.spec.ts", tags: ["modifica-cliente"] }];
+  assert.deepEqual(findingsCopertura(dopo.flussi, spec).findings, []);
+});
+
 test("due spec sullo stesso flusso lo coprono, non lo duplicano", () => {
   const { perFlusso } = copertura(FLUSSI, [
     { file: "e2e/a.spec.ts", tags: ["accesso-staff"] },

@@ -13,6 +13,15 @@ Confermato da: ORCHESTRATORE (2026-07-30)
 > assunto**: la conferma umana e' il solo modo di sapere che non manca un
 > flusso, e non e' automatizzabile. Vedi §Flussi assunti e non coperti.
 
+> **Secondo giro dello Specchio, stessa giornata.** L'elenco e' nato con dieci
+> flussi. L'undicesimo — `modifica-cliente` — e' entrato dopo, quando
+> `aggiornaCliente` ha smesso di essere un'azione orfana e ha preso la sua
+> vista. **Lo Specchio e' stato rifatto solo su quello**, come prescrive
+> `evolve`: gli altri dieci non sono stati rimessi in discussione, perche'
+> riconfermare tutto a ogni giro trasforma la firma in un'abitudine e
+> un'abitudine non conferma niente. Confermato dall'orchestratore il
+> 2026-07-30, insieme al primo elenco.
+
 Gli ostili sono derivati dalla tabella «Modello di accesso (chi vede cosa)» di
 `docs/handoff/07-schema-forge.md` §3: ogni «—» delle colonne `anon` e
 `authenticated` e' un attacco in lettura, e ogni «sola lettura» e' un attacco in
