@@ -1,9 +1,28 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Bottone } from "@/components/ui/Bottone";
 import { esci } from "@/modules/admin/accesso";
 import { richiediStaff, sezioniPer } from "@/modules/admin/guardia";
+
+/**
+ * Tutto il gestionale fuori dall'indice, ereditato da ogni rotta figlia.
+ *
+ * MISURATO il 2026-07-30, e va scritto perche' cambia il valore di questa riga:
+ * un crawler **non la riceve mai**. `richiediStaff()` gira prima del rendering e
+ * rimanda a `/accedi`, quindi cio' che esce da `/admin` senza sessione e' un
+ * redirect, non un documento con dei metatag. L'esclusione dall'indice la fa
+ * gia' la guardia.
+ *
+ * Resta qui come difesa in profondita', non come difesa: se un giorno una rotta
+ * sotto `/admin` diventasse pubblica per errore, nascerebbe gia' `noindex`
+ * invece di nascere indicizzabile. Una riga che oggi non fa niente e domani
+ * potrebbe salvare una pagina — non una riga che oggi fa quello che dice.
+ */
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 /**
  * La guardia della sezione: gira sul server prima di ogni pagina figlia, e

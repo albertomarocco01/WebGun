@@ -1,6 +1,24 @@
+import type { Metadata } from "next";
+
 import { Bottone } from "@/components/ui/Bottone";
 import { Campo, Modulo } from "@/components/ui/Campo";
 import { accedi } from "@/modules/admin/accesso";
+
+/**
+ * Titolo e canonical propri: senza, questa pagina serviva gli stessi identici
+ * tag della home, e il canonical (una volta introdotto nel layout) avrebbe
+ * dichiarato che `/accedi` E' la home — cioe' avrebbe chiesto di non
+ * indicizzarla e di attribuire tutto a un'altra pagina.
+ *
+ * Nessun `noindex`: la porta del gestionale non ha niente da nascondere e un
+ * `noindex` qui sarebbe una scelta, non un obbligo. Ce l'ha invece `/admin/*`,
+ * che sta dietro il suo layout.
+ */
+export const metadata: Metadata = {
+  title: "Accesso al gestionale",
+  description: "Area riservata al personale di Bottega Nord.",
+  alternates: { canonical: "/accedi" },
+};
 
 /**
  * La porta d'ingresso del gestionale. Rotta pubblica per forza: e' l'unica.

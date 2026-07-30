@@ -1,0 +1,397 @@
+/**
+ * gate-lib.test.mjs — Le regole del gate di Speed Demon, una per una.
+ *
+ * Runner nativo, zero dipendenze:  node --test "scripts/**\/*.test.mjs"
+ *
+ * Regola della casa: ogni regola ha il caso in cui SCATTA e quello in cui NON
+ * deve scattare. Il secondo e' quello che conta — una regola che scatta sempre
+ * e' rumore, e il rumore si impara a scavalcare.
+ */
+
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import {
+  argomentiOstiliACmd,
+  CATEGORIE,
+  contaGravita,
+  contrattoUscita,
+  dispersione,
+  eDevServer,
+  findingsBudget,
+  findingsContratto,
+  findingsSeo,
+  formFactorDa,
+  formaEseguibile,
+  indiziDevServer,
+  leggiContratto,
+  mediana,
+  metatagDaHtml,
+  misuraStabile,
+  primoEseguibile,
+  statoDaFindings,
+  verdettoDa,
+} from "./gate-lib.mjs";
+
+// ------------------------------------------------------------- il contratto
+
+const CONTRATTO = `# Performance — Bottega Nord
+
+Confermato da: ORCHESTRATORE (2026-07-30)
+Form factor: desktop
+
+## \`home\` — /
+
+Perche' conta: e' l'unica pagina pubblica.
+
+| categoria | soglia |
+|---|---|
+| performance | 90 |
+| accessibility | 95 |
+| seo | 90 |
+
+## \`accesso\` — /accedi
+
+| categoria | soglia |
+|---|---|
+| performance | 85 |
+
+## Deroghe
+
+| pagina | categoria | motivo |
+|---|---|---|
+| \`accesso\` | performance | il modulo carica il client Supabase, che qui non si puo' rimandare |
+`;
+
+test("legge pagine, soglie, firma e form factor", () => {
+  const c = leggiContratto(CONTRATTO);
+  assert.equal(c.confermatoDa, "ORCHESTRATORE (2026-07-30)");
+  assert.equal(c.formFactor, "desktop");
+  assert.deepEqual(c.pagine.map((p) => p.id), ["home", "accesso"]);
+  assert.deepEqual(c.pagine[0].soglie, { performance: 90, accessibility: 95, seo: 90 });
+  assert.deepEqual(c.errori, []);
+});
+
+test("le righe delle deroghe non diventano soglie della pagina precedente", () => {
+  const c = leggiContratto(CONTRATTO);
+  // Senza la chiusura della sezione su ogni `##`, la tabella delle deroghe
+  // sarebbe finita dentro `accesso` — che avrebbe preso una soglia in piu'
+  // presa da un'altra tabella. Difetto plausibile e silenzioso: la soglia
+  // sbagliata e' comunque un numero, e nessuno la nota.
+  assert.deepEqual(c.pagine[1].soglie, { performance: 85 });
+  assert.equal(c.deroghe.length, 1);
+  assert.equal(c.deroghe[0].pagina, "accesso");
+  assert.match(c.deroghe[0].motivo, /client Supabase/);
+});
+
+test("senza `Form factor:` si assume mobile, il default di Lighthouse", () => {
+  assert.equal(formFactorDa("Confermato da: UMANO (Alberto) (2026-07-30)"), "mobile");
+  assert.equal(formFactorDa("Form factor: DESKTOP"), "desktop");
+});
+
+test("il segnaposto del template non e' una firma", () => {
+  const c = leggiContratto("Confermato da: {{UMANO | ORCHESTRATORE}} (AAAA-MM-GG)\n\n## `home` — /\n\n| performance | 90 |");
+  assert.equal(c.confermatoDa, null);
+  assert.equal(statoDaFindings(findingsContratto(c)), "fail");
+});
+
+test("l'esempio compilato dentro un blocco recintato non dichiara pagine", () => {
+  const conEsempio = "Confermato da: ORCHESTRATORE (2026-07-30)\n\n## `vera` — /\n\n| performance | 90 |\n\n```markdown\n## `finta` — /mai\n\n| performance | 10 |\n```\n";
+  const c = leggiContratto(conEsempio);
+  assert.deepEqual(c.pagine.map((p) => p.id), ["vera"]);
+});
+
+test("un id di pagina ripetuto e' un errore di contratto, non una pagina in piu'", () => {
+  const c = leggiContratto("Confermato da: ORCHESTRATORE (2026-07-30)\n\n## `home` — /\n\n| performance | 90 |\n\n## `home` — /altra\n\n| performance | 90 |");
+  assert.equal(c.pagine.length, 1);
+  assert.equal(c.errori.length, 1);
+  assert.match(c.errori[0], /id ripetuto/);
+});
+
+test("una pagina senza nessuna soglia e' un block", () => {
+  const c = leggiContratto("Confermato da: ORCHESTRATORE (2026-07-30)\n\n## `home` — /\n\nSolo prosa, nessuna tabella.\n");
+  const findings = findingsContratto(c);
+  assert.equal(contaGravita(findings).block, 1);
+  assert.match(findings[0].message, /nessuna soglia/);
+});
+
+test("un contratto completo non produce nessun rilievo", () => {
+  assert.deepEqual(findingsContratto(leggiContratto(CONTRATTO)), []);
+});
+
+// -------------------------------------------------------------- statistica
+
+test("mediana su numero dispari e pari di giri", () => {
+  assert.equal(mediana([90, 70, 80]), 80);
+  assert.equal(mediana([70, 80, 90, 100]), 85);
+  assert.equal(mediana([]), null);
+});
+
+test("la mediana ignora il giro sfortunato, la media no", () => {
+  // Tre giri: due a 92 e uno rovinato da qualcosa che girava sulla macchina.
+  const giri = [92, 91, 40];
+  const media = giri.reduce((a, b) => a + b, 0) / giri.length;
+  assert.equal(mediana(giri), 91);
+  assert.ok(media < 80, "la media crolla sotto 80 per colpa di un giro solo");
+});
+
+test("dispersione e' massimo meno minimo", () => {
+  assert.equal(dispersione([90, 95, 92]), 5);
+  assert.equal(dispersione([90]), 0);
+});
+
+test("meno di tre giri non e' una misura", () => {
+  const m = misuraStabile([95, 96]);
+  assert.equal(m.stabile, false);
+  assert.match(m.motivo, /almeno 3/);
+});
+
+test("una dispersione ampia rende la misura inaffidabile, non bassa", () => {
+  const m = misuraStabile([98, 60, 85]);
+  assert.equal(m.stabile, false);
+  assert.equal(m.mediana, 85);
+  assert.match(m.motivo, /dispersione 38/);
+});
+
+test("tre giri vicini sono una misura buona", () => {
+  const m = misuraStabile([94, 96, 95]);
+  assert.deepEqual({ mediana: m.mediana, dispersione: m.dispersione, stabile: m.stabile },
+    { mediana: 95, dispersione: 2, stabile: true });
+});
+
+test("un giro fallito si scarta, NON vale zero", () => {
+  // E' la differenza fra «una pagina lenta» e «un browser che non e' partito».
+  // Con il `null` scartato restano tre giri buoni e vicini: misura valida.
+  const scartato = misuraStabile([95, null, 96, 95]);
+  assert.deepEqual(
+    { mediana: scartato.mediana, dispersione: scartato.dispersione, stabile: scartato.stabile },
+    { mediana: 95, dispersione: 1, stabile: true },
+  );
+
+  // Se lo stesso giro fallito valesse 0, la dispersione salirebbe a 96 e una
+  // pagina velocissima verrebbe dichiarata inaffidabile — o, peggio, la sua
+  // mediana scenderebbe abbastanza da far «ottimizzare» qualcosa che va bene.
+  const contatoZero = misuraStabile([95, 0, 96, 95]);
+  assert.equal(contatoZero.stabile, false);
+  assert.equal(contatoZero.dispersione, 96);
+});
+
+// ------------------------------------------------------------------ budget
+
+const PAGINE = [
+  { id: "home", percorso: "/", soglie: { performance: 90, seo: 90 } },
+];
+const buona = (n) => ({ mediana: n, dispersione: 2, stabile: true, motivo: null });
+
+test("sopra soglia: nessun rilievo", () => {
+  const misure = new Map([["home", { performance: buona(95), seo: buona(100) }]]);
+  assert.deepEqual(findingsBudget(PAGINE, misure, []), []);
+});
+
+test("sotto soglia senza deroga e' un block", () => {
+  const misure = new Map([["home", { performance: buona(72), seo: buona(100) }]]);
+  const findings = findingsBudget(PAGINE, misure, []);
+  assert.equal(contaGravita(findings).block, 1);
+  assert.match(findings[0].message, /72 sotto la soglia 90/);
+});
+
+test("sotto soglia CON deroga scritta e' un warn, e la deroga si legge nel messaggio", () => {
+  const misure = new Map([["home", { performance: buona(72), seo: buona(100) }]]);
+  const deroghe = [{ pagina: "home", categoria: "performance", motivo: "hosting condiviso fino a marzo" }];
+  const findings = findingsBudget(PAGINE, misure, deroghe);
+  assert.deepEqual(contaGravita(findings), { block: 0, issue: 0, warn: 1 });
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].severity, "warn");
+  assert.match(findings[0].message, /hosting condiviso/);
+  assert.equal(statoDaFindings(findings), "pass");
+});
+
+test("la deroga di un'altra pagina non copre questa", () => {
+  const misure = new Map([["home", { performance: buona(72), seo: buona(100) }]]);
+  const deroghe = [{ pagina: "accesso", categoria: "performance", motivo: "altra pagina" }];
+  assert.equal(findingsBudget(PAGINE, misure, deroghe)[0].severity, "block");
+});
+
+test("una pagina dichiarata e mai misurata e' un block, non un silenzio", () => {
+  const findings = findingsBudget(PAGINE, new Map(), []);
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].severity, "block");
+  assert.match(findings[0].message, /mai misurata/);
+});
+
+test("una misura inaffidabile e' un block anche se la mediana supera la soglia", () => {
+  // E' il punto della Legge n.3: un numero alto ma ballerino non promuove.
+  const misure = new Map([["home", {
+    performance: { mediana: 95, dispersione: 40, stabile: false, motivo: "dispersione 40 punti" },
+    seo: buona(100),
+  }]]);
+  const findings = findingsBudget(PAGINE, misure, []);
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].severity, "block");
+  assert.match(findings[0].message, /inaffidabile, non bassa/);
+});
+
+// --------------------------------------------------------- dev server o build
+
+// I due HTML che seguono sono RITAGLI VERI, presi il 2026-07-30 dallo stesso
+// progetto servito nei due modi nello stesso momento: `next dev -p 3001` e
+// `next start -p 3100` sopra la stessa build.
+const HTML_DEV = `<html><body>
+<script src="/_next/static/chunks/main-app.js?v=1785407832332"></script>
+<script src="/_next/static/chunks/app-pages-internals.js"></script>
+<script src="/_next/static/chunks/webpack.js?v=1785407832332"></script>
+</body></html>`;
+
+const HTML_PROD = `<html><head><title>Bottega Nord</title></head><body>
+<script src="/_next/static/chunks/4bd1b696-c023c6e3521b1417.js"></script>
+<script src="/_next/static/chunks/main-app-f1e4859868969239.js"></script>
+<script src="/_next/static/chunks/polyfills-42372ed130431b0a.js"></script>
+</body></html>`;
+
+test("l'HTML vero di una dev server viene riconosciuto", () => {
+  // Regressione del falso verde del 2026-07-30: questo HTML NON contiene
+  // `react-refresh` ne' `/_next/static/development/` — i due indizi «ovvi» —
+  // e con quelli soli il gate diceva `pass` su una dev server.
+  assert.ok(!HTML_DEV.includes("react-refresh"));
+  assert.ok(!HTML_DEV.includes("/_next/static/development/"));
+  assert.equal(eDevServer(HTML_DEV), true);
+  const nomi = indiziDevServer(HTML_DEV).map((i) => i.nome);
+  assert.deepEqual(nomi, ["chunk con `?v=<timestamp>`", "`app-pages-internals`"]);
+});
+
+test("l'HTML vero di una build di produzione non produce indizi", () => {
+  assert.deepEqual(indiziDevServer(HTML_PROD), []);
+  assert.equal(eDevServer(HTML_PROD), false);
+});
+
+test("i chunk con hash nel nome NON vengono scambiati per chunk con `?v=`", () => {
+  // Il caso in cui la regola scatterebbe a vuoto: un nome che contiene `v=`
+  // dentro l'hash, senza essere un parametro di query.
+  assert.equal(eDevServer(`<script src="/_next/static/chunks/main-app-a1v2b3.js"></script>`), false);
+});
+
+test("gli indizi storici restano validi", () => {
+  assert.equal(eDevServer(`<script src="/_next/static/development/_buildManifest.js"></script>`), true);
+  assert.equal(eDevServer(`<script>require("react-refresh/runtime")</script>`), true);
+});
+
+// -------------------------------------------------------------------- SEO
+
+test("legge title, description e canonical dall'HTML servito", () => {
+  const html = `<html><head>
+    <title>Bottega Nord — maglieria</title>
+    <meta name="description" content="Maglieria di lana"/>
+    <link rel="canonical" href="https://bottreganord.it/"/>
+  </head></html>`;
+  assert.deepEqual(metatagDaHtml(html), {
+    title: "Bottega Nord — maglieria",
+    description: "Maglieria di lana",
+    canonical: "https://bottreganord.it/",
+    robots: null,
+  });
+});
+
+test("gli attributi in ordine invertito si leggono lo stesso", () => {
+  const html = `<meta content="Descrizione" name="description"><link href="/x" rel="canonical">`;
+  const t = metatagDaHtml(html);
+  assert.equal(t.description, "Descrizione");
+  assert.equal(t.canonical, "/x");
+});
+
+test("un metatag mancante e' un block per pagina e per campo", () => {
+  const pagine = [{ id: "home", percorso: "/", soglie: {} }];
+  const tag = new Map([["home", { title: "C'e'", description: null, canonical: null, robots: null }]]);
+  const findings = findingsSeo(pagine, tag);
+  assert.equal(findings.length, 2);
+  assert.ok(findings.every((f) => f.severity === "block"));
+});
+
+test("un noindex su una pagina dichiarata pubblica e' un block", () => {
+  const pagine = [{ id: "home", percorso: "/", soglie: {} }];
+  const tag = new Map([["home", { title: "T", description: "D", canonical: "/", robots: "noindex, nofollow" }]]);
+  const findings = findingsSeo(pagine, tag);
+  assert.equal(findings.length, 1);
+  assert.match(findings[0].message, /esclusa dall'indice/);
+});
+
+test("una pagina con tutti i tag e senza noindex non produce rilievi", () => {
+  const pagine = [{ id: "home", percorso: "/", soglie: {} }];
+  const tag = new Map([["home", { title: "T", description: "D", canonical: "/", robots: "index, follow" }]]);
+  assert.deepEqual(findingsSeo(pagine, tag), []);
+});
+
+// --------------------------------------------- eseguibili risolti su Windows
+
+test("di `where npx` si prende la riga con l'estensione, non la prima", () => {
+  // E' l'uscita vera di questa macchina, incollata. La prima riga e' lo script
+  // per Git Bash: Windows non sa eseguirlo, `spawnSync` non produce stdout e la
+  // diagnosi diventa «nessun giro riuscito» su una macchina dove Lighthouse
+  // funziona benissimo a mano. Misurato il 2026-07-30, al primo giro del gate.
+  const uscita = "C:\\Program Files\\nodejs\\npx\r\nC:\\Program Files\\nodejs\\npx.cmd\r\n";
+  assert.equal(primoEseguibile(uscita), "C:\\Program Files\\nodejs\\npx.cmd");
+});
+
+test("se nessuna riga ha estensione si tiene la prima, invece di non fare niente", () => {
+  assert.equal(primoEseguibile("/usr/local/bin/lighthouse\n"), "/usr/local/bin/lighthouse");
+  assert.equal(primoEseguibile("   \n\n"), null);
+});
+
+test("uno shim .cmd passa da cmd.exe, e il percorso NON si virgoletta a mano", () => {
+  // Contro l'istinto, ed e' per questo che c'e' un test: Node quota gia'
+  // l'argomento, e aggiungendo virgolette si ottiene un doppio virgolettato
+  // che `cmd` non sa aprire (provate entrambe le forme il 2026-07-30).
+  const forma = formaEseguibile("npx", () => "C:\\Program Files\\nodejs\\npx.cmd", "win32");
+  assert.deepEqual(forma, { file: "cmd.exe", prefisso: ["/c", "C:\\Program Files\\nodejs\\npx.cmd"] });
+});
+
+test("un argomento con spazi e' ostile a cmd, e va riconosciuto prima di lanciarlo", () => {
+  // Misurato: lo stesso comando con e senza questo argomento da status 1 e
+  // status 0. L'errore parla del PROGRAMMA troncato («C:\\Program»), non
+  // dell'argomento colpevole — per questo il controllo sta a monte.
+  const args = ["lighthouse", "http://x/", "--chrome-flags=--headless=new --no-sandbox"];
+  assert.deepEqual(argomentiOstiliACmd(args, "win32"), ["--chrome-flags=--headless=new --no-sandbox"]);
+  assert.deepEqual(argomentiOstiliACmd(["--chrome-flags=--headless=new"], "win32"), []);
+});
+
+test("fuori da Windows gli spazi negli argomenti non sono un problema", () => {
+  assert.deepEqual(argomentiOstiliACmd(["--flags=a b c"], "linux"), []);
+});
+
+test("fuori da Windows non si passa da nessuna shell", () => {
+  assert.deepEqual(formaEseguibile("lighthouse", () => "/usr/bin/lighthouse", "linux"),
+    { file: "lighthouse", prefisso: [] });
+});
+
+test("un eseguibile vero non passa da cmd.exe nemmeno su Windows", () => {
+  assert.deepEqual(formaEseguibile("node", () => "C:\\Program Files\\nodejs\\node.exe", "win32"),
+    { file: "C:\\Program Files\\nodejs\\node.exe", prefisso: [] });
+});
+
+// ------------------------------------------------------- contratto d'uscita
+
+test("il verdetto e' ROSSO se anche un solo passo non e' pass", () => {
+  assert.equal(verdettoDa([{ status: "pass" }, { status: "skipped" }]), "ROSSO");
+  assert.equal(verdettoDa([{ status: "pass" }, { status: "pass" }]), "VERDE");
+});
+
+test("un handoff che dichiara VERDE su un gate ROSSO e' un block", () => {
+  const findings = contrattoUscita("docs/handoff/15-speed-demon.md", "# Handoff\n\nGate: VERDE (0 falliti)\n", "ROSSO");
+  assert.equal(findings.length, 1);
+  assert.match(findings[0].message, /parla di un'altra esecuzione/);
+});
+
+test("la parola VERDE dentro un blocco citato non conta come dichiarazione", () => {
+  // Un handoff che INCOLLA l'uscita di un gate verde precedente non sta
+  // dichiarando il proprio verdetto. Difetto gemello di quello che Flow
+  // Sentinel ha misurato il 2026-07-28 sul suo contratto d'uscita.
+  const testo = "# Handoff\n\n```\nGate: VERDE (0 falliti)\n```\n\nGate: ROSSO (1 fallito)\n";
+  assert.deepEqual(contrattoUscita("h.md", testo, "ROSSO"), []);
+});
+
+test("un handoff assente e' un block, non un silenzio", () => {
+  assert.equal(contrattoUscita("h.md", null, "VERDE")[0].severity, "block");
+});
+
+test("le categorie che il gate misura sono le quattro di Lighthouse", () => {
+  assert.deepEqual([...CATEGORIE], ["performance", "accessibility", "best-practices", "seo"]);
+});

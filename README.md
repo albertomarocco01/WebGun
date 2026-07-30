@@ -53,7 +53,7 @@ Ci lavora un team: ogni agente ha un proprietario che lo sviluppa e lo mantiene.
 
 12. 🟢\*\*\* **Flow Sentinel**
     Genera ed esegue test End-to-End con Playwright sui flussi critici prima del lancio. Tre leggi: il contratto dei flussi lo conferma un umano (`docs/flussi-critici.md`, con STOP), giudica il browser su app vera e database seminato, e un test che non può fallire non è un test — ogni flusso di scrittura asserisce l'effetto nel database, i flussi ostili provano i confini d'accesso dal browser. Se il checkout si rompe, lo scopre lui e non il cliente.
-13. 🔵 **Speed Demon**
+13. 🟢\*\*\*\* **Speed Demon**
     Ottimizza velocità, SEO, metatag e performance puntando al 100/100 Lighthouse. Va lanciato a sito completo, perché ottimizzare prima è lavoro sprecato.
 
 ### FASE 5 — Sicurezza e conformità
@@ -97,7 +97,7 @@ Ci lavora un team: ogni agente ha un proprietario che lo sviluppa e lo mantiene.
 | preventivo-smith | Skill Claude Code | 🔵 | — | questo repo |
 | gestionale-crafter | Skill Claude Code | 🟢\*\* | Alberto | questo repo |
 | ai-specialist | Skill Claude Code | 🔵 | — | questo repo |
-| speed-demon | Skill Claude Code | 🔵 | — | questo repo |
+| speed-demon | Skill Claude Code | 🟢\*\*\*\* | Alberto | questo repo |
 | flow-sentinel | Skill Claude Code | 🟢\*\*\* | Alberto | questo repo |
 | cyber-shield | Skill Claude Code | 🔵 | — | questo repo |
 | launchpad | Skill Claude Code | 🔵 | — | questo repo |
@@ -112,6 +112,8 @@ Il proprietario è chi sviluppa e mantiene l'agente; `—` significa non ancora 
 \* **schema-forge è 🟢 come strumento, non come agente pronto alla consegna.** Il gate è collaudato su database reale (144 test, 9 passi, due collaudi avversari), ma `agenti/schema-forge/STATO.md` lo dichiara **non ancora usabile su un progetto cliente**: restano aperti i punti 11, 12 e 15. Il punto 13 è **chiuso**: il consumatore a valle esiste — gestionale-crafter ha costruito un backoffice reale sopra uno schema di questa skill e `evolve` ha girato con codice applicativo sopra, dove il controllo più forte si è rivelato `tsc` sui tipi rigenerati (15 errori in 4 file, nessuno arrivato a runtime). Chi lo usa legga prima `agenti/schema-forge/COME-PROVARLA.md` §4, *Cosa NON dimostra un gate verde*.
 
 \*\* **gestionale-crafter è 🟢 come strumento, non come agente pronto alla consegna.** Due collaudi su banchi reali il 2026-07-28 (e-commerce e accademia musicale), 105 test sugli script, gate a 7 passi, 6 difetti piantati su 6 rilevati e zero falsi positivi sul gemello pulito. Ma `agenti/gestionale-crafter/STATO.md` lo dichiara **non ancora usabile su un progetto cliente**: il gate conta le guardie, non sa se chiedono il ruolo giusto — e questo è **misurato**, non temuto (`COLLAUDO-2026-07-28.md` §7.2). Chi lo usa legga prima `COME-PROVARLA.md` §4, *Cosa NON dimostra un gate verde*.
+
+\*\*\*\* **speed-demon è 🟢 come strumento, e per un giorno solo.** Costruito e collaudato il 2026-07-30 sullo stesso banco degli altri tre agenti — `banco-prova-negozio`, che non era stato fatto per lui: 42 test sugli script, gate a 7 passi, 5 classi di sabotaggio su 5 rosse, 4 difetti della skill trovati e corretti (tre erano falsi verdi o diagnosi bugiarde). Ha trovato **tre difetti SEO veri** su un progetto che Lighthouse valutava **SEO 100** — nessun canonical, lo stesso `<title>` su ogni rotta, il gestionale indicizzabile. Ma `agenti/speed-demon/STATO.md` lo dichiara **non ancora usabile su un progetto cliente**, e per un motivo che gli altri non hanno: **su quel banco non c'era niente da ottimizzare** (100/100 in partenza, due pagine senza immagini), quindi `plan` e `tune` non sono mai stati messi alla prova su un guadagno vero, e manca il collaudo avversario indipendente. Verbale: `COSTRUZIONE-2026-07-30.md`.
 
 \*\*\* **flow-sentinel è 🟢 come strumento, non come agente pronto alla consegna.** Costruito e collaudato in modo indipendente il 2026-07-28, poi **usato su un consumatore reale il 2026-07-30**: 106 test sugli script, gate a 7 passi con id stabili, 10 difetti trovati dal collaudo avversario e corretti uno per commit (7 erano falsi verdi). Il terzo banco — `banco-prova-negozio`, l'unico **scritto da altri agenti** — ha dato batteria 15/15 e gate 7/7, ma solo dopo aver scoperto che **nessuno riusciva ad accedere al gestionale** che due gate verdi avevano già firmato, e che il passo `app-viva` dichiarava viva l'app di un altro progetto. Resta **non provato su un progetto cliente**: il contratto dei flussi l'ha confermato l'orchestratore, non un committente, e il comando `evolve` non l'ha mai eseguito nessuno. Verbali: `COSTRUZIONE-2026-07-28.md` · `COLLAUDO-2026-07-28.md` · `COLLAUDO-P3-2026-07-30.md`.
 

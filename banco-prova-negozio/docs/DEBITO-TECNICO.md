@@ -81,7 +81,24 @@ l'app senza chiedere. Il gate dei flussi va lanciato con `--url`. Dal 2026-07-30
 la batteria eredita l'URL che il gate ha misurato, quindi un'app sbagliata
 produce un rosso rumoroso invece di un verde silenzioso.
 
-### 3.3 `auth.identities` c'e', nessun provider esterno e' configurato
+### 3.3 `NEXT_PUBLIC_SITE_URL` decide il canonical, e non e' impostata
+
+Dal 2026-07-30 ogni pagina dichiara il proprio `canonical`, risolto contro
+`metadataBase`. Se quella variabile non e' impostata in produzione, il sito
+pubblicato dichiara come canonico `http://127.0.0.1:3000` e regala la propria
+autorita' a un indirizzo che non esiste. **Prima non serviva a niente; da oggi
+e' la differenza fra un sito indicizzato e uno che chiede di non esserlo.**
+Va verificata sull'HTML servito dal dominio vero, non nel sorgente.
+Vedi `docs/handoff/15-speed-demon.md` §6.
+
+### 3.4 `sitemap.ts` e `robots.ts` non esistono
+
+Rimandati, non rifiutati: con due pagine il guadagno e' teorico, ma vanno
+scritti prima di pubblicare su un dominio vero. Nessun passo di gate li
+controlla — il gate di Speed Demon guarda i metatag di pagina e ignora i due
+file che dicono a un motore di ricerca *cosa esiste*.
+
+### 3.5 `auth.identities` c'e', nessun provider esterno e' configurato
 
 Il seed scrive l'identita' `email` di ogni utente dal 2026-07-30. Nessun OAuth
 e' configurato, quindi il percorso che quelle righe servono non e' mai stato
