@@ -1,2 +1,0 @@
-# scripts/ = strumenti deterministici eseguibili (Node/shell). Tutto ciò che si può
-# verificare senza LLM va qui: scansioni, validazioni, generazione albero file.

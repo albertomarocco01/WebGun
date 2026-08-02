@@ -105,10 +105,10 @@ In pipeline lo Specchio non sparisce. Il modello assunto si **scrive** nell'hand
 | 3 | `cucitura-ui` | la cucitura è l'unica fonte delle primitive e non ha dentro logica di dominio | lettura dei sorgenti | cucitura assente o vuota, nessuna primitiva dichiarata |
 | 4 | `chiavi-e-client` | nessuna chiave di servizio nel sito pubblico, nessun client fuori dai moduli dichiarati | lettura dei sorgenti | zero file letti sotto la radice pubblica |
 | 5 | `a11y-statica` | pagine pubbliche e cucitura passano `eslint-plugin-jsx-a11y` | ESLint della **skill** | ESLint assente, o nessun file da lintare |
-| 6 | `app-identita` | l'URL sotto esame è una **build di produzione di questo progetto**, non di ieri e non di un altro | `.next/BUILD_ID` nell'HTML servito | app spenta, `.next/` assente, nessun URL dichiarato, `BUILD_ID` di un altro |
+| 6 | `app-identita` | l'URL sotto esame è una **build di produzione di questo progetto**, non di ieri e non di un altro | `.next/BUILD_ID` nell'HTML servito | app spenta, `.next/BUILD_ID` assente, nessun URL dichiarato né passato — il `BUILD_ID` di **un altro** progetto è invece un `fail`: è un fatto misurato, non una verifica mancata |
 | 7 | `pagine-vive` | ogni pagina dichiarata risponde davvero, e ogni pagina pubblica servita è dichiarata | HTTP sulle rotte del contratto | contratto illeggibile o identità dell'app non stabilita |
 | 8 | `segnaposto-serviti` | nel testo servito non ci sono segnaposto né *lorem ipsum* | HTML delle stesse pagine | nessuna pagina scaricata |
-| 9 | `contenuti-vivi` | i contenuti vengono dal database: la stringa è **nel database e non nei sorgenti**, e le fonti dichiarate sono leggibili dall'anonimo | `psql` + HTML servito | `psql` assente, database non risolvibile, slot senza riga pubblicata o troppo corto per essere distintivo |
+| 9 | `contenuti-vivi` | i contenuti vengono dal database: la stringa è **nel database e non nei sorgenti**, e le fonti dichiarate sono leggibili dall'anonimo | `psql` + HTML servito | `psql` assente, database non risolvibile, valore dello slot troppo corto per essere distintivo. *(Slot dichiarato e senza riga pubblicata: **decisione sospesa** fra MANCANTE e `block`, si chiude col banco — vedi la reference)* |
 | 10 | `contratto-uscita` | l'handoff esiste e la sua riga `Gate:` dice il vero su **questa** esecuzione | `docs/handoff/` | non si applica: è `pass` o `fail` |
 
 **Uno strumento assente vale `MANCANTE`, non `PASS`**, e vale lo stesso per uno strumento presente che non ha letto il suo input (`DECISIONI.md` §18). Un gate rosso per verifiche mancanti resta rosso: qui conta doppio sul passo 9, perché senza database la Legge n°3 non è stata verificata affatto.
@@ -213,11 +213,11 @@ docs/handoff/<n>-vetrina-crafter.md    pagine, fonti, cosa è pubblico, richiest
 
 | File | Quando caricarlo | Stato |
 |---|---|---|
-| `references/verifica-deterministica.md` | prima di toccare il gate: i dieci passi con premessa e MANCANTE, il contratto `--json`, i falsi verdi possibili, i passi scartati | **scritta in P0** |
-| `references/struttura-pubblica.md` | quando generi lo scaffold: radice pubblica, layout, navigazione, la cucitura e le sue regole, il client anonimo, dove sta cosa | P1 |
-| `references/pagine-e-dati.md` | quando generi una pagina: composizione, query nei moduli, rotte dinamiche e `generateStaticParams`, stati vuoti, `not-found`, `title` e `description` dalla fonte dichiarata | P1 |
-| `references/contenuti-in-pagina.md` | quando una pagina mostra contenuti editabili: lettura degli slot pubblicati, testo e non HTML, cosa fare se lo slot non c'è, strategia di aggiornamento | P1 |
-| `references/sabotaggio.md` | al collaudo: i difetti da piantare, uno per classe, e il rosso atteso per ciascuno | P1 |
+| `references/verifica-deterministica.md` | prima di toccare il gate: i dieci passi con premessa e MANCANTE, il contratto `--json`, i falsi verdi possibili, i passi scartati | scritta in P0 |
+| `references/struttura-pubblica.md` | quando generi lo scaffold: radice pubblica, layout, navigazione, la cucitura e le sue regole, il client anonimo, dove sta cosa | scritta in P1 |
+| `references/pagine-e-dati.md` | quando generi una pagina: composizione, query nei moduli, rotte dinamiche e `generateStaticParams`, stati vuoti, `not-found`, `title` e `description` dalla fonte dichiarata | scritta in P1 |
+| `references/contenuti-in-pagina.md` | quando una pagina mostra contenuti editabili: lettura degli slot pubblicati, testo e non HTML, cosa fare se lo slot non c'è, strategia di aggiornamento | scritta in P1 |
+| `references/sabotaggio.md` | al collaudo: i difetti da piantare, uno per classe, e il rosso atteso per ciascuno | scritta in P1 — **procedura non ancora eseguita**: senza banco nessuna classe è stata provata |
 
 Non duplicano nulla di quanto sta già scritto altrove: `agenti/schema-forge/references/rls-supabase.md` per le policy, `agenti/gestionale-crafter/references/contenuti-editabili.md` per il modello degli slot, `agenti/speed-demon/references/seo.md` per metatag e indicizzazione, `agenti/code-maniac/references/costituzione.md` e `best-practices.md` per priorità e convenzioni, `agenti/code-maniac/resources/templates/struttura_directory.md` per la collocazione dei file.
 
@@ -225,14 +225,16 @@ Non duplicano nulla di quanto sta già scritto altrove: `agenti/schema-forge/ref
 
 | File | Cosa | Stato |
 |---|---|---|
-| `scripts/verify.mjs` | il gate — dieci passi, `id` stabili, uscite 0/1/2 | P1 |
-| `scripts/vetrina-audit.mjs` | guscio di I/O dei controlli statici: legge i sorgenti e stampa cosa ha letto | P1 |
-| `scripts/audit-lib.mjs` | **le regole** statiche (cucitura, chiavi e client), funzioni pure senza I/O | P1 |
-| `scripts/progetto-lib.mjs` | **le regole del contratto**: pagine dal contratto, ancoraggio alle rotte, verdetto dell'handoff | P1 |
-| `scripts/*.test.mjs` | test degli script — `node --test "scripts/**/*.test.mjs"` dalla cartella della skill | P1 |
-| `resources/config/eslint-a11y.config.mjs` | la configurazione di `jsx-a11y` che viaggia con la skill | P1 |
-| `resources/templates/vetrina.md` | modello del contratto della vetrina | **scritto in P0** |
-| `resources/templates/handoff-vetrina-crafter.md` | modello del file di handoff | **scritto in P0** |
+| `scripts/verify.mjs` | il gate — dieci passi, `id` stabili, uscite 0/1/2 | scritto in P1, **mai eseguito su un progetto vero** |
+| `scripts/vetrina-audit.mjs` | guscio di I/O dei controlli statici: legge i sorgenti, lancia ESLint, stampa cosa ha letto | scritto in P1 |
+| `scripts/audit-lib.mjs` | **le regole** sui sorgenti (cucitura, chiavi e client), funzioni pure senza I/O | scritto in P1 |
+| `scripts/progetto-lib.mjs` | **le regole** del contratto e dell'app servita: pagine, rotte, segnaposto, contenuti, verdetto dell'handoff | scritto in P1 |
+| `scripts/*.test.mjs` | test degli script — `npm test` dalla cartella della skill (**113 verdi**) | scritti in P1 |
+| `resources/config/eslint-a11y.config.mjs` | la configurazione di `jsx-a11y` che viaggia con la skill | scritta in P1 |
+| `resources/templates/vetrina.md` | modello del contratto della vetrina | scritto in P0 |
+| `resources/templates/handoff-vetrina-crafter.md` | modello del file di handoff | scritto in P0 |
+
+Il comando dei test è scritto **per esteso** e non con un glob: `node --test "scripts/**/*.test.mjs"` funziona su Node 24 e **non** su Node 20 (dove il pattern è trattato come un percorso letterale), mentre `node --test scripts` fa l'opposto. Elencare i tre file è l'unica forma che gira su entrambi.
 
 Le regole stanno nelle `*-lib.mjs` e non nei gusci per lo stesso motivo di schema-forge e gestionale-crafter: una regola che si può eseguire solo con un progetto costruito e servito davanti è una regola che può restare spenta per mesi senza che nessuno lo sappia. **Una regola nuova nasce nella lib, col suo test.**
 

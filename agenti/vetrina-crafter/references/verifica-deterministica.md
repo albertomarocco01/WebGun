@@ -196,14 +196,21 @@ Un audit su una cartella che non esiste non deve poter somigliare a un audit pul
   di dev server; l'app risponde. Il dettaglio stampa URL e `BUILD_ID` **anche sul verde**
   (`DECISIONI.md` §11: un gate che ha guardato l'app sbagliata non deve poter assomigliare
   a un gate che ha guardato la tua).
+  **Il `BUILD_ID` di un altro progetto è un `fail`, non un MANCANTE** (correzione del
+  direttore in revisione della P0). Un'app che risponde con un `BUILD_ID` diverso non è
+  una verifica che non si è potuta fare: è un fatto misurato — *stai guardando un altro
+  sito* — e il precedente è `build-produzione` di speed-demon, che su quel caso chiude
+  FAIL con la diagnosi. I passi a valle restano MANCANTI, perché quelli sì non hanno
+  potuto misurare niente.
 - **Rilievi:** `issue` se il file sorgente più recente sotto `src/` è **più recente** di
   `.next/BUILD_ID`: la build servita potrebbe non contenere le ultime modifiche, e tutto
   ciò che i passi 7-9 leggeranno parlerebbe di un'altra versione del sito. Si esce
   rilanciando `npm run build`, e converge in un giro — come il ciclo della riga `Gate:`.
   Falso positivo dichiarato: un `git checkout` o un formattatore che tocca file senza
   cambiarli.
-- **MANCANTE quando:** l'app non risponde; `.next/BUILD_ID` non c'è; nessun URL è stato
-  dichiarato né passato; il `BUILD_ID` servito è di un altro progetto.
+- **MANCANTE quando:** l'app non risponde; `.next/BUILD_ID` non c'è (il progetto non è mai
+  stato costruito); nessun URL è stato dichiarato né passato. Tre premesse assenti, non
+  tre esiti.
 - **Perché esiste.** L'ha pagato speed-demon. Il suo diciassettesimo difetto — il più
   grave — era che la porta dichiarata in un contratto **firmato** era occupata, su quella
   macchina, dal sito di **un'altra azienda**. `--url` obbligatorio impedisce al gate di
@@ -222,6 +229,22 @@ Un audit su una cartella che non esiste non deve poter somigliare a un audit pul
     fra le pagine né fra le **escluse** del contratto è un `issue` col suo percorso: è una
     pagina pubblica che nessuno ha firmato. Le rotte sotto le `radiciEscluse` — che si
     popolano da `gestionale.config.json` quando c'è — non contano.
+
+    **Come si chiama e cosa misura davvero** (precisazione del direttore in revisione
+    della P0). Il nome dice «servita», la misura legge i **sorgenti**: questa direzione
+    enumera l'albero delle rotte dai file `page.tsx` sotto la radice pubblica, non
+    dall'app accesa. La differenza non è teorica — **una rotta che nessun `page.tsx`
+    rappresenta questa direzione non la vede**: un `route.ts`, una rotta servita da un
+    `middleware`, una riscrittura di `next.config`, una pagina generata da un catch-all
+    che non ha un file proprio. Sono tutte cose che un visitatore raggiunge e che qui non
+    compaiono. Enumerarle dall'app vorrebbe dire strisciare il sito, cioè fare il mestiere
+    di un crawler dentro un gate: si è scelta la misura che si può fare in modo
+    deterministico, e la si dichiara per quello che è.
+    I segmenti dinamici si confrontano come **modelli**, non come testo: `[slug]` vale
+    `[^/]+` e `[...tutto]` vale il resto del percorso, così la pagina che il contratto
+    dichiara come istanza rappresentante (`/catalogo/acero-palmato`) copre la rotta
+    `/catalogo/[slug]` invece di lasciarla scoperta. I gruppi di rotta `(pubblico)` non
+    compaiono nell'URL e si tolgono dal percorso.
 - **MANCANTE quando:** premessa mancante, cioè contratto illeggibile o identità dell'app
   non stabilita. Interrogare pagine su un'app che non si sa quale sia produce un esito
   che non è un esito, e leggerlo come «le pagine non rispondono» manda qualcuno a cercare
@@ -273,11 +296,22 @@ rende verificabile la Legge n°3.
   senza rigenerazione: il cliente cambierà il testo dal gestionale e non vedrà cambiare
   niente finché qualcuno non ripubblica. È `issue` e non `block` perché un sito che si
   ripubblica a ogni modifica è una scelta legittima — **se è dichiarata**.
-- **MANCANTE quando:** `psql` non c'è; il database non è risolvibile; uno slot dichiarato
-  non ha nessuna riga pubblicata; il valore è **più corto della soglia distintiva**
-  (`lunghezzaMinimaFrammento`, ripiego 24 caratteri). Su un valore corto la ricerca non
-  prova niente in nessuna delle due direzioni: si dichiara che quello slot non è stato
-  verificato, invece di far finta.
+- **MANCANTE quando:** `psql` non c'è; il database non è risolvibile; il valore dello slot
+  è **più corto della soglia distintiva** (`lunghezzaMinimaFrammento`, ripiego 24
+  caratteri). Su un valore corto la ricerca non prova niente in nessuna delle due
+  direzioni: si dichiara che quello slot non è stato verificato, invece di far finta.
+
+> **DECISIONE SOSPESA — slot dichiarato senza nessuna riga pubblicata.**
+> La P0 lo classificava MANCANTE. In revisione il direttore ha osservato che somiglia
+> di più a un `block`: il contratto dichiara un contenuto che nel database non esiste,
+> e questo è un fatto misurato, non una verifica che non si è potuta fare. **La scelta
+> non si prende a tavolino:** il mandato di P1 dice di provare i due casi sul banco e
+> decidere con la misura accanto, e al 2026-08-02 il banco non esiste (Docker assente su
+> questa macchina). Finché non esiste, il codice implementa il caso come **MANCANTE** —
+> il comportamento della P0 firmata — e lo marca con `DECISIONE SOSPESA` accanto alla
+> riga, con un test che fissa il comportamento **attuale** e non quello desiderato.
+> Indovinarla adesso è esattamente il difetto che il collaudo avversario è pagato per
+> trovare.
 - **Due dettagli che in P1 decidono se questo passo funziona o mente.**
   1. Il confronto si fa **dopo aver decodificato le entità HTML e compattato gli spazi**:
      `L'orto d'inverno` arriva in pagina come `L&#x27;orto d&#x27;inverno`, e in italiano

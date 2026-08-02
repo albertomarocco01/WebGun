@@ -1,0 +1,24 @@
+// Configurazione knip degli script di Vetrina Crafter.
+// Ogni esenzione ha la motivazione sulla riga sopra: un'esenzione senza motivo
+// scritto e' un'esenzione che nessuno rimettera' mai (DECISIONI.md §8).
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+
+  // `verify.mjs` e `vetrina-audit.mjs` sono ENTRY POINT da riga di comando, non
+  // moduli importati; la configurazione dell'accessibilita' la carica ESLint per
+  // percorso (`--config`), non un import. Senza queste righe knip li dichiara
+  // file morti.
+  "entry": [
+    "scripts/verify.mjs",
+    "scripts/vetrina-audit.mjs",
+    "scripts/*.test.mjs",
+    "resources/config/eslint-a11y.config.mjs"
+  ],
+  "project": ["scripts/**/*.mjs", "resources/config/**/*.mjs"],
+
+  // jscpd non si importa: lo ESEGUE `code-maniac scan` come binario.
+  // eslint-plugin-jsx-a11y e typescript-eslint li importa la configurazione
+  // dell'accessibilita', che knip legge; typescript e' il parser che
+  // typescript-eslint richiede a sua volta.
+  "ignoreDependencies": ["jscpd"]
+}
