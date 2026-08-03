@@ -161,13 +161,42 @@ function leggiCatalogo({ dbUrl, schemas, tests }) {
         where n.nspname in (${list}) and c.relkind = 'r'
           and a.attnum > 0 and not a.attisdropped`
     ),
-    // 7. tabelle con un `grant` a anon/authenticated. La trappola inversa: RLS e
-    //    policy perfette non servono a niente se il ruolo del client non ha il
-    //    permesso sulla tabella — dalla Data API non legge nulla.
-    grants: q(
-      `select distinct table_schema, table_name
-         from information_schema.role_table_grants
-        where table_schema in (${list}) and grantee in ('anon', 'authenticated')`
+    // 7. QUALI privilegi CRUD ha davvero ogni ruolo del client, tabella per
+    //    tabella. La trappola inversa: RLS e policy perfette non servono a
+    //    niente se il ruolo non ha il permesso — dalla Data API non legge nulla.
+    //
+    //    Questa query ha SOSTITUITO un `select distinct` su
+    //    `information_schema.role_table_grants` filtrato per il solo `grantee`.
+    //    Quella forma non guardava QUALE privilegio, e il 2026-08-03 e' stata
+    //    misurata muta su uno schema interamente illeggibile: le immagini
+    //    Supabase nuove concedono `Dxtm` (TRUNCATE, REFERENCES, TRIGGER,
+    //    MAINTAIN — zero CRUD), la tabella compariva lo stesso in
+    //    `role_table_grants` con `privilege_type = 'TRUNCATE'`, e la regola
+    //    taceva su 18 tabelle su 18.
+    //
+    //    `has_any_column_privilege` invece di `has_table_privilege`: un `grant
+    //    update (colonna)` NON compare in `relacl` (sta in `pg_attribute.attacl`,
+    //    ../../DECISIONI.md §22) ed e' la difesa PRESCRITTA contro
+    //    l'auto-promozione. Con `has_table_privilege` la forma corretta
+    //    risulterebbe un difetto: il falso positivo peggiore, quello sul rimedio
+    //    che la skill stessa insegna.
+    //    `delete` fa eccezione e la eccezione e' di Postgres, non nostra: non
+    //    esiste un `delete` per colonna, e chiederlo e' un errore di esecuzione
+    //    («unrecognized privilege type: "DELETE"», misurato su 17.6) — cioe' un
+    //    audit MANCANTE, non un audit severo.
+    privilegi: q(
+      `select n.nspname, c.relname, r.rolname, p.priv
+         from pg_class c
+         join pg_namespace n on n.oid = c.relnamespace
+        cross join (values ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE')) as p (priv)
+        cross join pg_roles r
+        where n.nspname in (${list}) and c.relkind = 'r'
+          and r.rolname in ('anon', 'authenticated')
+          and case
+            when p.priv = 'DELETE' then has_table_privilege(r.oid, c.oid, p.priv)
+            else has_any_column_privilege(r.oid, c.oid, p.priv)
+          end
+        order by 1, 2, 3, 4`
     ),
     // 8. grant di UPDATE sull'INTERA tabella. `role_table_grants` legge `relacl`
     //    e quindi NON elenca i grant per colonna (verificato su Postgres reale

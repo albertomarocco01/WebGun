@@ -371,37 +371,154 @@ test("la select di un'ALTRA tabella non copre questa", () => {
   assert.match(findings[0].object, /public\.orders/);
 });
 
-// ─── regola 7 — la trappola inversa: RLS in ordine, nessun `grant` ───────────
-// Colonne di `information_schema.role_table_grants` verificate su Postgres
-// reale il 2026-07-27: grantee · table_schema · table_name · privilege_type.
+// ─── regola 7 — la policy promette, il privilegio non concede ────────────────
+// `privilegi` arriva da `has_any_column_privilege` (rls-audit.mjs, query 7): una
+// riga [schema, tabella, ruolo, privilegio] ESISTE solo se il ruolo quel
+// privilegio ce l'ha davvero, a livello di tabella o di colonna. Verificato su
+// Postgres 17.6 reale il 2026-08-03 sul banco veterinario.
 
-test("regola 7: tabella con RLS e policy ma senza grant → issue", () => {
+const TABELLA_CON_POLICY = [["public", "orders", "true", "3", "true"]];
+const POLICY_LETTURA_ANON = [
+  ["public", "orders", "chiunque legge", "SELECT", "anon,authenticated", "true", ""],
+];
+
+test("regola 7: policy di select per anon ma anon non ha select → block", () => {
   const findings = regolaGrant({
-    tabelle: [["public", "orders", "true", "3", "true"]],
-    grants: [],
+    tabelle: TABELLA_CON_POLICY,
+    policy: POLICY_LETTURA_ANON,
+    privilegi: [["public", "orders", "authenticated", "SELECT"]], // anon: niente
   });
-  assert.deepEqual(gravita(findings), ["issue"]);
-  assert.equal(findings[0].object, "public.orders");
-  assert.match(findings[0].hint, /grant select on public\.orders to anon, authenticated;/);
+  assert.deepEqual(gravita(findings), ["block"]);
+  assert.equal(findings[0].object, "public.orders → anon");
+  assert.match(findings[0].message, /NESSUN privilegio CRUD/);
+  assert.match(findings[0].hint, /grant select on public\.orders to anon;/);
 });
 
-test("regola 7: tabella con il grant → nessun finding", () => {
+test("regola 7: i grant giusti per tutti i ruoli promessi → nessun finding", () => {
   assert.deepEqual(regolaGrant({
-    tabelle: [["public", "orders", "true", "3", "true"]],
-    grants: [["public", "orders"]],
+    tabelle: TABELLA_CON_POLICY,
+    policy: POLICY_LETTURA_ANON,
+    privilegi: [
+      ["public", "orders", "anon", "SELECT"],
+      ["public", "orders", "authenticated", "SELECT"],
+    ],
   }), []);
+});
+
+// Il caso che ha fatto nascere questa riscrittura: l'immagine Supabase nuova
+// concede `Dxtm` (TRUNCATE, REFERENCES, TRIGGER, MAINTAIN — zero CRUD). La
+// tabella compariva lo stesso in `role_table_grants`, e la regola vecchia la
+// PROMUOVEVA. Qui `privilegi` non ha nessuna riga per quella tabella, perche'
+// nessuno dei quattro privilegi CRUD e' posseduto: e' il difetto, non l'assenza
+// della query.
+test("regola 7: il caso `Dxtm` — solo TRUNCATE/REFERENCES/TRIGGER → block su entrambi i ruoli", () => {
+  const findings = regolaGrant({
+    tabelle: TABELLA_CON_POLICY,
+    policy: POLICY_LETTURA_ANON,
+    privilegi: [],
+  });
+  assert.deepEqual(gravita(findings), ["block", "block"]);
+  assert.deepEqual(findings.map((f) => f.object),
+    ["public.orders → anon", "public.orders → authenticated"]);
+});
+
+test("regola 7: promessa parziale — c'e' il select, manca l'update → block con l'elenco", () => {
+  const findings = regolaGrant({
+    tabelle: TABELLA_CON_POLICY,
+    policy: [
+      ["public", "orders", "legge i propri", "SELECT", "authenticated", "true", ""],
+      ["public", "orders", "aggiorna i propri", "UPDATE", "authenticated", "true", "true"],
+    ],
+    privilegi: [["public", "orders", "authenticated", "SELECT"]],
+  });
+  assert.deepEqual(gravita(findings), ["block"]);
+  assert.match(findings[0].message, /manca `update`/);
+  assert.doesNotMatch(findings[0].message, /select/);
+});
+
+// Il falso positivo peggiore da evitare: `grant update (colonna)` e' la difesa
+// che questa skill PRESCRIVE contro l'auto-promozione, e non compare in
+// `relacl` (../../DECISIONI.md §22). Con `has_table_privilege` al posto di
+// `has_any_column_privilege` la forma corretta risulterebbe un difetto.
+test("regola 7: un `grant update (colonna)` soddisfa la promessa di update → nessun finding", () => {
+  assert.deepEqual(regolaGrant({
+    tabelle: [["public", "staff", "true", "2", "true"]],
+    policy: [
+      ["public", "staff", "legge", "SELECT", "authenticated", "true", ""],
+      ["public", "staff", "corregge i recapiti", "UPDATE", "authenticated", "true", "true"],
+    ],
+    privilegi: [
+      ["public", "staff", "authenticated", "SELECT"],
+      ["public", "staff", "authenticated", "UPDATE"], // solo su (full_name, phone)
+    ],
+  }), []);
+});
+
+test("regola 7: una policy `for all` promette tutti e quattro i privilegi", () => {
+  const findings = regolaGrant({
+    tabelle: TABELLA_CON_POLICY,
+    policy: [["public", "orders", "lo staff fa tutto", "ALL", "authenticated", "true", "true"]],
+    privilegi: [
+      ["public", "orders", "authenticated", "SELECT"],
+      ["public", "orders", "authenticated", "INSERT"],
+    ],
+  });
+  assert.deepEqual(gravita(findings), ["block"]);
+  assert.match(findings[0].message, /manca `update, delete`/);
+});
+
+test("regola 7: una policy senza `to` (ruolo `public`) promette a entrambi i ruoli", () => {
+  const findings = regolaGrant({
+    tabelle: TABELLA_CON_POLICY,
+    policy: [["public", "orders", "senza to", "SELECT", "{public}", "true", ""]],
+    privilegi: [["public", "orders", "anon", "SELECT"]],
+  });
+  assert.deepEqual(gravita(findings), ["block"]);
+  assert.equal(findings[0].object, "public.orders → authenticated");
 });
 
 test("regola 7: una tabella che ha gia' il suo finding non ne prende un secondo", () => {
   // RLS spenta o zero policy: la regola 1 ha gia' parlato, qui si tace.
   assert.deepEqual(regolaGrant({
     tabelle: [["public", "nuda", "false", "0"], ["public", "senza_policy", "true", "0"]],
-    grants: [],
+    policy: POLICY_LETTURA_ANON,
+    privilegi: [],
   }), []);
 });
 
-test("regola 7: senza la query dei grant non si inventa un verdetto", () => {
-  assert.deepEqual(regolaGrant({ tabelle: [["public", "orders", "true", "3"]] }), []);
+// `service_role` non compare mai in una policy (ha `bypassrls`): questa regola
+// non lo giudica, e non deve inventarsi che gli manchi qualcosa.
+test("regola 7: una policy per il solo `service_role` non promette niente ai ruoli del client", () => {
+  assert.deepEqual(regolaGrant({
+    tabelle: TABELLA_CON_POLICY,
+    policy: [["public", "orders", "servizio", "SELECT", "service_role", "true", ""]],
+    privilegi: [],
+  }), []);
+});
+
+// L'elenco dei mancanti e' in ordine canonico CRUD, non nell'ordine in cui il
+// catalogo ha restituito le policy: due esecuzioni sullo stesso database devono
+// produrre lo stesso messaggio, o il gate non si confronta con se' stesso.
+test("regola 7: l'elenco dei privilegi mancanti non dipende dall'ordine delle policy", () => {
+  const alRovescio = regolaGrant({
+    tabelle: TABELLA_CON_POLICY,
+    policy: [
+      ["public", "orders", "d", "DELETE", "authenticated", "true", ""],
+      ["public", "orders", "u", "UPDATE", "authenticated", "true", "true"],
+      ["public", "orders", "i", "INSERT", "authenticated", "", "true"],
+      ["public", "orders", "s", "SELECT", "authenticated", "true", ""],
+    ],
+    privilegi: [["public", "orders", "authenticated", "SELECT"]],
+  });
+  // ordine di inserimento: delete, update, insert — ordine canonico: il contrario
+  assert.match(alRovescio[0].message, /manca `insert, update, delete`/);
+});
+
+test("regola 7: senza la query dei privilegi non si inventa un verdetto", () => {
+  assert.deepEqual(regolaGrant({
+    tabelle: TABELLA_CON_POLICY,
+    policy: POLICY_LETTURA_ANON,
+  }), []);
 });
 
 // ─── composizione ────────────────────────────────────────────────────────────

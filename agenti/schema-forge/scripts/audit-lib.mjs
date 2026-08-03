@@ -328,27 +328,113 @@ export function regolaColonneDiPolicy({ policy, colonne, indicizzate }) {
   return findings;
 }
 
-// ─── regola 7 — la trappola inversa: RLS in ordine, nessun `grant` ───────────
-// RLS attiva e policy corrette non bastano a rendere una tabella raggiungibile:
-// se `anon`/`authenticated` non hanno il `grant`, dalla Data API la tabella non
-// legge e non scrive NIENTE, e il guasto sembra un bug del frontend. Su Supabase
-// le tabelle nuove non sono sempre esposte d'ufficio: dipende dalle impostazioni
-// della Data API del progetto (references/rls-supabase.md).
-// Si giudica solo dove le altre regole tacciono — tabella con RLS attiva e almeno
-// una policy — altrimenti la stessa tabella prende due findings per un difetto.
-// Righe dei grant: [schema, tabella], gia' filtrate a anon/authenticated.
-export function regolaGrant({ tabelle, grants }) {
-  if (!grants) return []; // la query non c'e': nessun verdetto inventato
-  const concessi = new Set(grants.map((r) => `${pulisci(r[0])}.${pulisci(r[1])}`));
+// ─── regola 7 — la policy promette un accesso che il privilegio non concede ──
+// Due sistemi di permessi in fila, e passano ENTRAMBI o non passa niente: la
+// policy decide QUALI RIGHE, il `grant` decide SE la tabella e' raggiungibile
+// affatto. Una policy di `select` per `anon` su una tabella dove `anon` non ha
+// `select` e' una funzione che non esiste: il client riceve
+// «permission denied for table», o una lista vuota, e sembra un bug del frontend.
+//
+// PERCHE' LA REGOLA E' STATA RISCRITTA (2026-08-03). Prima chiedeva al catalogo
+// una cosa piu' debole — «questa tabella compare in `role_table_grants` per
+// `anon` o `authenticated`?» — senza guardare QUALE privilegio. Misurata sul
+// banco veterinario con l'immagine Supabase nuova: le 18 tabelle avevano
+// `relacl` = `anon=Dxtm` (TRUNCATE, REFERENCES, TRIGGER, MAINTAIN: zero CRUD),
+// comparivano tutte e 18 in `role_table_grants` con `privilege_type` =
+// TRUNCATE/REFERENCES/TRIGGER, e la regola taceva su uno schema in cui NESSUN
+// ruolo del client poteva leggere una riga. La prova che serviva era gia' nel
+// catalogo, alla colonna accanto.
+//
+// GRAVITA' `block`, e non `issue` come prima (../../DECISIONI.md §17: la
+// gravita' si decide da dove sta la prova). Qui la prova e' INTERAMENTE nel
+// catalogo — `pg_policies.cmd`/`roles` contro `has_any_column_privilege` — senza
+// una riga di euristica: non c'e' il caso legittimo da non disturbare. E il
+// danno e' totale e muto: la meta' dello schema che la policy descrive non
+// esiste, e il gate verde la dichiarava consegnabile.
+//
+// Un solo finding per (tabella, ruolo): un difetto, una riga.
+// Righe di `privilegi`: [schema, tabella, ruolo, privilegio] — presenti SOLO se
+// il ruolo il privilegio ce l'ha davvero (a livello di tabella o di colonna).
+const RUOLI_DEL_CLIENT = ["anon", "authenticated"];
+
+// L'ordine canonico del report. Senza, l'elenco dei privilegi mancanti seguirebbe
+// l'ordine in cui il catalogo ha restituito le policy: due esecuzioni sullo
+// stesso database darebbero due messaggi diversi, e un gate che non si confronta
+// con se' stesso non si sa nemmeno rilanciare.
+const ORDINE_CRUD = ["SELECT", "INSERT", "UPDATE", "DELETE"];
+
+const PRIVILEGI_DELLA_POLICY = {
+  SELECT: ["SELECT"],
+  INSERT: ["INSERT"],
+  UPDATE: ["UPDATE"],
+  DELETE: ["DELETE"],
+  ALL: ["SELECT", "INSERT", "UPDATE", "DELETE"],
+};
+
+// Quali privilegi CRUD ogni ruolo del client HA, per tabella.
+const privilegiPosseduti = (privilegi) => {
+  const posseduti = new Map(); // "schema.tabella|ruolo" -> Set(privilegi)
+  for (const r of privilegi) {
+    const [schema, tabella, ruolo, privilegio] = riga(r);
+    const chiave = `${schema}.${tabella}|${ruolo}`;
+    if (!posseduti.has(chiave)) posseduti.set(chiave, new Set());
+    posseduti.get(chiave).add(privilegio.toUpperCase());
+  }
+  return posseduti;
+};
+
+// Quali privilegi le policy PROMETTONO, per tabella e per ruolo del client.
+// `public` in una policy vale «tutti i ruoli», quindi promette a entrambi.
+const privilegiPromessi = (policy) => {
+  const promessi = new Map();
+  for (const r of policy ?? []) {
+    const [schema, tabella, , cmd, ruoli] = riga(r);
+    const richiesti = PRIVILEGI_DELLA_POLICY[cmd.toUpperCase()];
+    if (!richiesti) continue;
+    const suoi = insiemeRuoli(ruoli);
+    const destinatari = RUOLI_DEL_CLIENT.filter(
+      (ruolo) => suoi.has(ruolo) || suoi.has("public")
+    );
+    for (const ruolo of destinatari) {
+      const chiave = `${schema}.${tabella}|${ruolo}`;
+      if (!promessi.has(chiave)) promessi.set(chiave, new Set());
+      for (const p of richiesti) promessi.get(chiave).add(p);
+    }
+  }
+  return promessi;
+};
+
+export function regolaGrant({ tabelle, policy, privilegi }) {
+  if (!privilegi) return []; // la query non c'e': nessun verdetto inventato
+  const posseduti = privilegiPosseduti(privilegi);
+  const promessi = privilegiPromessi(policy);
   const findings = [];
   for (const r of tabelle) {
     const [schema, tabella, rls, numeroPolicy] = riga(r);
     const obj = `${schema}.${tabella}`;
-    if (!vero(rls) || numeroPolicy === "0" || concessi.has(obj)) continue;
-    findings.push(trova("issue", obj,
-      "RLS e policy in ordine ma nessun `grant` a `anon`/`authenticated`: dalla Data API la tabella non legge nulla, e sembra un bug del frontend",
-      `grant select on ${obj} to anon, authenticated; ` +
-      `— se invece il client non deve raggiungerla, spostala in uno schema non esposto`));
+    // RLS spenta o zero policy: la regola 1 ha gia' parlato, qui si tace —
+    // altrimenti la stessa tabella prende due findings per un difetto solo.
+    if (!vero(rls) || numeroPolicy === "0") continue;
+    for (const ruolo of RUOLI_DEL_CLIENT) {
+      const chiave = `${obj}|${ruolo}`;
+      const promessa = promessi.get(chiave);
+      if (!promessa || promessa.size === 0) continue;
+      const ha = posseduti.get(chiave) ?? new Set();
+      const mancanti = ORDINE_CRUD.filter((p) => promessa.has(p) && !ha.has(p));
+      if (mancanti.length === 0) continue;
+      const elenco = mancanti.map((p) => p.toLowerCase()).join(", ");
+      const rimedio =
+        `grant ${elenco} on ${obj} to ${ruolo}; ` +
+        `— se invece ${ruolo} non deve raggiungerla, la risposta non e' il grant: ` +
+        `si toglie la policy, o la tabella si sposta in uno schema non esposto`;
+      findings.push(ha.size === 0
+        ? trova("block", `${obj} → ${ruolo}`,
+          `la tabella ha RLS e policy per \`${ruolo}\`, ma \`${ruolo}\` non ha NESSUN privilegio CRUD su di essa: dalla Data API non legge e non scrive niente, e il guasto sembra un bug del frontend. Su Supabase un privilegio che non hai scritto in una migrazione non e' un privilegio che hai`,
+          rimedio)
+        : trova("block", `${obj} → ${ruolo}`,
+          `le policy promettono a \`${ruolo}\` un accesso che il privilegio non concede: manca \`${elenco}\`. La policy decide quali righe, il \`grant\` decide se la tabella e' raggiungibile: passano entrambi o non passa niente`,
+          rimedio));
+    }
   }
   return findings;
 }

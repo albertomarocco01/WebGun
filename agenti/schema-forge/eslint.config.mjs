@@ -12,7 +12,11 @@ export default [
     languageOptions: {
       ecmaVersion: 2024,
       sourceType: "module",
-      globals: { console: "readonly", process: "readonly" },
+      // `URL` e' un globale di Node dalla 10: mancava dall'elenco, e
+      // `no-undef` lo segnalava come errore in `verify.test.mjs`. Il rilievo
+      // era vivo dal 2026-08-03 e invisibile, perche' su questa macchina i
+      // `node_modules` della skill non erano installati e ESLint non girava.
+      globals: { console: "readonly", process: "readonly", URL: "readonly" },
     },
     rules: {
       complexity: ["warn", 15],
