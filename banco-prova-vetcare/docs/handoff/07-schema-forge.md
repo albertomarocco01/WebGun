@@ -9,6 +9,15 @@ Progetto: **VetCare Nord** — portale di tre cliniche veterinarie.
   - `20260726120100_prestazioni.sql` — prestazioni e listini
   - `20260726120200_clinico.sql` — visite e cartella clinica
   - `20260726120300_amministrazione.sql` — fatturazione
+  - `20260726140000_promemoria_a_servizio_esterno.sql` — `evolve`: via `reminders`
+  - `20260726140100_rimuove_contrassegni_clienti.sql` — `evolve`: via
+    `owner_staff_flags` (distruttivo autorizzato, dati esportati)
+  - `20260803120000_permessi_espliciti.sql` — **i privilegi di tabella, scritti**
+    (`revoke` poi `grant` per `anon`, `authenticated` e `service_role`). Le
+    quattro migrazioni delle fondamenta non contenevano un solo `grant`: lo
+    schema si appoggiava ai privilegi che l'immagine Supabase concedeva
+    d'ufficio, e quei privilegi sono cambiati due volte in un mese. Vedi
+    `../../../DECISIONI.md` §27
 - Tabelle create: `species`, `clinics`, `staff`, `owners`, `owner_staff_flags`,
   `animals`, `services`, `price_lists`, `price_list_items`, `visits`,
   `medical_records`, `medical_record_revisions`, `diagnoses`, `treatments`,
@@ -65,6 +74,16 @@ Confermato da: **UMANO** (committente recitato dall'auditor del collaudo) il
 | `vaccinations` | — | sola lettura dei propri | tutto |
 | `invoices` / `invoice_lines` | — | sola lettura delle proprie | tutto |
 
+**I privilegi che stanno sotto questa tabella sono scritti**, non ereditati:
+`20260803120000_permessi_espliciti.sql` fa `revoke all` sui tre ruoli e poi
+riconcede riga per riga esattamente ciò che questa tabella dichiara — `anon` solo
+`select` su `clinics`, `services`, `species`; `authenticated` l'unione di ciò che
+le sue policy promettono, tabella per tabella; `service_role` i quattro CRUD, che
+gli servono perché scavalca la RLS ma **non** i privilegi. Nessuno dei tre
+conserva `truncate`, `references`, `trigger` o `maintain`: la RLS non li filtra —
+col default dell'immagine, `set role anon; truncate public.animals cascade`
+riusciva.
+
 Policy `using (true)` presenti e perché sono legittime: **una sola** —
 `species` («specie visibili a tutti»). È una tabella di codici (cane, gatto,
 coniglio): non contiene dati di nessuno. L'audit la segnala come `issue`; resta
@@ -105,7 +124,7 @@ per scelta, documentata qui.
 
 ## 6. Residui di `verify` e problemi noti
 
-**Gate: ROSSO** (2 falliti, 0 verifiche mancanti su 9 passi) — rilancio del 2026-07-28.
+**Gate: ROSSO** (2 falliti, 0 verifiche mancanti su 9 passi) — rilancio del 2026-08-03.
 
 > Questo schema **non è consegnabile**, ed è tracciato apposta in quello stato: è
 > il caso di prova di uno schema difettoso per le regole del blocco n°1
@@ -124,9 +143,39 @@ per scelta, documentata qui.
 |---|---|---|
 | `audit-rls` | **block** | `public.staff.job_title`: colonna che decide gli accessi, scrivibile dal proprietario della riga. Un veterinario fa `update public.staff set job_title = 'direttore'` sulla **propria** riga e passa da 2 visite / 0 note interne a 6 / 1, perché `puo_vedere_clinica()` decide in base a quella colonna |
 | `audit-rls` | issue | `public.visits.status`: macchina a stati vincolata solo in `update`. `insert … values (…, 'fatturata')` passa: il trigger di transizione non scatta su `insert`, e il `check` enumera il dominio invece di vietare gli stati d'arrivo |
-| `pgtap` | **fail** | asserzioni 22 e 23 su 23: «il veterinario non si promuove a direttore sulla propria riga» e «una visita non nasce già fatturata» |
+| `pgtap` | **fail** | asserzioni 22 e 23 su 23 di `rls_negativi.test.sql`: «il veterinario non si promuove a direttore sulla propria riga» e «una visita non nasce già fatturata» |
 
 **Le tre migrazioni che porterebbero il banco a verde** — non scritte, perché sono lavoro sul banco e il banco serve rosso: `grant update` per colonna su `staff` (togliendo `job_title`), vincolo sullo stato iniziale di `visits`, `revoke execute … from public, anon` sulle undici funzioni `security definer`.
+
+### Una quarta riga rossa, nata il 2026-08-03 e non ancora decisa
+
+`rls_policy.test.sql` esegue 10 asserzioni su 11 e si ferma sull'undicesima:
+
+```
+set local role anon;  select count(*) from public.owners;
+→ ERROR: permission denied for table owners (SQLSTATE 42501)
+Parse errors: Bad plan.  You planned 11 tests but ran 10.
+```
+
+Non è una regressione dello schema, ed è il contrario di un allentamento: quel
+test — «la chiave anonima non legge nessun cliente» — asseriva **zero righe**,
+cioè la forma del rifiuto che dava la RLS quando `anon` aveva `select` su tutto
+per grazia del default dell'immagine. Il modello di accesso qui sopra dice
+`owners → anon: —`, e `20260803120000_permessi_espliciti.sql` scrive esattamente
+quello: `anon` non ha `select` su `owners`, quindi il rifiuto arriva **prima**
+della RLS. Il cliente anonimo continua a non leggere nessun cliente — con più
+margine di prima, non con meno.
+
+Il test è un consumatore dello schema come il seed (`STATO.md` §Il primo
+consumatore a valle, punto 2), e questo è il caso in cui va riallineato: la forma
+corretta oggi è `throws_ok(…, '42501', …)`, che asserisce qualcosa di **più
+forte** di `count = 0`. Non è stato fatto qui perché chi ha scritto la migrazione
+non riscrive il test che la giudica: la riga resta rossa e dichiarata, e la
+decisione è del proprietario del banco.
+
+L'alternativa — una riga `grant select on public.owners to anon` — riporterebbe
+il test al verde concedendo un privilegio che il modello di accesso nega. Non è
+stata presa: è la scorciatoia che questa migrazione esiste per chiudere.
 
 ### Residui che restano anche a gate verde
 
@@ -138,4 +187,4 @@ per scelta, documentata qui.
 | debito | i promemoria vaccinali non esistono più nello schema: `reminders` è stata droppata dall'`evolve` del 26/07 (servizio esterno) | scelta del committente, dati esportati in `docs/export/promemoria-2026-07-26.csv` | nessuno |
 | debito | nessuna anonimizzazione automatica alla cancellazione GDPR di un cliente | `owners.anonymized_at` esiste, la procedura no | prima del rilascio |
 
-Verifiche mancanti (strumenti non eseguiti): **nessuna** — 0 `skipped` su 9 passi. `semgrep` e `gitleaks` non sono nel gate dello schema (sono di `code-maniac`) e non sono installati su questa macchina.
+Verifiche mancanti (strumenti non eseguiti): **nessuna** — 0 `skipped` su 9 passi, verificato col rilancio del 2026-08-03. `sqlfluff` (4.2.2) e `squawk` (2.61.0) sono installati e leggono **tutte e sette** le migrazioni: `20260726120200_clinico.sql` sta a 20 384 byte e il default `large_file_skip_byte_limit = 20000` lo faceva saltare in silenzio, quindi il `.sqlfluff` di questo progetto porta ora `large_file_skip_byte_limit = 0`, con la motivazione nel file. `semgrep` e `gitleaks` non sono nel gate dello schema (sono di `code-maniac`) e non sono installati su questa macchina.
