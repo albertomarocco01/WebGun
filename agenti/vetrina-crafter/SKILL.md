@@ -178,7 +178,7 @@ Dieci `pass` su dieci dicono una cosa precisa e non di più. Questa sezione esis
 
 - **Che le pagine dichiarate siano quelle giuste.** Il gate legge la **firma**, non la sua verità. Un sito impeccabile delle pagine sbagliate passa dieci passi su dieci ed è comunque da buttare. È lo stesso limite che speed-demon dichiara sull'elenco delle pagine che contano e flow-sentinel sull'elenco dei flussi: non è automatizzabile, si chiude con un committente.
 - **Che quello che la pagina mostra *debba* essere pubblico.** Il gate vede un dato in pagina; non sa se qualcuno voleva che ci fosse. Una colonna che la policy dell'anonimo concede per distrazione finisce in vetrina, e da lì nell'indice di un motore di ricerca, con dieci passi verdi sopra. La difesa è a monte (l'audit RLS e i test negativi di schema-forge) e a fianco (la domanda strutturale dello Specchio, che è di un umano proprio per questo).
-- **Che una colonna selezionata e non disegnata non sia arrivata al browser.** Il gate guarda ciò che è **in pagina**; un campo che la query porta con sé e che il componente non mostra viaggia lo stesso dentro l'HTML servito e dentro il payload RSC. Nasconderlo in pagina non è nasconderlo.
+- **Che quello che la pagina non mostra non sia pubblico.** Ed è più grave di come questa riga era scritta in P0. La P0 diceva che *una colonna selezionata e non disegnata arriva lo stesso al browser*: **misurato in P1, e non è vero** per una pagina resa interamente sul server — aggiunte `id, pubblicato, created_at` al `select` del banco, l'HTML servito e il payload RSC ne contengono **zero occorrenze**, perché di un Server Component viaggia l'*uscita*, non i suoi dati. Vale invece appena la riga passa a un Client Component come prop, o se la query si fa nel browser. Quello che è pubblico davvero è un'altra cosa: **la chiave anonima sta nel bundle**, e con quella chiunque chiede a PostgREST le colonne che il `grant` e la policy concedono, `?select=` alla mano — anche quelle che nessuna pagina seleziona. Misurato sul banco: `?select=id,created_at,in_evidenza` risponde. **Ciò che è pubblico lo decide il modello di accesso a monte, non l'elenco del nostro `select`** — e per questo l'handoff §4 si compila leggendo le policy, non solo le query.
 - **Che il sito sia bello, o che la gerarchia funzioni.** Non esiste un controllo deterministico del design. Il gate prova che la pagina esiste, che è finita e che legge da dove dice; che sia la pagina giusta, fatta bene, lo dice chi firma.
 - **Che la cucitura sia rispettata nella sostanza.** `cucitura-ui` intercetta un import dal percorso sbagliato; **non** intercetta un bottone reimplementato dentro la pagina con classi a mano. Quella è la forma in cui §21 si perde davvero, ed è difesa dalla prosa e dalla revisione, non dallo strumento.
 - **Che il contenuto resti fresco.** `contenuti-vivi` prova che al momento della misura la stringa stava nel database e non nei sorgenti. Su una pagina generata staticamente, una modifica fatta dal cliente il giorno dopo non si vede finché qualcuno non ripubblica — e il gate lo segnala come `issue` **solo se** il contratto non l'ha dichiarato.
@@ -217,7 +217,7 @@ docs/handoff/<n>-vetrina-crafter.md    pagine, fonti, cosa è pubblico, richiest
 | `references/struttura-pubblica.md` | quando generi lo scaffold: radice pubblica, layout, navigazione, la cucitura e le sue regole, il client anonimo, dove sta cosa | scritta in P1 |
 | `references/pagine-e-dati.md` | quando generi una pagina: composizione, query nei moduli, rotte dinamiche e `generateStaticParams`, stati vuoti, `not-found`, `title` e `description` dalla fonte dichiarata | scritta in P1 |
 | `references/contenuti-in-pagina.md` | quando una pagina mostra contenuti editabili: lettura degli slot pubblicati, testo e non HTML, cosa fare se lo slot non c'è, strategia di aggiornamento | scritta in P1 |
-| `references/sabotaggio.md` | al collaudo: i difetti da piantare, uno per classe, e il rosso atteso per ciascuno | scritta in P1 — **procedura non ancora eseguita**: senza banco nessuna classe è stata provata |
+| `references/sabotaggio.md` | al collaudo: i difetti da piantare, uno per classe, e il rosso atteso per ciascuno | scritta ed **eseguita** in P1 sul 2026-08-03: 22 classi provate, «Esito misurato» compilato per ognuna |
 
 Non duplicano nulla di quanto sta già scritto altrove: `agenti/schema-forge/references/rls-supabase.md` per le policy, `agenti/gestionale-crafter/references/contenuti-editabili.md` per il modello degli slot, `agenti/speed-demon/references/seo.md` per metatag e indicizzazione, `agenti/code-maniac/references/costituzione.md` e `best-practices.md` per priorità e convenzioni, `agenti/code-maniac/resources/templates/struttura_directory.md` per la collocazione dei file.
 
@@ -225,11 +225,11 @@ Non duplicano nulla di quanto sta già scritto altrove: `agenti/schema-forge/ref
 
 | File | Cosa | Stato |
 |---|---|---|
-| `scripts/verify.mjs` | il gate — dieci passi, `id` stabili, uscite 0/1/2 | scritto in P1, **mai eseguito su un progetto vero** |
+| `scripts/verify.mjs` | il gate — dieci passi, `id` stabili, uscite 0/1/2 | scritto in P1 ed **eseguito su un progetto vero**: `banco-prova-controtempo`, VERDE 10/10 |
 | `scripts/vetrina-audit.mjs` | guscio di I/O dei controlli statici: legge i sorgenti, lancia ESLint, stampa cosa ha letto | scritto in P1 |
 | `scripts/audit-lib.mjs` | **le regole** sui sorgenti (cucitura, chiavi e client), funzioni pure senza I/O | scritto in P1 |
 | `scripts/progetto-lib.mjs` | **le regole** del contratto e dell'app servita: pagine, rotte, segnaposto, contenuti, verdetto dell'handoff | scritto in P1 |
-| `scripts/*.test.mjs` | test degli script — `npm test` dalla cartella della skill (**113 verdi**) | scritti in P1 |
+| `scripts/*.test.mjs` | test degli script — `npm test` dalla cartella della skill (**122 verdi**) | scritti in P1 |
 | `resources/config/eslint-a11y.config.mjs` | la configurazione di `jsx-a11y` che viaggia con la skill | scritta in P1 |
 | `resources/templates/vetrina.md` | modello del contratto della vetrina | scritto in P0 |
 | `resources/templates/handoff-vetrina-crafter.md` | modello del file di handoff | scritto in P0 |

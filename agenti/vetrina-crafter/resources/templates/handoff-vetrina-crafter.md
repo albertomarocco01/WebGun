@@ -96,10 +96,22 @@ E' la sezione che questo handoff ha e gli altri no, e sta qui e non in fondo per
 l'unica informazione irreversibile della consegna: un dato pubblicato e' di chi l'ha
 copiato, indicizzato o messo in cache, e nessuna correzione lo riporta indietro.
 
-«Colonne che un anonimo riceve» si compila leggendo la QUERY, non la pagina. Un campo
-selezionato e non disegnato arriva lo stesso al browser, dentro l'HTML servito e dentro
-il payload RSC: il gate non lo segnala — vede solo cio' che e' in pagina — e chi legge
-questo handoff e' l'unico che puo' accorgersene.
+«Colonne che un anonimo riceve» si compila leggendo il MODELLO DI ACCESSO
+dell'handoff di schema-forge, non solo le query. Misurato in P1 sul banco, e cambia
+cosa va scritto qui:
+
+  - una colonna selezionata e non disegnata NON arriva al browser su una pagina resa
+    interamente sul server: di un Server Component viaggia l'uscita, non i suoi dati
+    (zero occorrenze nell'HTML servito e nel payload RSC). Arriva pero' appena quella
+    riga passa a un Client Component come prop, che e' un cambio di una riga;
+  - ma la CHIAVE ANONIMA STA NEL BUNDLE, e con quella chiunque chiede a PostgREST le
+    colonne che il `grant` e la policy concedono — anche quelle che nessuna pagina
+    seleziona. Misurato: `?select=id,created_at,in_evidenza` risponde.
+
+Quindi in questa tabella si scrivono DUE cose diverse e non una: le colonne che la
+pagina fetcha (dalle query) e le colonne che l'anonimo PUO' leggere (dalle policy).
+Se le seconde sono piu' delle prime, la differenza e' pubblicata lo stesso, e il gate
+non la vede: e' la riga che rende questa sezione l'unica difesa che esista.
 -->
 
 ## 5. Decisioni e deroghe

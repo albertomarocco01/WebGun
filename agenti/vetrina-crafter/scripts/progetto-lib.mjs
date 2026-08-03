@@ -507,6 +507,24 @@ function findingsPaginaDichiarata(pagina, risposta) {
  * parametro anti-cache.
  */
 const INDIZI_DEV = Object.freeze([
+  // I due indizi di TURBOPACK, aggiunti in P1 con la misura che li ha imposti.
+  // Sabotaggio del 2026-08-03 sul banco: `next dev` su Next 16, e NESSUNO dei
+  // sette indizi storici scattava — sono tutti dell'era Webpack, e dalla 16
+  // Turbopack e' il default. Il gate diventava rosso lo stesso (per il build id
+  // che non combacia), ma con la diagnosi SBAGLIATA: «sta rispondendo un'altra
+  // applicazione sulla stessa porta», mentre l'applicazione era proprio questa,
+  // servita in sviluppo. Un rosso giusto con una diagnosi bugiarda manda
+  // qualcuno a cercare la cosa sbagliata — a Speed Demon e' costato un
+  // pomeriggio.
+  // Misurato sullo STESSO progetto servito nei due modi nello stesso momento:
+  //   dev  /_next/static/chunks/%5Bturbopack%5D_browser_dev_hmr-client_…js
+  //        /_next/static/chunks/node_modules_next_dist_compiled_next-devtools_…js
+  //   prod /_next/static/chunks/turbopack-3l1jj1uo0j4no.js   (nomi a hash)
+  // La parola `turbopack` da sola NON serve: in produzione c'e' anche li'.
+  // Entrambi gli indizi sono ancorati a un percorso di chunk, cosi' una pagina
+  // che PARLA di HMR o di devtools non li fa scattare.
+  { segno: /\/_next\/static\/chunks\/[^"']*hmr-client/, nome: "chunk `hmr-client` di Turbopack", perche: "il canale di aggiornamento a caldo esiste solo in sviluppo" },
+  { segno: /\/_next\/static\/chunks\/[^"']*next-devtools/, nome: "chunk `next-devtools`", perche: "il bundle degli strumenti di sviluppo non entra in una build di produzione" },
   { segno: /\/_next\/static\/chunks\/[^"']*\?v=/, nome: "chunk con `?v=<timestamp>`", perche: "in produzione i chunk portano l'hash nel nome e non hanno parametro anti-cache" },
   { segno: /app-pages-internals/, nome: "`app-pages-internals`", perche: "e' il bundle interno che serve solo alla dev server" },
   { segno: /\/_next\/static\/development\//, nome: "`/_next/static/development/`", perche: "in produzione la cartella e' l'id di build, non `development`" },
@@ -708,16 +726,25 @@ export function findingsContenuti(dati) {
       continue;
     }
 
-    findings.push(...findingsSlot({ slot: s, pagina, frammento, testoPerPagina, cercaNeiSorgenti }));
+    findings.push(...findingsSlot({ slot: s, pagina, frammento, testoPerPagina, cercaNeiSorgenti, mancanti }));
   }
 
   findings.push(...findingsFontiLeggibili(contratto, conteggiAnon, mancanti));
   return { findings, mancanti };
 }
 
-function findingsSlot({ slot, pagina, frammento, testoPerPagina, cercaNeiSorgenti }) {
+function findingsSlot({ slot, pagina, frammento, testoPerPagina, cercaNeiSorgenti, mancanti }) {
   const findings = [];
   const testo = testoPerPagina.get(pagina.id);
+
+  // La pagina non e' stata scaricata (non risponde, o rimanda altrove): la
+  // meta' «la stringa e' in pagina» NON e' stata verificata, e tacere sarebbe
+  // un `pass` su un controllo che non e' girato. Trovato col sabotaggio della
+  // classe E il 2026-08-03: con `/contatti` a 404 il passo chiudeva «nessun
+  // rilievo» avendo saltato in silenzio due slot su sei.
+  if (testo === undefined) {
+    mancanti.push(`slot \`${slot.chiave}\`: la pagina ${pagina.id} (${pagina.percorso}) non e' stata scaricata — non si e' potuto verificare se il testo compare in pagina`);
+  }
 
   if (testo !== undefined && !testo.includes(frammento)) {
     findings.push({

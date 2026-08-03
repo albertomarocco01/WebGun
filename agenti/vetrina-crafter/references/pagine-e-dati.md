@@ -63,10 +63,28 @@ export async function elencaPiante() {
 }
 ```
 
-**La riga che vale l'intera pagina:** `select` elenca le colonne. Un campo
-selezionato e non disegnato arriva lo stesso al browser, e nessuno dei dieci passi
-del gate se ne accorge — il gate guarda cio' che e' *in pagina*. Chi legge l'handoff
-§4 e' l'unico che puo' vederlo.
+**La riga che vale l'intera pagina:** `select` elenca le colonne. E il motivo per
+cui la elenca e' stato **misurato in P1, e non e' quello che si crede**:
+
+- su una pagina resa interamente sul server, un campo selezionato e non disegnato
+  **non arriva al browser**. Provato sul banco aggiungendo `id, pubblicato,
+  created_at` al `select`: zero occorrenze nell'HTML servito e zero nel payload RSC.
+  Di un Server Component viaggia l'**uscita**, non i suoi dati;
+- **arriva** appena quella riga passa a un Client Component come prop, o se la query
+  si fa nel browser. Ed e' un cambio di una riga (`"use client"`), fatto un mese
+  dopo da qualcun altro, che nessun gate segnala;
+- e soprattutto: **cio' che e' pubblico non lo decide il `select`.** La chiave
+  anonima sta nel bundle, quindi chiunque puo' chiedere a PostgREST le colonne che
+  il `grant` e la policy concedono. Misurato:
+  `curl ".../rest/v1/corsi?select=id,created_at,in_evidenza" -H "apikey: <anon>"`
+  risponde con tre colonne che nessuna pagina seleziona e nessuna disegna.
+
+Quindi: elencare le colonne resta giusto — non fa arrivare meno dati al browser
+oggi, fa in modo che non ne arrivino domani, e dice a chi legge cosa serve davvero.
+Ma la domanda «cosa e' pubblico» si porta **a monte**, ed e' la tabella §Dati
+visibili a un anonimo del contratto piu' il modello di accesso di schema-forge.
+Chi legge l'handoff §4 e' l'unico che puo' accorgersi di una colonna concessa per
+distrazione.
 
 ## Gli stati vuoti non sono un caso limite
 

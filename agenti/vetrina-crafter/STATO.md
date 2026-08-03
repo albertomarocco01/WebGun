@@ -1,24 +1,20 @@
 # Stato — Vetrina Crafter
 
-- **Stato attuale: P1 PARZIALE — codice scritto, gate mai eseguito su un progetto
-  vero.** Esistono le cinque references, i quattro script (due gusci di I/O e due
-  librerie di regole pure), i **113 test verdi**, i guardiani della skill e i due
-  template. **Non esiste il banco**: Docker e lo stack Supabase locale non ci sono su
-  questa macchina (l'attivazione di `VirtualMachinePlatform` fallisce con `0x80073712`,
-  riparazione in corso da parte del direttore), quindi i deliverable 4-9 del mandato
-  P.2 non sono stati toccati per decisione del direttore stesso.
-- **Nessuno dei sette comandi e' stato esercitato**, e nessuno dei dieci passi del gate
-  ha misurato un progetto Next.js vero. Le uniche esecuzioni reali sono: i 113 test,
-  i guardiani sugli script, e **tre percorsi di rifiuto** del gate (cartella che non e'
-  un progetto → uscita 2; nessun `--url` e nessuna riga `URL servito:` → uscita 2;
-  audit senza configurazione → tre MANCANTI, uscita 1).
-- **Non usabile su nessun progetto.** Quello che oggi e' provato sono **le regole**,
-  non il gate: 113 test coprono funzioni pure con input della forma vera, ma nessuna
-  `fetch`, nessuna query `psql` e nessuna build di produzione sono mai state
-  eseguite. La casa ha gia' misurato quanto vale la differenza — sei dei diciassette
-  difetti del collaudo avversario di speed-demon erano **descritti nelle references e
-  non implementati**: *la prosa sapeva, il codice no*. Qui il codice c'e', e non e'
-  ancora stato messo davanti a un'app.
+- **Stato attuale: P1 CONSEGNATA — il gate ha misurato un sito vero, e chiude
+  VERDE 10/10.** Esistono le cinque references, i quattro script, i **122 test
+  verdi**, i guardiani della skill e i due template. Il banco esiste
+  (`banco-prova-controtempo`, Scuola di Musica Controtempo): schema prodotto
+  eseguendo **schema-forge** (gate **VERDE 9/9**), vetrina costruita col flusso
+  vero della skill, **tutti e sette i comandi esercitati**, sabotaggio eseguito
+  su tutte le classi.
+- **Il gate ha trovato tre difetti di sé stesso**, e li ha trovati il
+  sabotaggio, non la lettura: una diagnosi bugiarda sulla dev server di
+  Turbopack, un falso verde su una pagina non scaricata, e un `block` che
+  cercava in pagina l'**UUID di una riga**. Sono i tre motivi per cui questa
+  fase esiste.
+- **Non ancora usabile su un progetto cliente**, e il motivo non è più un
+  difetto della skill: sul banco **il contratto l'ha firmato chi costruiva**, e
+  il gate legge la firma, non la sua verità. Si chiude in P3, con un committente.
 - **Proprietario:** Alberto
 - **Dipendenze:**
   - **A monte:** **schema-forge** (tabelle, viste, policy di lettura per il ruolo
@@ -35,7 +31,7 @@
     esterna che in questo repo non c'e', e un progetto che la adotta lo dichiara come
     deroga in `docs/PROGETTO.md`
 - **Guardiani sugli script:** ESLint **0 errori 0 avvisi** · `knip` **pulito** ·
-  `jscpd` **MANCANTE** (non eseguibile: vedi §Cosa non e' stato fatto) ·
+  `jscpd` **pulito** (7 file, 3 121 righe, 31 173 gettoni, **0 cloni**) ·
   `semgrep`, `gitleaks` e `/code-inquisition` **mai lanciati**.
 
 ## Cosa fa, in una riga
@@ -52,8 +48,7 @@ nel database, o se una chiave di servizio e' raggiungibile dal sito pubblico.
 | Fase | Cosa | Dove | Stato |
 |---|---|---|---|
 | P0 | progettazione: `SKILL.md`, specifica del gate a dieci passi, template del contratto e dell'handoff | qui | **fatta il 2026-08-02**, firmata dal committente (commit `a1ee045`) |
-| P1 | costruzione: references, `scripts/`, guardiani, **banco**, sette comandi esercitati, sabotaggio, gate verde | qui | **parziale il 2026-08-02**: deliverable 1-3 fatti, 4-9 fermi al blocco Docker |
-| P1-bis | il banco e tutto quello che ci gira sopra: `specchio` → `verify`, sabotaggio delle sette classi, gate VERDE 10/10 | chat dedicata, al via del direttore | da fare |
+| P1 | costruzione: references, `scripts/`, guardiani, **banco**, sette comandi esercitati, sabotaggio, gate verde | qui | **consegnata il 2026-08-03** — deliverable 1-3 il 2026-08-03 (commit `b7fa58f · 43ff29f · 2697787`), 4-9 lo stesso giorno dopo P.0-igiene e P.8. Verbale: `COSTRUZIONE-2026-08-03.md` |
 | P2 | collaudo avversario indipendente su **dominio diverso**: caccia ai falsi verdi dei dieci passi | chat vergine (chi costruisce non collauda) | da fare |
 | P3 | primo consumatore reale, col contratto firmato da un **committente** | pacchetto «filo completo» | da fare |
 
@@ -61,54 +56,102 @@ nel database, o se una chiave di servizio e' raggiungibile dal sito pubblico.
 
 | Cosa | Numero | Come e' stato misurato |
 |---|---|---|
-| Test degli script | **113 verdi** | `npm test` (21 suite, 0 falliti, 8,7 s) |
+| Test degli script | **122 verdi** | `npm test` (21 suite, 0 falliti, 4,6 s) |
 | Passi del gate implementati | 10, con `id` stabili e ordine bloccato da un test | `scripts/verify.mjs`, `ID` |
-| Passi del gate **eseguiti su un progetto vero** | **0** | non esiste il banco |
-| Comandi esercitati | **0 su 7** | non esiste il banco |
-| Classi di sabotaggio provate | **0 su 7** (+3 aggiunte, +5 falsi positivi, +5 limiti) | `references/sabotaggio.md`, colonne «Esito misurato» vuote |
-| Regole pure | 2 librerie, 35 funzioni esportate | `audit-lib.mjs` (327 righe) · `progetto-lib.mjs` (829 righe) |
-| Gusci di I/O | 2 | `verify.mjs` (558) · `vetrina-audit.mjs` (295) |
-| References | **5** | 1 149 righe in tutto |
-| Template | 2 | `vetrina.md` (405) · `handoff-vetrina-crafter.md` (226) |
+| Passi del gate **eseguiti su un progetto vero** | **10 su 10** | gate su `banco-prova-controtempo`, uscita incollata nel verbale |
+| Comandi esercitati | **7 su 7** | `specchio` · `scaffold` · `pagine` · `audit` · `evolve` · `verify` · `handoff` |
+| Classi di sabotaggio provate | **7 su 7** del mandato, **+3** (tipi, a11y, handoff), **+6** controlli al contrario, **+6** classi cieche | `references/sabotaggio.md`, colonne «Esito misurato» compilate |
+| Difetti **del gate** trovati sabotando | **3**, tutti chiusi con un test | §Quattro difetti trovati costruendo e sabotando |
+| Premesse della specifica smentite dalla misura | **4** | §Le premesse che il banco ha smentito |
+| Regole pure | 2 librerie, 35 funzioni esportate | `audit-lib.mjs` (327 righe) · `progetto-lib.mjs` (900 righe) |
+| Gusci di I/O | 2 | `verify.mjs` (566) · `vetrina-audit.mjs` (295) |
+| References | **5** | 1 400 righe in tutto |
 | Falsi verdi previsti dalla specifica e diventati test | **10 su 10** | i test che cominciano con «falso verde» |
-| Difetti trovati costruendo | **3** | §Tre difetti trovati costruendo |
-| Guardiani | ESLint 0/0 · knip pulito · jscpd MANCANTE | eseguiti |
+| Guardiani | ESLint 0/0 · knip pulito · jscpd 0 cloni | eseguiti |
 
-## Tre difetti trovati costruendo, e chiusi
+## Le tre decisioni sospese, chiuse col banco
 
-Nessuno dei tre veniva dal compito: sono usciti facendo girare le cose invece di
-leggerle.
+Nessuna era stata decisa a tavolino, e nessuna è stata decisa leggendo: ognuna ha
+la sua misura accanto, e la misura ha cambiato due delle tre.
 
-1. **La regola della cucitura non poteva scattare sul client dei dati.** `puntaA`
-   confrontava un import (`@/lib/supabase/public`) con un modulo dichiarato **con
-   estensione** (`src/lib/supabase/public.ts`), quindi la meta' della regola che vieta
-   alla cucitura di leggere dati era **codice morto**. L'ha trovato il suo stesso test,
-   che si aspettava due rilievi e ne vedeva uno. Chiuso togliendo l'estensione dal
-   bersaglio del confronto.
-2. **L'audit statico usciva 0 con tre verifiche mancanti.** Lanciato su una cartella
-   senza `vetrina.config.json` stampava tre `MANC` e usciva **0**, cioe' «nessun
-   bloccante» su un audit che non aveva letto un file. E' la forma esatta del difetto
-   che questa casa combatte da tre skill (`../../DECISIONI.md` §18) e ce l'aveva dentro
-   il proprio guscio. Chiuso: uscita 0 solo se tutti e tre i passi hanno **guardato**.
-3. **ESLint non lintava niente e non lo diceva.** Invocato con percorsi assoluti sul
-   progetto rispondeva «all of the files matching the glob pattern are ignored … the
-   file is located outside of the base path»: il base path e' la cartella della
-   configurazione, che vive **dentro la skill**. Il guasto andava nella direzione
-   sicura (MANCANTE) ma con una diagnosi che avrebbe mandato qualcuno a cercare file
-   `.tsx` che ci sono. Chiuso: ESLint gira con `cwd` sul progetto e percorsi relativi,
-   misurato su una fixture con quattro errori a11y veri.
-
-## Decisioni sospese, in attesa del banco
-
-Il mandato ne assegnava esplicitamente una al banco; costruendo ne sono emerse altre
-due della stessa famiglia. **Nessuna e' stata decisa a tavolino**, e ognuna e' marcata
-nel codice dove sta.
-
-| # | Decisione | Comportamento attuale | Come si chiude |
+| # | Decisione | Esito | La misura che l'ha decisa |
 |---|---|---|---|
-| S1 | **slot dichiarato dal contratto senza nessuna riga pubblicata**: `block` o MANCANTE? | **MANCANTE** — il comportamento della P0 firmata, marcato `DECISIONE SOSPESA` in `progetto-lib.mjs` e fissato da un test che dichiara di fissare *il comportamento attuale, non quello desiderato* | si piantano i due casi sul banco (slot assente / slot in bozza) e si guarda quale dei due rossi descrive meglio quello che e' successo |
-| S2 | **la soglia distintiva di 24 caratteri** | ripiego dichiarato, sovrascrivibile dal contratto | si conta su un progetto vero quanti slot restano sotto soglia, cioe' **non verificati**: se sono tanti la soglia e' sbagliata, non gli slot |
-| S3 | **il rilievo sulla build piu' vecchia dei sorgenti** (`app-identita`) e **quello sulla firma piu' vecchia dell'handoff** (`contratto-vetrina`) | entrambi `issue`, coi falsi positivi dichiarati | si misura quanto spesso scattano su un progetto vero. Se scattano quasi sempre sono rumore, e allora si cambia la regola — non si declassa il passo (`../../DECISIONI.md` §8) |
+| **S1** | slot dichiarato senza riga pubblicata: `block` o MANCANTE? | **`block`** | i due casi (riga in bozza / riga assente) piantati sul banco danno lo **stesso** esito: `/docenti` serve la sezione decapitata e il `<title>` scende da «Chi insegna · Controtempo» a «Docenti · Controtempo». In tutti e due il database **ha risposto**. Resta MANCANTE l'altra metà — la tabella **non interrogata** — che prima avrebbe prodotto un `block` per ogni slot dichiarato |
+| **S2** | la soglia distintiva (ripiego 24) | **resta 24**, e il numero da guardare era un altro | sui sei slot veri i frammenti misurano 43, 183, 247, 257, 271, 314 caratteri: a 24 restano fuori **zero slot su sei**, il più corto sta 19 sopra. Ma 24 era **sotto il rumore**: `to_jsonb(t)` portava nei candidati anche `id` (36) e i due timestamp (32), e su uno slot corto vinceva l'**UUID**. Ogni soglia sotto 33 era decorativa |
+| **S3** | i due rilievi sulle date | **uno dei due falsi positivi dichiarati non esiste** | firma: `touch` sull'handoff di schema-forge → **nessun rilievo** (la data si legge dal testo, non dal filesystem); il vero positivo scatta con le due date stampate. Build: `touch` su un sorgente → l'`issue` scatta davvero. Frequenza su un ciclo normale costruisci → rilancia: **0 scatti su 9 esecuzioni** per entrambi |
+
+## Quattro difetti trovati costruendo e sabotando, e chiusi
+
+I primi tre non li ha trovati nessuna lettura: sono usciti puntando il gate dove
+non doveva.
+
+1. **Sulla dev server il gate accusava l'imputato sbagliato — diagnosi
+   bugiarda.** Puntato su `next dev`, chiudeva `FAIL` dicendo «sta rispondendo
+   un'altra applicazione sulla stessa porta», mentre l'applicazione era proprio
+   quella. **Nessuno dei sette indizi di dev server scattava**: sono tutti
+   dell'era Webpack, e da Next 16 il default è Turbopack. Chiuso con due indizi
+   strutturali misurati sullo stesso progetto servito nei due modi — `hmr-client`
+   e `next-devtools` nei percorsi dei chunk — ancorati a `/_next/static/chunks/`
+   così una pagina che *parla* di HMR non li fa scattare. Tre test.
+2. **Una pagina non scaricata rendeva muti i suoi slot — falso verde.** Col
+   sabotaggio della classe E (`/contatti` a 404), `contenuti-vivi` chiudeva
+   «nessun rilievo» avendo saltato **in silenzio** due slot su sei: la metà «la
+   stringa è in pagina» non era stata verificata affatto. Ora sono due MANCANTI
+   con il percorso della pagina. Due test.
+3. **Il frammento distintivo poteva essere l'UUID della riga — rosso falso con
+   diagnosi bugiarda.** Vedi S2. Su una pagina perfettamente corretta il gate
+   stampava `il valore pubblicato nel database non compare nel testo servito …
+   «44444444-4444-4444-8444-000000000006…»`. Chiuso scartando **per forma** UUID
+   e timestamp ISO dai candidati. Tre test.
+4. **Il passo `tipi` era spento sul progetto, e non per colpa del gate.** La
+   classe H di sabotaggio (colonna rinominata in `database.types.ts`) **non
+   scattava**: i moduli del banco riscrivevano i tipi a mano e chiudevano con
+   `as unknown as`, quindi la catena fra schema e pagine era tagliata. È un
+   difetto del *progetto generato*, non della skill — ma la skill lo produceva,
+   e ora `references/pagine-e-dati.md` prescrive di derivare i tipi con
+   `Pick<Database[...]["Row"], …>`. Con i tipi derivati la stessa rinomina
+   produce 5 errori in tre file.
+
+Restano validi i tre difetti trovati nella prima metà di P1 (regola della
+cucitura che non poteva scattare, audit che usciva 0 con tre MANCANTI, ESLint che
+non lintava niente e non lo diceva): sono in `COSTRUZIONE-2026-08-03.md` §2.
+
+## Le premesse che il banco ha smentito
+
+Quattro, e la seconda è quella che cambia una riga di dottrina.
+
+1. **«Il frammento distintivo è il più lungo dei valori di testo dello slot».**
+   Falso: `to_jsonb(t)` porta con sé la chiave primaria e le date. Vedi S2.
+2. **«Una colonna selezionata e non disegnata arriva lo stesso al browser, nell'HTML
+   servito e nel payload RSC».** Misurato: **zero occorrenze** in entrambi. Di un
+   Server Component viaggia l'*uscita*, non i suoi dati. La premessa vale appena
+   la riga passa a un Client Component come prop, o se la query si fa nel browser.
+   **Quello che è pubblico davvero** è un'altra cosa, e va scritta al posto di
+   quella: la chiave anonima sta nel bundle, e con quella chiunque chiede a
+   PostgREST le colonne che il `grant` e la policy concedono —
+   `?select=id,created_at,in_evidenza` risponde. *Ciò che è pubblico lo decide il
+   modello di accesso a monte, non l'elenco del nostro `select`.*
+3. **«Il falso positivo del rilievo sulla firma: un handoff riscritto per un refuso
+   invecchia una firma buona».** Non esiste: la data si legge dal testo. Vedi S3.
+4. **La ricetta della classe E di sabotaggio** («rinomina `page.tsx` in
+   `_page.tsx`») **non funziona su Next 16**: la build muore prima sui tipi di
+   rotta generati. Corretta nella reference.
+
+## Due cose di Next 16 che una vetrina deve sapere, misurate qui
+
+Non sono difetti della skill, e non sono note di colore: sono i due modi in cui su
+questo stack si misura il sito di ieri credendo di misurare quello di adesso.
+
+- **La Data Cache sopravvive a `next build`.** Una riga cambiata nel database non
+  entra nella build nuova finché non scade la finestra di `revalidate`: il gate
+  vede — correttamente — una pagina che non mostra ciò che il database dice, e la
+  diagnosi da sola manderebbe a cercare un difetto nel codice della pagina. Il
+  `hint` di `contenuti-vivi` ora elenca tutte e tre le cause.
+  Si chiude con `rm -rf .next/cache/fetch-cache`.
+- **I tipi di rotta generati sono uno stato.** Se una rotta sparisce, il validatore
+  generato la cerca ancora e la build muore con `Cannot find module
+  ../../../src/app/<rotta>/page.js`, additando un file che nessuno ha scritto.
+  Si chiude con `rm -rf .next/dev/types .next/types`.
 
 ## Decisioni prese in P1
 
@@ -128,155 +171,133 @@ revisione della P0 sono applicate e non sono ripetute qui.
    insieme dentro lo stesso gate, quindi la dipendenza non accoppia niente che fosse
    separato (stessa scelta, e stessa motivazione, di gestionale-crafter).
 3. **Il frammento distintivo di uno slot e' il piu' lungo dei suoi valori di testo**,
-   ricavato con `to_jsonb(t)` invece di elencare le colonne. Quali colonne contengano
-   il testo non lo dichiara nessuno, e chiederlo al contratto avrebbe voluto dire una
-   riga di sintassi in piu' per ogni progetto.
+   ricavato con `to_jsonb(t)` invece di elencare le colonne — **meno i valori
+   tecnici**, che si scartano per forma. La seconda metà di questa frase l'ha
+   scritta il banco: senza, il gate cercava un UUID dentro una pagina.
 4. **Il comando dei test elenca i file per esteso.** `node --test "scripts/**/*.test.mjs"`
    funziona su Node 24 e **non** su Node 20 (dove il pattern e' un percorso letterale);
    `node --test scripts` fa l'opposto. Elencare i tre file e' l'unica forma che gira su
-   entrambi — e questa macchina ha Node 20.12.2, mentre lo `STATO.md` di schema-forge
-   documenta la forma di Node 24.
+   entrambi — e questa macchina ha Node 20.12.2 di sistema.
 
 ## Cosa NON e' stato fatto, e perche'
 
-- **Il banco, e tutto quello che ci gira sopra** (deliverable 4-8 del mandato P.2):
-  fermo per decisione del direttore, in attesa che Docker torni disponibile. Senza
-  banco non ci sono comandi esercitati, non c'e' sabotaggio, e non c'e' nessun gate
-  verde da incollare.
-- **`README.md` e `scripts/installa-skill.ps1`** (deliverable 9): entrano **solo a
-  gate verde**, ed e' l'unica eccezione al perimetro. Non toccati.
-- **Le tre regole del passo `contenuti-vivi` non hanno mai interrogato un database.**
-  `psql` non e' ancora visibile sul PATH di questa sessione (la voce di registro c'e',
-  la cartella `scoop\apps\postgresql` no). Le regole sono provate come funzioni pure
-  con input della forma vera; il guscio che le alimenta — la query `to_jsonb`, il
-  `set role anon`, la lettura di `[db].port` — **non e' mai stato eseguito**.
-- **`jscpd` non gira su questa macchina.** `jscpd@4` richiede `commander@15`, che e'
-  solo-ESM e vuole Node ≥ 22.12; con Node 20.12.2 il bundle CJS di jscpd fallisce con
-  `ERR_REQUIRE_ESM`. E' una verifica **MANCANTE**, non superata: la ricerca di cloni
-  sugli script non e' stata fatta. Si chiude aggiornando Node oppure fissando
-  `commander` a una versione compatibile — e' una decisione del direttore, non mia.
-- **`semgrep`, `gitleaks` e `/code-inquisition` non sono mai stati puntati su questi
-  script.** `semgrep` risulta presente su questa macchina secondo gli `STATO.md` di
-  schema-forge e speed-demon: sarebbe una verifica **disponibile e non fatta**, che e'
-  un residuo peggiore di una mancante.
-- **Nessuna misura di quanto il gate impieghi.** Su un progetto vero fa una `fetch`
-  per pagina, due query per slot, un `tsc` e un ESLint: quanto costi non lo sa nessuno.
+- **Nessun committente ha firmato niente.** Sul banco il contratto della vetrina
+  porta `Confermato da: ORCHESTRATORE`, cioè la firma di chi costruiva. È il
+  limite ereditato dalla P0 e si chiude in P3.
+- **`semgrep`, `gitleaks` e `/code-inquisition` non sono mai stati puntati su
+  questi script.** `semgrep` risulta presente su questa macchina secondo gli
+  `STATO.md` di schema-forge e speed-demon: è una verifica **disponibile e non
+  fatta**, e sta nel perimetro di P.7c.
+- **`code-maniac scan` non è stato lanciato sul banco.** Il banco è usa e getta e
+  i guardiani della casa girano sugli **script della skill**, dove sono verdi.
+- **Nessuna misura di quanto il gate impieghi.** Sul banco (5 pagine, 6 slot, 2
+  fonti) l'esecuzione completa è nell'ordine dei secondi, ma non è stata
+  cronometrata: su un sito di trenta pagine non lo sa nessuno.
+- **Il modulo pubblico non è stato provato.** Il banco dichiara «Nessuna scrittura
+  pubblica», quindi il caso di frontiera di `SKILL.md` §Perimetro — la vetrina che
+  apre un percorso di scrittura all'anonimo — resta senza una misura.
+- **Storage non è stato toccato.** Le immagini del banco sono file statici; il
+  caso «il cliente carica una foto» ha tre policy sullo stesso bucket e nessuno
+  strumento di questa pipeline le guarda.
 
 ## Cosa un gate verde NON prova
 
 Scritta per intero in `SKILL.md` §Cosa un gate verde NON prova — dodici voci. Le tre
 che contano di piu': il gate legge **la firma** del contratto e non la sua verita';
-non sa se quello che la pagina mostra **debba** essere pubblico; e non vede una
-colonna selezionata e non disegnata, che viaggia lo stesso nell'HTML servito e nel
-payload RSC.
+non sa se quello che la pagina mostra **debba** essere pubblico; e quello che è
+pubblico lo decide il `grant` a monte, non l'elenco del nostro `select`.
 
 `references/sabotaggio.md` §Le classi che questo gate NON puo' vedere elenca le
-cinque rotture che devono restare **verdi**, e prescrive di provarle lo stesso — per
-misurare il limite invece di dichiararlo.
+rotture che devono restare **verdi**, e adesso ognuna ha accanto la misura che lo
+dimostra invece della previsione.
 
 ## Punti aperti — ordinati per gravita'
 
-1. **Il gate non ha mai visto un'app.** Sette dei dieci passi (`tipi`, `app-identita`,
-   `pagine-vive`, `segnaposto-serviti`, `contenuti-vivi`, piu' `a11y-statica` su un
-   progetto vero e `contratto-uscita` su un handoff vero) esistono solo come codice
-   provato su fixture. **Il primo difetto lo trovera' il banco**, ed e' normale;
-   quello che non sarebbe normale e' credere il contrario perche' i test sono verdi.
-2. **Nessun committente ha firmato niente.** Ereditato dalla P0, si chiude in P3.
-3. **Le tre decisioni sospese** (S1, S2, S3) restano tali finche' non c'e' il banco.
-   Indovinarle adesso e' esattamente il difetto che il collaudo avversario e' pagato
-   per trovare.
-4. **Il caso F di `evolve` e' cieco per costruzione**, e ora ha anche il suo posto in
-   `references/sabotaggio.md` fra le rotture che devono restare verdi.
-5. **`Nessuno slot.` e' un buco firmato**: rende quasi muto il passo `contenuti-vivi`.
-   Non chiudibile nel codice.
-6. **Le euristiche dichiarate non sono state messe alla prova.** `puntaA` confronta la
-   **coda** di un percorso e non risolve gli alias di `tsconfig`: due cartelle con la
-   stessa coda in un monorepo la ingannano. I segnaposto sono cercati come stringhe: un
-   progetto che parla di template produce un falso positivo. Entrambe sono scritte nel
-   codice e nella specifica; nessuna delle due ha ancora incontrato un progetto vero.
-7. **Il gate non misura quanto ci mette.** Se su un sito di trenta pagine impiegasse
-   minuti, sarebbe un gate che nessuno rilancia — e un gate che nessuno rilancia e' un
-   documento.
+1. **Nessun committente ha firmato niente.** Ereditato dalla P0, si chiude in P3.
+   È il punto più grave rimasto: dieci passi verdi su un elenco di pagine che si è
+   scritto da solo dimostrano che l'agente è coerente con sé stesso.
+2. **Il caso F di `evolve` e' cieco per costruzione**, e ora è anche **misurato**:
+   riscritto `Cosa mostra:` di `/contatti` come «il modulo di prenotazione con
+   calendario e pagamento della caparra», il gate chiude verde 10/10 su una pagina
+   che non esiste.
+3. **`Nessuno slot.` e' un buco firmato**, e anche questo è misurato: con il testo
+   di uno slot cablato nel JSX e `Nessuno slot.` nel contratto, il gate chiude
+   verde. Non chiudibile nel codice.
+4. **Le euristiche dichiarate hanno incontrato un progetto solo.** `puntaA`
+   confronta la **coda** di un percorso e non risolve gli alias di `tsconfig`: sul
+   banco non c'era nessun monorepo a ingannarla. I segnaposto sono cercati come
+   stringhe: un progetto che parla di template produce un falso positivo, e sul
+   banco non ce n'era.
+5. **Il gate non misura quanto ci mette.** Se su un sito di trenta pagine
+   impiegasse minuti, sarebbe un gate che nessuno rilancia — e un gate che nessuno
+   rilancia e' un documento.
+6. **Un solo dominio, un solo stack.** Tutto quello che è scritto qui è vero su
+   Next 16 con Turbopack, Supabase locale e sei slot. Il collaudo avversario (P2)
+   parte da un dominio diverso apposta.
 
 ## Proposte a monte/valle
 
 Il consumatore riporta, il proprietario decide. Nessuno di questi file e' stato
 toccato da qui.
 
-**A tutti e tre i gate esistenti — misurato, e grave**
-
-0. **Su Node 20 i gate di schema-forge, gestionale-crafter, flow-sentinel e
-   speed-demon non eseguono niente ed escono 0.** Tutti e quattro chiudono con
-   `if (import.meta.main) …`, e `import.meta.main` **e' arrivato in Node 24**: su
-   Node 20.12.2 vale `undefined`, quindi `main()` non gira, non viene stampato niente
-   e il processo esce **0**. Misurato il 2026-08-02 su questa macchina:
-
-   ```
-   $ node .../flow-sentinel/scripts/verify.mjs --json     # cartella non-progetto
-   (nessuna uscita)
-   uscita: 0                                              # atteso: 2
-
-   $ node .../speed-demon/scripts/verify.mjs              # senza --url
-   (nessuna uscita)
-   uscita: 0                                              # atteso: 2, «e' cosi' che si
-                                                          # misura l'app di un altro progetto»
-   ```
-
-   E' la forma piu' pura del falso verde che questa casa combatte: uno strumento che
-   non ha letto niente esce 0, e chi automatizza legge il codice d'uscita. Questa
-   skill usa `process.argv[1] === fileURLToPath(import.meta.url)`, che funziona
-   ovunque. **La correzione e' una riga per file**, ma sono file di altri agenti e
-   non li tocco.
-
 **A schema-forge**
 
 1. **La tabella dei contenuti non e' nelle sue references, ed e' lui che deve
-   scriverla.** Il modello degli slot e' documentato in
-   `agenti/gestionale-crafter/references/contenuti-editabili.md`, cioe' nel consumatore
+   scriverla.** Il modello degli slot è documentato in
+   `agenti/gestionale-crafter/references/contenuti-editabili.md`, cioè nel consumatore
    e non nel produttore. Proposta: `forge` la genera quando il brief dichiara contenuti
    editabili, con la sua policy e **almeno una riga di seed per slot dichiarato** —
-   senza righe la vetrina si costruisce sul vuoto e il passo `contenuti-vivi` non ha
-   niente da verificare.
-2. **Una policy di lettura mancante per `anon` non e' un `block` di nessun gate.**
+   senza righe la vetrina si costruisce sul vuoto, e dal 2026-08-03 quel caso è un
+   `block` del passo `contenuti-vivi` (decisione S1).
+2. **Una policy di lettura mancante per `anon` non e' un `block` di nessun gate suo.**
    L'audit RLS cerca tabelle *nude* e policy *sbagliate*; una tabella con RLS attiva e
    nessuna policy per l'anonimo e' **corretta** per l'audit e **invisibile** per il
-   sito pubblico.
-3. **`Confermato da: … il <DATA>` andrebbe scritta in forma ISO.** Il mio passo
-   `contratto-vetrina` confronta la data della firma della vetrina con quella
-   dell'handoff di schema-forge, e legge la data **dal testo** (non dal filesystem, che
-   su un clone direbbe sempre «oggi»). Se il template scrive `il 24 luglio 2026` il
-   confronto non si fa affatto — in silenzio, che e' il modo peggiore.
+   sito pubblico. Qui la trova `contenuti-vivi` contando le righe leggibili
+   impersonando il ruolo — cioè a valle, quando le pagine sono già state scritte.
+3. **`Confermato da: … il <DATA>` va scritta in forma ISO**, e su questo il banco dà
+   ragione alla proposta: il passo `contratto-vetrina` legge quella data dal testo
+   dell'handoff di schema-forge e ci confronta la firma della vetrina. Con
+   `il 24 luglio 2026` il confronto **non si fa affatto**, in silenzio.
+4. **Il `grant update` per colonna merita una riga nelle sue references.** Sul banco
+   ha impedito alla redazione di rinominare la chiave di uno slot — cioè di rompere
+   la pagina che la cerca, senza nessun errore da nessuna parte. È l'unica difesa che
+   la RLS non può dare, e ha il suo test pgTAP.
 
 **A speed-demon**
 
-4. **`docs/vetrina.md` e `docs/performance.md` elencano due volte «le pagine che
+5. **`docs/vetrina.md` e `docs/performance.md` elencano due volte «le pagine che
    contano», e possono divergere in silenzio.** Proposta: `contratto-performance` legge
    `docs/vetrina.md` quando c'e', almeno per un `warn` sulle pagine presenti in uno e
    non nell'altro.
-5. **Il controllo sulla build piu' vecchia dei sorgenti e' riusabile.** Qui e' un
-   `issue` di `app-identita` e chiude il caso «la build risponde, ma non e' quella dei
-   sorgenti di adesso», che il `BUILD_ID` da solo non copre.
+6. **I suoi sette indizi di dev server non vedono Turbopack.** Misurato qui il
+   2026-08-03 su Next 16: nessuno dei sette scatta, e il passo che li usa accusa
+   «un'altra applicazione sulla stessa porta». I due indizi che funzionano sono
+   `hmr-client` e `next-devtools` nei percorsi dei chunk, ancorati a
+   `/_next/static/chunks/`. **È lo stesso elenco che speed-demon ha nel proprio
+   gate**, ed è una correzione da portare lì.
+7. **Il controllo sulla build piu' vecchia dei sorgenti e' riusabile**, e ora ha anche
+   la sua frequenza misurata: 0 falsi positivi su 9 esecuzioni in un ciclo normale.
 
 **A flow-sentinel**
 
-6. **Il controllo della data della firma esiste, in un gate.** Il §7 del suo
+8. **Il controllo della data della firma esiste, in un gate.** Il §7 del suo
    `COLLAUDO-EVOLVE-2026-07-30.md` lo lascia aperto e propone `git log`, fermandosi
    davanti ai progetti senza git. Qui e' risolto senza git, confrontando due date
-   **dichiarate** in due file dello stesso progetto.
+   **dichiarate** in due file dello stesso progetto — e il falso positivo che temeva
+   (un handoff riscritto) **non si verifica**, perché la data si legge dal testo.
 
 **A gestionale-crafter**
 
-7. **Le chiavi degli slot vanno dette in forma fissa.** Oggi il suo handoff le elenca
+9. **Le chiavi degli slot vanno dette in forma fissa.** Oggi il suo handoff le elenca
    in prosa: due agenti sulla stessa tabella possono scrivere due insiemi di chiavi
    diversi senza che nessuno se ne accorga finche' il cliente non modifica una riga che
-   nessuna pagina mostra.
+   nessuna pagina mostra. Sul banco il caso è arrivato per davvero — uno slot
+   rinominato a monte — e a intercettarlo è stato il **contratto della vetrina**, non
+   i tipi: una chiave di slot è una stringa.
 
 **Alla regia**
 
-8. **Il `README.md` promette Fly UI al posto 8 della pipeline.** Quel posto e' questo
-   agente: la riga 8, la tabella §Natura degli agenti e `scripts/installa-skill.ps1`
-   si aggiornano **a gate verde**, non prima — per la regola del README stesso.
-9. **Node 20.12.2 e' sotto quello che chiedono gli strumenti della casa.** `jscpd@4`
-   non parte affatto, e diversi pacchetti avvisano `EBADENGINE`. Aggiornare Node
-   chiuderebbe anche il punto 0, che oggi rende inservibili quattro gate su questa
-   macchina.
+10. **Node 20.12.2 di sistema è sotto quello che chiedono gli strumenti della casa.**
+    `jscpd` gira solo col Node 24 di scoop, e va invocato come
+    `node_modules/jscpd/bin/jscpd` (lo shim `.bin/jscpd` è uno script di shell che
+    Node non sa eseguire). Con quello è **pulito: 0 cloni su 3 121 righe**.

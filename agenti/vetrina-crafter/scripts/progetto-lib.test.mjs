@@ -336,10 +336,35 @@ describe("app servita", () => {
   const PROD = `<html><head><script src="/_next/static/chunks/main-app-f1e4859868969239.js"></script></head><body>ciao</body></html>`;
   const DEV = `<html><head><script src="/_next/static/chunks/main-app.js?v=1785407832332"></script><script src="/_next/static/chunks/app-pages-internals.js"></script></head><body>ciao</body></html>`;
 
+  // Le due forme sono RITAGLI VERI, presi dal banco il 2026-08-03 sullo stesso
+  // progetto servito nei due modi (Next 16, Turbopack di default).
+  const DEV_TURBO = `<html><head><script src="/_next/static/chunks/%5Bturbopack%5D_browser_dev_hmr-client_hmr-client_ts_1xx01vv._.js"></script><script src="/_next/static/chunks/node_modules_next_dist_compiled_next-devtools_index_090k2jm.js"></script></head><body>ciao</body></html>`;
+  const PROD_TURBO = `<html><head><script src="/_next/static/chunks/turbopack-3l1jj1uo0j4no.js"></script><script src="/_next/static/chunks/0cz1d0mv5g_q7.js"></script></head><body>ciao</body></html>`;
+
   it("falso verde n°5: una dev server si riconosce dagli indizi strutturali", () => {
     const indizi = indiziDevServer(DEV);
     assert.ok(indizi.length >= 2);
     assert.deepEqual(indiziDevServer(PROD), []);
+  });
+
+  it("falso verde n°5 su TURBOPACK: i sette indizi dell'era Webpack non bastavano", () => {
+    // Misurato col sabotaggio: su `next dev` di Next 16 nessuno dei sette
+    // indizi storici scattava, e il gate accusava «un'altra applicazione sulla
+    // stessa porta» mentre l'applicazione era proprio questa.
+    assert.ok(indiziDevServer(DEV_TURBO).length >= 2);
+  });
+
+  it("e su una build di produzione di Turbopack NON scattano", () => {
+    // La parola `turbopack` da sola non e' un indizio: in produzione c'e'
+    // anche li', dentro `turbopack-<hash>.js`.
+    assert.deepEqual(indiziDevServer(PROD_TURBO), []);
+  });
+
+  it("una pagina che PARLA di hmr o di devtools non e' una dev server", () => {
+    // Gli indizi sono ancorati a un percorso di chunk apposta: un sito che
+    // documenta Next non deve far fallire il proprio gate.
+    const pagina = `<html><body><h1>Come funziona hmr-client</h1><p>Il pacchetto next-devtools serve in sviluppo.</p></body></html>`;
+    assert.deepEqual(indiziDevServer(pagina), []);
   });
 
   it("falso verde n°3: il BUILD_ID di un altro progetto non e' il mio", () => {
@@ -452,6 +477,21 @@ describe("contenuti dal database", () => {
     assert.equal(mancanti.length, 1);
     assert.match(mancanti[0], /non interrogata/);
     assert.match(mancanti[0], /nessuno dei \d+ slot dichiarati/);
+  });
+
+  it("falso verde trovato col sabotaggio: pagina non scaricata = slot NON verificato", () => {
+    // Classe E del sabotaggio, 2026-08-03: con la pagina dichiarata a 404 il
+    // passo chiudeva «nessun rilievo» avendo saltato in silenzio i suoi slot.
+    // La meta' «la stringa e' in pagina» non era stata verificata affatto.
+    const { findings, mancanti } = findingsContenuti({ ...base, testoPerPagina: new Map() });
+    assert.deepEqual(findings, []);
+    assert.equal(mancanti.length, 1);
+    assert.match(mancanti[0], /non e' stata scaricata/);
+  });
+
+  it("e NON dice niente quando la pagina e' stata scaricata davvero", () => {
+    const { mancanti } = findingsContenuti(base);
+    assert.deepEqual(mancanti, []);
   });
 
   it("segnala (issue) una pagina statica che mostra un contenuto editabile", () => {
