@@ -120,7 +120,7 @@ Un veterinario vede 2 visite e 0 note interne. Dopo un solo `update public.staff
 Le tre difese, in ordine di preferenza:
 
 1. **la colonna in una tabella che l'utente non scrive** (`staff_roles` gestita solo dalla direzione, o il claim in `raw_app_meta_data`)
-2. **`grant` per colonna**: `revoke update on public.staff from authenticated;` poi `grant update (full_name, phone) on public.staff to authenticated;`
+2. **`grant` per colonna**: `revoke update on public.staff from authenticated;` poi `grant update (full_name, phone) on public.staff to authenticated;` — l'ordine non è stilistico: il permesso per colonna è **additivo**, e senza il `revoke` davanti non toglie niente a chi aveva già la tabella intera (misurato due volte, `../../DECISIONI.md` §22 e §27). Dal 2026-08-03 il `revoke` → `grant` non è più solo la difesa di questo caso: è la forma di **ogni** privilegio che uno schema forgiato emette (`SKILL.md` §I privilegi si scrivono, non si ereditano)
 3. **un trigger `before update`** che rifiuta la modifica della colonna a chi non è autorizzato
 
 **La quarta difesa, quella che viene in mente per prima, non funziona — ed è circolare.** Irrigidire il `with check` facendogli chiamare la funzione di autorizzazione (*«solo un direttore può scrivere la riga di uno staff»*) sembra la risposta ovvia, e approva sempre:
@@ -141,17 +141,46 @@ Restano le tre difese sopra: la colonna altrove, `revoke update (colonna)`, o un
 
 ## La trappola inversa: RLS perfetta, nessun `grant`
 
-Il guasto simmetrico al data leak, e costa giorni perché non assomiglia a un problema di database. Tabella con RLS attiva, policy corrette, indici al posto giusto — e il client **non legge niente**. Non c'è errore: c'è una lista vuota, e sembra un bug del frontend.
+Il guasto simmetrico al data leak, e costa giorni perché non assomiglia a un problema di database. Tabella con RLS attiva, policy corrette, indici al posto giusto — e il client **non legge niente**. O c'è una lista vuota che sembra un bug del frontend, o c'è un `permission denied for table orders` che sembra una chiave sbagliata.
 
 Manca il permesso Postgres, che è un secondo sistema **sopra** la RLS: le policy decidono *quali righe*, il `grant` decide *se la tabella è raggiungibile affatto*.
 
+**La forma è `revoke` poi `grant`, e comprende `service_role`.** Non è una precauzione teorica: è la regola completa in `SKILL.md` §I privilegi si scrivono, non si ereditano, e la scorciatoia — scrivere il solo `grant`, per i soli ruoli del client — è già costata due volte.
+
 ```sql
+-- prima si azzera (il default dell'immagine non e' una garanzia, ed e' cambiato
+-- due volte in un mese: vedi ../../DECISIONI.md §27)
+revoke all on public.orders from anon, authenticated, service_role;
+
 grant select on public.orders to anon, authenticated;
 grant insert, update, delete on public.orders to authenticated;
+grant select, insert, update, delete on public.orders to service_role;
 ```
-Verifica: `select grantee, privilege_type from information_schema.role_table_grants where table_name = 'orders';`
 
-`scripts/rls-audit.mjs` lo controlla: una tabella con RLS attiva e almeno una policy ma **senza `grant`** a `anon`/`authenticated` produce un `issue`. Se il client non deve raggiungerla, la risposta giusta non è il `grant` — è **spostarla in uno schema non esposto**.
+Verifica, e **non** con `information_schema.role_table_grants` da sola: quella vista elenca anche `TRUNCATE`, `REFERENCES` e `TRIGGER`, quindi una tabella con **zero** privilegi CRUD ci compare lo stesso. È esattamente il modo in cui il difetto è rimasto invisibile fino al 2026-08-03.
+
+```sql
+-- quali privilegi ha DAVVERO ogni ruolo, colonna per colonna compresa
+select relname, relacl from pg_class
+ where relnamespace = 'public'::regnamespace and relkind = 'r';
+-- `r` = select · `a` = insert · `w` = update · `d` = delete
+-- `D` = truncate · `x` = references · `t` = trigger · `m` = maintain
+```
+
+`scripts/rls-audit.mjs` lo controlla (regola 7) e produce un **`block`**: per ogni tabella con RLS e policy confronta i ruoli e i comandi delle policy con `has_any_column_privilege`, e segnala sia il caso «nessun privilegio CRUD» sia quello «le policy promettono `update`, il ruolo ha solo `select`». La prova è interamente nel catalogo, senza euristiche. Se il client non deve raggiungerla, la risposta giusta non è il `grant` — è **spostarla in uno schema non esposto**.
+
+### Il `truncate` che la RLS non filtra
+
+Vale la pena saperlo prima di lasciare un privilegio ereditato dov'è: **la RLS non si applica a `TRUNCATE`**. Misurato il 2026-08-03 su uno schema con `force row level security` attiva su tutte le tabelle e i privilegi di default dell'immagine (`anon = Dxtm`):
+
+```
+set role anon; truncate public.animals cascade;
+→ TRUNCATE TABLE     (5 animali → 0, e in cascata visite, cartelle, diagnosi,
+                      trattamenti, prescrizioni, note interne, vaccinazioni,
+                      revisioni, righe di fattura)
+```
+
+La chiave anonima viaggia nel browser. Un privilegio di distruzione concesso d'ufficio, che nessuna policy può fermare, è la ragione per cui il `revoke` non è una formalità: dopo, la stessa riga risponde `permission denied for table animals`.
 
 ## Una policy per operazione e per ruolo
 

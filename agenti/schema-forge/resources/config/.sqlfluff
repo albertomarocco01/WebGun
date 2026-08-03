@@ -12,6 +12,20 @@
 [sqlfluff]
 dialect = postgres
 
+# `large_file_skip_byte_limit = 0` disattiva il salto dei file grandi.
+# Il default di sqlfluff e' 20 000 byte: oltre quella soglia SALTA il file, non
+# lo dichiara, ed esce comunque 0. Su un progetto normale e' una protezione da
+# dump generati; qui e' un buco nel gate, e per una ragione che vale solo per le
+# migrazioni: una migrazione applicata e' IMMUTABILE (SKILL.md §Regole non
+# negoziabili), quindi «spezza il file in due» — l'altro rimedio che il gate
+# suggerisce — non e' disponibile appena la migrazione e' partita una volta.
+# Misurato il 2026-08-03 sul banco veterinario: `20260726120200_clinico.sql` sta
+# a 20 384 byte, e il passo sqlfluff restava `MANCANTE` senza nessuna correzione
+# possibile. Con 0, sqlfluff legge tutto e il passo torna falsificabile.
+# Il controllo sui byte in `verify.mjs` NON viene tolto: resta a segnalare il
+# giorno in cui qualcuno rimettesse un limite.
+large_file_skip_byte_limit = 0
+
 # PG01 "CREATE INDEX should use CONCURRENTLY to avoid locking the table".
 # `create index concurrently` non puo' stare dentro una transazione, e il CLI
 # Supabase applica ogni migrazione dentro una transazione: la regola chiede una

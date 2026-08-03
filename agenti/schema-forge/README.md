@@ -130,7 +130,7 @@ Undici funzioni di regola esportate da `audit-lib.mjs`, **ventiquattro verdetti*
 | **colonna dal nome di privilegio** scrivibile, che però nessuna policy usa (euristica dichiarata) | `issue` |
 | `security definer` con `execute` a PUBLIC (il **default** di Postgres) | `issue` |
 | chiave esterna senza indice | `issue` |
-| tabella con RLS e policy ma **nessun `grant`** a `anon`/`authenticated` | `issue` |
+| **policy per un ruolo il cui privilegio corrispondente manca** — compreso il caso «`Dxtm`: nessun privilegio CRUD affatto» | `block` |
 | RLS attiva ma **non forzata** (`force row level security`): `enable` non vale per il proprietario della tabella | `warn` |
 | `auth.uid()` non avvolto in `(select …)` · join dentro la policy · policy senza ruolo esplicito · colonna di policy senza indice | `warn` |
 

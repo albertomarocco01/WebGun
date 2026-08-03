@@ -47,7 +47,7 @@ Una lista di assunzioni dichiarate è recuperabile in mezz'ora. Un'assunzione co
 | Comando | Cosa fa | Dettaglio |
 |---|---|---|
 | `model` | Deriva entità, relazioni, cardinalità e regole di accesso dal brief; produce l'ERD Mermaid e **lo Specchio del dominio** | Flusso 1 · `references/modellazione.md` |
-| `forge` | Genera la migrazione: DDL + vincoli + indici + trigger `updated_at` + **RLS e policy della prima ora**; **copia `.sqlfluff` e `squawk.toml` nella radice del progetto** | `references/modellazione.md` · `references/rls-supabase.md` · `resources/config/` |
+| `forge` | Genera la migrazione: DDL + vincoli + indici + trigger `updated_at` + **RLS, policy e privilegi espliciti della prima ora**; **copia `.sqlfluff` e `squawk.toml` nella radice del progetto** | `references/modellazione.md` · `references/rls-supabase.md` · §I privilegi si scrivono · `resources/config/` |
 | `seed` | Genera dati di seed **idempotenti e deterministici** (UUID fissi, `on conflict do nothing`) | `references/modellazione.md` §Seed |
 | `test` | Scrive i **test pgTAP negativi** delle policy: per ogni tabella scrivibile, il tentativo che deve fallire | `references/rls-supabase.md` §Una policy senza test |
 | `verify` | **Il gate**: applica su DB pulito reale + batteria deterministica + audit RLS; riporta solo il residuo | `scripts/verify.mjs` · `resources/config/` |
@@ -58,8 +58,8 @@ Una lista di assunzioni dichiarate è recuperabile in mezz'ora. Un'assunzione co
 ## Comando → procedura (cosa eseguo, in concreto)
 
 - **`model`** → leggo brief e handoff precedenti (`docs/handoff/`), estraggo i **sostantivi del dominio** e li classifico (entità · attributo · relazione · lookup), definisco cardinalità e proprietà dei dati (*chi possiede questa riga?* — è la domanda che genera le policy dopo), disegno l'ERD dello Specchio **a mano** (qui il database non esiste ancora: è una *proposta* da correggere, non una fotografia — l'ERD generato arriva dopo `forge`, con `erd.mjs`) e **STOP allo Specchio**.
-- **`forge`** → una migrazione per aggregato coerente in `supabase/migrations/<timestamp>_<nome>.sql`, nell'ordine: tipi/lookup → tabelle → vincoli → indici → trigger → RLS → policy → `grant`. Ogni tabella nasce **già** con `enable row level security` (e `force row level security`): non esiste una finestra temporale in cui è nuda. Le policy le derivo dalla mappa di proprietà dello step `model` (owner-based / tenant-based / role-based / public-read), **una per operazione e per ruolo**, con `(select auth.uid())` e l'indice sulla colonna di ownership. Tre cose si scrivono **nella stessa migrazione** della policy, non dopo:
-  - il **`grant`** ad `anon`/`authenticated` — per colonna (`grant update (col, …)`) su ogni tabella che contiene una colonna di privilegio: la RLS filtra le righe, non le colonne, e un `grant update` pieno su una tabella con il ruolo dentro è auto-promozione;
+- **`forge`** → una migrazione per aggregato coerente in `supabase/migrations/<timestamp>_<nome>.sql`, nell'ordine: tipi/lookup → tabelle → vincoli → indici → trigger → RLS → policy → **privilegi**. Ogni tabella nasce **già** con `enable row level security` (e `force row level security`): non esiste una finestra temporale in cui è nuda. Le policy le derivo dalla mappa di proprietà dello step `model` (owner-based / tenant-based / role-based / public-read), **una per operazione e per ruolo**, con `(select auth.uid())` e l'indice sulla colonna di ownership. Tre cose si scrivono **nella stessa migrazione** della policy, non dopo:
+  - i **privilegi espliciti**, nella forma `revoke` → `grant`, per **tutti e tre** i ruoli (`anon`, `authenticated`, `service_role`). Vedi §I privilegi si scrivono, non si ereditano: è la regola, non un esempio;
   - il **vincolo sullo stato iniziale** di ogni macchina a stati (`check`, o lo stesso trigger anche `before insert`): un trigger di transizione su `update` non dice niente su `insert`;
   - il **test pgTAP negativo** in `supabase/tests/` (vedi `test`). Una policy senza il tentativo che deve fallire non è consegnabile, ed è un `block` del gate.
 
@@ -71,6 +71,41 @@ Una lista di assunzioni dichiarate è recuperabile in mezz'ora. Un'assunzione co
 - **`evolve`** → prima l'**analisi di impatto** (chi legge questa colonna? grep + tipi + handoff a valle + **quante righe hanno davvero un valore**), poi il piano expand-contract in migrazioni separate, poi STOP se c'è un distruttivo. Se i dati contraddicono la richiesta, la contraddizione si riporta **prima**, coi numeri. Dopo l'autorizzazione: export dei dati in `docs/export/`, percorso citato nella migrazione, `-- squawk-ignore` sulla riga sopra il distruttivo. Alla fine **si riallinea `seed.sql`**, o il `db reset` successivo fallisce. Prima di un `evolve` che tocca RLS, funzioni o Auth vale leggere `https://supabase.com/changelog.md` cercando i `breaking-change`: Supabase cambia spesso. **A mano, non nel gate** — una lettura di rete dentro `verify.mjs` renderebbe il gate non deterministico e rosso quando cade la connessione.
 - **`handoff`** → scrivo il file di handoff con: entità e relazioni finali, decisioni e deroghe, modello di accesso (chi vede cosa), path dei tipi generati, problemi noti e residui di `verify`. **In fondo, una riga `Gate: VERDE` o `Gate: ROSSO`** con i conteggi: la verifica il gate stesso (passo `contratto-uscita`), e un handoff che dichiara un verdetto diverso da quello dell'esecuzione in corso fa fallire il passo. Se il gate è rosso l'handoff **si scrive lo stesso e dichiara rosso** — quello che non si può fare è consegnare a valle un verdetto che non è mai esistito.
 
+## I privilegi si scrivono, non si ereditano
+
+Su Postgres i sistemi di permessi sono **due**, in fila: il `grant` decide se il ruolo raggiunge la tabella, la policy decide quali righe. Passano entrambi o non passa niente. Su Supabase il primo dei due è stato a lungo invisibile, perché l'immagine lo concedeva d'ufficio — e in un mese è cambiato **due volte**, senza che nulla nello schema lo dicesse (`STATO.md`, `../../DECISIONI.md` §27):
+
+| quando | cosa concedeva il default a `anon`/`authenticated`/`service_role` |
+|---|---|
+| CLI 2.95.4 | `arwdDxtm` — tutto, compreso `insert`/`update`/`delete` per `anon` |
+| CLI 2.110.0 | `service_role` perde tutto; sopravvive solo chi una migrazione riconcede |
+| CLI 2.111.0 | `Dxtm` — TRUNCATE, REFERENCES, TRIGGER, MAINTAIN: **zero CRUD** |
+
+> **Un privilegio che non hai scritto non è un privilegio che hai.** E non è nemmeno un privilegio che perdi con preavviso: lo schema resta identico, il gate resta verde, e il sito smette di leggere.
+
+**Ogni schema forgiato emette una migrazione di privilegi espliciti**, nello stesso file delle policy che li accompagnano. La forma è `revoke` **poi** `grant`:
+
+```sql
+-- 1. si azzera: nessun privilegio ereditato sopravvive a questa riga
+revoke all on public.staff from anon, authenticated, service_role;
+
+-- 2. si scrive, ruolo per ruolo, cio' che il modello di accesso dichiara
+grant select on public.staff to authenticated;
+grant update (full_name, phone) on public.staff to authenticated;   -- per colonna
+grant select, insert, update, delete on public.staff to service_role;
+-- `anon` non compare: nel modello di accesso non ha questa tabella.
+```
+
+Cinque regole, ognuna con la misura che la giustifica (Postgres 17.6, CLI 2.111.0, 2026-08-03):
+
+1. **Il `revoke` viene prima, sempre.** Non perché il default conceda troppo — quello cambia — ma perché è l'unica riga che rende il `grant` scritto l'**unica verità** sui privilegi di quella tabella, qualunque cosa ci fosse prima. Misurato: dopo un `grant update` di tabella intera, aggiungere `grant update (full_name)` **non restringe niente** (il permesso per colonna è additivo) e il veterinario si promuove direttore lo stesso. Con il `revoke` davanti, la stessa coppia di righe nega.
+2. **Il `revoke` toglie anche ciò che la RLS non può filtrare.** `Dxtm` comprende **TRUNCATE**, e la RLS **non si applica a TRUNCATE**. Misurato su uno schema con `force row level security` su tutte le tabelle: `set role anon; truncate public.animals cascade` **riesce**, e porta via dieci tabelle. Dopo il `revoke`: `permission denied for table animals`. Nessun `grant` riconcede mai `truncate`, `references`, `trigger` o `maintain` a un ruolo del client.
+3. **`service_role` è nell'elenco.** Scavalca la RLS (`bypassrls`), **non** i privilegi: senza le sue righe non legge niente, e se ne accorge solo chi usa quella chiave — cioè nessuno dei nove passi del gate. È già costato nove test rossi da fermo su un progetto che non era stato toccato (`STATO.md` §Il difetto più grave di tutti).
+4. **Il privilegio ricalca le policy, ruolo per ruolo.** Una policy di `select` per `anon` senza il `select` ad `anon` è una funzione che non esiste; un `grant` senza la policy corrispondente è un cancello aperto su un cancello chiuso, che il giorno di una policy sbagliata diventa l'unica difesa mancante. Dove il modello di accesso dice «—», non si scrive una riga. Se il client non deve raggiungere una tabella affatto, la risposta giusta resta **spostarla in uno schema non esposto**. L'audit RLS confronta le due cose e produce un **`block`** (regola 7).
+5. **Niente `alter default privileges`.** Sostituire il default implicito di Supabase con un default implicito nostro sposta la cosa invisibile, non la toglie. Ed è legata a **chi crea l'oggetto**: misurato sul banco, `pg_default_acl` conteneva **due righe in conflitto** per lo stesso schema (`supabase_admin` → `arwdDxtm`, `postgres` → `Dxtm`), e una tabella creata da un terzo ruolo nasceva con `relacl` **NULL** — zero privilegi. Il privilegio di una tabella si scrive nella migrazione di quella tabella, dove chi legge il file lo vede.
+
+Il `revoke`/`grant` per colonna resta obbligatorio sulle **colonne di privilegio** (§Il caso peggiore di `references/rls-supabase.md`): la RLS filtra le righe, non i campi.
+
 ## Flusso 1 — Nuovo schema (dal brief alla migrazione verificata)
 
 1. **Leggi il contesto** — brief, `docs/PROGETTO.md`, handoff precedenti. Se manca il brief, **fermati**: non si modella per indovinare.
@@ -78,7 +113,7 @@ Una lista di assunzioni dichiarate è recuperabile in mezz'ora. Un'assunzione co
 3. **Mappa la proprietà dei dati** — per ogni tabella: *chi può leggerla, chi può scriverla, in base a cosa*. Questa mappa **è** la specifica delle policy RLS: se non sai rispondere, non sai ancora modellare.
 4. **Specchio del dominio → STOP.** Riformuli entità, relazioni e regole d'accesso in linguaggio semplice + ERD. Non scrivi SQL prima del "sì" (o della conferma dell'orchestratore in pipeline).
    **Ogni punto in cui il brief contraddice un pattern di riferimento diventa una domanda dello Specchio, non una decisione dell'agente.** «Gli ordini si modificano finché non spediamo» contro lo snapshot in sola lettura di `pattern-ecommerce.md` non è un conflitto da sciogliere in silenzio scegliendo il più autorevole dei due: è esattamente la cosa che l'umano deve vedere. Il pattern dice cosa costa cedere, il committente decide.
-5. **Forgia** — migrazione(i) nell'ordine canonico, RLS, policy, `grant` (per colonna dove c'è una colonna di privilegio) e vincoli sugli stati iniziali inclusi alla nascita.
+5. **Forgia** — migrazione(i) nell'ordine canonico, RLS, policy, **privilegi espliciti** (`revoke` poi `grant`, per tutti e tre i ruoli — §I privilegi si scrivono, non si ereditano; per colonna dove c'è una colonna di privilegio) e vincoli sugli stati iniziali inclusi alla nascita.
 6. **Seed** — idempotente e deterministico.
 7. **Test negativi** — `test`. Per ogni tabella scrivibile, il tentativo che deve fallire. Si scrivono **qui**, non dopo il gate: il gate li pretende (`block`), e una policy senza il suo test è un'ipotesi che nessuno ha mai messo alla prova.
 8. **Tipi** — `types`. Prima del gate: senza, il passo dei tipi è rosso per forza e il primo gate di ogni progetto nascerebbe rosso per un motivo che non è un difetto dello schema. Un rosso strutturale insegna a ignorare il rosso.
@@ -97,7 +132,7 @@ Una lista di assunzioni dichiarate è recuperabile in mezz'ora. Un'assunzione co
 - [ ] Nessuna policy autorizza in base a `user_metadata` (lo scrive l'utente) e nessuna usa `auth.role()` (con gli accessi anonimi non controlla niente): il ruolo si dichiara con `to`, il claim sta in `raw_app_meta_data`
 - [ ] Nessuna scrittura con controllo effettivo `true`: su `update`/`all` senza `with check` il controllo è quello di `using`, quindi `using (true)` **è** `with check (true)`
 - [ ] Ogni `update` e `delete` ha la sua policy di `select` per gli **stessi ruoli**: senza, l'operazione tocca 0 righe e non dà errore
-- [ ] Ogni tabella con RLS e policy ha anche il **`grant`** a `anon`/`authenticated` — o sta in uno schema non esposto: RLS corretta senza `grant` non legge nulla e sembra un bug del frontend
+- [ ] **Privilegi espliciti scritti in migrazione** (`revoke` poi `grant`) per `anon`, `authenticated` **e `service_role`**: nessuna tabella si appoggia ai default dell'immagine Supabase, che sono cambiati due volte in un mese. Per ogni policy, il privilegio corrispondente esiste per gli **stessi ruoli** — o sta in uno schema non esposto: RLS corretta senza `grant` non legge nulla e sembra un bug del frontend. Nessun ruolo del client conserva `truncate`/`references`/`trigger`/`maintain`: la RLS non li filtra
 - [ ] Viste esposte con `security_invoker = on` · **nessuna vista materializzata** in uno schema esposto (Postgres rifiuta `security_invoker` su una MV: si legge coi diritti del proprietario) · funzioni `security definer` con `set search_path = ''` e con `revoke execute … from public` (il default di Postgres è `execute` a PUBLIC, cioè un endpoint per `anon`)
 - [ ] `supabase db advisors` senza rilievi di livello `ERROR`
 - [ ] Ogni chiave esterna e ogni colonna usata nelle policy hanno un indice
