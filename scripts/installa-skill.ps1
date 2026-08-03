@@ -31,7 +31,12 @@ $ErrorActionPreference = "Stop"
 # niente e non lo sapeva, perche' lo script non ha modo di accorgersi di una
 # skill che nessuno gli ha nominato. Quando una skill smette di essere uno
 # scaffold, questa riga si tocca **insieme** ai due documenti.
-$skill = @("schema-forge", "gestionale-crafter", "flow-sentinel", "speed-demon", "code-inquisition")
+# `vetrina-crafter` e' entrato il 2026-08-03, quando il suo gate a dieci passi ha
+# chiuso VERDE 10/10 su `banco-prova-controtempo` — un sito vero, sopra uno schema
+# prodotto eseguendo schema-forge. Costruita e sabotata lo stesso giorno: 122 test,
+# 7 comandi su 7 esercitati, 22 classi di sabotaggio, tre difetti del gate trovati
+# e chiusi. Verbale: agenti/vetrina-crafter/COSTRUZIONE-2026-08-03.md.
+$skill = @("schema-forge", "gestionale-crafter", "vetrina-crafter", "flow-sentinel", "speed-demon", "code-inquisition")
 
 # code-maniac NON e' in elenco di proposito: il README lo dichiara uno SNAPSHOT
 # del repo di finzidev, quindi la fonte di verita' non e' questa cartella. Va
