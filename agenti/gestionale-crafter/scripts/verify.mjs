@@ -19,7 +19,7 @@
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -424,4 +424,12 @@ function main() {
   process.exit(verdetto(args.json));
 }
 
-if (import.meta.main) main();
+// eseguito come comando, non quando i test importano i passi.
+// `import.meta.main` NON si usa: e' arrivato in Node 24, e su Node 20 vale
+// `undefined` — il corpo non gira, il processo esce 0 senza stampare niente, e
+// chi legge il codice d'uscita crede di aver visto un verde. Questo gate lo ha
+// fatto per davvero: misurato il 2026-08-03 su questa macchina (Node 20.12.2,
+// l'unico Node di sistema) in una cartella non-progetto — uscita 0, zero righe,
+// dove Node 24.18.1 stampava il messaggio e usciva 2. I prerequisiti della
+// skill dicono «Node >= 20»: il confronto qui sotto li rispetta ovunque.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

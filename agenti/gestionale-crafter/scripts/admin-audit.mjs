@@ -14,7 +14,8 @@
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { auditAdmin, catalogoDaRighe, conBarre } from "./audit-lib.mjs";
 import { urlDbProgetto, validaConfig } from "./progetto-lib.mjs";
@@ -205,4 +206,13 @@ function stampa(doc, progetto) {
   );
 }
 
-if (import.meta.main) main();
+// eseguito come comando, non quando qualcun altro importa questo guscio.
+// `import.meta.main` NON si usa: e' arrivato in Node 24, e su Node 20 vale
+// `undefined` — il corpo non gira, il processo esce 0 senza stampare niente, e
+// chi legge il codice d'uscita crede di aver visto un audit senza bloccanti.
+// Qui e' peggio che altrove: 0 e' proprio il codice di «nessun bloccante», cioe'
+// il silenzio si traveste da esito buono. Misurato il 2026-08-03 su questa
+// macchina (Node 20.12.2, l'unico Node di sistema) in una cartella
+// non-progetto — uscita 0, zero righe, dove Node 24.18.1 stampava il messaggio
+// e usciva 2. Il confronto qui sotto funziona su qualunque Node.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
