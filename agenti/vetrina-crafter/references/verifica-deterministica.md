@@ -104,9 +104,19 @@ Un audit su una cartella che non esiste non deve poter somigliare a un audit pul
   dell'handoff di schema-forge: lo schema è cambiato dopo che qualcuno ha firmato
   l'elenco, quindi l'elenco è un'opinione datata. È il controllo che il collaudo di
   `evolve` di flow-sentinel ha lasciato aperto al suo §7 («nessuno script lo esegue»);
-  qui costa poco, perché le due date stanno in due file dello stesso progetto. Falso
-  positivo dichiarato: un handoff riscritto per un refuso invecchia una firma che era
-  buona.
+  qui costa poco, perché le due date stanno in due file dello stesso progetto.
+
+  **S3, prima metà — misurata sul banco il 2026-08-03: il falso positivo dichiarato non
+  esiste.** La P0 scriveva «un handoff riscritto per un refuso invecchia una firma che
+  era buona». Provato: `touch` sull'handoff di schema-forge, gate rilanciato, **nessun
+  rilievo**. La regola non guarda la data del filesystem — legge la data dal **testo**,
+  dalla riga `Confermato da:` dell'handoff — e riscrivere un file non cambia una data
+  scritta dentro. Il falso positivo che resta è un altro e più raro: qualcuno che
+  **cambia la data** dentro l'handoff senza che lo schema sia cambiato. Il vero positivo
+  scatta (contratto firmato il 2026-08-01 contro handoff del 2026-08-03 → `issue` con le
+  due date stampate); su **9 esecuzioni** del gate su un progetto allineato non è mai
+  scattato. Anche la riga qui sopra è stata corretta: dice «l'ultima modifica
+  dell'handoff» e in realtà è la **data dichiarata dentro** l'handoff.
 - **MANCANTE quando:** il file non c'è; la riga `Confermato da:` manca, è un segnaposto
   (`{{…}}`, `TODO`, `da compilare`) o non nomina nessuno (`—`, `-`, `?`); nessuna
   intestazione di pagina è riconosciuta — anche quando le intestazioni ci sono ma sono
@@ -206,8 +216,17 @@ Un audit su una cartella che non esiste non deve poter somigliare a un audit pul
   `.next/BUILD_ID`: la build servita potrebbe non contenere le ultime modifiche, e tutto
   ciò che i passi 7-9 leggeranno parlerebbe di un'altra versione del sito. Si esce
   rilanciando `npm run build`, e converge in un giro — come il ciclo della riga `Gate:`.
-  Falso positivo dichiarato: un `git checkout` o un formattatore che tocca file senza
-  cambiarli.
+
+  **S3, seconda metà — misurata sul banco il 2026-08-03: questo falso positivo esiste
+  ed è reale.** `touch src/components/ui/Card.tsx`, senza cambiare una riga, e il gate
+  stampa `[issue] .next/BUILD_ID: la build servita e' piu' vecchia del sorgente piu'
+  recente (src/components/ui/Card.tsx)`. Frequenza misurata: **0 scatti su 9 esecuzioni**
+  in un normale ciclo costruisci → rilancia, e uno scatto per ogni file toccato fuori da
+  quel ciclo, che una singola ricostruzione azzera. È rumore raro e a costo nullo, quindi
+  la regola resta `issue` e resta com'è: l'alternativa — confrontare il *contenuto*
+  invece della data — vorrebbe dire tenere un'impronta dei sorgenti dentro il gate, cioè
+  un secondo stato da mantenere allineato per chiudere un rilievo che si spegne
+  rilanciando la build.
 - **MANCANTE quando:** l'app non risponde; `.next/BUILD_ID` non c'è (il progetto non è mai
   stato costruito); nessun URL è stato dichiarato né passato. Tre premesse assenti, non
   tre esiti.
@@ -296,23 +315,53 @@ rende verificabile la Legge n°3.
   senza rigenerazione: il cliente cambierà il testo dal gestionale e non vedrà cambiare
   niente finché qualcuno non ripubblica. È `issue` e non `block` perché un sito che si
   ripubblica a ogni modifica è una scelta legittima — **se è dichiarata**.
-- **MANCANTE quando:** `psql` non c'è; il database non è risolvibile; il valore dello slot
-  è **più corto della soglia distintiva** (`lunghezzaMinimaFrammento`, ripiego 24
-  caratteri). Su un valore corto la ricerca non prova niente in nessuna delle due
-  direzioni: si dichiara che quello slot non è stato verificato, invece di far finta.
+- **MANCANTE quando:** `psql` non c'è; il database non è risolvibile; **la tabella dei
+  contenuti non è stata interrogata** (query fallita o nome non valido: allora *nessuno*
+  slot è stato verificato, e lo si dice una volta sola invece di accusare ogni slot di
+  non avere righe); il valore dello slot è **più corto della soglia distintiva**
+  (`Lunghezza minima del frammento distintivo`, ripiego 24 caratteri). Su un valore corto
+  la ricerca non prova niente in nessuna delle due direzioni: si dichiara che quello slot
+  non è stato verificato, invece di far finta.
 
-> **DECISIONE SOSPESA — slot dichiarato senza nessuna riga pubblicata.**
-> La P0 lo classificava MANCANTE. In revisione il direttore ha osservato che somiglia
-> di più a un `block`: il contratto dichiara un contenuto che nel database non esiste,
-> e questo è un fatto misurato, non una verifica che non si è potuta fare. **La scelta
-> non si prende a tavolino:** il mandato di P1 dice di provare i due casi sul banco e
-> decidere con la misura accanto, e al 2026-08-02 il banco non esiste (Docker assente su
-> questa macchina). Finché non esiste, il codice implementa il caso come **MANCANTE** —
-> il comportamento della P0 firmata — e lo marca con `DECISIONE SOSPESA` accanto alla
-> riga, con un test che fissa il comportamento **attuale** e non quello desiderato.
-> Indovinarla adesso è esattamente il difetto che il collaudo avversario è pagato per
-> trovare.
-- **Due dettagli che in P1 decidono se questo passo funziona o mente.**
+> **S1 — CHIUSA SUL BANCO IL 2026-08-03: uno slot dichiarato senza nessuna riga
+> pubblicata è un `block`.**
+>
+> La P0 lo classificava MANCANTE; il direttore in revisione osservava che somiglia a un
+> `block`; il mandato di P1 diceva di provare i **due casi** sul banco e decidere con la
+> misura accanto. Fatto, sul banco `banco-prova-controtempo`, sullo slot `docenti-intro`
+> della pagina `/docenti`:
+>
+> | caso piantato | cosa serve la pagina | cosa risponde il database |
+> |---|---|---|
+> | riga presente ma `is_published = false` | titolo di ripiego del codice, **nessun testo sotto**; `<title>` da «Chi insegna · Controtempo» a «Docenti · Controtempo» | interrogata, zero righe per quella chiave |
+> | riga assente del tutto | **identico** | identico |
+>
+> I due casi non si distinguono, né in pagina né dal database, e in tutti e due il
+> database **ha risposto**. È una misura riuscita con esito negativo, non una verifica
+> che non si è potuta fare — e MANCANTE avrebbe mandato chi legge il rosso a controllare
+> `psql`, la porta e la connessione, cioè l'imputato sbagliato.
+>
+> **La metà che resta MANCANTE**, e senza la quale la decisione sarebbe stata sbagliata:
+> quando la tabella non è stata letta affatto, il vecchio codice avrebbe prodotto un
+> `block` per **ogni** slot dichiarato («non c'è nessuna riga pubblicata»), cioè N
+> diagnosi che mandano a cercare righe che magari ci sono tutte. Le due condizioni ora
+> sono separate nel codice e hanno un test ciascuna.
+- **Tre dettagli che decidono se questo passo funziona o mente.**
+  0. **Il frammento distintivo si sceglie fra i valori che sono davvero contenuto.**
+     `to_jsonb(t)` restituisce come testo anche la chiave primaria e le date tecniche, e
+     quelle sono lunghe: `id` 36 caratteri, `created_at`/`updated_at` 32 ciascuna. Su uno
+     slot il cui contenuto più lungo sta sotto i 36, «il più lungo dei valori di testo»
+     era l'**UUID della riga**, e il gate lo cercava in pagina. Misurato sul banco il
+     2026-08-03, su una pagina perfettamente corretta:
+     ```
+     [block] slot `pie-pagina` → contatti (/contatti): il valore pubblicato nel
+     database non compare nel testo servito della pagina che dovrebbe mostrarlo:
+     «44444444-4444-4444-8444-000000000006…»
+     ```
+     Un rosso falso con una diagnosi bugiarda, cioè la cosa peggiore che un gate possa
+     produrre. UUID e timestamp ISO ora si scartano **per forma**, prima del confronto di
+     lunghezza; alzare la soglia sopra 36 avrebbe nascosto il difetto trasformandolo in
+     un MANCANTE su ogni slot corto.
   1. Il confronto si fa **dopo aver decodificato le entità HTML e compattato gli spazi**:
      `L'orto d'inverno` arriva in pagina come `L&#x27;orto d&#x27;inverno`, e in italiano
      gli apostrofi sono dappertutto. Senza normalizzazione questo passo sarebbe una
@@ -321,9 +370,22 @@ rende verificabile la Legge n°3.
   2. La ricerca gira sul **testo ripulito** dagli `<script>`, lo stesso del passo 8: un
      valore che compare solo nel payload RSC e non nella pagina non è un contenuto
      mostrato.
-- **La soglia di 24 caratteri è una convenzione, non una misura**, esattamente come i tre
-  giri di Lighthouse: il numero giusto si ricava su un progetto vero, guardando quanti
-  slot restano fuori. Va tarata in P1 e dichiarata nel contratto.
+- **S2 — la soglia, tarata sul banco il 2026-08-03: resta 24, e il numero da guardare era
+  un altro.** Sui sei slot veri di `banco-prova-controtempo` i frammenti di contenuto
+  misurano 43, 183, 247, 257, 271 e 314 caratteri: a soglia 24 restano fuori **zero slot
+  su sei**, e il più corto sta **19 caratteri sopra**. La taratura conferma il ripiego —
+  ma la misura interessante è un'altra: 24 era **sotto il rumore**. I valori tecnici che
+  la regola si tirava dentro (UUID 36, timestamp 32) qualificavano sempre, quindi ogni
+  soglia sotto 33 era decorativa e il difetto non era il numero ma la candidatura
+  (dettaglio 0 qui sopra). Su un progetto nuovo il numero si ricava allo stesso modo:
+  si contano i frammenti di contenuto e si guarda quanti restano sotto.
+- **Il modo in cui questo passo può diventare rosso senza che il sito abbia niente che non
+  va**, misurato sul banco: la **Data Cache di Next sopravvive a `next build`**. Una riga
+  cambiata nel database non entra nella build nuova finché non scade la finestra di
+  `revalidate`, quindi il gate vede — correttamente — una pagina che non mostra ciò che il
+  database dice. Il rilievo è vero, la diagnosi da sola manderebbe a cercare un difetto
+  nel codice della pagina: il `hint` elenca tutte e tre le cause, e la terza si chiude con
+  `rm -rf .next/cache/fetch-cache && npm run build`.
 
 ### 10. `contratto-uscita` — l'handoff dice il vero sul gate che lo verifica
 

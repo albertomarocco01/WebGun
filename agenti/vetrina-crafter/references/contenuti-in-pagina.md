@@ -84,15 +84,23 @@ Tre casi, tre comportamenti diversi, e la differenza conta:
 | Caso | Cosa fa la pagina | Cosa fa il gate |
 |---|---|---|
 | lo slot esiste ed e' pubblicato | lo mostra | verifica che il testo sia in pagina e **non** nei sorgenti |
-| lo slot esiste ed e' in bozza | mostra il ripiego | *(decisione sospesa: vedi sotto)* |
-| lo slot non esiste affatto | mostra il ripiego | *(decisione sospesa: vedi sotto)* |
+| lo slot esiste ed e' in bozza | mostra il ripiego | **`block`** |
+| lo slot non esiste affatto | mostra il ripiego | **`block`** |
+| la tabella non e' stata interrogata | — | **MANCANTE**, una volta sola per tutti gli slot |
 
-> **DECISIONE SOSPESA.** Uno slot che il contratto dichiara e che nel database non
-> ha nessuna riga pubblicata oggi produce una **verifica MANCANTE**. Il direttore ha
-> osservato in revisione della P0 che somiglia di piu' a un `block` — il contratto
-> dichiara un contenuto che non esiste — e la scelta **si prende sul banco**,
-> provando i due casi. Finche' il banco non esiste resta MANCANTE, che e' il
-> comportamento della P0 firmata, ed e' marcato nel codice.
+> **DECISA SUL BANCO IL 2026-08-03 (S1): `block`.** I due casi sono stati piantati
+> su `banco-prova-controtempo`, slot `docenti-intro` della pagina `/docenti`, e
+> danno lo **stesso** esito: la pagina serve la sezione decapitata — il titolo di
+> ripiego del codice, e sotto niente — e il `<title>` scende da «Chi insegna ·
+> Controtempo» a «Docenti · Controtempo». In tutti e due i casi il database **ha
+> risposto**: e' una misura riuscita con esito negativo, non una verifica che non
+> si e' potuta fare. MANCANTE avrebbe mandato chi legge il rosso a controllare
+> `psql` e la porta, cioe' l'imputato sbagliato.
+>
+> La riga MANCANTE della tabella qui sopra e' la meta' che rende vera l'altra:
+> quando la tabella non e' stata letta affatto, dire «nessuna riga pubblicata» per
+> ogni slot sarebbe N diagnosi che mandano a cercare righe che magari ci sono
+> tutte.
 
 Il ripiego si scrive nel codice **e si dichiara nell'handoff**: un testo di riserva
 che nessuno sa che esiste diventa il testo del sito senza che nessuno l'abbia
@@ -122,9 +130,17 @@ gestionale, la pagina non cambia, e nessuno capisce perche'.
 `Lunghezza minima del frammento distintivo` caratteri (ripiego: 24). Sotto quella
 soglia la ricerca non prova niente in nessuna delle due direzioni — «Chi siamo» si
 trova in pagina per caso e nei sorgenti per caso — e allora il gate dichiara che
-quello slot **non e' stato verificato**, invece di far finta. Il numero e' una
-convenzione, non una misura: si tara su un progetto vero guardando quanti slot
-restano fuori.
+quello slot **non e' stato verificato**, invece di far finta.
+
+**E il frammento si sceglie fra i valori che sono davvero contenuto** (misurato il
+2026-08-03, S2). Il gate legge la riga con `to_jsonb`, che restituisce come testo
+anche la chiave primaria e le date: `id` 36 caratteri, `created_at`/`updated_at` 32
+ciascuna. Su uno slot il cui contenuto piu' lungo stava sotto i 36, «il piu' lungo
+dei valori di testo» era **l'UUID della riga**, e il gate lo cercava in pagina:
+`block` su una pagina corretta, con una diagnosi che nominava un UUID. UUID e
+timestamp ora si scartano per forma. Il numero della soglia, tarato sui sei slot
+veri del banco (43-314 caratteri di contenuto): a 24 restano fuori **zero slot su
+sei**, e il piu' corto sta 19 caratteri sopra.
 
 ## Immagini
 

@@ -431,13 +431,27 @@ describe("contenuti dal database", () => {
     assert.match(mancanti[0], /sotto la soglia distintiva/);
   });
 
-  it("DECISIONE SOSPESA: slot senza riga pubblicata resta MANCANTE, non block", () => {
-    // Questo test fissa il comportamento ATTUALE (quello della P0 firmata), non
-    // quello desiderato: la scelta fra MANCANTE e `block` si decide sul banco,
-    // provando i due casi, e al 2026-08-02 il banco non esiste.
+  it("S1: slot dichiarato senza riga pubblicata e' un `block` (deciso sul banco il 2026-08-03)", () => {
+    // I due casi del mandato — riga in bozza e riga assente — danno lo stesso
+    // esito visibile sul banco: la pagina serve la sezione decapitata. In tutti
+    // e due il database HA RISPOSTO, quindi e' una misura riuscita con esito
+    // negativo, non una verifica che non si e' potuta fare.
     const { findings, mancanti } = findingsContenuti({ ...base, valoriPerSlot: new Map([["home-hero", null]]) });
+    assert.deepEqual(mancanti, []);
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].severity, "block");
+    assert.match(findings[0].message, /nessuna riga pubblicata con questa chiave/);
+  });
+
+  it("S1, l'altra meta': la tabella NON interrogata resta MANCANTE, e non N block", () => {
+    // Senza questa distinzione un `psql` che fallisce produrrebbe un `block` per
+    // ogni slot dichiarato, cioe' N diagnosi che mandano a cercare righe che
+    // magari ci sono tutte.
+    const { findings, mancanti } = findingsContenuti({ ...base, valoriPerSlot: null });
     assert.deepEqual(findings, []);
-    assert.match(mancanti[0], /DECISIONE SOSPESA/);
+    assert.equal(mancanti.length, 1);
+    assert.match(mancanti[0], /non interrogata/);
+    assert.match(mancanti[0], /nessuno dei \d+ slot dichiarati/);
   });
 
   it("segnala (issue) una pagina statica che mostra un contenuto editabile", () => {
@@ -452,6 +466,41 @@ describe("contenuti dal database", () => {
     assert.equal(frammentoDistintivo(["corto", "questo e' abbastanza lungo da essere distintivo"]), "questo e' abbastanza lungo da essere distintivo");
     assert.equal(frammentoDistintivo(["corto", "anche corto"]), null);
     assert.equal(frammentoDistintivo([]), null);
+  });
+
+  it("S2: la chiave primaria e le date NON sono candidati al frammento distintivo", () => {
+    // MISURATO sul banco il 2026-08-03: `to_jsonb(t)` restituisce come testo
+    // anche `id` (36 caratteri) e i due timestamp (32), che su uno slot corto
+    // vincevano il confronto «il piu' lungo». Il gate cercava l'UUID della riga
+    // nella pagina e produceva un `block` con una diagnosi bugiarda su una
+    // pagina corretta.
+    const riga = [
+      "44444444-4444-4444-8444-000000000006", // id
+      "2026-08-03T16:01:00.506112+00:00", // created_at
+      "2026-08-03T16:01:00.506112+00:00", // updated_at
+      "pie-pagina",
+      "Bologna, telefono 051 000 111", // il contenuto vero: 29 caratteri
+    ];
+    assert.equal(frammentoDistintivo(riga), "Bologna, telefono 051 000 111");
+  });
+
+  it("S2, il caso in cui NON deve scattare: un testo che somiglia a una data non e' tecnico", () => {
+    // La regola scarta per FORMA, e la forma deve essere quella intera: un
+    // contenuto che contiene una data non e' una data.
+    const testo = "Chiusura estiva dal 2026-08-01 al 2026-08-31, riapriamo lunedi'";
+    assert.equal(frammentoDistintivo([testo, "44444444-4444-4444-8444-000000000006"]), testo);
+  });
+
+  it("S2: se l'unico valore lungo e' tecnico, lo slot risulta NON verificato", () => {
+    // Togliere i candidati tecnici non li promuove a MANCANTE per magia: senza
+    // contenuto sopra soglia lo slot resta dichiarato non verificato, che e' la
+    // risposta onesta.
+    const { findings, mancanti } = findingsContenuti({
+      ...base,
+      valoriPerSlot: new Map([["home-hero", ["44444444-4444-4444-8444-000000000006", "corto"]]]),
+    });
+    assert.deepEqual(findings, []);
+    assert.match(mancanti[0], /sotto la soglia distintiva/);
   });
 });
 

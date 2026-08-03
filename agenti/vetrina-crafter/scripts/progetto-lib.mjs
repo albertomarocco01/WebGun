@@ -597,7 +597,36 @@ const estratto = (testo, da) => testo.slice(Math.max(0, da - 20), da + 60).trim(
 
 // --------------------------------------------------------------- i contenuti
 /**
- * Il frammento distintivo di uno slot: il piu' lungo dei suoi valori di testo.
+ * I valori che una riga si porta dietro e che NON sono contenuto: la chiave
+ * primaria e le date tecniche.
+ *
+ * MISURATO sul banco il 2026-08-03, ed e' il motivo per cui questa costante
+ * esiste. Il frammento si ricava con `to_jsonb(t)`, che restituisce come TESTO
+ * anche `id` (36 caratteri) e `created_at`/`updated_at` (32 ciascuna). Su uno
+ * slot il cui contenuto piu' lungo sta sotto i 36 caratteri, «il piu' lungo dei
+ * valori di testo» e' l'UUID della riga — e il gate cercava l'UUID nella pagina:
+ *
+ *   [block] slot `pie-pagina` → contatti (/contatti): il valore pubblicato nel
+ *   database non compare nel testo servito della pagina che dovrebbe mostrarlo:
+ *   «44444444-4444-4444-8444-000000000006…»
+ *
+ * La pagina era corretta e mostrava esattamente cio' che il database diceva.
+ * Un rosso falso con una diagnosi bugiarda, cioe' la cosa peggiore che un gate
+ * possa produrre. Alzare la soglia sopra 36 lo avrebbe nascosto trasformandolo
+ * in un MANCANTE su ogni slot corto: il difetto non era la soglia, era la
+ * candidatura.
+ */
+const VALORE_TECNICO = new RegExp(
+  "^(?:" +
+    "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}" + // uuid
+    "|\\d{4}-\\d{2}-\\d{2}[T ][\\d:.]+(?:[+-]\\d{2}:?\\d{2}|Z)?" + // timestamp ISO
+    ")$",
+  "i",
+);
+
+/**
+ * Il frammento distintivo di uno slot: il piu' lungo dei suoi valori di testo,
+ * fra quelli che sono davvero contenuto.
  *
  * Sotto la soglia la ricerca non prova niente in NESSUNA delle due direzioni —
  * «Chi siamo» si trova in pagina per caso e nei sorgenti per caso — quindi si
@@ -608,7 +637,7 @@ const estratto = (testo, da) => testo.slice(Math.max(0, da - 20), da + 60).trim(
 export function frammentoDistintivo(valori, soglia = SOGLIA_FRAMMENTO) {
   const candidati = (valori ?? [])
     .map((v) => normalizzaSpazi(v ?? ""))
-    .filter((v) => v.length >= soglia)
+    .filter((v) => v.length >= soglia && !VALORE_TECNICO.test(v))
     .sort((a, b) => b.length - a.length);
   return candidati[0] ?? null;
 }
@@ -618,7 +647,9 @@ export function frammentoDistintivo(valori, soglia = SOGLIA_FRAMMENTO) {
  *
  * @param {object} dati `{ contratto, valoriPerSlot, testoPerPagina, cercaNeiSorgenti, conteggiAnon, soglia }`
  *   - `valoriPerSlot`: Mappa chiave → elenco di valori di testo della riga
- *     pubblicata, oppure `null` se nel database non c'e' nessuna riga pubblicata;
+ *     pubblicata, con `null` sulle chiavi che nel database non hanno nessuna
+ *     riga pubblicata. **`null` al posto della Mappa** significa un'altra cosa:
+ *     la tabella dei contenuti non e' stata interrogata affatto;
  *   - `cercaNeiSorgenti`: funzione frammento → elenco di percorsi.
  * Ritorna `{ findings, mancanti }`: i `mancanti` sono verifiche NON fatte, e
  * tengono il passo su MANCANTE invece che su `pass`.
@@ -629,25 +660,51 @@ export function findingsContenuti(dati) {
   const mancanti = [];
   const percorsoDi = new Map(contratto.pagine.map((p) => [p.id, p]));
 
+  // La tabella non e' stata letta: nessuno slot e' stato verificato, e dirlo
+  // slot per slot come «nessuna riga pubblicata» manderebbe a cercare righe che
+  // magari ci sono tutte. E' la differenza fra «ho misurato e non c'e'» e «non
+  // ho misurato», ed e' la sola per cui questo passo esiste.
+  if (valoriPerSlot === null || valoriPerSlot === undefined) {
+    if (contratto.slot.length > 0) {
+      mancanti.push(
+        `tabella dei contenuti \`${contratto.tabellaContenuti?.tabella ?? "?"}\` non interrogata: ` +
+        `nessuno dei ${contratto.slot.length} slot dichiarati e' stato verificato`,
+      );
+    }
+    findings.push(...findingsFontiLeggibili(contratto, conteggiAnon, mancanti));
+    return { findings, mancanti };
+  }
+
   for (const s of contratto.slot) {
     const pagina = percorsoDi.get(s.pagina);
     if (!pagina) continue;
     const valori = valoriPerSlot.get(s.chiave);
 
-    // DECISIONE SOSPESA (mandato P.2, righe 48-50): uno slot dichiarato senza
-    // nessuna riga pubblicata somiglia a un `block` — il contratto dichiara un
-    // contenuto che non esiste — ma la scelta si prende SUL BANCO, provando i due
-    // casi, e al 2026-08-02 il banco non esiste. Finche' non esiste resta
-    // MANCANTE, che e' il comportamento della P0 firmata. Il test che copre
-    // questa riga fissa il comportamento ATTUALE, non quello desiderato.
+    // DECISIONE S1, CHIUSA SUL BANCO IL 2026-08-03: `block`, non MANCANTE.
+    //
+    // I due casi del mandato — slot in bozza (`is_published = false`) e riga
+    // assente del tutto — sono stati piantati sul banco Controtempo e danno lo
+    // STESSO esito visibile: `/docenti` serve la sezione decapitata, con il
+    // titolo di ripiego del codice e nessun testo sotto, e il `<title>` della
+    // pagina scende da «Chi insegna · Controtempo» a «Docenti · Controtempo».
+    // In tutti e due i casi il database ha RISPOSTO, e la risposta e' «per
+    // questa chiave non c'e' niente di pubblicato»: e' una misura riuscita con
+    // esito negativo, non una verifica che non si e' potuta fare. MANCANTE
+    // avrebbe mandato chi legge a controllare `psql`, la porta e la
+    // connessione — l'imputato sbagliato.
     if (valori === null || valori === undefined) {
-      mancanti.push(`slot \`${s.chiave}\`: nessuna riga pubblicata nel database — verifica non fatta [DECISIONE SOSPESA: block o MANCANTE, si decide sul banco]`);
+      findings.push({
+        severity: "block",
+        object: `slot \`${s.chiave}\` → ${pagina.id} (${pagina.percorso})`,
+        message: "il contratto lo dichiara e nel database non c'e' nessuna riga pubblicata con questa chiave: la pagina serve la sua sezione senza il testo che dovrebbe contenere",
+        hint: "pubblica la riga (colonna di pubblicazione a vero), oppure togli lo slot dal contratto e fallo riconfermare. Se la chiave e' scritta in due modi fra vetrina e gestionale, il difetto e' quello",
+      });
       continue;
     }
 
     const frammento = frammentoDistintivo(valori, soglia);
     if (!frammento) {
-      mancanti.push(`slot \`${s.chiave}\`: nessun valore lungo almeno ${soglia} caratteri — sotto la soglia distintiva la ricerca non prova niente, quello slot NON e' stato verificato`);
+      mancanti.push(`slot \`${s.chiave}\`: nessun valore di contenuto lungo almeno ${soglia} caratteri — sotto la soglia distintiva la ricerca non prova niente, quello slot NON e' stato verificato`);
       continue;
     }
 
@@ -667,7 +724,14 @@ function findingsSlot({ slot, pagina, frammento, testoPerPagina, cercaNeiSorgent
       severity: "block",
       object: `slot \`${slot.chiave}\` → ${pagina.id} (${pagina.percorso})`,
       message: `il valore pubblicato nel database non compare nel testo servito della pagina che dovrebbe mostrarlo: «${frammento.slice(0, 60)}…»`,
-      hint: "la pagina non legge quello slot, oppure lo legge e non lo rende: il cliente cambiera' il testo e non cambiera' niente",
+      // La terza causa non e' teorica: e' stata misurata sul banco il
+      // 2026-08-03. La Data Cache di Next SOPRAVVIVE a `next build`, quindi una
+      // riga cambiata nel database non entra nella build nuova finche' non
+      // scade la finestra di `revalidate` — e il gate vede giustamente una
+      // pagina che non mostra cio' che il database dice. Senza questa riga la
+      // diagnosi manderebbe a cercare un difetto nel codice della pagina, che
+      // e' corretto.
+      hint: "tre cause possibili: la pagina non legge quello slot; lo legge e non lo rende; oppure la build ha riusato la cache dei dati e sta servendo il contenuto di prima (`rm -rf .next/cache/fetch-cache && npm run build`)",
     });
   }
 

@@ -445,19 +445,28 @@ function premesseContenuti(ctx, args) {
   return { dbUrl, schemi, contratto };
 }
 
+/**
+ * I valori di testo di ogni riga pubblicata, per chiave.
+ *
+ * Ritorna `null` — e non una Mappa vuota — quando la tabella NON e' stata
+ * interrogata: senza questa distinzione un `psql` che fallisce produrrebbe un
+ * `block` per ogni slot dichiarato («non c'e' nessuna riga pubblicata»), cioe'
+ * N diagnosi sbagliate al posto di una verifica mancante.
+ */
 function leggiSlot(dbUrl, contratto) {
   const valori = new Map();
   const tc = contratto.tabellaContenuti;
-  if (!tc) return valori;
-  if (![tc.tabella, tc.colonnaChiave, tc.colonnaPubblicato].every((n) => IDENTIFICATORE.test(n))) return valori;
+  if (!tc) return null;
+  if (![tc.tabella, tc.colonnaChiave, tc.colonnaPubblicato].every((n) => IDENTIFICATORE.test(n))) return null;
 
   // `to_jsonb(t)` invece di elencare le colonne: quali colonne contengano il
   // testo non lo dichiara nessuno, e chiederlo al contratto vorrebbe dire una
-  // riga di sintassi in piu' per ogni progetto. Cosi' si prendono tutti i valori
-  // di testo della riga e il frammento distintivo e' il piu' lungo.
+  // riga di sintassi in piu' per ogni progetto. Si prendono tutti i valori di
+  // testo della riga, e `frammentoDistintivo` scarta quelli che non sono
+  // contenuto (chiave primaria e date: vedi `VALORE_TECNICO`).
   const righeDb = interroga(dbUrl,
     `select ${tc.colonnaChiave}::text, to_jsonb(t)::text from ${tc.tabella} t where ${tc.colonnaPubblicato}`);
-  if (righeDb === null) return valori;
+  if (righeDb === null) return null;
 
   for (const s of contratto.slot) valori.set(s.chiave, null);
   for (const [chiave, json] of righeDb) {
