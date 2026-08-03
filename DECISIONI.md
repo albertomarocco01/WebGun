@@ -364,6 +364,12 @@ cicatrice (`// BUTCHER DA METTE` e `REEEEEEEE` su due righe).
 - **Stato:** presa. Non c'è nessun controllo automatico che i due file siano allineati: se il
   `.docx` cambia e nessuno rilancia lo script, il `.txt` torna a mentire. È un residuo noto, e
   il posto giusto dove chiuderlo è un gate della regia, che oggi non esiste.
+- **Residuo chiuso il 2026-08-03 (P.7a):** il gate della regia esiste —
+  `node scripts/verifica-regia.mjs`, passo `docx-txt`. Riestrae il `.docx` **in un file
+  temporaneo** con lo stesso `estrai-docx.ps1` (`-Uscita`, aggiunto lì per questo) e lo
+  confronta riga per riga col `.txt` tracciato: **misura, non riscrive**, perché un gate che
+  sana quello che misura chiude verde a ogni giro e non dice mai che il documento madre è
+  cambiato. PowerShell assente vale MANCANTE, mai PASS.
 
 ## Decisioni prese scrivendo i privilegi di Schema Forge (2026-08-03)
 

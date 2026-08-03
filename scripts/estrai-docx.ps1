@@ -10,13 +10,23 @@
 # si rilancia questo.
 #
 # USO, dalla radice del repo:  powershell -ExecutionPolicy Bypass -File scripts/estrai-docx.ps1
+#
+# `-Uscita <percorso>` scrive altrove invece che su `webgun_content.txt`, e serve
+# a una cosa sola: `scripts/verifica-regia.mjs` riestrae in un file temporaneo e
+# lo confronta col tracciato. Il gate MISURA, non corregge — se riscrivesse il
+# .txt chiuderebbe verde a ogni giro e non direbbe mai che il documento madre e'
+# cambiato senza che nessuno rilanciasse questo script. Senza il parametro il
+# comportamento e' quello di sempre, ed e' quello che si usa a mano.
+param([string]$Uscita)
 
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $radice = Split-Path -Parent $PSScriptRoot
 $docx = Join-Path $radice "Web Gun.docx"
-$uscita = Join-Path $radice "webgun_content.txt"
+# I nomi di variabile di PowerShell NON distinguono le maiuscole: `$uscita` e
+# `$Uscita` sono la stessa cosa, quindi il resto dello script resta com'era.
+if ([string]::IsNullOrWhiteSpace($uscita)) { $uscita = Join-Path $radice "webgun_content.txt" }
 
 $zip = [System.IO.Compression.ZipFile]::OpenRead($docx)
 try {
