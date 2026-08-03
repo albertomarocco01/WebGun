@@ -17,7 +17,7 @@
   modifica e' del 2026-07-30, quando il collaudo di `evolve` ha scoperto che quella procedura
   copriva un caso su quattro (`COLLAUDO-EVOLVE-2026-07-30.md` §4); esistono le
   **4 references**, il gate `verify.mjs` a **7 passi** con id stabili, le regole pure in
-  `scripts/gate-lib.mjs` con **103 test verdi allora** (**108 oggi**, §Cosa esiste), i **3 template** e la configurazione
+  `scripts/gate-lib.mjs` con **103 test verdi allora** (**110 oggi**, §Cosa esiste), i **3 template** e la configurazione
   ESLint delle spec. Il gate e' stato **eseguito davvero** su due banchi Next.js + Supabase locale,
   scritti da due mani diverse: `banco-prova-flow/` (P1, e-commerce) e `banco-prova-collaudo-fs/`
   (P2, palestra) — **VERDE 7 su 7 su entrambi**, e rosso ogni volta che qualcosa e' stato rotto apposta.
@@ -37,6 +37,21 @@
   - A valle: speed-demon (ottimizza con la batteria come rete di sicurezza), cyber-shield (parte dai
     flussi ostili dichiarati), launchpad (non pubblica su gate rosso)
 - **Guardiani:** ESLint **0 errori 0 warning**, `knip` pulito, `jscpd` **0 cloni** su `scripts/`.
+- **2026-08-03 — il gate non partiva sul Node di sistema, e usciva `0` muto.** *Il difetto:* l'epilogo era
+  `if (import.meta.main) await main();`, e `import.meta.main` e' arrivato in **Node 24**; su Node 20.12.2
+  — l'unico Node di sistema di questa macchina — vale `undefined`, `main()` non girava e **il gate usciva
+  `0` senza stampare una riga**, cioe' un verde che non aveva guardato niente. Questo gate lo pagava due
+  volte: **speed-demon lo lancia come sottoprocesso** col `node` del PATH per il suo passo `rete-verde`, e
+  da un gate muto ricavava «non ha prodotto JSON leggibile», cioe' una verifica MANCANTE per colpa d'altri.
+  I prerequisiti dichiarati dicono «Node >= 20»: era il codice a violare il proprio contratto. *La
+  correzione:* la forma gia' collaudata di `vetrina-crafter`, `process.argv[1]` risolto e confrontato con
+  `fileURLToPath(import.meta.url)`, a comportamento invariato su Node 24. *Come si e' provata:* in una
+  cartella non-progetto nelle **due direzioni** — prima Node 20 usciva `0` con zero righe e Node 24 usciva
+  `2` con il messaggio, dopo **entrambi escono `2` con lo stesso messaggio**. Due test di regressione in
+  `scripts/verify.test.mjs` (108 → **110**): uno **funzionale** (lancia il gate in una cartella
+  non-progetto e pretende uscita != 0 e output non muto — copre tutta la classe «l'epilogo non parte», ma
+  su Node 24 non vede *questo* difetto) e uno **statico** (il sorgente non contiene `import.meta.main` —
+  l'unico dei due che lo impedisce su qualunque Node). Pacchetto P.0-igiene.
 
 ## Piano di costruzione (deciso in P0)
 
@@ -52,7 +67,7 @@
 | Cosa | Numero | Come e' stato misurato |
 |---|---|---|
 | Passi del gate | 7 | `verify.mjs --json`, `summary.passi` |
-| Test degli script | **108 verdi** (79 dopo P1, +24 in P2, +3 in P3 su `ambienteBatteria`, +2 col collaudo di `evolve`) | `node --test "scripts/**/*.test.mjs"` |
+| Test degli script | **110 verdi** (79 dopo P1, +24 in P2, +3 in P3 su `ambienteBatteria`, +2 col collaudo di `evolve`, +2 con P.0-igiene il 2026-08-03) | `node --test "scripts/**/*.test.mjs"` |
 | References | 4 | `references/`, 1288 righe dopo P1, corrette in tre punti da P2 |
 | Template | 3 | `flussi-critici.md`, `handoff-flow-sentinel.md`, `eslint-spec.config.mjs` |
 | Banchi su cui il gate e' girato | **3**, di tre domini — e il terzo scritto da **altri agenti** | `banco-prova-flow/` (5 flussi, 5 spec) · `banco-prova-collaudo-fs/` (6 flussi, 6 spec) · **`banco-prova-negozio/` (11 flussi, 11 spec, 16 test, gate 7/7)**. Nessuno dei tre e' piu' su disco: i primi due erano usa e getta, il terzo e' stato cancellato il 2026-07-30 (`../../DECISIONI.md` §25) e torna con `git checkout 67f9001 -- banco-prova-negozio` |

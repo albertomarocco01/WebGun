@@ -4,7 +4,7 @@
   avversario lo stesso giorno da una sessione indipendente**, su un secondo
   banco costruito apposta con pagine davvero lente
   (`banco-prova-immobiliare`, Case di Langa). Gli script hanno test propri
-  (`node --test`, **73 verdi**), il gate `verify` ha **7 passi** con id stabili.
+  (`node --test`, **75 verdi**), il gate `verify` ha **7 passi** con id stabili.
   Il gate corretto e' stato **rilanciato sul banco vecchio**, `banco-prova-negozio`,
   e chiude **VERDE 7/7**: nessuna regressione, e `rete-verde` — la seconda legge
   della skill — ha finalmente girato dentro questo gate, verde sull'app giusta e
@@ -23,6 +23,25 @@
     di componenti da ottimizzare, i componenti sono scritti a mano nel progetto.
 - **Guardiani:** code-maniac e code-inquisition valutano gli script di questa
   skill come qualsiasi altro codice. Nessuno dei due li ha mai visti: punto 5.
+- **2026-08-03 — il gate non partiva sul Node di sistema, e usciva `0` muto.** *Il
+  difetto:* l'epilogo era `if (import.meta.main) await main();`, e `import.meta.main`
+  e' arrivato in **Node 24**; su Node 20.12.2 — l'unico Node di sistema di questa
+  macchina — vale `undefined`, `main()` non girava e **il gate usciva `0` senza
+  stampare una riga**, cioe' un verde che non aveva guardato niente. E' esattamente la
+  classe di difetto per cui questa skill esiste — `--url` senza default,
+  `eLaMiaBuild`, `indiziDevServer` — e ce l'aveva nell'ultima riga del proprio guscio.
+  I prerequisiti dichiarati dicono «Node >= 20»: era il codice a violare il proprio
+  contratto. *La correzione:* la forma gia' collaudata di `vetrina-crafter`,
+  `process.argv[1]` risolto e confrontato con `fileURLToPath(import.meta.url)`, a
+  comportamento invariato su Node 24. *Come si e' provata:* in una cartella
+  non-progetto nelle **due direzioni** — prima Node 20 usciva `0` con zero righe e
+  Node 24 usciva `2` con il messaggio, dopo **entrambi escono `2` con lo stesso
+  messaggio**. Due test di regressione nel nuovo `scripts/verify.test.mjs` (73 →
+  **75**), il primo file di test del guscio: uno **funzionale** (lancia il gate in una
+  cartella non-progetto e pretende uscita != 0 e output non muto — copre tutta la
+  classe «l'epilogo non parte», ma su Node 24 non vede *questo* difetto) e uno
+  **statico** (il sorgente non contiene `import.meta.main` — l'unico dei due che lo
+  impedisce su qualunque Node). Pacchetto P.0-igiene.
 
 ## Cosa fa, in una riga
 
@@ -77,7 +96,7 @@ E la prima esecuzione vera di `plan` e `tune` su guadagni misurati: home
 | Cosa | Numero | Come e' stato misurato |
 |---|---|---|
 | Passi del gate | 7 | `verify.mjs --json`, `summary.passi` |
-| Test degli script | **73 verdi** | `node --test "scripts/**/*.test.mjs"` |
+| Test degli script | **75 verdi** (73 al collaudo, +2 con P.0-igiene il 2026-08-03) | `node --test "scripts/**/*.test.mjs"` |
 | References | 3 | `misurazione.md` · `ottimizzazioni.md` · `seo.md` |
 | Template | 2 | `performance.md` (il contratto) · `handoff-speed-demon.md` |
 | Banchi su cui il gate e' girato | **2** | `banco-prova-negozio` · `banco-prova-immobiliare` — **cancellati dal disco il 2026-07-30** (`../../DECISIONI.md` §25): tornano con `git checkout 67f9001 -- <banco>` |
