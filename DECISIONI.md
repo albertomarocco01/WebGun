@@ -364,3 +364,69 @@ cicatrice (`// BUTCHER DA METTE` e `REEEEEEEE` su due righe).
 - **Stato:** presa. Non c'è nessun controllo automatico che i due file siano allineati: se il
   `.docx` cambia e nessuno rilancia lo script, il `.txt` torna a mentire. È un residuo noto, e
   il posto giusto dove chiuderlo è un gate della regia, che oggi non esiste.
+
+## Decisioni prese scrivendo i privilegi di Schema Forge (2026-08-03)
+
+### 27. I privilegi si scrivono nelle migrazioni, perché i default di Supabase sono cambiati due volte in un mese
+
+Terza puntata di una storia che questo repo aveva già a verbale due volte, e la prima
+in cui la regola entra nel contratto d'uscita invece di restare un suggerimento.
+
+**Gli episodi, tutti misurati su `pg_default_acl`, mai dedotti.**
+
+| quando | CLI | `anon` / `authenticated` / `service_role` sulle tabelle nuove | come si è visto |
+|---|---|---|---|
+| 2026-07-28 | 2.95.4 | `arwdDxtm` — tutto, `anon` compreso | i `grant` scritti nelle migrazioni erano **no-op** (§22), e un `grant` per colonna non restringeva senza `revoke` |
+| 2026-07-30 | 2.110.0 | `service_role` perde tutto; gli altri due sopravvivono **solo** dove una migrazione li riconcede | nove test E2E rossi **da fermo**, su un progetto che nessuno aveva toccato |
+| 2026-08-03 | 2.111.0 | `Dxtm` — TRUNCATE, REFERENCES, TRIGGER, MAINTAIN: **zero CRUD** | pgTAP muore con `permission denied for table animals`; il gate di luglio non era falso, era **scaduto** |
+
+Nessuno dei tre cambiamenti era annunciato dallo schema, e nessuno dei tre poteva esserlo:
+lo schema non conteneva una riga sui privilegi. Le due richieste nate dai primi due episodi
+— «il `revoke` prima del `grant` va nella regola, non solo nell'esempio» e «`permessi_espliciti`
+deve comprendere `service_role`» — erano rimaste scritte e non applicate.
+
+**Scelta: ogni schema forgiato emette una migrazione di privilegi espliciti, nella forma
+`revoke` → `grant`, per tutti e tre i ruoli.** Regola completa in
+`agenti/schema-forge/SKILL.md` §I privilegi si scrivono, non si ereditano.
+
+Le cinque premesse sono state provate su Postgres 17.6 reale prima di diventare regola (§18),
+e due hanno cambiato la forma che era stata proposta a tavolino:
+
+1. **Il `revoke` non serve «perché il default concede troppo»** — quella premessa è
+   esattamente quella scaduta. Serve perché è l'unica riga che rende il `grant` scritto
+   l'unica verità sui privilegi, qualunque cosa ci fosse prima: misurato, dopo un
+   `grant update` di tabella intera il `grant update (full_name)` **non restringe niente**
+   e l'auto-promozione riesce; con il `revoke` davanti, la stessa coppia nega.
+2. **`Dxtm` non è «meno permissivo»: è distruttivo.** Comprende TRUNCATE, e **la RLS non si
+   applica a TRUNCATE**. Misurato su uno schema con `force row level security` ovunque:
+   `set role anon; truncate public.animals cascade` **riesce** e porta via dieci tabelle.
+   La chiave anonima viaggia nel browser. Nessun `grant` riconcede mai `truncate`,
+   `references`, `trigger` o `maintain` a un ruolo del client.
+3. **Niente `alter default privileges`**, che era la proposta più elegante e la più sbagliata:
+   sposta la cosa invisibile invece di toglierla, ed è legata a **chi crea l'oggetto**.
+   Misurato sul banco: `pg_default_acl` conteneva **due righe in conflitto** per lo stesso
+   schema (`supabase_admin` → `arwdDxtm`, `postgres` → `Dxtm`), e una tabella creata da un
+   terzo ruolo nasceva con `relacl` **NULL**, cioè zero privilegi.
+4. **Il privilegio ricalca le policy, ruolo per ruolo.** Dove il modello di accesso dice «—»
+   non si scrive una riga; se il client non deve raggiungere una tabella affatto, la risposta
+   resta spostarla in uno schema non esposto.
+5. **`service_role` è nell'elenco.** Scavalca la RLS, non i privilegi.
+
+**E l'audit impara a vederlo.** La regola 7 di `audit-lib.mjs` chiedeva al catalogo una cosa
+più debole di quella che le serviva — «questa tabella compare in `role_table_grants` per
+`anon` o `authenticated`?» — senza guardare **quale** privilegio. Con `Dxtm` la tabella
+compariva lo stesso, con `privilege_type = 'TRUNCATE'`: la regola ha taciuto su 18 tabelle su
+18, su uno schema in cui nessun ruolo del client poteva leggere una riga. Riscritta: confronta
+i ruoli e i comandi di `pg_policies` con `has_any_column_privilege`, e produce un **`block`**.
+
+Gravità `block` e non `issue`, per il criterio della §17: la prova è **interamente nel
+catalogo**, senza una riga di euristica, quindi non c'è il caso legittimo da non disturbare —
+e il danno è totale e muto, perché la metà dello schema che le policy descrivono non esiste.
+`has_any_column_privilege` e non `has_table_privilege` perché un `grant update (colonna)` non
+compare in `relacl` (§22): con la funzione sbagliata, l'audit boccerebbe il rimedio che la
+skill stessa prescrive.
+
+- **Stato:** presa. Resta **fuori**, e va detto: la versione della CLI Supabase e
+  dell'immagine Postgres continua a non essere versionata da nessuna parte (era la richiesta
+  n°2 del 2026-07-30). Finché non lo è, un aggiornamento resta un evento, non una decisione —
+  e questa regola ne limita il danno invece di impedirlo.

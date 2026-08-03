@@ -55,7 +55,7 @@ Stati possibili: `da fare` · `in corso` (prompt emesso, operaio al lavoro) · `
 | P.1 | vetrina-crafter — P0 progettazione | `SKILL.md` completo col gate scritto PRIMA del flusso, passi del gate progettati con id stabili, template del contratto e dell'handoff, `STATO.md` col piano P0→P3 | analisi di cantiere (fatta) | revisione del direttore + **firma del committente** sulla progettazione; checklist del template (`COME-USARE-QUESTO-TEMPLATE.md` §9); nessun comando speculativo | **consegnata 2026-08-02** (commit `a1ee045`, Opus 5 · max) — revisione del direttore: **promossa**, 3 rilievi minori assorbiti nel mandato P.2; in attesa della firma del committente |
 | P.2 | vetrina-crafter — P1 costruzione | references, `scripts/` (verify.mjs + lib pure + test), banco usa e getta via schema-forge, **tutti e 7 i comandi esercitati**, sabotaggio provato | P.1 firmata | gate **VERDE 10/10** sul banco e **ROSSO** su ogni sabotaggio; `node --test` verde; guardiani sugli script (package.json+eslint locali, come schema-forge); verbale `COSTRUZIONE-<data>.md`; a gate verde entra in `README.md` e `installa-skill.ps1` | **parziale, ferma al banco** — deliverable 1-3 consegnati 2026-08-03 (Opus 5 · max, commit `b7fa58f · 43ff29f · 2697787`); 113 test **rilanciati dal direttore**, 113 pass 0 fail. Fermata al deliverable 4 per **due prerequisiti fuori dal suo perimetro**: i GRANT di schema-forge (P.8) e i cinque `import.meta.main` (P.0-igiene). Tre decisioni sospese in attesa del banco (S1 slot senza riga pubblicata, S2 soglia 24 caratteri, S3 rilievi sulle date) |
 | P.0-igiene | I gate tornano a parlare su Node 20 | i cinque `import.meta.main` corretti con la forma di vetrina-crafter + **due** test di regressione per script (funzionale: spawn in cartella non-progetto, uscita ≠ 0 e output non muto; statico: il sorgente non contiene `import.meta.main` — il funzionale su Node 24 non vede questo difetto) | — (urgente: col node di sistema ogni gate esce 0 muto) | prove **due-direzioni** su 5 script incollate; gate di schema-forge sul banco col node di sistema = stesso verdetto misurato dal direttore (ROSSO, 1 fallito, 2 mancanti); batterie 144/105/108/73 verdi; `STATO.md` delle quattro skill aggiornati | **consegnata 2026-08-03** (Opus 5 · max) — 5 punti corretti con la forma di vetrina-crafter; prove due-direzioni su 5 script × 2 node: **prima** Node 20 usciva `0` con zero righe e Node 24 usciva `2` col messaggio, **dopo** tutti e dieci escono `2` con lo stesso messaggio. Gate di schema-forge sul banco **col node di sistema**: ROSSO, 1 fallito (pgTAP `permission denied for table animals`/`price_list_items` → P.8) e 2 mancanti (sqlfluff, squawk) su 9 — identico alla misura del direttore con Node 24. Batterie **146/109/110/75** (+10 test nuovi: 2 per script, funzionale e statico); i due test provati per sabotaggio — reintrodotto `import.meta.main` in schema-forge, su Node 24 il funzionale **passa** e lo statico fallisce, su Node 20 falliscono entrambi. `STATO.md` delle quattro skill aggiornati. **Collaudata dal direttore il 2026-08-03**: 5/5 script rilanciati col node di sistema (tutti exit `2` con messaggio), batterie **146/109/110/75 rilanciate, 0 fail**, gate sul banco col node di sistema **ROSSO 1 fallito / 2 mancanti, uscita 1** (identico), grep: nessuna guardia viva, residui solo in commenti e test. **Chiusa** |
-| P.8 | schema-forge emette privilegi espliciti | contratto d'uscita di `forge` con `revoke`+`grant` espliciti (compreso `service_role`); regola d'audit che distingue i privilegi CRUD da `Dxtm`; banco riportato al suo rosso storico; sqlfluff+squawk installati (perimetro: D7) | P.0-igiene collaudata (fatto) | gate di schema-forge sul banco: ROSSO **per i soli motivi storici documentati** (pgTAP 2 fail su 23 + block/issue noti), **0 verifiche mancanti**; regola nuova con test (caso che scatta + caso che non scatta); `STATO.md` aggiornato | **in corso** — mandato emesso 2026-08-03 (`agenti/schema-forge/prompts/P8-privilegi-espliciti.md`, Opus 5 · max) |
+| P.8 | schema-forge emette privilegi espliciti | contratto d'uscita di `forge` con `revoke`+`grant` espliciti (compreso `service_role`); regola d'audit che distingue i privilegi CRUD da `Dxtm`; banco riportato al suo rosso storico; sqlfluff+squawk installati (perimetro: D7) | P.0-igiene collaudata (fatto) | gate di schema-forge sul banco: ROSSO **per i soli motivi storici documentati** (pgTAP 2 fail su 23 + block/issue noti), **0 verifiche mancanti**; regola nuova con test (caso che scatta + caso che non scatta); `STATO.md` aggiornato | **consegnata 2026-08-03** (Opus 5 · max) — gate sul banco **ROSSO, 2 falliti, 0 mancanti su 9**, col `block` su `staff.job_title` **tornato** e pgTAP a **2/23** (asserzioni storiche 22-23). Regola 7 dell'audit riscritta (`role_table_grants` non distingueva `Dxtm` da un grant vero): **0 findings prima → 21 `block` dopo** sullo stesso banco, gravità `block` per il criterio §17. Migrazione nuova in coda (`20260803120000_permessi_espliciti.sql`), banco **non sanato**. Test **146 → 153**; ESLint e knip puliti; sqlfluff 4.2.2 e squawk 2.61.0 installati con `pipx`. Voce **`DECISIONI.md` §27**. Tre scoperte oltre il mandato: `anon` col default poteva **`truncate`** (la RLS non filtra TRUNCATE); `pg_default_acl` aveva **due righe in conflitto**; sqlfluff **saltava in silenzio** una migrazione da 20 384 byte. **Uno scarto dal verdetto atteso**: `rls_policy.test.sql` si ferma a 10/11 — l'undicesima asserzione pretendeva un `select` ad `anon` che il modello di accesso nega (vedi giornale). Verifica del direttore da fare |
 | P.3 | vetrina-crafter — P2 collaudo avversario | chat vergine, dominio diverso, caccia ai falsi verdi dei passi del gate | P.2 consegnato | verbale `COLLAUDO-<data>.md` con difetti **misurati prima e dopo**, un test di regressione per difetto; gate corretto rilanciato senza regressioni sul banco di P.2 | da fare |
 | P.4 | Filo completo (progetto pilota) | un progetto realistico attraversa schema-forge → vetrina-crafter → gestionale-crafter → flow-sentinel → speed-demon; Alberto firma i contratti da committente | P.3 collaudato | ogni gate VERDE **rilanciato dal direttore**; handoff a catena letti e scritti; le righe `Confermato da:` portano la firma del **committente** (chiude il §6.2 di speed-demon e il punto "mai un committente" di flow-sentinel); si ferma a speed-demon (D2) | da fare — si spezzerà in sotto-pacchetti (una chat per agente) |
 | P.5 | launchpad — P0→P2 | deploy 1-click con verifica d'identità dell'app (`BUILD_ID` nell'HTML servito), "non si pubblica su gate rosso", deploy sempre a checkpoint umano | P.4 (consigliato: serve un sito vero da pubblicare) | come P.1–P.3; collaudo finale = deploy del pilota, autorizzato dal committente | da fare |
@@ -164,3 +164,69 @@ Stati possibili: `da fare` · `in corso` (prompt emesso, operaio al lavoro) · `
   `rete-verde` di speed-demon, che lancia il gate di flow-sentinel come sottoprocesso —
   ora funziona. Emesso il mandato **P.8**
   (`agenti/schema-forge/prompts/P8-privilegi-espliciti.md`, Opus 5 · max).
+- **2026-08-03 (sera)** — **P.8 consegnata: i privilegi entrano nel contratto d'uscita.**
+  L'operaio (Opus 5 · max) ha chiuso le due richieste storiche mai applicate dello
+  `STATO.md` di schema-forge — il `revoke` prima del `grant` **nella regola** (2026-07-28) e
+  `service_role` nei permessi espliciti (2026-07-30, «la richiesta più importante
+  dell'intero file»). Regola nuova in `SKILL.md` §I privilegi si scrivono, non si ereditano;
+  voce **`DECISIONI.md` §27**.
+
+  *Perché la regola 6/7 dell'audit taceva, misurato.* Chiedeva al catalogo una cosa più
+  debole di quella che le serviva: «questa tabella compare in `role_table_grants` per `anon`
+  o `authenticated`?», senza guardare **quale** privilegio. Con `Dxtm` la tabella compare lo
+  stesso, con `privilege_type` = TRUNCATE/REFERENCES/TRIGGER — la stessa query dell'audit
+  rendeva **19 righe su 19 oggetti** su uno schema in cui nessun ruolo del client poteva
+  leggere una riga. Riscritta su `pg_policies` × `has_any_column_privilege`: sullo stesso
+  banco, **0 findings prima, 21 `block` dopo**. Gravità `block` e non `issue` per il criterio
+  della §17 (prova interamente nel catalogo, zero euristica) e perché il danno è totale e
+  muto. `has_any_column_privilege` e non `has_table_privilege`, altrimenti l'audit boccerebbe
+  il `grant update (colonna)` che la skill stessa prescrive.
+
+  *Tre cose trovate misurando, che il mandato non prevedeva.* **(a)** `Dxtm` non è «meno
+  permissivo»: comprende TRUNCATE, e **la RLS non si applica a TRUNCATE** — `set role anon;
+  truncate public.animals cascade` **riusciva** sul banco, portandosi via dieci tabelle, con
+  `force row level security` attiva ovunque. È la giustificazione più forte del `revoke`, e
+  non era nel mandato. **(b)** `pg_default_acl` conteneva **due righe in conflitto** per lo
+  stesso schema (`supabase_admin` → `arwdDxtm`, `postgres` → `Dxtm`): il default dipende da
+  **chi crea l'oggetto**, e una tabella creata da un terzo ruolo nasce con `relacl` NULL. Da
+  qui la decisione di **non** prescrivere `alter default privileges`, che era la forma più
+  elegante e la più sbagliata. **(c)** `sqlfluff` **saltava in silenzio**
+  `20260726120200_clinico.sql` (20 384 byte, oltre il default di 20 000) uscendo 0: il passo
+  restava `MANCANTE` e il rimedio suggerito dal gate — spezzare il file — è impossibile su
+  una migrazione immutabile. Corretto con `large_file_skip_byte_limit = 0` motivato nel
+  `.sqlfluff` della skill e del banco, provato nelle due direzioni.
+
+  *Il banco.* Settima migrazione in coda (`20260803120000_permessi_espliciti.sql`), banco
+  **non sanato**: `staff` riceve `update` di tabella intera, cioè l'auto-promozione resta.
+  Gate **prima**: ROSSO, 1 fallito, 2 mancanti su 9, `audit-rls` **OK** (il `block` storico
+  non scattava), pgTAP 9/23 + 11/11 tutti `permission denied`. Gate **dopo**: **ROSSO, 2
+  falliti, 0 mancanti su 9**, `block` su `staff.job_title` **tornato**, pgTAP **2/23** —
+  le asserzioni storiche 22-23. Le ACL sono passate da `anon/authenticated/service_role =
+  Dxtm` su tutte e 18 le tabelle a `anon=r` sulle sole tre pubbliche, `authenticated`
+  l'unione di ciò che le sue policy promettono, `service_role=arwd`, e **nessun** ruolo del
+  client con `truncate`.
+
+  *Lo scarto dal verdetto atteso, ed è una cosa da decidere.* Il mandato prevedeva pgTAP a
+  2 asserzioni su 23 e `rls_policy.test.sql` verde. Il file esegue **10 asserzioni su 11** e
+  si ferma sull'undicesima — «la chiave anonima non legge nessun cliente» — che asseriva
+  `count = 0`, cioè la forma del rifiuto che dava la RLS **quando `anon` aveva `select` su
+  tutto per grazia del default**. Il modello di accesso del banco dice `owners → anon: —` e
+  la migrazione scrive quello, quindi il rifiuto arriva prima della RLS (`42501 permission
+  denied`). Non è un allentamento: è più stretto di prima. L'operaio non ha toccato il test
+  («chi scrive la migrazione non riscrive il test che la giudica») né aggiunto il `grant`
+  che lo farebbe passare («è la scorciatoia che la migrazione esiste per chiudere»), e ha
+  dichiarato la riga nell'handoff del banco e nello `STATO.md`. **Decisione del direttore:**
+  riallineare l'asserzione a `throws_ok(…, '42501', …)` — più forte di `count = 0` — oppure
+  accettare la quarta riga rossa come parte del rosso documentato del banco.
+
+  *Guardiani.* ESLint sugli script **pulito** dopo due correzioni: `complexity 21` sulla
+  regola nuova (estratte due funzioni pure) e un `no-undef` su `URL` in `verify.test.mjs`
+  **vivo da P.0-igiene e mai visto**, perché i `node_modules` della skill non erano
+  installati e ESLint non girava affatto — cioè un guardiano che non gira è un guardiano che
+  passa. `knip` pulito. Batteria **153 verdi, 0 fail** (era 146). `sqlfluff` 4.2.2 e `squawk`
+  2.61.0 installati con `pipx` (`python -m pip install --user pipx`, poi `pipx ensurepath`:
+  `~/.local/bin` è ora nel PATH utente permanente).
+
+  *Resta fuori, dichiarato:* la versione della CLI Supabase e dell'immagine Postgres non è
+  versionata da nessuna parte (richiesta n°2 del 2026-07-30, fuori da D7). La regola limita
+  il danno di un aggiornamento non annunciato, non lo impedisce.

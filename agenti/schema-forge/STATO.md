@@ -1,6 +1,6 @@
 # Stato — Schema Forge
 
-- **Stato attuale:** v1.5 — collaudata su Postgres reale (Supabase locale, Windows), **nel comportamento** (`COLLAUDO-2026-07-25.md`) e **corretta tre volte**: gli otto punti del primo collaudo il 2026-07-26, nove dei quindici del secondo il 2026-07-27, e i residui dell'audit multiagentico del repo il 2026-07-28 (§Cosa ha trovato l'audit del repo). Gli script hanno test propri (`node --test`, **146 verdi** — il 144° è nato con la firma del gate, commit `a92b4f1`; i due ultimi il 2026-08-03, vedi la riga qui sotto), il gate `verify` ha **9 passi** e undici regole di audit.
+- **Stato attuale:** v1.6 — collaudata su Postgres reale (Supabase locale, Windows), **nel comportamento** (`COLLAUDO-2026-07-25.md`) e **corretta quattro volte**: gli otto punti del primo collaudo il 2026-07-26, nove dei quindici del secondo il 2026-07-27, i residui dell'audit multiagentico del repo il 2026-07-28 (§Cosa ha trovato l'audit del repo) e il contratto d'uscita sui privilegi il 2026-08-03 (§I privilegi non erano nel contratto d'uscita). Gli script hanno test propri (`node --test`, **153 verdi** — il 144° è nato con la firma del gate, commit `a92b4f1`; i due del 2026-08-03 mattina con P.0-igiene; i sette del pomeriggio con la regola 7 riscritta), il gate `verify` ha **9 passi** e undici regole di audit.
   **NON ancora usabile su un progetto cliente — ma il gate ha smesso di mentire.** Il secondo collaudo, indipendente e avversario (`COLLAUDO-2026-07-26.md`, dominio **non e-commerce**), aveva riprodotto con comandi reali **16 difetti su 17**, cinque Critical, su uno schema che il gate dichiarava **VERDE 8/8** (i passi erano otto: `db advisors` e' nato il giorno dopo). Su quello stesso schema il gate chiude ora **ROSSO**: `block` sull'auto-promozione di ruolo via colonna, `issue` sulla macchina a stati aggirabile in `insert`, e `block` su ogni tabella con policy di scrittura che nessun test pgTAP attacca. Scritti i test negativi, **2 asserzioni su 23 falliscono** — l'auto-promozione e la visita che nasce già `fatturata`. Resta vero che **l'audit guarda la forma delle policy**: la semantica la dimostrano i test negativi, e il gate verifica che esistano e passino, non che siano severi. Punti aperti ordinati per gravità in fondo.
 - **Proprietario:** Alberto
 - **Dipendenze:**
@@ -762,6 +762,13 @@ authenticated, service_role`. Conseguenze, entrambe provate sul campo:
 skill e non la reference scrive la riga inefficace. **Suggerimento: il `revoke` prima del
 `grant` va nella regola, non solo nell'esempio.**
 
+> **CHIUSO il 2026-08-03** (P.8). Il `revoke` → `grant` è ora la forma di **ogni**
+> privilegio che uno schema forgiato emette: `SKILL.md` §I privilegi si scrivono, non si
+> ereditano, richiamata dal comando `forge`, dal Flusso 1 e dal gate di chiusura. La
+> premessa di questa sezione — «il default copre tutto, quindi il `grant` è no-op» — nel
+> frattempo è **scaduta** (§I privilegi non erano nel contratto d'uscita): la regola regge
+> lo stesso, ma per un motivo più solido di quello con cui era stata proposta.
+
 L'audit di questa skill, va detto, **il difetto lo trova**: rimesso il permesso di tabella
 intera, `rls-audit.mjs` risponde `[block] public.staff.ruolo: colonna che decide gli accessi,
 scrivibile dal proprietario della riga`. Il buco era nella *prescrizione*, non nel controllo.
@@ -791,14 +798,14 @@ scrivibile dal proprietario della riga`. Il buco era nella *prescrizione*, non n
 
 ### Cosa questo consumatore chiede alla skill, in ordine di utilità
 
-1. il `revoke` prima del `grant` **nella regola** di `forge`, non solo nell'esempio della reference;
+1. ~~il `revoke` prima del `grant` **nella regola** di `forge`, non solo nell'esempio della reference;~~ — **fatto il 2026-08-03** (P.8), ed esteso a `service_role`;
 2. `tsc` sui tipi rigenerati come passo prescritto dell'analisi di impatto di `evolve`, prima del grep;
 3. il riallineamento dei **test pgTAP** accanto a quello del seed, nella procedura di `evolve`;
 4. l'euristica delle colonne di privilegio estesa agli interruttori di attivazione, **solo dove la prova è nel catalogo**;
 5. un finding — anche solo `issue` — per una colonna di stato vincolata da un `check` di dominio e da nessun trigger.
 
-Nessuno di questi cinque punti è stato applicato qui: **questa skill non è stata toccata**.
-È il consumatore che riporta, il proprietario che decide.
+Dei cinque punti, il **n°1 è stato applicato il 2026-08-03** (P.8). Gli altri quattro no:
+**è il consumatore che riporta, il proprietario che decide.**
 
 ### Una deriva misurata, non corretta qui
 
@@ -890,9 +897,11 @@ default. Cambiato il default, non gli è rimasto niente.
 
 **Cosa questo chiede alla skill, ed è la richiesta più importante dell'intero file:**
 
-1. **`permessi_espliciti` deve comprendere `service_role`.** Oggi il template scrive il
-   `revoke`/`grant` per `anon` e `authenticated` e tace sul ruolo di servizio, esattamente come
-   taceva questo banco. Ogni progetto già generato ha lo stesso buco latente.
+1. ~~**`permessi_espliciti` deve comprendere `service_role`.**~~ — **CHIUSA il 2026-08-03**
+   (P.8). La regola di `forge` scrive il `revoke` e il `grant` per **tutti e tre** i ruoli,
+   `service_role` compreso, e il gate di chiusura lo pretende. Restava vero fino a ieri che
+   «ogni progetto già generato ha lo stesso buco latente»: da oggi ce l'hanno solo quelli
+   generati prima.
 2. **La versione della CLI e dell'immagine Postgres non è versionata da nessuna parte.** Un
    progetto Web Gun dichiara le sue dipendenze npm al patch e lascia libera la cosa che decide
    i permessi del suo database. Va fissata, così un aggiornamento è una decisione.
@@ -904,3 +913,133 @@ default. Cambiato il default, non gli è rimasto niente.
 
 La regola generale, che vale oltre questo caso: **su Supabase un privilegio che non hai
 scritto non è un privilegio che hai** — e da oggi si sa che non lo è nemmeno domani.
+
+## I privilegi non erano nel contratto d'uscita (2026-08-03, pacchetto P.8)
+
+Terza puntata della stessa storia, e la prima in cui la regola entra nel contratto invece
+di restare un suggerimento in fondo a una sezione. Le due richieste storiche qui sopra —
+«il `revoke` prima del `grant` va nella regola» (2026-07-28) e «`permessi_espliciti` deve
+comprendere `service_role`» (2026-07-30, *la richiesta più importante dell'intero file*) —
+sono **chiuse**. Voce di decisione: `../../DECISIONI.md` §27.
+
+### Il difetto, misurato prima di essere corretto
+
+Le sei migrazioni del banco veterinario non contenevano **un solo** `grant` né un
+`alter default privileges` (grep, zero risultati): lo schema si appoggiava ai privilegi che
+l'immagine Supabase concedeva d'ufficio. Con la CLI 2.111.0 quei privilegi sono `Dxtm` —
+TRUNCATE, REFERENCES, TRIGGER, MAINTAIN: **zero CRUD** — su tutte e 18 le tabelle, e il
+pgTAP moriva con `permission denied for table animals`. Il verde di luglio non era falso:
+era **scaduto**.
+
+La causa sta nel catalogo, ed è più precisa di «Supabase ha cambiato i default»:
+`pg_default_acl` conteneva **due righe in conflitto** per (public, tabelle), una per ogni
+ruolo che può creare oggetti.
+
+```
+defaclrole      | defaclacl
+----------------+---------------------------------------------------------------
+ supabase_admin | {postgres=arwdDxtm, anon=arwdDxtm, authenticated=arwdDxtm,
+                |  service_role=arwdDxtm}
+ postgres       | {postgres=arwdDxtm, anon=Dxtm, authenticated=Dxtm,
+                |  service_role=Dxtm}
+```
+
+Le migrazioni le applica `postgres`. La stessa `create table`, eseguita da un terzo ruolo,
+nasceva con `relacl` **NULL** — zero privilegi (misurato con un ruolo creato apposta).
+
+### Cinque premesse provate su Postgres reale, e due che hanno cambiato la regola
+
+Il banco acceso ha smentito la forma che sarebbe venuta in mente per prima (§18: si misura
+la premessa prima di leggere l'esito). Le misure, su Postgres 17.6 · CLI 2.111.0:
+
+| # | Premessa | Esito misurato |
+|---|---|---|
+| 1 | il `revoke` serve «perché il default concede troppo» | **falsa oggi**: il default non concede più niente. Il `revoke` serve perché è l'unica riga che rende il `grant` scritto l'unica verità, qualunque cosa ci fosse prima |
+| 2 | un `grant` per colonna restringe da solo | **dipende**: col default di oggi sì; dopo un `grant update` di tabella intera **no**, il permesso per colonna è additivo e l'auto-promozione riesce lo stesso |
+| 3 | `Dxtm` è «meno permissivo» | **falso, ed è la misura peggiore**: comprende TRUNCATE, e la RLS **non si applica a TRUNCATE**. `set role anon; truncate public.animals cascade` **riesce** e porta via dieci tabelle, su uno schema con `force row level security` ovunque |
+| 4 | `alter default privileges` risolve il problema per le migrazioni successive | **no**: sposta la cosa invisibile. È legato a chi crea l'oggetto (vedi le due righe in conflitto qui sopra) |
+| 5 | senza `select`, `anon` legge una lista vuota | **no**: riceve `42501 permission denied`. La RLS non arriva nemmeno a decidere |
+
+Le premesse 1 e 3 hanno cambiato la motivazione scritta nella regola; la 4 ha tolto una
+riga che stava per essere prescritta.
+
+### La regola 7 dell'audit taceva, e si è misurato perché
+
+Non era un'omissione: la regola chiedeva al catalogo una cosa **più debole** di quella che
+le serviva — «questa tabella compare in `information_schema.role_table_grants` per `anon` o
+`authenticated`?» — senza guardare *quale* privilegio. Con `Dxtm` la tabella compare, con
+`privilege_type` = TRUNCATE/REFERENCES/TRIGGER. Misura, la stessa query dell'audit:
+
+```
+select distinct table_schema, table_name from information_schema.role_table_grants
+ where table_schema in ('public') and grantee in ('anon','authenticated');
+→ 19 righe su 19 oggetti          (quindi: nessun finding, su uno schema illeggibile)
+```
+
+Riscritta: confronta i ruoli e i comandi di `pg_policies` con `has_any_column_privilege`,
+un finding per (tabella, ruolo), gravità **`block`** — la prova è interamente nel catalogo,
+senza euristiche (§17), e il danno è totale e muto. Sullo stesso banco, **prima** 0 findings,
+**dopo** 21 `block` (18 tabelle × `authenticated` + 3 × `anon`).
+
+`has_any_column_privilege` e non `has_table_privilege`: un `grant update (colonna)` non
+compare in `relacl` (§22), e con la funzione sbagliata l'audit boccerebbe il rimedio che la
+skill stessa prescrive. `delete` fa eccezione perché in Postgres non esiste un `delete` per
+colonna — chiederlo è un errore di esecuzione, cioè un audit mancante.
+
+### Cosa è cambiato, in concreto
+
+- `SKILL.md`: nuova sezione **§I privilegi si scrivono, non si ereditano** (la regola, le
+  cinque premesse con la loro misura, la forma `revoke` → `grant` per tutti e tre i ruoli),
+  richiamata dal comando `forge`, dal passo 5 del Flusso 1 e dal gate di chiusura.
+- `references/rls-supabase.md`: §La trappola inversa riscritta (la forma completa, la
+  verifica su `relacl` invece che su `role_table_grants`, e il nuovo §Il `truncate` che la
+  RLS non filtra); §Il caso peggiore rimanda alla regola generale.
+- `scripts/audit-lib.mjs` + `scripts/rls-audit.mjs`: regola 7 riscritta, query nuova.
+- `resources/config/.sqlfluff`: `large_file_skip_byte_limit = 0`. Il default di sqlfluff
+  (20 000 byte) faceva **saltare in silenzio** `20260726120200_clinico.sql` (20 384 byte),
+  e il rimedio suggerito dal gate — spezzare il file — è impossibile su una migrazione già
+  applicata, che è immutabile. Provato nelle due direzioni: col limite di default sqlfluff
+  stampa un avviso su stdout, salta il file ed esce **0** anche con uno statement
+  malformato dentro; con 0 lo legge e lo segnala.
+- Test: **146 → 153** (`node --test`, 0 fail). Nove asserzioni nuove per la regola 7: il
+  caso che scatta, il caso che non deve scattare, il caso `Dxtm` che la regola vecchia
+  promuoveva, la promessa parziale, il `grant` per colonna che **non** deve produrre un
+  finding, la policy `for all`, la policy senza `to`, la policy del solo `service_role`,
+  l'ordine canonico dell'elenco.
+- Guardiani: ESLint **pulito** (0 problemi) dopo due correzioni — `complexity 21` sulla
+  regola nuova, estratte due funzioni pure; e un `no-undef` su `URL` in `verify.test.mjs`,
+  **vivo dal 2026-08-03 mattina e mai visto** perché su questa macchina i `node_modules`
+  della skill non erano installati e ESLint non girava affatto. `knip` pulito.
+  `sqlfluff` 4.2.2 e `squawk` 2.61.0 installati con `pipx`.
+
+### Il banco: stesso rosso, motivi tornati quelli storici
+
+`banco-prova-vetcare` ha una settima migrazione, `20260803120000_permessi_espliciti.sql`,
+che scrive i privilegi che lo schema aveva sempre presunto. **Non lo sana**: `public.staff`
+riceve `update` di tabella intera, cioè l'auto-promozione resta.
+
+| | prima di P.8 | dopo |
+|---|---|---|
+| gate | ROSSO, 1 fallito, **2 mancanti** su 9 | ROSSO, **2 falliti, 0 mancanti** su 9 |
+| `audit-rls` | OK (0 block) — il `block` storico su `staff.job_title` **non scattava** | FAIL, `block` su `staff.job_title` **tornato** |
+| `pgtap` | 9/23 + 11/11 falliti, tutti `permission denied` | **2/23** (asserzioni 22-23, le storiche) + 1/11 |
+
+L'unica riga che non torna storica: `rls_policy.test.sql` si ferma sull'undicesima
+asserzione, «la chiave anonima non legge nessun cliente», che asseriva `count = 0` — la
+forma del rifiuto che dava la RLS quando `anon` aveva `select` su tutto per grazia del
+default. Il modello di accesso del banco dice `owners → anon: —` e la migrazione scrive
+quello, quindi il rifiuto arriva **prima** della RLS (`42501`). Non è un allentamento: è
+più stretto di prima. Il test è un consumatore dello schema come il seed, e va riallineato
+a `throws_ok(…, '42501', …)` — **non fatto qui**: chi scrive la migrazione non riscrive il
+test che la giudica. Dichiarato nell'handoff del banco.
+
+### Cosa resta fuori, dichiarato
+
+- **La versione della CLI Supabase e dell'immagine Postgres non è versionata da nessuna
+  parte.** Era la richiesta n°2 del 2026-07-30 e resta aperta: un progetto Web Gun dichiara
+  le sue dipendenze npm al patch e lascia libera la cosa che decide i permessi del suo
+  database. La regola dei privilegi espliciti **limita il danno** di un aggiornamento non
+  annunciato, non lo impedisce: fuori dal perimetro di P.8 (D7).
+- Le tre migrazioni che porterebbero il banco a verde restano non scritte, per scelta: è il
+  caso di prova permanente di uno schema difettoso (`../../DECISIONI.md` §20/§25).
+- I quattro punti su cinque del primo consumatore e i due del secondo restano aperti.
