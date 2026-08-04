@@ -39,6 +39,7 @@ import {
   statoDaFindings,
 } from "./audit-lib.mjs";
 import {
+  argomentiPsql,
   contrattoUscita,
   dataConfermaDa,
   eLaMiaBuild,
@@ -48,6 +49,7 @@ import {
   findingsSegnaposto,
   indiziDevServer,
   leggiContratto,
+  righeDaPsql,
   rotteDaSorgenti,
   schemiEsposti,
   SOGLIA_FRAMMENTO,
@@ -149,14 +151,22 @@ const unisci = (base, percorso) => new URL(percorso, base).toString();
  *  di questo contratto, ed e' meglio non interrogare che interrogare a caso. */
 const IDENTIFICATORE = /^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?$/;
 
-const RS = "";
-const FS = "";
+function interrogaConEsito(dbUrl, sql) {
+  const res = esegui("psql", argomentiPsql(dbUrl, sql));
+  if (res.error || res.status !== 0) {
+    return { righe: null, errore: `${res.stderr ?? ""}${res.error?.message ?? ""}` };
+  }
+  return { righe: righeDaPsql(res.stdout), errore: "" };
+}
 
 function interroga(dbUrl, sql) {
-  const res = esegui("psql", [dbUrl, "-v", "ON_ERROR_STOP=1", "-A", "-t", "-R", RS, "-F", FS, "-c", sql]);
-  if (res.error || res.status !== 0) return null;
-  return res.stdout.split(RS).map((r) => r.replace(/\r?\n/g, "").trim()).filter(Boolean).map((r) => r.split(FS));
+  return interrogaConEsito(dbUrl, sql).righe;
 }
+
+/** Postgres dice «permission denied» con `42501`, e la differenza fra quello e
+ *  «non sono riuscito a interrogare» e' la differenza fra una misura riuscita
+ *  con esito negativo e una verifica che non si e' potuta fare. */
+const PERMESSO_NEGATO = /42501|permission denied|permesso negato/i;
 
 // ------------------------------------------------------------------ i passi
 const PASSI = [
@@ -318,7 +328,7 @@ const PASSI = [
 
   {
     id: ID.contenuti,
-    nome: "contenuti dal database",
+    nome: "contenuti e permessi dell'anonimo",
     async esegui(ctx, args) {
       const esito = premesseContenuti(ctx, args);
       if (esito.motivo) return record(this.id, this.nome, "skipped", esito.motivo);
@@ -328,7 +338,11 @@ const PASSI = [
       const soglia = contratto.sogliaFrammento ?? SOGLIA_FRAMMENTO;
       const sorgenti = raccogliSorgenti(PROGETTO);
       const valoriPerSlot = leggiSlot(dbUrl, contratto);
-      const conteggiAnon = contaComeAnonimo(dbUrl, contratto, schemi[0]);
+      const conteggiAnon = misuraLetturaAnonima(dbUrl, fontiDichiarate(contratto), schemi[0]);
+      // Le tabelle dei percorsi di scrittura pubblici si guardano al contrario:
+      // qui «negata» e' l'esito giusto. Chi scrive non legge.
+      const letturaScritture = misuraLetturaAnonima(
+        dbUrl, new Set(contratto.scritture.map((s) => s.tabella)), schemi[0]);
 
       const { findings, mancanti } = findingsContenuti({
         contratto,
@@ -336,6 +350,7 @@ const PASSI = [
         testoPerPagina: ctx.testoPagine ?? new Map(),
         cercaNeiSorgenti: (frammento) => frammentoNeiSorgenti(frammento, sorgenti),
         conteggiAnon,
+        letturaScritture,
         soglia,
       });
 
@@ -420,7 +435,11 @@ function premesseContenuti(ctx, args) {
 
   const senzaSlot = contratto.slot.length === 0;
   const senzaFonti = contratto.pagine.every((p) => p.fonti.filter((f) => f.tipo !== "slot").length === 0);
-  if (senzaSlot && senzaFonti) {
+  // Un percorso di scrittura pubblico tiene questo passo acceso anche su un
+  // sito senza un solo contenuto editabile: c'e' comunque una tabella da
+  // guardare, ed e' quella su cui scrive uno sconosciuto.
+  const senzaScritture = contratto.scritture.length === 0;
+  if (senzaSlot && senzaFonti && senzaScritture) {
     if (!contratto.nessunoSlotDichiarato) {
       return { motivo: "il contratto non dichiara ne' slot ne' fonti di dati, e non scrive `Nessuno slot.`: non si distingue «questo sito non ha contenuti editabili» da «nessuno ha compilato la tabella»" };
     }
@@ -480,23 +499,51 @@ function leggiSlot(dbUrl, contratto) {
 }
 
 /**
- * Le righe che vede un VISITATORE ANONIMO, non quelle che ci sono.
+ * Cosa vede di una relazione un VISITATORE ANONIMO, non cosa c'e' dentro.
  *
  * `set role anon` e' l'unico modo di misurarlo: come `postgres` la RLS non si
  * applica affatto, e un conteggio preso cosi' direbbe che la pagina ha dati
  * mentre il sito serve una lista vuota.
+ *
+ * Quattro esiti, e tenerli separati e' tutto il punto (misurato sul banco del
+ * collaudo il 2026-08-04, dove ne collassavano tre in uno):
+ *   `null`                     non interrogata → verifica MANCANTE
+ *   `{ stato: "assente" }`     la relazione non esiste
+ *   `{ stato: "negata" }`      esiste, e l'anonimo NON puo' leggerla
+ *   `{ stato: "letta", righe }` esiste, e l'anonimo ne legge `righe`
+ * Cosa sia buono e cosa sia un difetto lo decide chi chiama: per una fonte di
+ * pagina «negata» e' un difetto, per la tabella di un modulo pubblico e' la
+ * cosa giusta.
  */
-function contaComeAnonimo(dbUrl, contratto, schemaDefault) {
-  const conteggi = new Map();
-  const fonti = new Set(contratto.pagine.flatMap((p) => p.fonti.filter((f) => f.tipo !== "slot").map((f) => f.nome)));
-  for (const fonte of fonti) {
-    if (!IDENTIFICATORE.test(fonte)) { conteggi.set(fonte, null); continue; }
-    const qualificata = fonte.includes(".") ? fonte : `${schemaDefault}.${fonte}`;
-    const righeDb = interroga(dbUrl, `set role anon; select count(*) from ${qualificata};`);
-    conteggi.set(fonte, righeDb && righeDb.length > 0 ? Number(righeDb[righeDb.length - 1][0]) : null);
+function misuraLetturaAnonima(dbUrl, nomi, schemaDefault) {
+  const esiti = new Map();
+  for (const nome of nomi) {
+    const qualificata = nome.includes(".") ? nome : `${schemaDefault}.${nome}`;
+    if (!IDENTIFICATORE.test(nome) || !IDENTIFICATORE.test(qualificata)) {
+      esiti.set(nome, null);
+      continue;
+    }
+    const esistenza = interroga(dbUrl, `select to_regclass('${qualificata}') is not null;`);
+    if (esistenza === null || esistenza.length === 0) { esiti.set(nome, null); continue; }
+    if (!/^t/i.test(esistenza[esistenza.length - 1][0])) { esiti.set(nome, { stato: "assente", righe: null }); continue; }
+
+    const conteggio = interrogaConEsito(dbUrl, `set role anon; select count(*) from ${qualificata};`);
+    if (conteggio.righe === null) {
+      // La relazione esiste e la connessione funziona (l'abbiamo appena usata):
+      // se `psql` rifiuta ADESSO e dice `42501`, e' la policy o il `grant`, non
+      // un intoppo. Qualunque altro errore resta una verifica non fatta.
+      esiti.set(nome, PERMESSO_NEGATO.test(conteggio.errore) ? { stato: "negata", righe: null } : null);
+      continue;
+    }
+    esiti.set(nome, conteggio.righe.length > 0
+      ? { stato: "letta", righe: Number(conteggio.righe[conteggio.righe.length - 1][0]) }
+      : null);
   }
-  return conteggi;
+  return esiti;
 }
+
+const fontiDichiarate = (contratto) =>
+  new Set(contratto.pagine.flatMap((p) => p.fonti.filter((f) => f.tipo !== "slot").map((f) => f.nome)));
 
 // ------------------------------------------------------------------- verdetto
 export function riepilogo(passi) {

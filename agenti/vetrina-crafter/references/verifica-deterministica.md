@@ -311,6 +311,33 @@ rende verificabile la Legge n°3.
      anonimo**. Zero righe → `block`: la pagina è viva e vuota. È il modo n°1 in cui un
      sito pubblico sopra la RLS fallisce in silenzio — la policy non lascia leggere, la
      pagina non dà errore, e nessuno se ne accorge finché non lo dice un cliente.
+
+     **Quattro esiti, non due** (corretto nel collaudo P2, 2026-08-04): la relazione
+     **non esiste** → `block`; esiste e la lettura è **rifiutata** (`42501`) → `block`,
+     con la diagnosi che nomina il `grant` e non solo la policy; **zero righe** →
+     `block`; **N righe** → passa. Solo il caso «non sono riuscito a interrogare» resta
+     MANCANTE. Prima collassavano tutti nella stessa riga — *«non interrogata (tabella
+     assente o non leggibile) — verifica non fatta»* — e su una tabella che esiste
+     benissimo quella riga manda a controllare `psql` invece della policy.
+
+  4. **Chi scrive non legge.** Per ogni tabella dichiarata in §Percorsi di scrittura
+     aperti al pubblico si misura, **impersonando il ruolo anonimo**, se la lettura è
+     possibile. Se lo è → `block`: una casella in cui chiunque può imbucare non è una
+     casella che chiunque può aprire, e dentro ci sono nome, telefono ed email di chi ha
+     scritto prima. L'eccezione — un guestbook, dove essere rileggibile è il punto — si
+     dichiara scrivendo `lettura pubblica` nella riga della tabella, e allora scende a
+     `issue`.
+
+     **Perché questa regola esiste, misurato sul banco `banco-prova-valscura` il
+     2026-08-04.** Aperta la lettura di `richieste_prenotazione` all'anonimo con due
+     righe di SQL (`grant select` più una policy `using (true)`), chiunque poteva
+     rileggere le richieste di tutti — e il gate chiudeva **VERDE 10/10**. A monte non
+     basta: l'audit RLS di schema-forge chiude quel caso con un `issue` che dice
+     «legittima solo su dati realmente pubblici, e **va documentata nell'handoff**»,
+     cioè rimanda esattamente al documento che questo passo verifica. La domanda che
+     `SKILL.md` §Modalità dichiara irreversibile — *cosa diventa visibile a un anonimo* —
+     era una dichiarazione che nessuno dei dieci passi falsificava, anche se il gate
+     aveva già in mano lo strumento per farlo.
 - **Rilievi:** `issue` se la pagina che mostra uno slot dichiara `Aggiornamento: statico`
   senza rigenerazione: il cliente cambierà il testo dal gestionale e non vedrà cambiare
   niente finché qualcuno non ripubblica. È `issue` e non `block` perché un sito che si
@@ -538,6 +565,15 @@ implementativi: sono i modi in cui un gate sano dà un esito sbagliato.
   Windows arriva con `\r\n`, e se è passato da PowerShell anche con il BOM; `psql` lascia
   il `\r` in coda a ogni riga. Si normalizza **una volta sola, all'ingresso**, e solo ciò
   che non porta significato.
+- **`psql` va invocato con `-q`, e non è cosmetica.** Senza, stampa su **stdout** il tag
+  del comando — `SET` per `set role anon` — e quel tag finisce nel **primo record insieme
+  al valore**, perché `-R` sostituisce il terminatore di *riga* e non quello di una riga
+  di stato. Il conteggio letto diventa `SET0`, `Number(…)` dà `NaN`, e `NaN === 0` è
+  falso: la regola «zero righe leggibili dall'anonimo» **non poteva scattare**. Misurato
+  nel collaudo P2 il 2026-08-04, ed era vivo da P1: tolta la policy di lettura per `anon`
+  su una tabella dichiarata come fonte, il gate nominava le zero righe **zero volte**.
+  Gli argomenti di `psql` stanno ora in una funzione pura (`argomentiPsql`) con il suo
+  test, perché un flag mancante in un vettore di argomenti non lo vede nessuna revisione.
 - **Le entità HTML e gli spazi**, per il passo 9: vedi il dettaglio lì sopra. È la stessa
   classe di problema, spostata dal file al documento servito.
 

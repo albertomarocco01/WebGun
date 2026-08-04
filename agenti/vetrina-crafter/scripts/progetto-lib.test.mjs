@@ -14,6 +14,7 @@ import { describe, it } from "node:test";
 
 import {
   aggiornamentoDa,
+  argomentiPsql,
   combacia,
   contrattoUscita,
   dataConfermaDa,
@@ -29,6 +30,7 @@ import {
   indiziDevServer,
   leggiContratto,
   piuLungoDiContenuto,
+  righeDaPsql,
   rottaDaFile,
   rotteDaSorgenti,
   schemiEsposti,
@@ -70,6 +72,10 @@ Quattro voci in navigazione.
 **Contenuti da:** \`tabella:piante\`
 **Titolo da:** colonna \`piante.nome\`
 **Aggiornamento:** statico
+
+## Percorsi di scrittura aperti al pubblico
+
+Nessuna scrittura pubblica.
 
 ## Slot dei contenuti
 
@@ -442,7 +448,7 @@ describe("contenuti dal database", () => {
     valoriPerSlot: new Map([["home-hero", [FRAMMENTO, "corto"]]]),
     testoPerPagina: new Map([["home", `Benvenuti — ${FRAMMENTO} — dal 1987`], ["catalogo", "48 piante"]]),
     cercaNeiSorgenti: () => [],
-    conteggiAnon: new Map([["piante", 48]]),
+    conteggiAnon: new Map([["piante", { stato: "letta", righe: 48 }]]),
     soglia: SOGLIA_FRAMMENTO,
   };
 
@@ -466,9 +472,36 @@ describe("contenuti dal database", () => {
   });
 
   it("SCATTA (block) su una fonte con zero righe leggibili dall'anonimo", () => {
-    const { findings } = findingsContenuti({ ...base, conteggiAnon: new Map([["piante", 0]]) });
+    const { findings } = findingsContenuti({ ...base, conteggiAnon: new Map([["piante", { stato: "letta", righe: 0 }]]) });
     assert.equal(findings.length, 1);
     assert.match(findings[0].message, /zero righe leggibili impersonando il ruolo anonimo/);
+  });
+
+  it("collaudo P2: una fonte che ESISTE e che l'anonimo non puo' leggere e' un `block`, non un MANCANTE", () => {
+    // MISURATO sul banco il 2026-08-04. Prima, «non esiste», «esiste e il
+    // permesso e' negato» e «non sono riuscito a interrogare» collassavano nello
+    // stesso `null` e producevano la stessa riga: «non interrogata (tabella
+    // assente o non leggibile) — verifica non fatta». Su una tabella che esiste
+    // benissimo e' una misura riuscita con esito negativo travestita da verifica
+    // mancante, e manda a controllare `psql` invece della policy.
+    const { findings, mancanti } = findingsContenuti({
+      ...base,
+      conteggiAnon: new Map([["piante", { stato: "negata", righe: null }]]),
+    });
+    assert.deepEqual(mancanti, []);
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].severity, "block");
+    assert.match(findings[0].message, /lettura e' RIFIUTATA/);
+    assert.match(findings[0].hint, /grant select/);
+  });
+
+  it("collaudo P2: una fonte dichiarata che nel database non esiste e' un `block`", () => {
+    const { findings, mancanti } = findingsContenuti({
+      ...base,
+      conteggiAnon: new Map([["piante", { stato: "assente", righe: null }]]),
+    });
+    assert.deepEqual(mancanti, []);
+    assert.match(findings[0].message, /non esiste nessuna relazione con questo nome/);
   });
 
   it("una fonte non interrogata e' una verifica MANCANTE, non un verde", () => {
@@ -630,6 +663,132 @@ describe("contenuti dal database", () => {
     });
     assert.deepEqual(findings, []);
     assert.match(mancanti[0], /sotto la soglia distintiva/);
+  });
+});
+
+describe("percorsi di scrittura aperti al pubblico", () => {
+  // Il difetto che ha fatto nascere questa suite, misurato sul banco
+  // `banco-prova-valscura` il 2026-08-04: aperta la lettura della tabella del
+  // modulo di prenotazione all'anonimo (due righe di SQL), chiunque poteva
+  // rileggere nome, email, telefono e messaggio di chi aveva scritto prima — e
+  // il gate chiudeva VERDE 10/10. Nessuno dei dieci passi guardava la sola
+  // domanda che `SKILL.md` dichiara irreversibile.
+  const CON_SCRITTURA = CONTRATTO.replace(
+    "Nessuna scrittura pubblica.",
+    ["| Rotta | Cosa scrive | Tabella | Chi l'ha autorizzato |",
+      "|---|---|---|---|",
+      "| `/contatti` | un messaggio del modulo | `messaggi` | Elena Barbieri (titolare) (2026-07-24) |"].join("\n"),
+  );
+  const contratto = leggiContratto(CON_SCRITTURA);
+  const base = {
+    contratto,
+    valoriPerSlot: new Map([["home-hero", ["Il vivaio delle piante rare della Corte Vecchia"]]]),
+    testoPerPagina: new Map([["home", "Il vivaio delle piante rare della Corte Vecchia"], ["catalogo", "48 piante"]]),
+    cercaNeiSorgenti: () => [],
+    conteggiAnon: new Map([["piante", { stato: "letta", righe: 48 }]]),
+    soglia: SOGLIA_FRAMMENTO,
+  };
+
+  it("legge la tabella dalla sua intestazione, non da una posizione fissa", () => {
+    assert.deepEqual(contratto.scritture, [
+      { rotta: "/contatti", tabella: "messaggi", letturaPubblica: false },
+    ]);
+    assert.equal(contratto.nessunaScritturaDichiarata, false);
+  });
+
+  it("`Nessuna scrittura pubblica.` e' una dichiarazione, e si distingue da una tabella vuota", () => {
+    assert.equal(leggiContratto(CONTRATTO).nessunaScritturaDichiarata, true);
+    assert.equal(leggiContratto(CONTRATTO.replace("Nessuna scrittura pubblica.", "")).nessunaScritturaDichiarata, false);
+  });
+
+  it("un contratto che non dichiara ne' le scritture ne' la loro assenza prende un `issue`", () => {
+    const muto = leggiContratto(CONTRATTO.replace("Nessuna scrittura pubblica.", ""));
+    const findings = findingsContratto(muto, {});
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].severity, "issue");
+    assert.match(findings[0].message, /Percorsi di scrittura/);
+  });
+
+  it("CHI SCRIVE NON LEGGE: se l'anonimo rilegge la tabella e' un `block`", () => {
+    const { findings } = findingsContenuti({
+      ...base,
+      letturaScritture: new Map([["messaggi", { stato: "letta", righe: 312 }]]),
+    });
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].severity, "block");
+    assert.match(findings[0].message, /RILEGGE 312 righe/);
+  });
+
+  it("e NON scatta quando la lettura e' rifiutata, che e' come deve andare", () => {
+    const { findings, mancanti } = findingsContenuti({
+      ...base,
+      letturaScritture: new Map([["messaggi", { stato: "negata", righe: null }]]),
+    });
+    assert.deepEqual(findings, []);
+    assert.deepEqual(mancanti, []);
+  });
+
+  it("un guestbook lo si dichiara, e allora scende a `issue`", () => {
+    const guestbook = leggiContratto(
+      CON_SCRITTURA.replace("un messaggio del modulo", "un messaggio del modulo, a lettura pubblica"),
+    );
+    const { findings } = findingsContenuti({
+      ...base,
+      contratto: guestbook,
+      letturaScritture: new Map([["messaggi", { stato: "letta", righe: 312 }]]),
+    });
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].severity, "issue");
+  });
+
+  it("la tabella dichiarata che nel database non esiste e' un `block`", () => {
+    const { findings } = findingsContenuti({
+      ...base,
+      letturaScritture: new Map([["messaggi", { stato: "assente", righe: null }]]),
+    });
+    assert.match(findings[0].message, /non esiste nessuna relazione/);
+  });
+
+  it("e se non e' stata interrogata resta una verifica MANCANTE", () => {
+    const { findings, mancanti } = findingsContenuti({ ...base, letturaScritture: new Map() });
+    assert.deepEqual(findings, []);
+    assert.equal(mancanti.length, 1);
+    assert.match(mancanti[0], /non si e' potuto verificare se l'anonimo la rilegge/);
+  });
+});
+
+describe("la chiamata a psql", () => {
+  it("porta SEMPRE `-q`, e non e' cosmetica", () => {
+    // MISURATO sul banco `banco-prova-valscura` il 2026-08-04. Senza `-q`,
+    // `psql` stampa su stdout il tag del comando (`SET` per `set role anon`) e
+    // quel tag finisce nel primo record INSIEME al valore, perche' `-R`
+    // sostituisce il terminatore di riga e non quello di una riga di stato: il
+    // conteggio diventa `SET0`, `Number(...)` da' `NaN`, e `NaN === 0` e' falso.
+    // La regola «zero righe leggibili impersonando il ruolo anonimo» — il modo
+    // n°1 in cui un sito pubblico sopra la RLS fallisce in silenzio — non
+    // poteva scattare: il gate di P1 la nominava ZERO volte su una tabella
+    // senza policy di lettura per `anon`.
+    const args = argomentiPsql("postgresql://x", "select 1");
+    assert.equal(args.includes("-q"), true);
+    assert.equal(args.includes("-A"), true);
+    assert.equal(args.includes("-t"), true);
+    assert.equal(args[args.length - 1], "select 1");
+  });
+
+  it("righeDaPsql legge record e campi, e toglie i CRLF di Windows", () => {
+    const RS = "\u001e";
+    const FS = "\u001f";
+    assert.deepEqual(righeDaPsql(`a${FS}b\r\n${RS}c${FS}d\r\n${RS}`), [["a", "b"], ["c", "d"]]);
+    assert.deepEqual(righeDaPsql(`0\r\n${RS}`), [["0"]]);
+    assert.deepEqual(righeDaPsql(""), []);
+  });
+
+  it("e il conteggio letto e' un NUMERO, non una stringa col tag davanti", () => {
+    const RS = "\u001e";
+    const righe = righeDaPsql(`0\r\n${RS}`);
+    assert.equal(Number(righe[righe.length - 1][0]), 0);
+    // Il difetto di P1, in una riga: se il tag fosse ancora li', questo sarebbe NaN.
+    assert.equal(Number.isNaN(Number(righe[righe.length - 1][0])), false);
   });
 });
 

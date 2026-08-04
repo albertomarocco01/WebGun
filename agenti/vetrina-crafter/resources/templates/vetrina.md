@@ -144,10 +144,26 @@ RSC: se un anonimo non deve vederlo, non deve RICEVERLO.
 | `{{/contatti}}` | {{un messaggio del modulo di contatto}} | `{{messaggi}}` | {{nome, ruolo}} ({{AAAA-MM-GG}}) |
 
 <!--
-SINTASSI la tabella. Se non ce ne sono si scrive sotto, fuori dalla tabella,
-`Nessuna scrittura pubblica.` — cosi' «non ce ne sono» si distingue da «la
-tabella non e' stata compilata». Sono due stati diversi e uno dei due e' un
-problema.
+SINTASSI la tabella, e il gate LA LEGGE: dalla sua intestazione ricava la
+colonna `Rotta` e la colonna `Tabella`, e per ogni tabella dichiarata va a
+misurare cosa ne vede una sessione anonima. Se non ce ne sono si scrive sotto,
+fuori dalla tabella, `Nessuna scrittura pubblica.` — cosi' «non ce ne sono» si
+distingue da «la tabella non e' stata compilata». Sono due stati diversi e uno
+dei due e' un problema; il contratto che non dice ne' l'uno ne' l'altro prende
+un `issue` al passo `contratto-vetrina`.
+
+CHI SCRIVE NON LEGGE. Il passo `contenuti-vivi` impersona il ruolo anonimo e
+pretende che la lettura di queste tabelle sia RIFIUTATA: una casella in cui
+chiunque puo' imbucare non e' una casella che chiunque puo' aprire, e dentro ci
+sono nome, telefono ed email di chi ha scritto prima. Se l'anonimo ci legge
+dentro e' un `block`. Misurato sul banco del collaudo il 2026-08-04: due righe
+di SQL — `grant select` piu' una policy `using (true)` — rendevano rileggibili
+tutte le richieste di prenotazione, e il gate chiudeva VERDE 10/10.
+
+L'ECCEZIONE si dichiara, e si scrive dentro la riga: un guestbook, un muro dei
+messaggi, una bacheca — dove essere rileggibile e' il punto — porta le parole
+`lettura pubblica` nella sua riga, e allora il rilievo scende a `issue`. Non
+sparisce: resta una cosa da guardare.
 
 E' la seconda domanda che ferma la pipeline anche in automatico. Un modulo che
 scrive da una sessione anonima e' una porta: la vetrina la disegna e la collega,

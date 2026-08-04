@@ -150,6 +150,41 @@ function slotDaTabella(righeTabella) {
   return slot;
 }
 
+/**
+ * La tabella §Percorsi di scrittura aperti al pubblico, letta DALLA SUA
+ * INTESTAZIONE come quella degli slot.
+ *
+ * Il template la prescrive con quattro colonne — Rotta, Cosa scrive, Tabella,
+ * Chi l'ha autorizzato — e il gate ne legge due: la rotta (per nominarla nel
+ * rilievo) e la tabella (per andarci a guardare). Una riga puo' dichiarare
+ * `lettura pubblica`: e' l'eccezione firmata di un guestbook, dove essere
+ * rileggibile e' il punto.
+ */
+function scrittureDaTabella(righeTabella) {
+  const scritture = [];
+  let indici = null;
+  for (const linea of righeTabella) {
+    if (eSeparatore(linea)) continue;
+    const c = celle(linea);
+    if (!indici) {
+      const dove = (parola) => c.findIndex((x) => new RegExp(parola, "i").test(x));
+      const rotta = dove("rotta");
+      const tabella = dove("tabella");
+      if (rotta >= 0 && tabella >= 0) indici = { rotta, tabella };
+      continue;
+    }
+    const rotta = senzaApici(c[indici.rotta]);
+    const tabella = senzaApici(c[indici.tabella]).toLowerCase();
+    if (!rotta || !tabella) continue;
+    scritture.push({
+      rotta,
+      tabella,
+      letturaPubblica: /lettura pubblica/i.test(linea),
+    });
+  }
+  return scritture;
+}
+
 /** `Tabella dei contenuti: site_content — chiave `slot`, pubblicato `is_published`` */
 export function tabellaContenutiDa(valore) {
   const testo = String(valore ?? "");
@@ -172,12 +207,13 @@ export const SOGLIA_FRAMMENTO = 24;
  */
 export function leggiContratto(testo) {
   const proprio = senzaZoneCitate(testo);
-  const stato = { pagine: [], righeSlot: [], escluse: [], errori: [], visti: new Set(), corrente: null, sezione: null };
+  const stato = { pagine: [], righeSlot: [], righeScritture: [], escluse: [], errori: [], visti: new Set(), corrente: null, sezione: null };
 
   for (const linea of righe(proprio)) {
     if (leggiIntestazione(linea, stato)) continue;
     if (stato.corrente) { leggiRigaPagina(linea, stato.corrente); continue; }
     if (stato.sezione === "slot" && /^\s*\|/.test(linea)) stato.righeSlot.push(linea);
+    if (stato.sezione === "scritture" && /^\s*\|/.test(linea)) stato.righeScritture.push(linea);
     if (stato.sezione === "escluse") {
       const m = /^\s*[-*]\s+`?(\/[^`\s]*)`?/.exec(linea);
       if (m) stato.escluse.push(m[1]);
@@ -188,6 +224,7 @@ export function leggiContratto(testo) {
     ...lettureGlobali(proprio),
     pagine: stato.pagine,
     slot: slotDaTabella(stato.righeSlot),
+    scritture: scrittureDaTabella(stato.righeScritture),
     escluse: stato.escluse,
     errori: stato.errori,
   };
@@ -210,6 +247,8 @@ function lettureGlobali(proprio) {
     // per distinguere «questo sito non ha testi editabili» da «nessuno ha
     // compilato la tabella». Sono due stati diversi e uno dei due e' un problema.
     nessunoSlotDichiarato: /^\s*Nessuno slot\.?\s*$/im.test(proprio),
+    // Stessa forma, e per la domanda piu' irreversibile delle due.
+    nessunaScritturaDichiarata: /^\s*Nessuna scrittura pubblica\.?\s*$/im.test(proprio),
   };
 }
 
@@ -232,11 +271,17 @@ function leggiIntestazione(linea, stato) {
   // della tabella degli slot finirebbero come righe dell'ultima pagina.
   if (/^##\s+/.test(linea)) {
     stato.corrente = null;
-    stato.sezione = /slot/i.test(linea) ? "slot" : /esclus/i.test(linea) ? "escluse" : null;
+    stato.sezione = sezioneDa(linea);
     return true;
   }
   return false;
 }
+
+const sezioneDa = (linea) =>
+  /slot/i.test(linea) ? "slot"
+    : /esclus/i.test(linea) ? "escluse"
+      : /scrittur/i.test(linea) ? "scritture"
+        : null;
 
 function leggiRigaPagina(linea, pagina) {
   for (const etichetta of RIGHE_OBBLIGATORIE) {
@@ -283,6 +328,18 @@ export function findingsContratto(contratto, opzioni = {}) {
 
   findings.push(...findingsSlotDichiarati(contratto, idPagine));
   findings.push(...findingsFirmaDatata(contratto, opzioni.dataHandoffSchema));
+  // Stessa forma di «Nessuno slot.», e per la domanda che `SKILL.md` §Modalita'
+  // dichiara irreversibile: se il contratto non dice ne' quali percorsi di
+  // scrittura esistono ne' che non ce ne sono, non si distingue «non ce ne
+  // sono» da «nessuno ha compilato la tabella».
+  if (contratto.scritture.length === 0 && !contratto.nessunaScritturaDichiarata) {
+    findings.push({
+      severity: "issue",
+      object: "docs/vetrina.md",
+      message: "§Percorsi di scrittura aperti al pubblico non e' compilata e non dichiara `Nessuna scrittura pubblica.`: non si distingue «non ce ne sono» da «nessuno ci ha guardato»",
+      hint: "e' una delle due domande che fermano la pipeline anche in automatico (SKILL.md §Modalita'): o si elencano le rotte che scrivono, o si scrive che non ce ne sono",
+    });
+  }
   return findings;
 }
 
@@ -736,7 +793,7 @@ export function piuLungoDiContenuto(valori, escludi = []) {
  * tengono il passo su MANCANTE invece che su `pass`.
  */
 export function findingsContenuti(dati) {
-  const { contratto, valoriPerSlot, testoPerPagina, cercaNeiSorgenti, conteggiAnon, soglia } = dati;
+  const { contratto, valoriPerSlot, testoPerPagina, cercaNeiSorgenti, conteggiAnon, soglia, letturaScritture } = dati;
   const findings = [];
   const mancanti = [];
   const percorsoDi = new Map(contratto.pagine.map((p) => [p.id, p]));
@@ -753,6 +810,7 @@ export function findingsContenuti(dati) {
       );
     }
     findings.push(...findingsFontiLeggibili(contratto, conteggiAnon, mancanti));
+    findings.push(...findingsScritturePubbliche(contratto, letturaScritture, mancanti));
     return { findings, mancanti };
   }
 
@@ -803,6 +861,7 @@ export function findingsContenuti(dati) {
   }
 
   findings.push(...findingsFontiLeggibili(contratto, conteggiAnon, mancanti));
+  findings.push(...findingsScritturePubbliche(contratto, letturaScritture, mancanti));
   return { findings, mancanti };
 }
 
@@ -863,6 +922,18 @@ function findingsSlot({ slot, pagina, frammento, testoPerPagina, cercaNeiSorgent
  * E' il modo n°1 in cui un sito pubblico sopra la RLS fallisce in silenzio: la
  * policy non lascia leggere, la pagina non da' nessun errore, e nessuno se ne
  * accorge finche' non lo dice un cliente.
+ *
+ * `conteggiAnon` porta `{ stato, righe }`: `letta` con il conteggio, `negata`
+ * quando il database ha risposto «permission denied», `assente` quando la
+ * relazione non esiste. La chiave assente (o `null`) significa un'altra cosa —
+ * non e' stata interrogata affatto — ed e' l'unica che resta MANCANTE.
+ *
+ * MISURATO sul banco del collaudo il 2026-08-04: prima, tutte e tre le
+ * condizioni finivano nello stesso `null` e producevano la stessa riga —
+ * «non interrogata (tabella assente o non leggibile) — verifica non fatta» —
+ * su una tabella che esisteva benissimo e che l'anonimo NON deve poter leggere.
+ * Una misura riuscita con esito negativo travestita da verifica mancante, cioe'
+ * la diagnosi che manda a controllare `psql` invece della policy.
  */
 function findingsFontiLeggibili(contratto, conteggiAnon, mancanti) {
   const findings = [];
@@ -872,15 +943,34 @@ function findingsFontiLeggibili(contratto, conteggiAnon, mancanti) {
     for (const fonte of pagina.fonti.filter((f) => f.tipo !== "slot")) {
       if (viste.has(fonte.nome)) continue;
       viste.add(fonte.nome);
-      const conteggio = conteggiAnon.get(fonte.nome);
-      if (conteggio === null || conteggio === undefined) {
-        mancanti.push(`fonte \`${fonte.nome}\`: non interrogata (${fonte.tipo} assente o non leggibile) — verifica non fatta`);
+      const esito = conteggiAnon.get(fonte.nome);
+      if (esito === null || esito === undefined) {
+        mancanti.push(`fonte \`${fonte.nome}\`: non interrogata — verifica non fatta`);
         continue;
       }
-      if (conteggio === 0) {
+      const dove = `${fonte.tipo} \`${fonte.nome}\` → ${pagina.id}`;
+      if (esito.stato === "assente") {
         findings.push({
           severity: "block",
-          object: `${fonte.tipo} \`${fonte.nome}\` → ${pagina.id}`,
+          object: dove,
+          message: `il contratto la dichiara come fonte della pagina e nel database non esiste nessuna relazione con questo nome`,
+          hint: "o il nome nel contratto e' sbagliato, o la tabella non e' mai stata creata: nel secondo caso e' una richiesta a schema-forge",
+        });
+        continue;
+      }
+      if (esito.stato === "negata") {
+        findings.push({
+          severity: "block",
+          object: dove,
+          message: "esiste, ma impersonando il ruolo anonimo la lettura e' RIFIUTATA (permesso negato): la pagina che la dichiara non puo' funzionare con la chiave anonima",
+          hint: "manca il `grant select` per `anon`, non (solo) la policy: sono due cose diverse e passano tutte e due o non passa niente. E' una richiesta a schema-forge",
+        });
+        continue;
+      }
+      if (esito.righe === 0) {
+        findings.push({
+          severity: "block",
+          object: dove,
           message: "zero righe leggibili impersonando il ruolo anonimo: la pagina e' viva e vuota, e nessuno se ne accorge finche' non lo dice un cliente",
           hint: "manca una policy di lettura per `anon`, o il seed: e' una richiesta a schema-forge, non una correzione qui",
         });
@@ -888,6 +978,87 @@ function findingsFontiLeggibili(contratto, conteggiAnon, mancanti) {
     }
   }
   return findings;
+}
+
+/**
+ * Chi scrive non legge: le tabelle dei percorsi di scrittura pubblici NON
+ * devono essere rileggibili da una sessione anonima.
+ *
+ * E' la meta' della domanda irreversibile che il contratto dichiara e che
+ * nessuno dei dieci passi verificava. MISURATO sul banco del collaudo il
+ * 2026-08-04, e il verde era immeritato: aperta la lettura di
+ * `richieste_prenotazione` all'anonimo — due righe di SQL, `grant select` piu'
+ * una policy `using (true)` — chiunque poteva rileggere nome, email, telefono e
+ * messaggio di chi aveva scritto prima, e il gate chiudeva **VERDE 10/10**. A
+ * monte non basta: l'audit RLS di schema-forge chiude quel caso con un `issue`
+ * («legittima solo su dati realmente pubblici, e va documentata nell'handoff»),
+ * cioe' rimanda proprio al documento che questo passo verifica.
+ *
+ * L'eccezione esiste e si dichiara: una riga della tabella che porta
+ * `lettura pubblica` e' un guestbook, dove essere rileggibile e' il punto. Li'
+ * il rilievo scende a `issue`, perche' resta una cosa da guardare.
+ */
+function findingsScritturePubbliche(contratto, letturaScritture, mancanti) {
+  const findings = [];
+  for (const scrittura of contratto.scritture ?? []) {
+    const esito = letturaScritture?.get(scrittura.tabella);
+    if (esito === null || esito === undefined) {
+      mancanti.push(`percorso di scrittura \`${scrittura.rotta}\` → tabella \`${scrittura.tabella}\`: non interrogata — non si e' potuto verificare se l'anonimo la rilegge`);
+      continue;
+    }
+    if (esito.stato === "assente") {
+      findings.push({
+        severity: "block",
+        object: `${scrittura.rotta} → \`${scrittura.tabella}\``,
+        message: "il contratto dichiara che questa rotta ci scrive, e nel database non esiste nessuna relazione con questo nome",
+        hint: "o il nome nel contratto e' sbagliato, o il modulo pubblico sta scrivendo da un'altra parte",
+      });
+      continue;
+    }
+    if (esito.stato === "negata") continue; // chi scrive non legge: e' cosi' che deve andare
+    findings.push({
+      severity: scrittura.letturaPubblica ? "issue" : "block",
+      object: `${scrittura.rotta} → \`${scrittura.tabella}\``,
+      message: `una sessione anonima RILEGGE ${esito.righe} righe della tabella in cui chiunque scrive: dentro ci sono i dati di chi ha scritto prima${scrittura.letturaPubblica ? " (il contratto lo dichiara: `lettura pubblica`)" : ""}`,
+      hint: "una casella in cui chiunque puo' imbucare non e' una casella che chiunque puo' aprire: servono `revoke select ... from anon` e nessuna policy di lettura per `anon`. E' una richiesta a schema-forge",
+    });
+  }
+  return findings;
+}
+
+// ---------------------------------------------------------------- psql
+/** Separatori di record e di campo: due caratteri di controllo, perche' un
+ *  valore di testo puo' contenere a capo, tabulazioni e barre verticali. */
+const RECORD_PSQL = "";
+const CAMPO_PSQL = "";
+
+/**
+ * Gli argomenti con cui questo gate chiama `psql`.
+ *
+ * Stanno qui, in una funzione pura con il suo test, per una ragione misurata:
+ * `-q` non e' cosmetica. Senza, `psql` stampa su STDOUT il TAG DEL COMANDO —
+ * `SET` per `set role anon` — e quel tag finisce nel primo record insieme al
+ * valore, perche' `-R` sostituisce il terminatore di RIGA e non quello di una
+ * riga di stato. Il conteggio letto diventa `SET0`, `Number(…)` da' `NaN`, e
+ * `NaN === 0` e' falso: la regola «zero righe leggibili impersonando il ruolo
+ * anonimo» — quella che la specifica chiama il modo n°1 in cui un sito pubblico
+ * sopra la RLS fallisce in silenzio — non poteva scattare.
+ *
+ * MISURATO sul banco `banco-prova-valscura` il 2026-08-04: tolta la policy di
+ * lettura per `anon` su `camere`, il gate di P1 nomina le zero righe ZERO volte.
+ */
+export function argomentiPsql(dbUrl, sql) {
+  return [dbUrl, "-q", "-v", "ON_ERROR_STOP=1", "-A", "-t", "-R", RECORD_PSQL, "-F", CAMPO_PSQL, "-c", sql];
+}
+
+/** Da `stdout` di `psql` a righe di campi. I CRLF si tolgono qui, una volta
+ *  sola: su Windows `psql` lascia il ritorno a capo in coda a ogni riga. */
+export function righeDaPsql(stdout) {
+  return senzaBom(stdout ?? "")
+    .split(RECORD_PSQL)
+    .map((r) => r.replace(/\r?\n/g, "").trim())
+    .filter(Boolean)
+    .map((r) => r.split(CAMPO_PSQL));
 }
 
 // ------------------------------------------------- il database del PROGETTO

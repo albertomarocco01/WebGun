@@ -54,6 +54,8 @@ Scritto qui perché un perimetro non dichiarato lo si scopre litigando su un fil
 
 **Il caso di frontiera che va deciso ora, non dopo: i moduli pubblici.** Un modulo di contatto scrive nel database da una sessione anonima. È dentro il mio perimetro *renderlo e collegarlo*; **non** lo è aprire il permesso che lo fa funzionare — quello è una richiesta a schema-forge — né difenderlo dagli abusi, che è di cyber-shield. E siccome apre un percorso di scrittura all'anonimo, è una delle due domande che **fermano la pipeline** anche in automatico (§Modalità).
 
+**Una cosa però la misuro, ed è mia: chi scrive non legge.** Il contratto elenca i percorsi di scrittura pubblici, e il passo `contenuti-vivi` va a vedere, impersonando il ruolo anonimo, se quelle tabelle si possono **rileggere**. Se sì è un `block`: una casella in cui chiunque può imbucare non è una casella che chiunque può aprire, e dentro ci sono nome, telefono ed email di chi ha scritto prima. Non è il mestiere di cyber-shield (che difende dagli abusi) né quello di schema-forge (il cui audit RLS chiude quel caso con un `issue` che rimanda *«all'handoff»*, cioè a questo documento): è la metà verificabile della domanda irreversibile che questa skill fa firmare. Misurata sul banco del collaudo il 2026-08-04, dove due righe di SQL pubblicavano le richieste di tutti con dieci passi verdi sopra.
+
 ## Modalità: interattiva vs pipeline
 
 | | Chi conferma lo Specchio della vetrina | Cosa ferma comunque la pipeline |
@@ -108,7 +110,7 @@ In pipeline lo Specchio non sparisce. Il modello assunto si **scrive** nell'hand
 | 6 | `app-identita` | l'URL sotto esame è una **build di produzione di questo progetto**, non di ieri e non di un altro | `.next/BUILD_ID` nell'HTML servito | app spenta, `.next/BUILD_ID` assente, nessun URL dichiarato né passato — il `BUILD_ID` di **un altro** progetto è invece un `fail`: è un fatto misurato, non una verifica mancata |
 | 7 | `pagine-vive` | ogni pagina dichiarata risponde davvero, e ogni pagina pubblica servita è dichiarata | HTTP sulle rotte del contratto | contratto illeggibile o identità dell'app non stabilita |
 | 8 | `segnaposto-serviti` | nel testo servito non ci sono segnaposto né *lorem ipsum* | HTML delle stesse pagine | nessuna pagina scaricata |
-| 9 | `contenuti-vivi` | i contenuti vengono dal database: la stringa è **nel database e non nei sorgenti**, e le fonti dichiarate sono leggibili dall'anonimo | `psql` + HTML servito | `psql` assente, database non risolvibile, **tabella dei contenuti non interrogata**, valore dello slot troppo corto per essere distintivo. *(Slot dichiarato e senza riga pubblicata: è un `block` — deciso sul banco il 2026-08-03, vedi la reference)* |
+| 9 | `contenuti-vivi` | i contenuti vengono dal database: la stringa è **nel database e non nei sorgenti**; le fonti dichiarate sono leggibili dall'anonimo, e le tabelle dei **percorsi di scrittura pubblici no** | `psql` + HTML servito | `psql` assente, database non risolvibile, **tabella dei contenuti non interrogata**, valore dello slot troppo corto per essere distintivo. *(Slot dichiarato e senza riga pubblicata: è un `block` — deciso sul banco il 2026-08-03, vedi la reference)* |
 | 10 | `contratto-uscita` | l'handoff esiste e la sua riga `Gate:` dice il vero su **questa** esecuzione | `docs/handoff/` | non si applica: è `pass` o `fail` |
 
 **Uno strumento assente vale `MANCANTE`, non `PASS`**, e vale lo stesso per uno strumento presente che non ha letto il suo input (`DECISIONI.md` §18). Un gate rosso per verifiche mancanti resta rosso: qui conta doppio sul passo 9, perché senza database la Legge n°3 non è stata verificata affatto.
@@ -158,7 +160,7 @@ Scritto guardando cosa ha imparato flow-sentinel collaudando il proprio `evolve`
 - [ ] **Ogni pagina dichiarata risponde** sull'app **di questo progetto**, senza rimandare altrove (passi `app-identita` e `pagine-vive`)
 - [ ] **Ogni pagina pubblica servita è dichiarata** nel contratto o fra le escluse con la motivazione (passo `pagine-vive`)
 - [ ] **Nessun segnaposto e nessun *lorem ipsum*** nel testo servito (passo `segnaposto-serviti`)
-- [ ] **I contenuti editabili arrivano dal database**: presenti in pagina, assenti dai sorgenti; le fonti dichiarate sono leggibili dall'anonimo (passo `contenuti-vivi`)
+- [ ] **I contenuti editabili arrivano dal database**: presenti in pagina, assenti dai sorgenti; le fonti dichiarate sono leggibili dall'anonimo, **e le tabelle dei percorsi di scrittura pubblici non lo sono** (passo `contenuti-vivi`)
 - [ ] **I componenti si importano solo dalla cucitura `src/components/ui/`**, e la cucitura non importa logica di dominio né il client dei dati (passo `cucitura-ui`)
 - [ ] **Nessuna chiave `service_role`** raggiungibile dal sito pubblico, **nessun client Supabase** fuori dai moduli dichiarati (passo `chiavi-e-client`)
 - [ ] **`tsc` pulito** sul progetto, su tipi allineati alle migrazioni (passo `tipi`)
