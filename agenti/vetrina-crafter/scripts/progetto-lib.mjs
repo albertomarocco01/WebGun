@@ -938,10 +938,52 @@ export function findingsContenuti(dati) {
     findings.push(...findingsSlot({ slot: s, pagina, frammento, testoPerPagina, cercaNeiSorgenti, mancanti }));
   }
 
+  findings.push(...findingsRigheNonDichiarate({ contratto, valoriPerSlot, cercaNeiSorgenti, soglia }));
   findings.push(...findingsFontiLeggibili(contratto, conteggiAnon, mancanti));
   findings.push(...findingsScritturePubbliche(contratto, letturaScritture, mancanti));
   findings.push(...findingsLetturePubbliche(contratto, colonneConcesse, mancanti));
   return { findings, mancanti };
+}
+
+/**
+ * Le righe pubblicate che NESSUNO slot dichiara, e che stanno nei sorgenti.
+ *
+ * MISURATO sul banco il 2026-08-04, ed e' la quinta classe cieca di
+ * `sabotaggio.md`: «dichiara `Nessuno slot.` su un sito coi testi cablati» — o,
+ * nella forma piu' subdola perche' non richiede di dichiarare niente, togli dal
+ * contratto la riga di UN solo slot e cabla quel testo nel JSX. Sul banco:
+ * 331 caratteri di `rifugio-storia` copiati dentro `il-rifugio/page.tsx`, la
+ * riga sparita dalla tabella §Slot dei contenuti, e **gate VERDE 10/10**. Il
+ * ciclo dei controlli girava su `contratto.slot`, quindi una riga tolta dal
+ * contratto usciva dal perimetro insieme al suo difetto.
+ *
+ * La regola 2 (`la stringa non e' nei sorgenti`) esisteva gia': le mancava di
+ * essere applicata a cio' che il contratto NON dichiara. Il database sa quali
+ * righe sono pubblicate, e quelle sono un elenco che nessuno puo' accorciare
+ * riscrivendo un documento.
+ *
+ * Cosa NON scatta: una riga pubblicata che nessuno slot dichiara e che nei
+ * sorgenti non c'e'. Una tabella dei contenuti puo' servire anche pagine di un
+ * altro contratto o il gestionale, e segnalarla sarebbe rumore su un fatto
+ * legittimo. Quel che si segnala e' la coincidenza fra le due cose.
+ */
+function findingsRigheNonDichiarate({ contratto, valoriPerSlot, cercaNeiSorgenti, soglia }) {
+  const dichiarate = new Set(contratto.slot.map((s) => s.chiave));
+  const findings = [];
+  for (const [chiave, valori] of valoriPerSlot) {
+    if (dichiarate.has(chiave) || !Array.isArray(valori)) continue;
+    const frammento = frammentoDistintivo(valori, soglia, [chiave]);
+    if (!frammento) continue;
+    const nei = cercaNeiSorgenti(frammento);
+    if (nei.length === 0) continue;
+    findings.push({
+      severity: "block",
+      object: `riga \`${chiave}\` → ${nei.join(", ")}`,
+      message: "e' pubblicata nella tabella dei contenuti, nessuno slot del contratto la dichiara, e il suo testo sta CABLATO nei sorgenti: il cliente la cambia dal gestionale e la pagina non cambia",
+      hint: "leggila dal database e dichiarala fra gli §Slot dei contenuti — togliere la riga dal contratto non toglie il testo dal codice, sposta solo il difetto fuori dal perimetro di chi guarda",
+    });
+  }
+  return findings;
 }
 
 function findingsSlot({ slot, pagina, frammento, testoPerPagina, cercaNeiSorgenti, mancanti }) {

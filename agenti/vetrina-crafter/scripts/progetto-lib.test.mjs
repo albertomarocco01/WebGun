@@ -502,6 +502,52 @@ describe("contenuti dal database", () => {
     assert.match(findings[0].message, /CABLATO nei sorgenti/);
   });
 
+  // Difetto n°13 del collaudo 2026-08-04, quinta classe cieca di `sabotaggio.md`.
+  // Il ciclo dei controlli girava su `contratto.slot`: togliere dal contratto la
+  // riga di uno slot ne portava fuori dal perimetro anche il difetto. Sul banco:
+  // 331 caratteri di `rifugio-storia` cablati nel JSX, la riga sparita dalla
+  // tabella §Slot dei contenuti, gate VERDE 10/10.
+  it("SCATTA (block) su una riga pubblicata che nessuno slot dichiara e che sta nei sorgenti", () => {
+    const { findings } = findingsContenuti({
+      ...base,
+      valoriPerSlot: new Map([
+        ["home-hero", ["Il vivaio delle piante rare della Corte Vecchia"]],
+        ["storia-del-vivaio", ["Il vivaio l'ha aperto nel 1968 il nonno di Elena"]],
+      ]),
+      cercaNeiSorgenti: (f) => (f.includes("1968") ? ["src/app/chi-siamo/page.tsx"] : []),
+    });
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].severity, "block");
+    assert.match(findings[0].object, /riga `storia-del-vivaio` → src\/app\/chi-siamo\/page\.tsx/);
+    assert.match(findings[0].message, /nessuno slot del contratto la dichiara/);
+  });
+
+  it("e NON scatta su una riga non dichiarata che nei sorgenti non c'e'", () => {
+    // Una tabella dei contenuti puo' servire anche il gestionale o un altro
+    // contratto: segnalarla sarebbe rumore su un fatto legittimo.
+    const { findings, mancanti } = findingsContenuti({
+      ...base,
+      valoriPerSlot: new Map([
+        ["home-hero", ["Il vivaio delle piante rare della Corte Vecchia"]],
+        ["storia-del-vivaio", ["Il vivaio l'ha aperto nel 1968 il nonno di Elena"]],
+      ]),
+    });
+    assert.deepEqual(findings, []);
+    assert.deepEqual(mancanti, []);
+  });
+
+  it("e NON scatta su una riga non dichiarata piu' corta della soglia distintiva", () => {
+    const { findings } = findingsContenuti({
+      ...base,
+      valoriPerSlot: new Map([
+        ["home-hero", ["Il vivaio delle piante rare della Corte Vecchia"]],
+        ["saluto", ["Ciao."]],
+      ]),
+      cercaNeiSorgenti: (f) => (f.includes("Ciao") ? ["src/app/page.tsx"] : []),
+    });
+    assert.deepEqual(findings, []);
+  });
+
   it("SCATTA (block) su una fonte con zero righe leggibili dall'anonimo", () => {
     const { findings } = findingsContenuti({ ...base, conteggiAnon: new Map([["piante", { stato: "letta", righe: 0 }]]) });
     assert.equal(findings.length, 1);

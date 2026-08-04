@@ -366,8 +366,15 @@ const PASSI = [
         soglia,
       });
 
-      // Il bersaglio si stampa SEMPRE, anche sul verde (DECISIONI.md §11).
-      const testa = `database: ${dbUrl.replace(/:[^:@]*@/, ":***@")} · schemi: ${schemi.join(", ")} · soglia distintiva: ${soglia} caratteri`;
+      // Il bersaglio si stampa SEMPRE, anche sul verde (DECISIONI.md §11) — e
+      // le righe pubblicate che nessuno slot dichiara si contano a parte: sono
+      // il perimetro che il contratto NON copre, e un numero taciuto e' il modo
+      // in cui la quinta classe cieca e' rimasta cieca (difetto n°13).
+      const dichiarate = new Set(contratto.slot.map((s) => s.chiave));
+      const pubblicate = valoriPerSlot === null ? null
+        : [...valoriPerSlot].filter(([chiave, v]) => Array.isArray(v) && !dichiarate.has(chiave)).length;
+      const testa = `database: ${dbUrl.replace(/:[^:@]*@/, ":***@")} · schemi: ${schemi.join(", ")} · soglia distintiva: ${soglia} caratteri` +
+        (pubblicate === null ? "" : ` · ${contratto.slot.length} slot dichiarati, ${pubblicate} righe pubblicate che nessuno slot dichiara`);
       if (mancanti.length > 0) {
         return record(this.id, this.nome, "skipped",
           [testa, ...mancanti, findings.length > 0 ? dettaglioFindings(findings) : ""].filter(Boolean).join("\n"));
