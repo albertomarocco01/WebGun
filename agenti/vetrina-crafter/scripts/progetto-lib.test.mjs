@@ -28,6 +28,7 @@ import {
   frammentoDistintivo,
   indiziDevServer,
   leggiContratto,
+  piuLungoDiContenuto,
   rottaDaFile,
   rotteDaSorgenti,
   schemiEsposti,
@@ -480,6 +481,27 @@ describe("contenuti dal database", () => {
     const { mancanti, findings } = findingsContenuti({ ...base, valoriPerSlot: new Map([["home-hero", ["Chi siamo"]]]) });
     assert.deepEqual(findings, []);
     assert.match(mancanti[0], /sotto la soglia distintiva/);
+  });
+
+  it("collaudo P2: la diagnosi dello slot corto porta il NUMERO, cioe' la manopola", () => {
+    // Su `banco-prova-valscura` quattro slot su tredici stavano sotto il ripiego
+    // di 24 caratteri, e la riga di prima («nessun valore lungo almeno 24») non
+    // diceva se il contenuto misurasse 23 o se la riga fosse vuota. La soglia si
+    // dichiara nel contratto: senza il numero, quella riga non e' azionabile.
+    // Misurato: a 24 quattro slot non verificati, a 19 tutti e tredici verdi.
+    const { mancanti } = findingsContenuti({
+      ...base,
+      valoriPerSlot: new Map([["home-hero", ["Marta e Ivan, dal 2019."]]]),
+    });
+    assert.match(mancanti[0], /misura 23 caratteri/);
+    assert.match(mancanti[0], /soglia distintiva di 24/);
+    assert.match(mancanti[0], /Lunghezza minima del frammento distintivo/);
+  });
+
+  it("piuLungoDiContenuto ignora la soglia, i valori tecnici e la chiave", () => {
+    const riga = ["home-hero", "44444444-4444-4444-8444-000000000006", "corto", "un po' piu' lungo"];
+    assert.equal(piuLungoDiContenuto(riga, ["home-hero"]), "un po' piu' lungo");
+    assert.equal(piuLungoDiContenuto([], []), null);
   });
 
   it("S1: slot dichiarato senza riga pubblicata e' un `block` (deciso sul banco il 2026-08-03)", () => {

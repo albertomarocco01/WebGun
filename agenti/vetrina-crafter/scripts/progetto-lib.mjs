@@ -699,12 +699,28 @@ const VALORE_TECNICO = new RegExp(
  * facendo esattamente quello che la skill prescrive.
  */
 export function frammentoDistintivo(valori, soglia = SOGLIA_FRAMMENTO, escludi = []) {
+  const piuLungo = piuLungoDiContenuto(valori, escludi);
+  return piuLungo && piuLungo.length >= soglia ? piuLungo : null;
+}
+
+/**
+ * Il piu' lungo dei valori che sono davvero contenuto, SENZA guardare la soglia.
+ *
+ * Serve alla diagnosi, non al verdetto: quando uno slot resta sotto soglia, chi
+ * legge il rosso deve sapere di quanto — «nessun valore lungo almeno 24» non
+ * dice se il contenuto misura 23 o se la riga e' vuota, e la manopola (la riga
+ * `Lunghezza minima del frammento distintivo:` del contratto) si gira solo
+ * sapendo il numero. Sul banco del collaudo la differenza era fra 19 e 24, cioe'
+ * fra un gate verde e quattro slot dichiarati non verificati per sempre.
+ */
+export function piuLungoDiContenuto(valori, escludi = []) {
   const fuori = new Set(escludi.map((v) => normalizzaSpazi(v ?? "")).filter(Boolean));
-  const candidati = (valori ?? [])
-    .map((v) => normalizzaSpazi(v ?? ""))
-    .filter((v) => v.length >= soglia && !VALORE_TECNICO.test(v) && !fuori.has(v))
-    .sort((a, b) => b.length - a.length);
-  return candidati[0] ?? null;
+  return (
+    (valori ?? [])
+      .map((v) => normalizzaSpazi(v ?? ""))
+      .filter((v) => v.length > 0 && !VALORE_TECNICO.test(v) && !fuori.has(v))
+      .sort((a, b) => b.length - a.length)[0] ?? null
+  );
 }
 
 /**
@@ -771,7 +787,15 @@ export function findingsContenuti(dati) {
     // non il suo contenuto (vedi `frammentoDistintivo`).
     const frammento = frammentoDistintivo(valori, soglia, [s.chiave]);
     if (!frammento) {
-      mancanti.push(`slot \`${s.chiave}\`: nessun valore di contenuto lungo almeno ${soglia} caratteri — sotto la soglia distintiva la ricerca non prova niente, quello slot NON e' stato verificato`);
+      // Il numero c'e' perche' senza numero questa riga non e' azionabile: la
+      // soglia si dichiara nel contratto, e la si sposta solo sapendo di quanto.
+      const piuLungo = piuLungoDiContenuto(valori, [s.chiave]);
+      mancanti.push(
+        `slot \`${s.chiave}\`: il valore di contenuto piu' lungo misura ${piuLungo?.length ?? 0} caratteri, ` +
+        `sotto la soglia distintiva di ${soglia} — la ricerca non proverebbe niente in nessuna delle due ` +
+        "direzioni, quindi quello slot NON e' stato verificato (la soglia si dichiara nel contratto, riga " +
+        "`Lunghezza minima del frammento distintivo:`, e si ricava contando quanti slot restano fuori)",
+      );
       continue;
     }
 
