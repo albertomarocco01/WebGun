@@ -1056,3 +1056,27 @@ passo senza dettaglio va riletto come sospetto d'ambiente prima che come tipi di
 - Le tre migrazioni che porterebbero il banco a verde restano non scritte, per scelta: è il
   caso di prova permanente di uno schema difettoso (`../../DECISIONI.md` §20/§25).
 - I quattro punti su cinque del primo consumatore e i due del secondo restano aperti.
+
+## Il gate esce 0 muto se invocato dalla junction (2026-08-04, pacchetto P.4-pre)
+
+Punto **aperto**, misurato e non corretto: la correzione la decide il direttore.
+Dettaglio e uscite incollate in `../../PILOTA-PRE-2026-08-04.md` §2b.
+
+`node <regia>/agenti/schema-forge/scripts/verify.mjs`, lanciato da una cartella
+qualsiasi **fuori** dall'albero della regia, esce **2 con il messaggio** (`Nessuna
+cartella <cwd>\supabase\migrations: non c'e' schema da verificare.`). Lo stesso gate
+invocato come `node <...>/.claude/skills/schema-forge/scripts/verify.mjs`, stessa
+cartella e stesso node di sistema (20.12.2), esce **0 senza stampare una riga** — cioè
+la regressione che P.0-igiene ha chiuso, per un canale che P.0-igiene non copriva.
+
+Causa, misurata stampando i due lati del confronto durante l'invocazione dalla junction:
+nell'epilogo prescritto dalla regola `epiloghi-vivi` del gate della regia,
+`resolve(process.argv[1])` restituisce il percorso della junction mentre
+`import.meta.url` restituisce il percorso reale (Node canonicalizza i moduli). I due
+differiscono, la guardia è falsa, `main()` non gira.
+
+Non è un difetto di questa skill sola: **lo hanno tutti e cinque i gate**, e la forma
+difettosa è quella che il campo `hint` della regola `epiloghi-vivi` prescrive. Finché
+resta aperto, i gate si lanciano **per percorso assoluto dentro la regia**, mai dalla
+junction — e vale in particolare per una chat aperta sul repo di un progetto generato,
+che le skill le vede proprio in `.claude/skills`.

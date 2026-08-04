@@ -108,6 +108,24 @@ E la prima esecuzione vera di `plan` e `tune` su guadagni misurati: home
 
 ## Punti aperti — ordinati per gravita'
 
+> **Il gate esce 0 muto se invocato dalla junction**
+> (`.claude/skills/speed-demon/scripts/verify.mjs`) — misurato il 2026-08-04, P.4-pre,
+> `../../PILOTA-PRE-2026-08-04.md` §2b. Per percorso reale dentro la regia esce **2
+> col messaggio** anche da fuori dall'albero; dalla junction esce **0 senza stampare
+> una riga**, cioè la regressione di P.0-igiene su un canale che P.0-igiene non
+> copriva. Causa: nell'epilogo prescritto dalla regola `epiloghi-vivi`,
+> `resolve(process.argv[1])` non risolve la junction mentre `import.meta.url` sì,
+> quindi la guardia è falsa e `main()` non gira. Non è un punto numerato perché non è
+> di questa skill sola: **lo hanno tutti e cinque i gate**. Non corretto — la
+> correzione è del direttore. Fino ad allora i gate si lanciano **per percorso
+> assoluto dentro la regia**, mai dalla junction.
+>
+> Conseguenza specifica di questa skill: la domanda di P.4-pre su `AGENTI_DIR =
+> dirname(SKILL_DIR)` dalla junction — dove diventerebbe `.claude/skills` — **resta
+> aperta e non misurabile**, perché il gate non parte e il passo `rete-verde` non
+> viene mai eseguito. Dal percorso reale `AGENTI_DIR` **regge**, misurato: il passo ha
+> lanciato il gate di flow-sentinel come sottoprocesso e ne ha letto il JSON.
+
 1. **Nessun committente ha mai firmato l'elenco delle pagine.** Su tutti e due i
    banchi la riga `Confermato da:` l'ha scritta chi costruiva o chi collaudava.
    Il gate legge la firma, non la sua verita': una baseline impeccabile sulle

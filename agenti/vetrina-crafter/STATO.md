@@ -228,6 +228,18 @@ limiti. Le due che restano sono in §Punti aperti, coi loro perché.
 
 ## Punti aperti — ordinati per gravita'
 
+> **Il gate esce 0 muto se invocato dalla junction**
+> (`.claude/skills/vetrina-crafter/scripts/verify.mjs`) — misurato il 2026-08-04,
+> P.4-pre, `../../PILOTA-PRE-2026-08-04.md` §2b. Per percorso reale dentro la regia
+> esce **2 col messaggio** anche da fuori dall'albero; dalla junction esce **0 senza
+> stampare una riga**, cioè la regressione di P.0-igiene su un canale che P.0-igiene
+> non copriva. Causa: nell'epilogo prescritto dalla regola `epiloghi-vivi`,
+> `resolve(process.argv[1])` non risolve la junction mentre `import.meta.url` sì,
+> quindi la guardia è falsa e `main()` non gira. Non è un punto numerato perché non è
+> di questa skill sola: **lo hanno tutti e cinque i gate**. Non corretto — la
+> correzione è del direttore. Fino ad allora i gate si lanciano **per percorso
+> assoluto dentro la regia**, mai dalla junction.
+
 1. **Nessun committente ha firmato niente.** Ereditato dalla P0, si chiude in P.4.
    È il punto più grave rimasto, e il collaudo P2 **non lo tocca**: due banchi
    verdi su elenchi di pagine che si sono scritti da soli dimostrano che l'agente

@@ -151,6 +151,18 @@ silenzio, tre crash su report malformati, e tre rossi sbagliati su codice commen
 
 ## Punti aperti — ordinati per gravita'
 
+> **Il gate esce 0 muto se invocato dalla junction**
+> (`.claude/skills/flow-sentinel/scripts/verify.mjs`) — misurato il 2026-08-04,
+> P.4-pre, `../../PILOTA-PRE-2026-08-04.md` §2b. Per percorso reale dentro la regia
+> esce **2 col messaggio** anche da fuori dall'albero; dalla junction esce **0 senza
+> stampare una riga**, cioè la regressione di P.0-igiene su un canale che P.0-igiene
+> non copriva. Causa: nell'epilogo prescritto dalla regola `epiloghi-vivi`,
+> `resolve(process.argv[1])` non risolve la junction mentre `import.meta.url` sì,
+> quindi la guardia è falsa e `main()` non gira. Non è un punto numerato perché non è
+> di questa skill sola: **lo hanno tutti e cinque i gate**. Non corretto — la
+> correzione è del direttore. Fino ad allora i gate si lanciano **per percorso
+> assoluto dentro la regia**, mai dalla junction.
+
 > **Quattro punti chiusi da P3** il 2026-07-30 — il consumatore reale (era il n°1), `lint-spec`
 > senza dipendenze (n°3, chiuso operativamente: resta da scrivere il README), `psql` nel PATH (n°4,
 > c'e' e il passo interroga il database davvero) e l'URL preso da `[auth].site_url` (n°5, che non e'
