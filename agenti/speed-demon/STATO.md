@@ -4,7 +4,7 @@
   avversario lo stesso giorno da una sessione indipendente**, su un secondo
   banco costruito apposta con pagine davvero lente
   (`banco-prova-immobiliare`, Case di Langa). Gli script hanno test propri
-  (`node --test`, **75 verdi**), il gate `verify` ha **7 passi** con id stabili.
+  (`node --test`, **86 verdi**), il gate `verify` ha **7 passi** con id stabili.
   Il gate corretto e' stato **rilanciato sul banco vecchio**, `banco-prova-negozio`,
   e chiude **VERDE 7/7**: nessuna regressione, e `rete-verde` — la seconda legge
   della skill — ha finalmente girato dentro questo gate, verde sull'app giusta e
@@ -21,8 +21,11 @@
     launchpad (non pubblica su gate rosso)
   - **Fly UI non esiste** (`../../DECISIONI.md` §21): non c'e' nessuna libreria
     di componenti da ottimizzare, i componenti sono scritti a mano nel progetto.
-- **Guardiani:** code-maniac e code-inquisition valutano gli script di questa
-  skill come qualsiasi altro codice. Nessuno dei due li ha mai visti: punto 5.
+- **Guardiani:** ESLint **0 errori 0 warning** e `knip` **0 rilievi** sugli
+  script (P.7c punti 1-2, commit `a6f6d1e`, 2026-08-03); nello stesso giro la
+  `complexity 19` di `verify.mjs` è stata sciolta in funzioni pure, batteria
+  75 → **86**, rilanciata dal direttore il 2026-08-04 (86/86, 0 fail). Il resto
+  resta mai visto — semgrep, `jscpd`, code-inquisition: punto 5.
 - **2026-08-03 — il gate non partiva sul Node di sistema, e usciva `0` muto.** *Il
   difetto:* l'epilogo era `if (import.meta.main) await main();`, e `import.meta.main`
   e' arrivato in **Node 24**; su Node 20.12.2 — l'unico Node di sistema di questa
@@ -96,7 +99,7 @@ E la prima esecuzione vera di `plan` e `tune` su guadagni misurati: home
 | Cosa | Numero | Come e' stato misurato |
 |---|---|---|
 | Passi del gate | 7 | `verify.mjs --json`, `summary.passi` |
-| Test degli script | **75 verdi** (73 al collaudo, +2 con P.0-igiene il 2026-08-03) | `node --test "scripts/**/*.test.mjs"` |
+| Test degli script | **86 verdi** (73 al collaudo, +2 con P.0-igiene il 2026-08-03, +11 sciogliendo la `complexity 19` di `verify.mjs` — P.7c punti 1-2, `a6f6d1e`; rilanciati il 2026-08-04: 86/86, 0 fail) | `node --test "scripts/**/*.test.mjs"` |
 | References | 3 | `misurazione.md` · `ottimizzazioni.md` · `seo.md` |
 | Template | 2 | `performance.md` (il contratto) · `handoff-speed-demon.md` |
 | Banchi su cui il gate e' girato | **2** | `banco-prova-negozio` · `banco-prova-immobiliare` — **cancellati dal disco il 2026-07-30** (`../../DECISIONI.md` §25): tornano con `git checkout 67f9001 -- <banco>` |

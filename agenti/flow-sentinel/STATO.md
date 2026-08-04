@@ -36,7 +36,7 @@
     componenti a monte, i componenti li scrive a mano chi costruisce il progetto
   - A valle: speed-demon (ottimizza con la batteria come rete di sicurezza), cyber-shield (parte dai
     flussi ostili dichiarati), launchpad (non pubblica su gate rosso)
-- **Guardiani:** ESLint **0 errori 0 warning**, `knip` pulito, `jscpd` **0 cloni** su `scripts/`.
+- **Guardiani:** ESLint **0 errori 0 warning** (riconfermato con `node_modules` locali veri — P.7c punti 1-2, commit `a6f6d1e`, 2026-08-03), `knip` **0 rilievi** (rieseguito dal direttore il 2026-08-04), `jscpd` **0 cloni** su `scripts/`.
 - **2026-08-03 — il gate non partiva sul Node di sistema, e usciva `0` muto.** *Il difetto:* l'epilogo era
   `if (import.meta.main) await main();`, e `import.meta.main` e' arrivato in **Node 24**; su Node 20.12.2
   — l'unico Node di sistema di questa macchina — vale `undefined`, `main()` non girava e **il gate usciva
