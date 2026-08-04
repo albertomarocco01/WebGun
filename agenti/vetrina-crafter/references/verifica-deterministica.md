@@ -339,7 +339,10 @@ rende verificabile la Legge n°3.
      era una dichiarazione che nessuno dei dieci passi falsificava, anche se il gate
      aveva già in mano lo strumento per farlo.
 
-  5. **Il firmato contro il concesso.** Per ogni relazione di §Dati visibili a un anonimo
+  5. **Il firmato contro il concesso.** Prima la **relazione**: si enumerano tutte le
+     relazioni degli schemi che `config.toml` espone su cui `anon` ha `select` — quelle,
+     e solo quelle, sono raggiungibili da PostgREST — e ognuna che la sezione non nomina
+     è un `block`. Poi la **colonna**: per ogni relazione di §Dati visibili a un anonimo
      si legge da `information_schema.column_privileges` su quali colonne `anon` ha
      davvero `select`, e si confronta con l'elenco firmato. Colonna **concessa e non
      dichiarata** → `block`; colonna **dichiarata e non concessa** → `block` anche quello,
@@ -366,6 +369,12 @@ rende verificabile la Legge n°3.
      `in_evidenza`) nessuna pagina le seleziona e nessuno le aveva firmate, ma con la
      chiave anonima — che sta nel bundle — PostgREST le serve a chiunque. `sabotaggio.md`
      dichiarava questa classe **cieca**: non lo era.
+
+     La **sezione assente** non si tratta qui: un contratto che salta §Dati visibili a
+     un anonimo non prende un `block` per relazione — sarebbe una valanga su un difetto
+     di forma — ma un `issue` al passo `contratto-vetrina`, esattamente come già faceva
+     §Percorsi di scrittura quando manca. Senza quella riga, saltare la sezione sarebbe
+     il modo di far tacere il controllo più nuovo di questo gate.
 - **Rilievi:** `issue` se la pagina che mostra uno slot dichiara `Aggiornamento: statico`
   senza rigenerazione: il cliente cambierà il testo dal gestionale e non vedrà cambiare
   niente finché qualcuno non ripubblica. È `issue` e non `block` perché un sito che si

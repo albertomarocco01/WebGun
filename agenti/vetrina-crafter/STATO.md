@@ -1,17 +1,28 @@
 # Stato — Vetrina Crafter
 
-- **Stato attuale: P1 CONSEGNATA — il gate ha misurato un sito vero, e chiude
-  VERDE 10/10.** Esistono le cinque references, i quattro script, i **122 test
-  verdi**, i guardiani della skill e i due template. Il banco esiste
-  (`banco-prova-controtempo`, Scuola di Musica Controtempo): schema prodotto
-  eseguendo **schema-forge** (gate **VERDE 9/9**), vetrina costruita col flusso
-  vero della skill, **tutti e sette i comandi esercitati**, sabotaggio eseguito
-  su tutte le classi.
-- **Il gate ha trovato tre difetti di sé stesso**, e li ha trovati il
-  sabotaggio, non la lettura: una diagnosi bugiarda sulla dev server di
-  Turbopack, un falso verde su una pagina non scaricata, e un `block` che
-  cercava in pagina l'**UUID di una riga**. Sono i tre motivi per cui questa
-  fase esiste.
+- **Stato attuale: P2 CONSEGNATA — collaudo avversario fatto, quattordici difetti
+  trovati e chiusi.** Il gate chiude **VERDE 10/10 su due banchi indipendenti**
+  (`banco-prova-valscura`, rifugio alpino: 9 pagine, 13 slot, modulo pubblico;
+  `banco-prova-controtempo`, il banco di P1). **177 test verdi** (erano 122),
+  ESLint e knip puliti. Verbale: `COLLAUDO-2026-08-04.md`.
+- **Il collaudo ha trovato quattordici difetti**, tutti misurati prima di essere
+  corretti e tutti con un test. Il filo che li lega quasi tutti: **il gate leggeva
+  i documenti che qualcuno poteva riscrivere, e non il database che nessuno può
+  riscrivere.** Le due tabelle firmate del contratto — §Percorsi di scrittura e
+  §Dati visibili a un anonimo, le due domande che `SKILL.md` dichiara
+  irreversibili — **non le leggeva nessuno dei dieci passi**. Adesso il gate le
+  confronta col `grant`.
+- **Tre delle sei classi dichiarate cieche non erano cieche**, e una quarta si è
+  ristretta: erano righe che nessuno aveva provato a guardare. Una era perfino
+  difesa da un test (`route.ts` → `null`).
+- **La prova che conta di più:** il gate corretto, rilanciato su
+  `banco-prova-controtempo` per dimostrare l'assenza di regressioni, ci ha trovato
+  **diciannove colonne e una tabella intera leggibili da un anonimo che nessuno
+  aveva firmato** — su un banco che chi scriveva la regola non stava guardando.
+- **P1, per memoria: il gate aveva trovato tre difetti di sé stesso** col
+  sabotaggio: una diagnosi bugiarda sulla dev server di Turbopack, un falso verde
+  su una pagina non scaricata, e un `block` che cercava in pagina l'**UUID di una
+  riga**.
 - **Non ancora usabile su un progetto cliente**, e il motivo non è più un
   difetto della skill: sul banco **il contratto l'ha firmato chi costruiva**, e
   il gate legge la firma, non la sua verità. Si chiude in P3, con un committente.
@@ -30,9 +41,10 @@
     (`../../DECISIONI.md` §21). Anche **sites-effects** resta fuori: e' una libreria
     esterna che in questo repo non c'e', e un progetto che la adotta lo dichiara come
     deroga in `docs/PROGETTO.md`
-- **Guardiani sugli script:** ESLint **0 errori 0 avvisi** · `knip` **pulito** ·
-  `jscpd` **pulito** (7 file, 3 121 righe, 31 173 gettoni, **0 cloni**) ·
-  `semgrep`, `gitleaks` e `/code-inquisition` **mai lanciati**.
+- **Guardiani sugli script:** ESLint **0 errori 0 avvisi** · `knip` **pulito**
+  (rilanciati a fine P2) · `jscpd` pulito in P1 (7 file, 3 121 righe, 0 cloni),
+  **non rilanciato dopo P2** · `semgrep`, `gitleaks` e `/code-inquisition`
+  **mai lanciati**.
 
 ## Cosa fa, in una riga
 
@@ -209,31 +221,54 @@ pubblico lo decide il `grant` a monte, non l'elenco del nostro `select`.
 
 `references/sabotaggio.md` §Le classi che questo gate NON puo' vedere elenca le
 rotture che devono restare **verdi**, e adesso ognuna ha accanto la misura che lo
-dimostra invece della previsione.
+dimostra invece della previsione. **Dopo il collaudo P2 quell'elenco è più corto**:
+tre righe sono barrate (`route.ts`, le colonne concesse a PostgREST, e — a metà —
+`Nessuno slot.`) perché erano righe che nessuno aveva provato a guardare, non
+limiti. Le due che restano sono in §Punti aperti, coi loro perché.
 
 ## Punti aperti — ordinati per gravita'
 
-1. **Nessun committente ha firmato niente.** Ereditato dalla P0, si chiude in P3.
-   È il punto più grave rimasto: dieci passi verdi su un elenco di pagine che si è
-   scritto da solo dimostrano che l'agente è coerente con sé stesso.
-2. **Il caso F di `evolve` e' cieco per costruzione**, e ora è anche **misurato**:
-   riscritto `Cosa mostra:` di `/contatti` come «il modulo di prenotazione con
-   calendario e pagamento della caparra», il gate chiude verde 10/10 su una pagina
-   che non esiste.
-3. **`Nessuno slot.` e' un buco firmato**, e anche questo è misurato: con il testo
-   di uno slot cablato nel JSX e `Nessuno slot.` nel contratto, il gate chiude
-   verde. Non chiudibile nel codice.
-4. **Le euristiche dichiarate hanno incontrato un progetto solo.** `puntaA`
-   confronta la **coda** di un percorso e non risolve gli alias di `tsconfig`: sul
-   banco non c'era nessun monorepo a ingannarla. I segnaposto sono cercati come
-   stringhe: un progetto che parla di template produce un falso positivo, e sul
-   banco non ce n'era.
-5. **Il gate non misura quanto ci mette.** Se su un sito di trenta pagine
-   impiegasse minuti, sarebbe un gate che nessuno rilancia — e un gate che nessuno
-   rilancia e' un documento.
-6. **Un solo dominio, un solo stack.** Tutto quello che è scritto qui è vero su
-   Next 16 con Turbopack, Supabase locale e sei slot. Il collaudo avversario (P2)
-   parte da un dominio diverso apposta.
+1. **Nessun committente ha firmato niente.** Ereditato dalla P0, si chiude in P.4.
+   È il punto più grave rimasto, e il collaudo P2 **non lo tocca**: due banchi
+   verdi su elenchi di pagine che si sono scritti da soli dimostrano che l'agente
+   è coerente con sé stesso.
+2. **Il caso F di `evolve` e' cieco per costruzione**, e **rimisurato in P2** su un
+   secondo banco: riscritto `Cosa mostra:` di `/come-arrivare` come «la mappa
+   interattiva con il tracciato GPS, il meteo a sei giorni e il modulo per
+   prenotare il trasferimento in fuoristrada», il gate chiude verde 10/10 su una
+   pagina che non esiste. Non chiudibile senza giudicare un significato.
+3. **La primitiva reimplementata a mano resta cieca**, e in P2 si è deciso che
+   **conviene lasciarla tale**: ogni regola immaginata produce rossi su pagine
+   corrette, e il difetto evitato è reversibile mentre il costo sarebbe
+   strutturale (`COLLAUDO-2026-08-04.md` §4). Il confine si è però spostato: la
+   copia **importata** ora si vede ovunque stia (difetto n°7).
+4. **`Nessuno slot.` non è più un buco intero.** Il difetto n°13 applica la regola
+   del testo cablato anche alle righe **pubblicate** che nessuno slot dichiara —
+   il database è un elenco che nessuno accorcia riscrivendo un documento. **Resta
+   cieco** il solo caso in cui il testo cablato nel database non esiste affatto.
+5. **Il gate non misura la staleness del CONTENUTO.** `identita` confronta la
+   build coi file **sorgente**, e in una skill la cui dottrina è «il contenuto sta
+   nel database» quello è l'unico ingresso rispetto a cui la build può invecchiare.
+   Il difetto n°8 ha reso la diagnosi giusta (il `hint` ora si stampa e nomina la
+   Data Cache), **non automatica**: `updated_at` mantenuto da un trigger è una
+   convenzione dichiarata di schema-forge, e il gate non la interroga.
+6. **Nessun passo ha un timeout.** Se `psql` si blocca, il gate si blocca con lui.
+   Misurato il tempo (**4,93 s di media su 9 pagine e 13 slot**, varianza 0,22 s su
+   tre giri identici), non la sua patologia.
+7. **Le euristiche degli alias hanno ancora un limite dichiarato.** `puntaA`
+   risolve ora **esatto** i percorsi relativi (difetto n°7); per `@/` e `~/`, che
+   senza `tsconfig.json` non si risolvono, resta un confronto **ancorato in testa**
+   — cieco su un monorepo con due cartelle omonime in pacchetti diversi. I
+   segnaposto sono ancora cercati come stringhe: `da compilare` e `da decidere`
+   sono italiano ordinario, e su un contenuto vero che li contenga il passo
+   `segnaposto-serviti` darebbe un `block` su prosa finita. **Non misurato** su un
+   contenuto scritto in buona fede: sul banco quella frase c'era come residuo di
+   sabotaggio, non come testo del rifugio.
+8. **Due domini, un solo stack.** Tutto quello che è scritto qui è vero su Next 16
+   con Turbopack e Supabase locale. Il collaudo P2 ha aggiunto un dominio (rifugio
+   alpino) e un percorso di scrittura pubblico, non un altro stack.
+9. **`--json` non è stato esercitato in P2.** Il contratto d'uscita in JSON esiste;
+   tutte le misure di questo collaudo sono sull'uscita per umani.
 
 ## Proposte a monte/valle
 

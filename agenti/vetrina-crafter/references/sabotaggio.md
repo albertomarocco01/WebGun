@@ -12,6 +12,21 @@ col sabotaggio.
 > Le colonne «Esito misurato» portano quello che e' successo, non quello che
 > doveva succedere. **Il sabotaggio ha trovato tre difetti del gate**, tutti
 > chiusi con un test: sono le righe in grassetto.
+>
+> **AGGIORNAMENTO 2026-08-04 (collaudo P2, `COLLAUDO-2026-08-04.md`).** Le classi
+> sono state ripassate su un secondo banco (`banco-prova-valscura`, rifugio
+> alpino: 9 pagine, 13 slot, modulo pubblico di prenotazione) e ne sono usciti
+> **otto difetti** oltre ai sei della prima meta'. **Tre delle sei classi
+> dichiarate cieche non lo erano** e una quarta si e' ristretta: sono le righe
+> barrate qui sotto. La lezione, e vale per chiunque scriva un elenco di limiti:
+> una classe si dichiara cieca solo dopo aver provato a guardarla, e una di
+> queste era perfino difesa da un test.
+>
+> **E il sabotaggio va RIPRISTINATO, sempre.** Questa ripresa ha trovato sul banco
+> un sabotaggio di classe B ancora piantato, col suo commento «va rimosso dopo la
+> misura», e la misura non era mai stata presa: un banco lasciato rotto non rende
+> solo inutile la classe successiva — rende false tutte le misure che vengono
+> dopo, comprese quelle di chi arrivera' domani senza sapere che c'era.
 
 ## Come si esegue
 

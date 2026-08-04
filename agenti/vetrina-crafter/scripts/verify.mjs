@@ -354,6 +354,7 @@ const PASSI = [
       // differenza e' una sottrazione. Vedi `findingsLetturePubbliche`.
       const colonneConcesse = misuraColonneConcesse(
         dbUrl, contratto.letture.map((l) => l.relazione), schemi[0]);
+      const relazioniConcesse = misuraRelazioniConcesse(dbUrl, schemi);
 
       const { findings, mancanti } = findingsContenuti({
         contratto,
@@ -363,6 +364,7 @@ const PASSI = [
         conteggiAnon,
         letturaScritture,
         colonneConcesse,
+        relazioniConcesse,
         soglia,
       });
 
@@ -585,6 +587,27 @@ function misuraColonneConcesse(dbUrl, nomi, schemaDefault) {
     esiti.set(nome, righe === null ? null : righe.map((r) => r[0]).filter(Boolean));
   }
   return esiti;
+}
+
+/**
+ * Ogni relazione degli schemi esposti su cui `anon` ha `select`.
+ *
+ * E' l'elenco che il contratto deve coprire: una tabella che non compare in
+ * §Dati visibili a un anonimo e che `anon` legge e' pubblicata senza che nessuno
+ * l'abbia firmata. Si guardano SOLO gli schemi che `config.toml` espone
+ * (`[api].schemas`): quelli sono le relazioni raggiungibili da PostgREST, e
+ * quindi dal browser di chiunque.
+ *
+ * `null` = non interrogata, cioe' verifica MANCANTE.
+ */
+function misuraRelazioniConcesse(dbUrl, schemi) {
+  const validi = schemi.filter((s) => IDENTIFICATORE.test(s));
+  if (validi.length === 0) return null;
+  const elenco = validi.map((s) => `'${s}'`).join(", ");
+  const righe = interroga(dbUrl,
+    `select distinct table_name from information_schema.column_privileges ` +
+    `where table_schema in (${elenco}) and grantee = 'anon' and privilege_type = 'SELECT' order by table_name;`);
+  return righe === null ? null : new Set(righe.map((r) => r[0]).filter(Boolean));
 }
 
 const fontiDichiarate = (contratto) =>

@@ -74,6 +74,12 @@ Quattro voci in navigazione.
 **Titolo da:** colonna \`piante.nome\`
 **Aggiornamento:** statico
 
+## Dati visibili a un anonimo
+
+| Tabella o vista | Cosa vede un visitatore senza account | Chi l'ha autorizzato |
+|---|---|---|
+| \`piante\` | \`slug\`, \`nome\` delle piante con \`pubblicata = true\` | Elena Barbieri (titolare) (2026-07-24) |
+
 ## Percorsi di scrittura aperti al pubblico
 
 Nessuna scrittura pubblica.
@@ -480,6 +486,12 @@ describe("contenuti dal database", () => {
     testoPerPagina: new Map([["home", `Benvenuti — ${FRAMMENTO} — dal 1987`], ["catalogo", "48 piante"]]),
     cercaNeiSorgenti: () => [],
     conteggiAnon: new Map([["piante", { stato: "letta", righe: 48 }]]),
+    // Il contratto di prova dichiara `piante` in §Dati visibili a un anonimo, e
+    // le due misure della regola 5 vanno passate anche qui: senza, ogni test di
+    // questo blocco porterebbe con se' una verifica MANCANTE che non sta
+    // provando (il gate resterebbe rosso per una ragione fuori tema).
+    colonneConcesse: new Map([["piante", ["slug", "nome"]]]),
+    relazioniConcesse: new Set(["piante"]),
     soglia: SOGLIA_FRAMMENTO,
   };
 
@@ -752,16 +764,8 @@ describe("dati visibili a un anonimo: il firmato contro il concesso", () => {
   // `created_at`, `updated_at`, `chiave`, `in_evidenza` — nessuna pagina le
   // seleziona, ma PostgREST le serve a chiunque abbia la chiave anonima, che sta
   // nel bundle. `sabotaggio.md` dichiarava la classe CIECA: non lo era.
-  const conLetture = (righe) => leggiContratto(CONTRATTO.replace(
-    "## Percorsi di scrittura aperti al pubblico",
-    ["## Dati visibili a un anonimo", "",
-      "| Tabella o vista | Cosa vede un visitatore senza account | Chi l'ha autorizzato |",
-      "|---|---|---|",
-      ...righe, "",
-      "## Percorsi di scrittura aperti al pubblico"].join("\n"),
-  ));
-
   const RIGA_PIANTE = "| `piante` | `slug`, `nome` delle piante con `pubblicata = true` | Elena Barbieri (titolare) (2026-07-24) |";
+  const conLetture = (righe) => leggiContratto(CONTRATTO.replace(RIGA_PIANTE, righe.join("\n")));
   const base = (contratto) => ({
     contratto,
     valoriPerSlot: new Map([["home-hero", ["Il vivaio delle piante rare della Corte Vecchia"]]]),
@@ -795,6 +799,7 @@ describe("dati visibili a un anonimo: il firmato contro il concesso", () => {
     ]);
     const { findings, mancanti } = findingsContenuti({
       ...base(c), colonneConcesse: new Map([["v_gite", ["slug", "titolo"]]]),
+      relazioniConcesse: new Set(["v_gite"]),
     });
     assert.deepEqual(findings, []);
     assert.equal(mancanti.length, 1);
@@ -805,6 +810,7 @@ describe("dati visibili a un anonimo: il firmato contro il concesso", () => {
     const { findings } = findingsContenuti({
       ...base(conLetture([RIGA_PIANTE])),
       colonneConcesse: new Map([["piante", ["slug", "nome", "id", "costo_acquisto", "created_at"]]]),
+      relazioniConcesse: new Set(["piante"]),
     });
     assert.equal(findings.length, 1);
     assert.equal(findings[0].severity, "block");
@@ -816,6 +822,7 @@ describe("dati visibili a un anonimo: il firmato contro il concesso", () => {
     const { findings, mancanti } = findingsContenuti({
       ...base(conLetture([RIGA_PIANTE])),
       colonneConcesse: new Map([["piante", ["slug", "nome"]]]),
+      relazioniConcesse: new Set(["piante"]),
     });
     assert.deepEqual(findings, []);
     assert.deepEqual(mancanti, []);
@@ -825,12 +832,14 @@ describe("dati visibili a un anonimo: il firmato contro il concesso", () => {
     const buca = "| `messaggi` | **niente.** Ci si scrive e non ci si legge: nessun `grant select` per `anon` | Elena Barbieri (titolare) (2026-07-24) |";
     const pulito = findingsContenuti({
       ...base(conLetture([buca])), colonneConcesse: new Map([["messaggi", []]]),
+      relazioniConcesse: new Set(["messaggi"]),
     });
     assert.deepEqual(pulito.findings, []);
     assert.deepEqual(pulito.mancanti, []);
 
     const aperto = findingsContenuti({
       ...base(conLetture([buca])), colonneConcesse: new Map([["messaggi", ["email", "telefono"]]]),
+      relazioniConcesse: new Set(["messaggi"]),
     });
     assert.equal(aperto.findings[0].severity, "block");
     assert.match(aperto.findings[0].message, /non ne vede niente, e `anon` ha invece `select` su 2 colonne/);
@@ -840,6 +849,7 @@ describe("dati visibili a un anonimo: il firmato contro il concesso", () => {
     const { findings } = findingsContenuti({
       ...base(conLetture([RIGA_PIANTE])),
       colonneConcesse: new Map([["piante", ["slug"]]]),
+      relazioniConcesse: new Set(["piante"]),
     });
     assert.equal(findings.length, 1);
     assert.equal(findings[0].severity, "block");
@@ -851,6 +861,7 @@ describe("dati visibili a un anonimo: il firmato contro il concesso", () => {
     const { findings } = findingsContenuti({
       ...base(conLetture(["| `piante` | tutte le colonne della tabella | Elena Barbieri (titolare) (2026-07-24) |"])),
       colonneConcesse: new Map([["piante", ["slug", "nome", "costo_acquisto"]]]),
+      relazioniConcesse: new Set(["piante"]),
     });
     assert.equal(findings.length, 1);
     assert.equal(findings[0].severity, "block");
@@ -860,10 +871,45 @@ describe("dati visibili a un anonimo: il firmato contro il concesso", () => {
   it("una relazione non interrogata e' una verifica MANCANTE, non un verde", () => {
     const { findings, mancanti } = findingsContenuti({
       ...base(conLetture([RIGA_PIANTE])), colonneConcesse: new Map(),
+      relazioniConcesse: new Set(["piante"]),
     });
     assert.deepEqual(findings, []);
     assert.equal(mancanti.length, 1);
     assert.match(mancanti[0], /privilegi di colonna non interrogati/);
+  });
+
+  // Il caso piu' grande della stessa famiglia, e sfuggiva per costruzione: si
+  // confrontavano solo le righe SCRITTE. MISURATO su `banco-prova-controtempo`
+  // il 2026-08-04: `strumenti` e' concessa ad `anon` e il contratto non la
+  // nomina in nessuna riga.
+  it("SCATTA (block) su una relazione che `anon` legge e che la sezione non nomina", () => {
+    const { findings } = findingsContenuti({
+      ...base(conLetture([RIGA_PIANTE])),
+      colonneConcesse: new Map([["piante", ["slug", "nome"]]]),
+      relazioniConcesse: new Set(["piante", "fornitori"]),
+    });
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].severity, "block");
+    assert.match(findings[0].message, /1 relazioni che la sezione non nomina: fornitori/);
+  });
+
+  it("NON scatta quando ogni relazione concessa ha la sua riga", () => {
+    const { findings, mancanti } = findingsContenuti({
+      ...base(conLetture([RIGA_PIANTE])),
+      colonneConcesse: new Map([["piante", ["slug", "nome"]]]),
+      relazioniConcesse: new Set(["piante"]),
+    });
+    assert.deepEqual(findings, []);
+    assert.deepEqual(mancanti, []);
+  });
+
+  it("l'elenco delle relazioni non interrogato e' MANCANTE, non un verde", () => {
+    const { mancanti } = findingsContenuti({
+      ...base(conLetture([RIGA_PIANTE])),
+      colonneConcesse: new Map([["piante", ["slug", "nome"]]]),
+    });
+    assert.equal(mancanti.length, 1);
+    assert.match(mancanti[0], /relazioni leggibili da `anon` non elencate/);
   });
 });
 
@@ -921,6 +967,8 @@ describe("percorsi di scrittura aperti al pubblico", () => {
     testoPerPagina: new Map([["home", "Il vivaio delle piante rare della Corte Vecchia"], ["catalogo", "48 piante"]]),
     cercaNeiSorgenti: () => [],
     conteggiAnon: new Map([["piante", { stato: "letta", righe: 48 }]]),
+    colonneConcesse: new Map([["piante", ["slug", "nome"]]]),
+    relazioniConcesse: new Set(["piante"]),
     soglia: SOGLIA_FRAMMENTO,
   };
 

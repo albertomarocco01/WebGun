@@ -401,6 +401,21 @@ export function findingsContratto(contratto, opzioni = {}) {
       hint: "e' una delle due domande che fermano la pipeline anche in automatico (SKILL.md §Modalita'): o si elencano le rotte che scrivono, o si scrive che non ce ne sono",
     });
   }
+
+  // E la GEMELLA, sull'altra delle due domande irreversibili. Senza questa riga
+  // un contratto che salta §Dati visibili a un anonimo non prende nessun
+  // rilievo, e la regola 5 di `contenuti-vivi` non ha niente da confrontare:
+  // saltare la sezione sarebbe il modo di far tacere il controllo piu' nuovo di
+  // questo gate, cioe' esattamente il buco che `Nessuno slot.` era per la Legge
+  // n°3 (vedi il collaudo P2, difetti 9 e 13).
+  if (contratto.letture.length === 0) {
+    findings.push({
+      severity: "issue",
+      object: "docs/vetrina.md",
+      message: "§Dati visibili a un anonimo non e' compilata: nessuna relazione e' dichiarata, quindi nessuna puo' essere confrontata col `grant` — e cio' che un anonimo legge resta una cosa che non ha firmato nessuno",
+      hint: "e' l'altra delle due domande che fermano la pipeline (SKILL.md §Modalita'): elenca le relazioni con le loro colonne, oppure scrivi `Nessun dato pubblico.` se il sito non ne legge nessuna",
+    });
+  }
   return findings;
 }
 
@@ -870,7 +885,7 @@ export function piuLungoDiContenuto(valori, escludi = []) {
  * tengono il passo su MANCANTE invece che su `pass`.
  */
 export function findingsContenuti(dati) {
-  const { contratto, valoriPerSlot, testoPerPagina, cercaNeiSorgenti, conteggiAnon, soglia, letturaScritture, colonneConcesse } = dati;
+  const { contratto, valoriPerSlot, testoPerPagina, cercaNeiSorgenti, conteggiAnon, soglia, letturaScritture, colonneConcesse, relazioniConcesse } = dati;
   const findings = [];
   const mancanti = [];
   const percorsoDi = new Map(contratto.pagine.map((p) => [p.id, p]));
@@ -888,7 +903,7 @@ export function findingsContenuti(dati) {
     }
     findings.push(...findingsFontiLeggibili(contratto, conteggiAnon, mancanti));
     findings.push(...findingsScritturePubbliche(contratto, letturaScritture, mancanti));
-    findings.push(...findingsLetturePubbliche(contratto, colonneConcesse, mancanti));
+    findings.push(...findingsLetturePubbliche(contratto, colonneConcesse, mancanti, relazioniConcesse));
     return { findings, mancanti };
   }
 
@@ -941,7 +956,7 @@ export function findingsContenuti(dati) {
   findings.push(...findingsRigheNonDichiarate({ contratto, valoriPerSlot, cercaNeiSorgenti, soglia }));
   findings.push(...findingsFontiLeggibili(contratto, conteggiAnon, mancanti));
   findings.push(...findingsScritturePubbliche(contratto, letturaScritture, mancanti));
-  findings.push(...findingsLetturePubbliche(contratto, colonneConcesse, mancanti));
+  findings.push(...findingsLetturePubbliche(contratto, colonneConcesse, mancanti, relazioniConcesse));
   return { findings, mancanti };
 }
 
@@ -1164,8 +1179,48 @@ function findingsScritturePubbliche(contratto, letturaScritture, mancanti) {
  * @param colonneConcesse Mappa relazione → `string[]` di colonne leggibili da
  *   `anon`, oppure `null` se la relazione non e' stata interrogata.
  */
-function findingsLetturePubbliche(contratto, colonneConcesse, mancanti) {
+/**
+ * Prima della colonna, la RELAZIONE.
+ *
+ * Una tabella che `anon` legge e che §Dati visibili a un anonimo non nomina
+ * affatto e' il caso piu' grande della stessa famiglia, e sfuggiva al confronto
+ * per costruzione: si confrontavano solo le righe SCRITTE. MISURATO il
+ * 2026-08-04 su `banco-prova-controtempo`, dove `strumenti` — concessa ad
+ * `anon`, quindi leggibile da chiunque abbia la chiave che sta nel bundle — non
+ * compare in nessuna riga del contratto.
+ *
+ * La sezione ASSENTE non si tratta qui: e' un difetto di FORMA del contratto, e
+ * sta dov'e' gia' trattata l'assenza di §Percorsi di scrittura, cioe' al passo
+ * `contratto-vetrina`. Qui si confronta cio' che e' scritto.
+ */
+function findingsRelazioniTaciute(contratto, relazioniConcesse, mancanti) {
+  if ((contratto.letture ?? []).length === 0) return [];
+  if (relazioniConcesse === null || relazioniConcesse === undefined) {
+    mancanti.push("relazioni leggibili da `anon` non elencate: non si e' potuto verificare che §Dati visibili a un anonimo le nomini tutte");
+    return [];
+  }
+  const dichiarate = new Set(contratto.letture.map((l) => l.relazione.split(".").pop()));
+  const taciute = [...relazioniConcesse].filter((r) => !dichiarate.has(r.split(".").pop()));
+  if (taciute.length === 0) return [];
+  return [{
+    severity: "block",
+    object: "§Dati visibili a un anonimo",
+    message: `\`anon\` puo' leggere ${taciute.length} relazioni che la sezione non nomina: ${taciute.join(", ")}`,
+    hint: "una tabella che non compare in questa sezione e' una tabella che nessuno ha firmato: aggiungile una riga con le sue colonne e falla riconfermare, oppure chiedi a schema-forge il `revoke` se non deve essere pubblica",
+  }];
+}
+
+function findingsLetturePubbliche(contratto, colonneConcesse, mancanti, relazioniConcesse) {
   const findings = [];
+
+  // Prima della colonna, la RELAZIONE. Una tabella che `anon` legge e che la
+  // sezione non nomina affatto e' il caso piu' grande della stessa famiglia, e
+  // sfuggiva al confronto per costruzione: si confrontavano solo le righe
+  // scritte. MISURATO il 2026-08-04 su `banco-prova-controtempo`, dove
+  // `strumenti` — concessa ad `anon`, quindi leggibile da chiunque abbia la
+  // chiave del bundle — non compare in nessuna riga del contratto.
+  findings.push(...findingsRelazioniTaciute(contratto, relazioniConcesse, mancanti));
+
   for (const lettura of contratto.letture ?? []) {
     const concesse = colonneConcesse?.get(lettura.relazione);
     if (concesse === null || concesse === undefined) {
