@@ -565,6 +565,9 @@ export function decodificaEntita(testo) {
     .replace(/&([a-z]+);/gi, (intero, nome) => ENTITA[nome.toLowerCase()] ?? intero);
 }
 
+/** Il testo alternativo di un'immagine, dentro il tag che lo porta. */
+const ALT_NEL_TAG = /(?:^|\s)alt\s*=\s*(?:"([^"]*)"|'([^']*)')/i;
+
 /**
  * Il testo che un visitatore vede.
  *
@@ -572,6 +575,16 @@ export function decodificaEntita(testo) {
  * ripete il contenuto della pagina in forma serializzata. Cercarci dentro
  * significherebbe trovare un testo che la pagina non mostra — e per il passo 9
  * sarebbe un verde su un contenuto invisibile.
+ *
+ * Un tag pero' non sempre e' solo impaginazione: il TESTO ALTERNATIVO di
+ * un'immagine e' contenuto servito, lo legge chi usa uno screen reader e lo
+ * vede chiunque quando la foto non arriva. Toglierlo insieme al tag e' costato
+ * un `block` falso, misurato sul banco `banco-prova-valscura` il 2026-08-04:
+ * sullo slot `cucina-nota-polenta` il valore piu' lungo di contenuto era
+ * `immagine_alt` («Il paiolo di rame sul fuoco», 27 caratteri), la pagina lo
+ * serviva dentro l'attributo `alt` — e per il passo 9 non esisteva.
+ * La costituzione mette l'accessibilita' sopra il minimalismo, e qui le due
+ * cose coincidono: quel testo e' contenuto, quindi si legge.
  */
 export function testoServito(html) {
   return normalizzaSpazi(
@@ -580,7 +593,10 @@ export function testoServito(html) {
         .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
         .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
         .replace(/<!--[\s\S]*?-->/g, " ")
-        .replace(/<[^>]+>/g, " "),
+        .replace(/<[^>]+>/g, (tag) => {
+          const alt = ALT_NEL_TAG.exec(tag);
+          return alt ? ` ${alt[1] ?? alt[2]} ` : " ";
+        }),
     ),
   );
 }
@@ -633,11 +649,23 @@ const estratto = (testo, da) => testo.slice(Math.max(0, da - 20), da + 60).trim(
  * possa produrre. Alzare la soglia sopra 36 lo avrebbe nascosto trasformandolo
  * in un MANCANTE su ogni slot corto: il difetto non era la soglia, era la
  * candidatura.
+ *
+ * MISURATO DI NUOVO sul banco `banco-prova-valscura` il 2026-08-04, e la
+ * famiglia era piu' grande di due: un URL non e' mai testo di pagina. Sullo slot
+ * `cucina-nota-polenta` (titolo 22 caratteri, corpo 19, `immagine_url` 31) il
+ * valore piu' lungo era il percorso della foto, che vive dentro un attributo
+ * `src` e sparisce insieme ai tag:
+ *
+ *   [block] slot `cucina-nota-polenta` → cucina (/cucina): il valore pubblicato
+ *   nel database non compare nel testo servito della pagina che dovrebbe
+ *   mostrarlo: «/foto/cucina-paiolo-di-rame.png…»
  */
 const VALORE_TECNICO = new RegExp(
   "^(?:" +
     "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}" + // uuid
     "|\\d{4}-\\d{2}-\\d{2}[T ][\\d:.]+(?:[+-]\\d{2}:?\\d{2}|Z)?" + // timestamp ISO
+    "|[a-z][a-z0-9+.-]*://\\S+" + // URL assoluto
+    "|/\\S*" + // percorso di un asset: `/foto/paiolo.png`
     ")$",
   "i",
 );
@@ -651,11 +679,30 @@ const VALORE_TECNICO = new RegExp(
  * dichiara che quello slot non e' stato verificato, invece di far finta.
  * La soglia e' una CONVENZIONE, non una misura: il numero giusto si ricava su un
  * progetto vero guardando quanti slot restano fuori (§Note della specifica).
+ *
+ * `escludi` porta i valori che questa riga usa come IDENTIFICATORE e non come
+ * contenuto — in pratica la chiave dello slot. MISURATO sul banco
+ * `banco-prova-valscura` il 2026-08-04: su uno slot con la chiave lunga
+ * (`prenotazione-avviso-caparra`, 27 caratteri) e il contenuto corto (titolo 10,
+ * corpo 22), «il piu' lungo dei valori di testo» era la CHIAVE. E la chiave e'
+ * il candidato peggiore possibile, perche' sbaglia in tutte e due le direzioni
+ * per costruzione: in pagina non c'e' mai — nessuno stampa il nome dello slot —
+ * e nei sorgenti c'e' sempre, perche' e' cosi' che la pagina chiede lo slot.
+ * Due `block` a testa, tutti e due falsi, su una pagina corretta:
+ *
+ *   [block] slot `prenotazione-avviso-caparra` → prenota (/prenota): il valore
+ *   pubblicato nel database non compare nel testo servito …
+ *   [block] slot `prenotazione-avviso-caparra` → src/app/prenota/page.tsx: lo
+ *   stesso testo sta CABLATO nei sorgenti …
+ *
+ * Il secondo accusava la pagina di aver cablato il contenuto mentre stava
+ * facendo esattamente quello che la skill prescrive.
  */
-export function frammentoDistintivo(valori, soglia = SOGLIA_FRAMMENTO) {
+export function frammentoDistintivo(valori, soglia = SOGLIA_FRAMMENTO, escludi = []) {
+  const fuori = new Set(escludi.map((v) => normalizzaSpazi(v ?? "")).filter(Boolean));
   const candidati = (valori ?? [])
     .map((v) => normalizzaSpazi(v ?? ""))
-    .filter((v) => v.length >= soglia && !VALORE_TECNICO.test(v))
+    .filter((v) => v.length >= soglia && !VALORE_TECNICO.test(v) && !fuori.has(v))
     .sort((a, b) => b.length - a.length);
   return candidati[0] ?? null;
 }
@@ -720,7 +767,9 @@ export function findingsContenuti(dati) {
       continue;
     }
 
-    const frammento = frammentoDistintivo(valori, soglia);
+    // La chiave dello slot esce dai candidati: e' l'identificatore della riga,
+    // non il suo contenuto (vedi `frammentoDistintivo`).
+    const frammento = frammentoDistintivo(valori, soglia, [s.chiave]);
     if (!frammento) {
       mancanti.push(`slot \`${s.chiave}\`: nessun valore di contenuto lungo almeno ${soglia} caratteri — sotto la soglia distintiva la ricerca non prova niente, quello slot NON e' stato verificato`);
       continue;

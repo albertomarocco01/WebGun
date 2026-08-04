@@ -388,6 +388,32 @@ describe("app servita", () => {
   it("il testo servito compatta gli spazi e toglie i tag", () => {
     assert.equal(testoServito("<p>  a\n  <b>b</b>\n</p>"), "a b");
   });
+
+  it("collaudo P2: il testo alternativo di un'immagine E' testo servito", () => {
+    // MISURATO sul banco `banco-prova-valscura` il 2026-08-04: il valore piu'
+    // lungo di contenuto dello slot `cucina-nota-polenta` era `immagine_alt`,
+    // la pagina lo serviva dentro l'attributo `alt`, e il passo 9 lo dichiarava
+    // assente — `block` su una pagina corretta. Quel testo lo legge chi usa uno
+    // screen reader e lo vede chiunque quando la foto non arriva: e' contenuto.
+    const html = `<figure><img src="/foto/paiolo.png" alt="Il paiolo di rame sul fuoco"/><figcaption>La polenta</figcaption></figure>`;
+    const testo = testoServito(html);
+    assert.equal(testo.includes("Il paiolo di rame sul fuoco"), true);
+    assert.equal(testo.includes("La polenta"), true);
+    // Il percorso della foto resta fuori: non e' testo, e' un indirizzo.
+    assert.equal(testo.includes("/foto/paiolo.png"), false);
+  });
+
+  it("collaudo P2: un attributo che FINISCE per `alt` non e' un testo alternativo", () => {
+    // `data-alt` e `salt` non sono `alt`: senza l'ancora sullo spazio, il tag
+    // porterebbe in pagina una stringa che nessuno legge.
+    const testo = testoServito(`<div data-alt="mai letto"><span>visibile</span></div>`);
+    assert.equal(testo.includes("mai letto"), false);
+    assert.equal(testo.includes("visibile"), true);
+  });
+
+  it("collaudo P2: un tag con `alt` non incolla le parole vicine", () => {
+    assert.equal(testoServito(`<p>prima<img alt="in mezzo">dopo</p>`), "prima in mezzo dopo");
+  });
 });
 
 describe("segnaposto nel testo servito", () => {
@@ -529,6 +555,47 @@ describe("contenuti dal database", () => {
     // contenuto che contiene una data non e' una data.
     const testo = "Chiusura estiva dal 2026-08-01 al 2026-08-31, riapriamo lunedi'";
     assert.equal(frammentoDistintivo([testo, "44444444-4444-4444-8444-000000000006"]), testo);
+  });
+
+  it("collaudo P2: la CHIAVE dello slot non e' un candidato al frammento distintivo", () => {
+    // MISURATO sul banco `banco-prova-valscura` il 2026-08-04. `to_jsonb(t)`
+    // porta anche la colonna-chiave, e su uno slot con la chiave lunga e il
+    // contenuto corto vinceva lei. E' il candidato peggiore possibile: sbaglia
+    // in tutte e due le direzioni per costruzione — in pagina non c'e' mai,
+    // nei sorgenti c'e' sempre.
+    const riga = ["prenotazione-avviso-caparra", "La caparra", "Trenta euro a persona."];
+    assert.equal(frammentoDistintivo(riga, 24, ["prenotazione-avviso-caparra"]), null);
+    // Senza l'esclusione sarebbe la chiave, cioe' il difetto:
+    assert.equal(frammentoDistintivo(riga, 24), "prenotazione-avviso-caparra");
+  });
+
+  it("collaudo P2: due `block` falsi in meno quando la chiave e' il valore piu' lungo", () => {
+    // L'uscita di prima, sul banco, su una pagina che mostrava il suo slot
+    // perfettamente: «non compare nel testo servito» + «sta CABLATO nei
+    // sorgenti». Il secondo accusava la pagina di aver cablato il contenuto
+    // mentre chiedeva lo slot per chiave, che e' quello che la skill prescrive.
+    const CHIAVE_LUNGA = "prenotazione-avviso-caparra";
+    const esito = findingsContenuti({
+      ...base,
+      contratto: leggiContratto(CONTRATTO.replaceAll("home-hero", CHIAVE_LUNGA)),
+      valoriPerSlot: new Map([[CHIAVE_LUNGA, [CHIAVE_LUNGA, "La caparra", "corto"]]]),
+      // I sorgenti contengono la chiave: e' cosi' che la pagina chiede lo slot.
+      cercaNeiSorgenti: (frammento) => (frammento === CHIAVE_LUNGA ? ["src/app/page.tsx"] : []),
+    });
+    assert.deepEqual(esito.findings, []);
+    assert.match(esito.mancanti[0], /sotto la soglia distintiva/);
+  });
+
+  it("collaudo P2: un URL e un percorso di asset non sono testo di pagina", () => {
+    // Stessa famiglia dell'UUID: vivono dentro un attributo `src`, e spariscono
+    // insieme ai tag. Misurato su `cucina-nota-polenta` il 2026-08-04.
+    const riga = ["/foto/cucina-paiolo-di-rame.png", "https://esempio.example/foto/paiolo.png", "corto"];
+    assert.equal(frammentoDistintivo(riga), null);
+  });
+
+  it("collaudo P2, il caso in cui NON deve scattare: un testo che contiene una barra non e' un percorso", () => {
+    const testo = "Aperti tutti i giorni, mezza pensione 65/75 euro a persona";
+    assert.equal(frammentoDistintivo([testo, "/foto/paiolo.png"]), testo);
   });
 
   it("S2: se l'unico valore lungo e' tecnico, lo slot risulta NON verificato", () => {
