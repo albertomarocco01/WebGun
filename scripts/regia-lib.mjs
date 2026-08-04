@@ -155,7 +155,10 @@ export function findingsEpiloghi(file) {
         severity: "block",
         object: `${conBarre(percorso)}:${numero}`,
         message: `\`${EPILOGO}\` vivo in una riga di codice: e' arrivato in Node 24, e sul node di sistema di questa macchina (20.12.2) vale \`undefined\` — il corpo non gira e lo script esce 0 senza stampare niente`,
-        hint: "usa la forma di vetrina-crafter: `if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();`",
+        hint:
+          "usa la guardia a **doppio confronto**: `const questo = fileURLToPath(import.meta.url), invocato = resolve(process.argv[1]);` " +
+          "poi `if (invocato === questo || realpathSync(invocato) === questo) await main();`, con `realpathSync` dentro un `try` che ricade sul testuale. " +
+          "Doppio perche' il solo confronto testuale e' FALSO quando lo script e' invocato dalla junction `.claude/skills/<skill>/...`: li' `argv[1]` resta il percorso della junction mentre `import.meta.url` e' gia' canonico, e lo script esce 0 muto esattamente come con `import.meta.main` (misurato il 2026-08-04 sui cinque gate, `PILOTA-PRE-2026-08-04.md` §2b)",
       });
     }
   }

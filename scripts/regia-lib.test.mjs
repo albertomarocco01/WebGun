@@ -83,11 +83,22 @@ describe("epiloghi-vivi", () => {
     assert.equal(findings[0].object, "agenti/x/scripts/verify.mjs:2");
   });
 
-  it("NON scatta sul commento che spiega perche' non si usa — e' la riga vera di tutte e cinque le skill", () => {
+  it("NON scatta sul commento che spiega perche' non si usa — e' l'epilogo vero di tutte e cinque le skill", () => {
+    // Dal 2026-08-04 (P.0-igiene-2) l'epilogo vero e' a doppio confronto: il
+    // solo `resolve` non scioglie una junction, e i cinque gate invocati da
+    // `.claude/skills/...` uscivano 0 muti. La regola non guarda la FORMA della
+    // guardia — vieta un token — e quindi non scatta ne' prima ne' dopo: qui si
+    // verifica che continui a non scattare sulla riga vera di oggi.
     const findings = findingsEpiloghi([file("agenti/schema-forge/scripts/verify.mjs", [
       "// `import.meta.main` NON si usa: e' arrivato in Node 24, e su Node 20 vale",
       "// `undefined` — il corpo non gira, il processo esce 0 senza stampare niente.",
-      "if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();",
+      "if (process.argv[1]) {",
+      "  const questoModulo = fileURLToPath(import.meta.url);",
+      "  const invocato = resolve(process.argv[1]);",
+      "  let invocatoReale = invocato;",
+      "  try { invocatoReale = realpathSync(invocato); } catch { /* percorso sparito: vale il testuale */ }",
+      "  if (invocato === questoModulo || invocatoReale === questoModulo) await main();",
+      "}",
     ].join("\n"))]);
     assert.deepEqual(findings, []);
   });

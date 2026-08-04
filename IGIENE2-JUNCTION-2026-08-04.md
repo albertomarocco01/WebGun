@@ -197,3 +197,46 @@ parla**, ed è rispettata.
 GATE REGIA: VERDE (0 falliti, 0 verifiche mancanti su 5 passi)
 uscita reale del gate della regia: 0
 ```
+
+Commit: `257e34d`.
+
+---
+
+## 2. L'`hint` di `epiloghi-vivi` prescrive la forma nuova
+
+`scripts/regia-lib.mjs:158`. **La logica della regola non è stata toccata**:
+`EPILOGO` è ancora la costante `import.meta.main`, `righeDiCodice` è intatta, il
+confronto resta per sottostringa. Cambia solo il testo che il rilievo suggerisce
+a chi lo legge — che fino a stamattina prescriveva la forma difettosa.
+
+Il rilievo, stampato per davvero (`findingsEpiloghi` su una riga colpevole):
+
+```
+[block] agenti/x/scripts/verify.mjs:1
+  → usa la guardia a **doppio confronto**: `const questo = fileURLToPath(import.meta.url), invocato = resolve(process.argv[1]);` poi `if (invocato === questo || realpathSync(invocato) === questo) await main();`, con `realpathSync` dentro un `try` che ricade sul testuale. Doppio perche' il solo confronto testuale e' FALSO quando lo script e' invocato dalla junction `.claude/skills/<skill>/...`: li' `argv[1]` resta il percorso della junction mentre `import.meta.url` e' gia' canonico, e lo script esce 0 muto esattamente come con `import.meta.main` (misurato il 2026-08-04 sui cinque gate, `PILOTA-PRE-2026-08-04.md` §2b)
+```
+
+Un test è stato aggiornato, ed è dentro il perimetro («i suoi test **se citano
+la forma**»): `scripts/regia-lib.test.mjs`, il caso «NON scatta sul commento che
+spiega perché non si usa». Citava la vecchia riga a confronto singolo
+dichiarandola «la riga vera di tutte e cinque le skill» — da oggi non lo è più.
+Ora cita l'epilogo vero di oggi, blocco compreso, e asserisce la stessa cosa di
+prima. Gli altri quattro casi di `epiloghi-vivi` sono intatti.
+
+### Nota misurata, dichiarata e non eseguita (la decide il direttore)
+
+**Nessuna regola della regia pretende positivamente che l'epilogo esista.** La
+regola `epiloghi-vivi` vieta un token: non chiede che una guardia ci sia. Chi
+cancellasse l'ultima riga di un `verify.mjs` avrebbe un gate che non parte mai —
+uscita 0 muta su **tutti** i canali — e il gate della regia resterebbe VERDE.
+
+Non è una deduzione: è già scritto nella suite. `scripts/verifica-regia.test.mjs`
+costruisce la sua regia finta con
+`writeFileSync(join(radice, "agenti", "attrezzo", "scripts", "verify.mjs"), "// niente epilogo qui\n")`
+(riga 98) e poi asserisce che i quattro passi non-`docx` **chiudono verdi**
+(righe 120-125). Un file senza epilogo passa `epiloghi-vivi` oggi.
+
+La contromisura per-skill c'è ed è il terzo test del §3 (il funzionale pretende
+che il gate parli: se l'epilogo sparisce, non parla). Una regola **positiva** di
+regia — «ogni `scripts/*.mjs` di casa che ha un `main()` deve avere una guardia
+che lo chiami» — è un'altra storia, e non è stata scritta: fuori mandato.
