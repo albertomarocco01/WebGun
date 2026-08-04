@@ -4,7 +4,7 @@
   avversario lo stesso giorno da una sessione indipendente**, su un secondo
   banco costruito apposta con pagine davvero lente
   (`banco-prova-immobiliare`, Case di Langa). Gli script hanno test propri
-  (`node --test`, **86 verdi**), il gate `verify` ha **7 passi** con id stabili.
+  (`node --test`, **87 verdi**), il gate `verify` ha **7 passi** con id stabili.
   Il gate corretto e' stato **rilanciato sul banco vecchio**, `banco-prova-negozio`,
   e chiude **VERDE 7/7**: nessuna regressione, e `rete-verde` — la seconda legge
   della skill — ha finalmente girato dentro questo gate, verde sull'app giusta e
@@ -99,7 +99,7 @@ E la prima esecuzione vera di `plan` e `tune` su guadagni misurati: home
 | Cosa | Numero | Come e' stato misurato |
 |---|---|---|
 | Passi del gate | 7 | `verify.mjs --json`, `summary.passi` |
-| Test degli script | **86 verdi** (73 al collaudo, +2 con P.0-igiene il 2026-08-03, +11 sciogliendo la `complexity 19` di `verify.mjs` — P.7c punti 1-2, `a6f6d1e`; rilanciati il 2026-08-04: 86/86, 0 fail) | `node --test "scripts/**/*.test.mjs"` |
+| Test degli script | **87 verdi** (73 al collaudo, +2 con P.0-igiene il 2026-08-03, +11 sciogliendo la `complexity 19` di `verify.mjs` — P.7c punti 1-2, `a6f6d1e`; +1 col test junction di P.0-igiene-2 il 2026-08-04: 87/87, 0 fail) | `node --test "scripts/**/*.test.mjs"` |
 | References | 3 | `misurazione.md` · `ottimizzazioni.md` · `seo.md` |
 | Template | 2 | `performance.md` (il contratto) · `handoff-speed-demon.md` |
 | Banchi su cui il gate e' girato | **2** | `banco-prova-negozio` · `banco-prova-immobiliare` — **cancellati dal disco il 2026-07-30** (`../../DECISIONI.md` §25): tornano con `git checkout 67f9001 -- <banco>` |
@@ -108,23 +108,38 @@ E la prima esecuzione vera di `plan` e `tune` su guadagni misurati: home
 
 ## Punti aperti — ordinati per gravita'
 
-> **Il gate esce 0 muto se invocato dalla junction**
-> (`.claude/skills/speed-demon/scripts/verify.mjs`) — misurato il 2026-08-04, P.4-pre,
-> `../../PILOTA-PRE-2026-08-04.md` §2b. Per percorso reale dentro la regia esce **2
-> col messaggio** anche da fuori dall'albero; dalla junction esce **0 senza stampare
-> una riga**, cioè la regressione di P.0-igiene su un canale che P.0-igiene non
-> copriva. Causa: nell'epilogo prescritto dalla regola `epiloghi-vivi`,
-> `resolve(process.argv[1])` non risolve la junction mentre `import.meta.url` sì,
-> quindi la guardia è falsa e `main()` non gira. Non è un punto numerato perché non è
-> di questa skill sola: **lo hanno tutti e cinque i gate**. Non corretto — la
-> correzione è del direttore. Fino ad allora i gate si lanciano **per percorso
-> assoluto dentro la regia**, mai dalla junction.
+> **CHIUSO il 2026-08-04 (P.0-igiene-2) — il gate parla anche dalla junction.**
+> Era: invocato come `.claude/skills/speed-demon/scripts/verify.mjs` il gate usciva
+> **0 senza stampare una riga**, mentre per percorso reale usciva 2 col messaggio
+> (misura di P.4-pre, `../../PILOTA-PRE-2026-08-04.md` §2b). Causa:
+> `resolve(process.argv[1])` normalizza il percorso ma non scioglie una junction,
+> mentre `import.meta.url` è già canonico — guardia falsa, `main()` mai chiamata.
+> Ora l'epilogo confronta **due volte** (testuale e `realpathSync`, con ricaduta
+> sul testuale se `realpathSync` solleva), ed è la forma che l'`hint` della regola
+> `epiloghi-vivi` prescrive da oggi. Commit `257e34d` (guardia), `e6deb39`
+> (`hint`), `c96ae00` (test).
 >
-> Conseguenza specifica di questa skill: la domanda di P.4-pre su `AGENTI_DIR =
-> dirname(SKILL_DIR)` dalla junction — dove diventerebbe `.claude/skills` — **resta
-> aperta e non misurabile**, perché il gate non parte e il passo `rete-verde` non
-> viene mai eseguito. Dal percorso reale `AGENTI_DIR` **regge**, misurato: il passo ha
-> lanciato il gate di flow-sentinel come sottoprocesso e ne ha letto il JSON.
+> **Misura del 2026-08-04**, node di sistema 20.12.2, cartella vuota fuori
+> dall'albero: **entrambi i canali escono 2** con lo stesso messaggio, carattere
+> per carattere — `Nessuna cartella docs/ in <cwd>: lancia il gate dalla radice del
+> progetto.` Uscite incollate in `../../IGIENE2-JUNCTION-2026-08-04.md` §1. **Cade
+> il vincolo provvisorio di D12**: i gate si lanciano da **entrambi** i canali,
+> junction compresa — che è come li vede una chat aperta sul repo di un progetto
+> generato.
+>
+> **`AGENTI_DIR` dalla junction: la domanda ha una risposta, ed è «regge».** P.4-pre
+> l'aveva lasciata «aperta e non misurabile» perché il gate non partiva. Misurata
+> oggi (verbale §5): su una cartella con `docs/flussi-critici.md`, il gate lanciato
+> dalla junction e quello lanciato per percorso reale stampano un'uscita **identica
+> riga per riga**, passo `rete-verde` compreso — `gate flussi: ROSSO (1 falliti, 6
+> mancanti su 7 passi)`, gli stessi numeri che flow-sentinel dà lanciato a mano
+> sulla stessa cartella. Il motivo è nel codice: `SKILL_DIR` nasce da
+> `import.meta.url`, che Node canonicalizza anche quando l'invocazione non lo è, e
+> `AGENTI_DIR`/`GATE_FLUSSI` ne discendono. Non diventa mai `.claude/skills`.
+>
+> Regressione piantata: un terzo test invoca il gate **attraverso una junction
+> vera** e pretende uscita ≠ 0 e output non vuoto; statico e funzionale sono ciechi
+> a questo difetto, provato col sabotaggio (verbale §4).
 
 1. **Nessun committente ha mai firmato l'elenco delle pagine.** Su tutti e due i
    banchi la riga `Confermato da:` l'ha scritta chi costruiva o chi collaudava.

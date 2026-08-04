@@ -67,7 +67,7 @@
 | Cosa | Numero | Come e' stato misurato |
 |---|---|---|
 | Passi del gate | 7 | `verify.mjs --json`, `summary.passi` |
-| Test degli script | **110 verdi** (79 dopo P1, +24 in P2, +3 in P3 su `ambienteBatteria`, +2 col collaudo di `evolve`, +2 con P.0-igiene il 2026-08-03) | `node --test "scripts/**/*.test.mjs"` |
+| Test degli script | **111 verdi** (79 dopo P1, +24 in P2, +3 in P3 su `ambienteBatteria`, +2 col collaudo di `evolve`, +2 con P.0-igiene il 2026-08-03, +1 col test junction di P.0-igiene-2 il 2026-08-04) | `node --test "scripts/**/*.test.mjs"` |
 | References | 4 | `references/`, 1288 righe dopo P1, corrette in tre punti da P2 |
 | Template | 3 | `flussi-critici.md`, `handoff-flow-sentinel.md`, `eslint-spec.config.mjs` |
 | Banchi su cui il gate e' girato | **3**, di tre domini — e il terzo scritto da **altri agenti** | `banco-prova-flow/` (5 flussi, 5 spec) · `banco-prova-collaudo-fs/` (6 flussi, 6 spec) · **`banco-prova-negozio/` (11 flussi, 11 spec, 16 test, gate 7/7)**. Nessuno dei tre e' piu' su disco: i primi due erano usa e getta, il terzo e' stato cancellato il 2026-07-30 (`../../DECISIONI.md` §25) e torna con `git checkout 67f9001 -- banco-prova-negozio` |
@@ -151,17 +151,34 @@ silenzio, tre crash su report malformati, e tre rossi sbagliati su codice commen
 
 ## Punti aperti — ordinati per gravita'
 
-> **Il gate esce 0 muto se invocato dalla junction**
-> (`.claude/skills/flow-sentinel/scripts/verify.mjs`) — misurato il 2026-08-04,
-> P.4-pre, `../../PILOTA-PRE-2026-08-04.md` §2b. Per percorso reale dentro la regia
-> esce **2 col messaggio** anche da fuori dall'albero; dalla junction esce **0 senza
-> stampare una riga**, cioè la regressione di P.0-igiene su un canale che P.0-igiene
-> non copriva. Causa: nell'epilogo prescritto dalla regola `epiloghi-vivi`,
-> `resolve(process.argv[1])` non risolve la junction mentre `import.meta.url` sì,
-> quindi la guardia è falsa e `main()` non gira. Non è un punto numerato perché non è
-> di questa skill sola: **lo hanno tutti e cinque i gate**. Non corretto — la
-> correzione è del direttore. Fino ad allora i gate si lanciano **per percorso
-> assoluto dentro la regia**, mai dalla junction.
+> **CHIUSO il 2026-08-04 (P.0-igiene-2) — il gate parla anche dalla junction.**
+> Era: invocato come `.claude/skills/flow-sentinel/scripts/verify.mjs` il gate
+> usciva **0 senza stampare una riga**, mentre per percorso reale usciva 2 col
+> messaggio (misura di P.4-pre, `../../PILOTA-PRE-2026-08-04.md` §2b). Causa:
+> `resolve(process.argv[1])` normalizza il percorso ma non scioglie una junction,
+> mentre `import.meta.url` è già canonico — guardia falsa, `main()` mai chiamata.
+> Ora l'epilogo confronta **due volte** (testuale e `realpathSync`, con ricaduta
+> sul testuale se `realpathSync` solleva), ed è la forma che l'`hint` della regola
+> `epiloghi-vivi` prescrive da oggi. Commit `257e34d` (guardia), `e6deb39`
+> (`hint`), `c96ae00` (test).
+>
+> **Misura del 2026-08-04**, node di sistema 20.12.2, cartella vuota fuori
+> dall'albero: **entrambi i canali escono 2** con lo stesso messaggio, carattere
+> per carattere — `Ne' docs/ ne' e2e/ in <cwd>: non c'e' batteria da verificare
+> (lancia il gate dalla radice del progetto).` Uscite incollate in
+> `../../IGIENE2-JUNCTION-2026-08-04.md` §1. **Cade il vincolo provvisorio di
+> D12**: i gate si lanciano da **entrambi** i canali, junction compresa — che è
+> come li vede una chat aperta sul repo di un progetto generato.
+>
+> Ricaduta che riguardava questa skill in proprio: speed-demon lancia questo gate
+> come sottoprocesso per il suo passo `rete-verde`, e da un gate muto ricavava
+> «non ha prodotto JSON leggibile», cioè una verifica MANCANTE per colpa d'altri.
+> Misurato oggi sulla stessa cartella dai due canali: `GATE FLUSSI: ROSSO (1
+> falliti, 6 verifiche mancanti su 7 passi)`, identico (verbale §5).
+>
+> Regressione piantata: un terzo test invoca il gate **attraverso una junction
+> vera** e pretende uscita ≠ 0 e output non vuoto; statico e funzionale sono
+> ciechi a questo difetto, provato col sabotaggio (verbale §4).
 
 > **Quattro punti chiusi da P3** il 2026-07-30 — il consumatore reale (era il n°1), `lint-spec`
 > senza dipendenze (n°3, chiuso operativamente: resta da scrivere il README), `psql` nel PATH (n°4,

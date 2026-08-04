@@ -68,7 +68,7 @@ nel database, o se una chiave di servizio e' raggiungibile dal sito pubblico.
 
 | Cosa | Numero | Come e' stato misurato |
 |---|---|---|
-| Test degli script | **122 verdi** | `npm test` (21 suite, 0 falliti, 4,6 s) |
+| Test degli script | **183 verdi** (misurati il 2026-08-04: 177 prima di P.0-igiene-2, +6 con la terna dell'epilogo per i due gusci eseguibili. La riga diceva **122**, il conto di P1: era rimasta indietro di due pacchetti — corretta qui col numero misurato, non stimato) | `npm test` · `node --test "scripts/**/*.test.mjs"` |
 | Passi del gate implementati | 10, con `id` stabili e ordine bloccato da un test | `scripts/verify.mjs`, `ID` |
 | Passi del gate **eseguiti su un progetto vero** | **10 su 10** | gate su `banco-prova-controtempo`, uscita incollata nel verbale |
 | Comandi esercitati | **7 su 7** | `specchio` · `scaffold` · `pagine` · `audit` · `evolve` · `verify` · `handoff` |
@@ -228,17 +228,41 @@ limiti. Le due che restano sono in §Punti aperti, coi loro perché.
 
 ## Punti aperti — ordinati per gravita'
 
-> **Il gate esce 0 muto se invocato dalla junction**
-> (`.claude/skills/vetrina-crafter/scripts/verify.mjs`) — misurato il 2026-08-04,
-> P.4-pre, `../../PILOTA-PRE-2026-08-04.md` §2b. Per percorso reale dentro la regia
-> esce **2 col messaggio** anche da fuori dall'albero; dalla junction esce **0 senza
-> stampare una riga**, cioè la regressione di P.0-igiene su un canale che P.0-igiene
-> non copriva. Causa: nell'epilogo prescritto dalla regola `epiloghi-vivi`,
-> `resolve(process.argv[1])` non risolve la junction mentre `import.meta.url` sì,
-> quindi la guardia è falsa e `main()` non gira. Non è un punto numerato perché non è
-> di questa skill sola: **lo hanno tutti e cinque i gate**. Non corretto — la
-> correzione è del direttore. Fino ad allora i gate si lanciano **per percorso
-> assoluto dentro la regia**, mai dalla junction.
+> **CHIUSO il 2026-08-04 (P.0-igiene-2) — il gate parla anche dalla junction.**
+> Era: invocato come `.claude/skills/vetrina-crafter/scripts/verify.mjs` il gate
+> usciva **0 senza stampare una riga**, mentre per percorso reale usciva 2 col
+> messaggio (misura di P.4-pre, `../../PILOTA-PRE-2026-08-04.md` §2b). Causa:
+> `resolve(process.argv[1])` normalizza il percorso ma non scioglie una junction,
+> mentre `import.meta.url` è già canonico — guardia falsa, `main()` mai chiamata.
+> Ora l'epilogo confronta **due volte** (testuale e `realpathSync`, con ricaduta
+> sul testuale se `realpathSync` solleva), ed è la forma che l'`hint` della regola
+> `epiloghi-vivi` prescrive da oggi. Commit `257e34d` (guardia, anche in
+> `vetrina-audit.mjs`), `e6deb39` (`hint`), `c96ae00` (test).
+>
+> Da leggere senza consolazione: fino al 2026-08-04 l'epilogo di questa skill era
+> **il modello** — l'`hint` della regola diceva «usa la forma di vetrina-crafter».
+> Era la forma giusta contro `import.meta.main` e falsa attraverso una junction.
+>
+> **Misura del 2026-08-04**, node di sistema 20.12.2, cartella vuota fuori
+> dall'albero: **entrambi i canali escono 2** con lo stesso messaggio, carattere
+> per carattere — `Ne' docs/ ne' src/app/ in <cwd>: qui non c'e' un progetto Web
+> Gun, e un ROSSO direbbe qualcosa su un progetto che il gate non ha guardato.`; e
+> `vetrina-audit.mjs` dalla junction esce **1** stampando il suo `AUDIT STATICO`
+> con i `MANC` (prima usciva 0 muto). Uscite incollate in
+> `../../IGIENE2-JUNCTION-2026-08-04.md` §1. **Cade il vincolo provvisorio di
+> D12**: i gate si lanciano da **entrambi** i canali, junction compresa — che è
+> come li vede una chat aperta sul repo di un progetto generato.
+>
+> Regressione piantata: i due gusci eseguibili di questa skill non avevano
+> **nessuno** dei test dell'epilogo (a P.0-igiene non c'era niente da correggere
+> qui). Ora ne hanno **tre a testa** — funzionale, statico, junction — in
+> `scripts/verify.test.mjs`: +6 test. Perché i due di `vetrina-audit.mjs` stanno
+> in quel file e non in un `vetrina-audit.test.mjs` proprio: lo `npm test` di
+> questa skill elenca i file per esteso in `package.json` (§4 qui sotto: il glob
+> non gira su Node 20), e `package.json` era fuori dal perimetro del mandato — un
+> file di test non elencato sarebbe una verifica MANCANTE travestita da PASS.
+> **Resta al direttore** decidere se spostarli, con le due righe da aggiornare
+> (`package.json` e la frase «i tre file» di `SKILL.md`).
 
 1. **Nessun committente ha firmato niente.** Ereditato dalla P0, si chiude in P.4.
    È il punto più grave rimasto, e il collaudo P2 **non lo tocca**: due banchi

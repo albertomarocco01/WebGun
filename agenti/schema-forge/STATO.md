@@ -1,6 +1,6 @@
 # Stato — Schema Forge
 
-- **Stato attuale:** v1.6 — collaudata su Postgres reale (Supabase locale, Windows), **nel comportamento** (`COLLAUDO-2026-07-25.md`) e **corretta quattro volte**: gli otto punti del primo collaudo il 2026-07-26, nove dei quindici del secondo il 2026-07-27, i residui dell'audit multiagentico del repo il 2026-07-28 (§Cosa ha trovato l'audit del repo) e il contratto d'uscita sui privilegi il 2026-08-03 (§I privilegi non erano nel contratto d'uscita). Gli script hanno test propri (`node --test`, **153 verdi** — il 144° è nato con la firma del gate, commit `a92b4f1`; i due del 2026-08-03 mattina con P.0-igiene; i sette del pomeriggio con la regola 7 riscritta), il gate `verify` ha **9 passi** e undici regole di audit.
+- **Stato attuale:** v1.6 — collaudata su Postgres reale (Supabase locale, Windows), **nel comportamento** (`COLLAUDO-2026-07-25.md`) e **corretta quattro volte**: gli otto punti del primo collaudo il 2026-07-26, nove dei quindici del secondo il 2026-07-27, i residui dell'audit multiagentico del repo il 2026-07-28 (§Cosa ha trovato l'audit del repo) e il contratto d'uscita sui privilegi il 2026-08-03 (§I privilegi non erano nel contratto d'uscita). Gli script hanno test propri (`node --test`, **154 verdi** — il 144° è nato con la firma del gate, commit `a92b4f1`; i due del 2026-08-03 mattina con P.0-igiene; i sette del pomeriggio con la regola 7 riscritta; il 154° è il test junction di P.0-igiene-2, 2026-08-04), il gate `verify` ha **9 passi** e undici regole di audit.
   **NON ancora usabile su un progetto cliente — ma il gate ha smesso di mentire.** Il secondo collaudo, indipendente e avversario (`COLLAUDO-2026-07-26.md`, dominio **non e-commerce**), aveva riprodotto con comandi reali **16 difetti su 17**, cinque Critical, su uno schema che il gate dichiarava **VERDE 8/8** (i passi erano otto: `db advisors` e' nato il giorno dopo). Su quello stesso schema il gate chiude ora **ROSSO**: `block` sull'auto-promozione di ruolo via colonna, `issue` sulla macchina a stati aggirabile in `insert`, e `block` su ogni tabella con policy di scrittura che nessun test pgTAP attacca. Scritti i test negativi, **2 asserzioni su 23 falliscono** — l'auto-promozione e la visita che nasce già `fatturata`. Resta vero che **l'audit guarda la forma delle policy**: la semantica la dimostrano i test negativi, e il gate verifica che esistano e passino, non che siano severi. Punti aperti ordinati per gravità in fondo.
 - **Proprietario:** Alberto
 - **Dipendenze:**
@@ -1057,26 +1057,47 @@ passo senza dettaglio va riletto come sospetto d'ambiente prima che come tipi di
   caso di prova permanente di uno schema difettoso (`../../DECISIONI.md` §20/§25).
 - I quattro punti su cinque del primo consumatore e i due del secondo restano aperti.
 
-## Il gate esce 0 muto se invocato dalla junction (2026-08-04, pacchetto P.4-pre)
+## Il gate parla anche dalla junction — CHIUSO il 2026-08-04 (P.0-igiene-2)
 
-Punto **aperto**, misurato e non corretto: la correzione la decide il direttore.
-Dettaglio e uscite incollate in `../../PILOTA-PRE-2026-08-04.md` §2b.
+Punto **chiuso**. Aperto dalla misura di P.4-pre (`../../PILOTA-PRE-2026-08-04.md`
+§2b), corretto e collaudato lo stesso giorno: verbale
+`../../IGIENE2-JUNCTION-2026-08-04.md`, commit `257e34d` (la guardia), `e6deb39`
+(l'`hint` della regola), `c96ae00` (il test di regressione).
 
-`node <regia>/agenti/schema-forge/scripts/verify.mjs`, lanciato da una cartella
-qualsiasi **fuori** dall'albero della regia, esce **2 con il messaggio** (`Nessuna
-cartella <cwd>\supabase\migrations: non c'e' schema da verificare.`). Lo stesso gate
+**Era.** `node <regia>/agenti/schema-forge/scripts/verify.mjs`, da una cartella
+qualsiasi fuori dall'albero della regia, usciva **2 con il messaggio**; lo stesso gate
 invocato come `node <...>/.claude/skills/schema-forge/scripts/verify.mjs`, stessa
-cartella e stesso node di sistema (20.12.2), esce **0 senza stampare una riga** — cioè
-la regressione che P.0-igiene ha chiuso, per un canale che P.0-igiene non copriva.
+cartella e stesso node di sistema (20.12.2), usciva **0 senza stampare una riga** — la
+regressione che P.0-igiene aveva chiuso, per un canale che P.0-igiene non copriva.
+Causa, misurata stampando i due lati del confronto: nell'epilogo prescritto dalla
+regola `epiloghi-vivi` del gate della regia, `resolve(process.argv[1])` restituisce il
+percorso della junction mentre `import.meta.url` restituisce quello reale (Node
+canonicalizza i moduli). I due differivano, la guardia era falsa, `main()` non girava.
+Non era un difetto di questa skill sola: **lo avevano tutti e cinque i gate**, e la
+forma difettosa era quella che il campo `hint` prescriveva.
 
-Causa, misurata stampando i due lati del confronto durante l'invocazione dalla junction:
-nell'epilogo prescritto dalla regola `epiloghi-vivi` del gate della regia,
-`resolve(process.argv[1])` restituisce il percorso della junction mentre
-`import.meta.url` restituisce il percorso reale (Node canonicalizza i moduli). I due
-differiscono, la guardia è falsa, `main()` non gira.
+**È.** L'epilogo confronta **due volte**: il percorso testuale (`resolve`) e quello
+sciolto (`realpathSync`), con ricaduta sul testuale se `realpathSync` solleva — mai un
+errore che ammutolisce. La stessa forma è quella che l'`hint` prescrive da oggi.
 
-Non è un difetto di questa skill sola: **lo hanno tutti e cinque i gate**, e la forma
-difettosa è quella che il campo `hint` della regola `epiloghi-vivi` prescrive. Finché
-resta aperto, i gate si lanciano **per percorso assoluto dentro la regia**, mai dalla
-junction — e vale in particolare per una chat aperta sul repo di un progetto generato,
-che le skill le vede proprio in `.claude/skills`.
+**Misura del 2026-08-04**, node di sistema 20.12.2, cartella vuota fuori dall'albero,
+i due canali uno dopo l'altro:
+
+```
+=== schema-forge [agenti] === uscita: 2 | righe: 1
+Nessuna cartella <cwd>\supabase\migrations: non c'e' schema da verificare.
+=== schema-forge [skills] === uscita: 2 | righe: 1
+Nessuna cartella <cwd>\supabase\migrations: non c'e' schema da verificare.
+```
+
+Identico carattere per carattere: non un altro messaggio, lo stesso gate che parla.
+**Cade il vincolo provvisorio di D12** — i gate si lanciano da **entrambi** i canali,
+junction compresa, ed è il canale con cui una chat aperta sul repo di un progetto
+generato vede le skill.
+
+**Regressione piantata.** I test dell'epilogo diventano **tre**: al funzionale e allo
+statico si aggiunge il **junction**, che crea una junction vera e invoca il gate
+attraverso di essa. Gli altri due non potevano vederlo — lo statico vieta un token che
+questo difetto non contiene, il funzionale usa il percorso reale, canonico per
+costruzione. Provato col **sabotaggio**: guardia vecchia rimessa, batteria su Node 24
+→ **52 verdi e un rosso**, e il rosso è il test junction (verbale §4).
