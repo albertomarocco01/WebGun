@@ -33,8 +33,19 @@ export const perRegExp = (testo) => String(testo ?? "").replace(/[.*+?^${}()|[\]
  *  le barre rovesce, e due percorsi uguali smettono di esserlo. */
 export const conBarre = (percorso) => String(percorso ?? "").replace(/\\/g, "/");
 
+/**
+ * Un rilievo, per chi lo legge sullo schermo — `hint` COMPRESO.
+ *
+ * MISURATO il 2026-08-04: le regole di questa skill scrivevano 23 `hint`, e
+ * nessuna riga di codice ne leggeva uno. L'unico lettore in tutto il pacchetto
+ * era un'asserzione di test, cioe' la batteria certificava il contenuto di un
+ * campo che nessuno vedeva mai. Dentro quei 23 c'erano le tre cause della
+ * pagina che non mostra il suo slot, i falsi positivi dichiarati, e il comando
+ * da lanciare per rimediare: tutto il lavoro di diagnosi che questa casa fa per
+ * non mandare dall'imputato sbagliato finiva scritto e buttato.
+ */
 export const dettaglioFindings = (findings) =>
-  findings.map((f) => `[${f.severity}] ${f.object}: ${f.message}`).join("\n");
+  findings.map((f) => `[${f.severity}] ${f.object}: ${f.message}${f.hint ? `\n  → ${f.hint}` : ""}`).join("\n");
 
 export function contaGravita(findings) {
   const per = (s) => findings.filter((f) => f.severity === s).length;

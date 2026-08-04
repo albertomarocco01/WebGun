@@ -13,6 +13,7 @@ import {
   argomentiOstiliACmd,
   conBarre,
   contaGravita,
+  dettaglioFindings,
   eCommento,
   formaEseguibile,
   frammentoNeiSorgenti,
@@ -123,6 +124,32 @@ import type { Props } from "./tipi";`;
 
   it("non inventa importazioni dove non ce ne sono", () => {
     assert.deepEqual(importazioni("const x = 1; // import { Bottone } from 'altrove'"), []);
+  });
+});
+
+describe("dettaglioFindings", () => {
+  // Difetto n°8 del collaudo 2026-08-04: 23 `hint` scritti, zero letti.
+  it("stampa il `hint`, che e' meta' della diagnosi", () => {
+    const testo = dettaglioFindings([{
+      severity: "block", object: "slot `x` → home (/)",
+      message: "il valore pubblicato nel database non compare nel testo servito",
+      hint: "tre cause possibili: … oppure la build ha riusato la cache dei dati",
+    }]);
+    assert.match(testo, /\[block\] slot `x` → home \(\/\): il valore pubblicato/);
+    assert.match(testo, /\n {2}→ tre cause possibili/);
+  });
+
+  it("non aggiunge una riga vuota al rilievo che non ha `hint`", () => {
+    const testo = dettaglioFindings([{ severity: "issue", object: "a", message: "b" }]);
+    assert.equal(testo, "[issue] a: b");
+  });
+
+  it("tiene un rilievo per riga anche quando tutti hanno un `hint`", () => {
+    const testo = dettaglioFindings([
+      { severity: "block", object: "a", message: "b", hint: "c" },
+      { severity: "issue", object: "d", message: "e", hint: "f" },
+    ]);
+    assert.deepEqual(testo.split("\n"), ["[block] a: b", "  → c", "[issue] d: e", "  → f"]);
   });
 });
 
