@@ -248,15 +248,25 @@ describe("configurazione del progetto", () => {
 
 describe("rotte", () => {
   it("da file a rotta, togliendo i gruppi di rotta", () => {
-    assert.equal(rottaDaFile("src/app/page.tsx", "src/app"), "/");
-    assert.equal(rottaDaFile("src/app/(pubblico)/catalogo/page.tsx", "src/app"), "/catalogo");
-    assert.equal(rottaDaFile("src/app/catalogo/[slug]/page.tsx", "src/app"), "/catalogo/[slug]");
+    assert.deepEqual(rottaDaFile("src/app/page.tsx", "src/app"), { rotta: "/", tipo: "pagina" });
+    assert.deepEqual(rottaDaFile("src/app/(pubblico)/catalogo/page.tsx", "src/app"), { rotta: "/catalogo", tipo: "pagina" });
+    assert.deepEqual(rottaDaFile("src/app/catalogo/[slug]/page.tsx", "src/app"), { rotta: "/catalogo/[slug]", tipo: "pagina" });
   });
 
-  it("un file che non e' una pagina non e' una rotta", () => {
-    assert.equal(rottaDaFile("src/app/layout.tsx", "src/app"), null);
-    assert.equal(rottaDaFile("src/app/api/x/route.ts", "src/app"), null);
-    assert.equal(rottaDaFile("src/components/ui/Bottone.tsx", "src/app"), null);
+  // Difetto n°11 del collaudo 2026-08-04. Il test di P1 pretendeva `null` su un
+  // `route.ts`, cioe' CODIFICAVA la cecita' dichiarata in `sabotaggio.md`: sul
+  // banco un endpoint che rispondeva `200` con dei dati, e che nessuno aveva
+  // firmato, passava con dieci passi verdi sopra.
+  it("un `route.ts` E' una rotta pubblica, e si distingue da una pagina", () => {
+    assert.deepEqual(rottaDaFile("src/app/api/x/route.ts", "src/app"), { rotta: "/api/x", tipo: "gestore" });
+    assert.deepEqual(rottaDaFile("src/app/disponibilita/route.ts", "src/app"), { rotta: "/disponibilita", tipo: "gestore" });
+  });
+
+  it("un file che non serve nessuna rotta resta fuori", () => {
+    for (const f of ["src/app/layout.tsx", "src/app/not-found.tsx", "src/app/loading.tsx",
+      "src/app/prenota/ModuloPrenotazione.tsx", "src/components/ui/Bottone.tsx"]) {
+      assert.equal(rottaDaFile(f, "src/app"), null, f);
+    }
   });
 
   it("le radici escluse non entrano nell'elenco", () => {
@@ -319,6 +329,26 @@ describe("passo pagine-vive, due direzioni", () => {
     assert.equal(findings.length, 1);
     assert.equal(findings[0].severity, "issue");
     assert.equal(findings[0].object, "/promozioni");
+  });
+
+  it("SCATTA (issue) su un `route.ts` pubblico che nessuno ha dichiarato", () => {
+    // MISURATO sul banco il 2026-08-04: `/disponibilita` rispondeva 200 con dei
+    // dati, e il gate chiudeva VERDE 10/10 contando «9 rotte pubbliche».
+    const conGestore = [...rotteSorgenti, { rotta: "/disponibilita", file: "src/app/disponibilita/route.ts", tipo: "gestore" }];
+    const findings = findingsRotte({ pagine, risposte: tutteVive, rotteSorgenti: conGestore, escluse: [] });
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].severity, "issue");
+    assert.equal(findings[0].object, "/disponibilita");
+    assert.match(findings[0].message, /servita dal gestore/);
+    assert.match(findings[0].hint, /§Percorsi di scrittura aperti al pubblico/);
+  });
+
+  it("e NON scatta sul gestore messo fra le escluse col perche'", () => {
+    const conGestore = [...rotteSorgenti, { rotta: "/disponibilita", file: "src/app/disponibilita/route.ts", tipo: "gestore" }];
+    assert.deepEqual(
+      findingsRotte({ pagine, risposte: tutteVive, rotteSorgenti: conGestore, escluse: ["/disponibilita"] }),
+      [],
+    );
   });
 
   it("NON scatta se quella rotta e' fra le escluse del contratto", () => {

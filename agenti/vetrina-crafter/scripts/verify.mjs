@@ -304,8 +304,13 @@ const PASSI = [
         rotteSorgenti,
         escluse: ctx.contratto.escluse,
       });
+      // I gestori si contano a parte: «9 rotte» quando otto sono pagine e una e'
+      // un `route.ts` nasconde nella somma proprio la cosa che si e' appena
+      // imparato a guardare.
+      const gestori = rotteSorgenti.filter((r) => r.tipo === "gestore").length;
       return conFindings(this.id, this.nome, findings,
-        `${ctx.contratto.pagine.length} pagine dichiarate · ${rotteSorgenti.length} rotte pubbliche nei sorgenti · ${ctx.contratto.escluse.length} escluse dal contratto`);
+        `${ctx.contratto.pagine.length} pagine dichiarate · ${rotteSorgenti.length - gestori} rotte da \`page\` nei sorgenti · ` +
+        `${gestori} da \`route\` · ${ctx.contratto.escluse.length} escluse dal contratto`);
     },
   },
 

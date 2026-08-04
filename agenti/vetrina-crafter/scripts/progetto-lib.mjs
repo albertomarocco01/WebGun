@@ -482,15 +482,25 @@ export function validaConfig(oggetto) {
  * I gruppi di rotta `(pubblico)` non compaiono nell'URL: sono una cartella per
  * gli umani. Toglierli e' la differenza fra una rotta che si trova e una rotta
  * che il gate segnala come «non dichiarata» mentre e' dichiarata benissimo.
+ *
+ * Riconosce DUE foglie, e la seconda e' il difetto n°11 del collaudo P2: un
+ * `route.ts` serve una rotta pubblica quanto un `page.tsx`. Ritorna `null` per
+ * tutto il resto (`layout`, `loading`, `not-found`, i componenti di pagina).
  */
+const FOGLIA_ROTTA = /^(page|route)\.[jt]sx?$/;
+
 export function rottaDaFile(percorso, radicePubblica) {
   const p = conBarre(percorso);
   const radice = conBarre(radicePubblica).replace(/\/+$/, "");
   if (!p.startsWith(`${radice}/`)) return null;
   const segmenti = p.slice(radice.length + 1).split("/");
-  if (!/^page\.[jt]sx?$/.test(segmenti.pop() ?? "")) return null;
+  const foglia = FOGLIA_ROTTA.exec(segmenti.pop() ?? "");
+  if (!foglia) return null;
   const utili = segmenti.filter((s) => !/^\(.*\)$/.test(s) && !s.startsWith("@"));
-  return `/${utili.join("/")}`.replace(/\/{2,}/g, "/").replace(/(.)\/$/, "$1");
+  return {
+    rotta: `/${utili.join("/")}`.replace(/\/{2,}/g, "/").replace(/(.)\/$/, "$1"),
+    tipo: foglia[1] === "route" ? "gestore" : "pagina",
+  };
 }
 
 export function rotteDaSorgenti(percorsi, config) {
@@ -499,8 +509,8 @@ export function rotteDaSorgenti(percorsi, config) {
   for (const percorso of percorsi) {
     const p = conBarre(percorso);
     if (escluse.some((e) => p === e || p.startsWith(`${e}/`))) continue;
-    const rotta = rottaDaFile(p, config.radicePubblica);
-    if (rotta) rotte.push({ rotta, file: p });
+    const trovata = rottaDaFile(p, config.radicePubblica);
+    if (trovata) rotte.push({ ...trovata, file: p });
   }
   return rotte;
 }
@@ -562,18 +572,24 @@ export function findingsRotte(dati) {
     findings.push(...findingsPaginaDichiarata(pagina, risposte.get(pagina.id)));
   }
 
-  // Seconda direzione. Enumera l'albero delle rotte dai SORGENTI (i `page.tsx`),
-  // non dall'app: una rotta che nessun `page.tsx` rappresenta — un `route.ts`,
-  // una riscrittura di `next.config`, una pagina servita dal middleware — qui
-  // non si vede, ed e' dichiarato nella specifica.
-  for (const { rotta, file } of rotteSorgenti) {
+  // Seconda direzione. Enumera l'albero delle rotte dai SORGENTI — i `page.tsx`
+  // E i `route.ts`: fino al collaudo P2 i secondi non si contavano, e un
+  // endpoint pubblico che rispondeva `200` con dei dati passava con dieci passi
+  // verdi sopra (misurato sul banco il 2026-08-04). Restano invisibili qui, e
+  // sono dichiarati nella specifica, solo cio' che nessun file rappresenta: una
+  // riscrittura di `next.config`, una rotta servita dal middleware.
+  for (const { rotta, file, tipo } of rotteSorgenti) {
     const dichiarata = pagine.some((p) => combacia(rotta, p.percorso));
     if (dichiarata || esclusa(rotta, escluse)) continue;
     findings.push({
       severity: "issue",
       object: rotta,
-      message: `rotta pubblica servita da \`${file}\` e non dichiarata nel contratto: e' una pagina che chiunque puo' aprire e che nessuno ha firmato`,
-      hint: "aggiungila al contratto e falla riconfermare, oppure mettila fra le §Pagine escluse dal contratto col perche'",
+      message: tipo === "gestore"
+        ? `rotta pubblica servita dal gestore \`${file}\` e non dichiarata nel contratto: non e' una pagina, e nessuno dei passi a valle puo' dire cosa risponde — ma chiunque la puo' chiamare, e nessuno l'ha firmata`
+        : `rotta pubblica servita da \`${file}\` e non dichiarata nel contratto: e' una pagina che chiunque puo' aprire e che nessuno ha firmato`,
+      hint: tipo === "gestore"
+        ? "un `route.ts` non e' una pagina di vetrina: mettilo fra le §Pagine escluse dal contratto col perche' — e se scrive nel database, la sua riga va in §Percorsi di scrittura aperti al pubblico"
+        : "aggiungila al contratto e falla riconfermare, oppure mettila fra le §Pagine escluse dal contratto col perche'",
     });
   }
 
