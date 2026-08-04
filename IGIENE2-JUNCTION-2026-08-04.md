@@ -240,3 +240,74 @@ La contromisura per-skill c'è ed è il terzo test del §3 (il funzionale preten
 che il gate parli: se l'epilogo sparisce, non parla). Una regola **positiva** di
 regia — «ogni `scripts/*.mjs` di casa che ha un `main()` deve avere una guardia
 che lo chiami» — è un'altra storia, e non è stata scritta: fuori mandato.
+
+Commit: `e6deb39`.
+
+---
+
+## 3. Il terzo test: funzionale-junction, sette script di skill
+
+Il test crea una **junction vera** (`symlinkSync(SKILL_DIR, …, "junction")` — su
+Windows non chiede privilegi), invoca lo script **attraverso** di essa con
+`process.execPath`, `cwd` su una **seconda** cartella non-progetto, e asserisce
+le due cose del funzionale: **uscita ≠ 0** e **output non vuoto**. Se la junction
+non si crea, il test **fallisce** con un messaggio che lo dice — nessuno skip
+silenzioso. Pulizia in `finally`.
+
+Una cosa è stata **misurata prima di scriverla**, perché sbagliarla avrebbe
+cancellato il sorgente di una skill: `rmSync(dir, { recursive: true })` su una
+cartella che contiene una junction rimuove **la junction, non il suo bersaglio**.
+Provato su Node 20.12.2 e su Node 24.18.1 con un bersaglio finto — bersaglio
+vivo e coi suoi file dopo la rimozione. È scritto nel commento del `finally`.
+
+| Test file | Script coperti | Test aggiunti |
+|---|---|---|
+| `agenti/schema-forge/scripts/verify.test.mjs` | `verify.mjs` | +1 (junction) |
+| `agenti/gestionale-crafter/scripts/verify.test.mjs` | `verify.mjs` | +1 (junction) |
+| `agenti/gestionale-crafter/scripts/admin-audit.test.mjs` | `admin-audit.mjs` | +1 (junction) |
+| `agenti/flow-sentinel/scripts/verify.test.mjs` | `verify.mjs` | +1 (junction) |
+| `agenti/speed-demon/scripts/verify.test.mjs` | `verify.mjs` | +1 (junction) |
+| `agenti/vetrina-crafter/scripts/verify.test.mjs` | `verify.mjs` **e** `vetrina-audit.mjs` | +6 (la **terna** per ognuno) |
+
+In ogni file il commento che diceva «i test sono **DUE** perché…» ora dice
+**TRE**, con la terza voce e il perché: lo statico vieta un token che questo
+difetto non contiene, il funzionale usa il percorso reale — canonico per
+costruzione. **Solo il canale junction vede il canale junction.**
+
+### Due scelte da dichiarare, perché non sono quelle che il mandato prescriveva
+
+1. **A vetrina-crafter è stata data la terna intera, non il solo terzo test**
+   (+6 invece di +2). Motivo: questa skill non aveva **nessuno** dei tre. A
+   P.0-igiene non le fu dato niente perché il suo epilogo era già
+   `resolve(argv[1]) === …` — era anzi *il modello* che l'`hint` citava. Il
+   2026-08-04 quel modello è diventato il difetto. Lasciarle il solo test
+   junction avrebbe significato: se domani qualcuno ci rimette `import.meta.main`,
+   la batteria di vetrina-crafter passa e nessuno se ne accorge (lo statico non
+   c'è, il funzionale su Node 24 non lo vede). Le altre quattro skill hanno tre
+   protezioni; questa ne avrebbe avuta una.
+
+2. **I test di `vetrina-audit.mjs` stanno in `verify.test.mjs`**, non in un
+   `vetrina-audit.test.mjs` nuovo. Motivo, ed è un vincolo di perimetro, non un
+   gusto: lo `npm test` di vetrina-crafter **elenca i file di test per esteso**
+   nel suo `package.json` (il glob `scripts/**/*.test.mjs` non gira su Node 20,
+   e questa macchina ha Node 20 di sistema — `STATO.md` §4, `SKILL.md`). Un file
+   nuovo non elencato lì sarebbe una verifica **MANCANTE travestita da PASS**;
+   elencarlo vorrebbe dire toccare `package.json` e la frase «i tre file» di
+   `SKILL.md`, **fuori dal perimetro di questo mandato**. La casa giusta di quei
+   due test resta un `vetrina-audit.test.mjs`: **la decide il direttore**,
+   insieme alle due righe da aggiornare. È scritto anche nel commento del file.
+
+### Batterie: prima → dopo (Node 24, `node --test "scripts/**/*.test.mjs"`)
+
+| batteria | prima | dopo | delta | fail |
+|---|---|---|---|---|
+| schema-forge | 153 | **154** | +1 | 0 |
+| vetrina-crafter | 177 | **183** | +6 | 0 |
+| gestionale-crafter | 109 | **111** | +2 | 0 |
+| flow-sentinel | 110 | **111** | +1 | 0 |
+| speed-demon | 86 | **87** | +1 | 0 |
+| regia | 46 | **46** | 0 | 0 |
+
+Totale **+11**, nessuna regressione. La regia non cresce: `verifica-regia.mjs`
+non ha canale junction, e i suoi test esistenti bastano (l'unico suo file
+toccato è un test che citava la forma vecchia, §2).

@@ -1,8 +1,8 @@
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -154,7 +154,7 @@ describe("dettaglioEsecuzione", () => {
 // uscita 2 e il messaggio. La skill dichiara «Node >= 20»: era il codice a
 // violare il proprio contratto.
 //
-// I test sono DUE perche' proteggono due cose diverse, e nessuno dei due basta:
+// I test sono TRE perche' proteggono tre cose diverse, e nessuno dei tre basta:
 //
 //  - il FUNZIONALE copre tutta la classe «l'epilogo non parte», qualunque ne sia
 //    la causa (guardia sbagliata, `main()` cancellata, condizione che non scatta
@@ -164,9 +164,22 @@ describe("dettaglioEsecuzione", () => {
 //  - lo STATICO e' l'unico che impedisce il ritorno del difetto su QUALUNQUE
 //    Node, perche' non esegue niente: vieta il token nel sorgente. E' brutale, e
 //    va bene cosi' — finche' il prerequisito dichiarato e' Node >= 20, quel
-//    token qui dentro non ha nessun uso legittimo.
-describe("l'epilogo che non parte (2026-08-03)", () => {
+//    token qui dentro non ha nessun uso legittimo;
+//  - il JUNCTION (2026-08-04, P.0-igiene-2) invoca il gate attraverso una
+//    junction vera. Il difetto di quel giorno: la guardia era
+//    `resolve(argv[1]) === fileURLToPath(import.meta.url)` — la forma che la
+//    regola `epiloghi-vivi` della regia PRESCRIVEVA — e invocata da
+//    `.claude/skills/<skill>/scripts/verify.mjs` era falsa, perche' `resolve`
+//    normalizza ma non scioglie una junction mentre `import.meta.url` e' gia'
+//    canonico. Tutti e cinque i gate uscivano 0 muti su quel canale
+//    (`PILOTA-PRE-2026-08-04.md` §2b), che e' proprio quello con cui una chat
+//    aperta sul repo di un progetto generato vede la skill. Gli altri due sono
+//    ciechi: lo statico vieta un token che qui non compare, il funzionale usa il
+//    percorso reale, canonico per costruzione. Solo il canale junction vede il
+//    canale junction.
+describe("l'epilogo che non parte (2026-08-03, e dalla junction 2026-08-04)", () => {
   const VERIFY = fileURLToPath(new URL("./verify.mjs", import.meta.url));
+  const SKILL_DIR = dirname(dirname(VERIFY));
 
   it("il gate parla anche fuori da un progetto: mai un'uscita 0 muta", () => {
     const dir = mkdtempSync(join(tmpdir(), "gestionale-crafter-epilogo-"));
@@ -194,5 +207,38 @@ describe("l'epilogo che non parte (2026-08-03)", () => {
     const colpevoli = righeDiCodice.filter((riga) => riga.includes("import.meta.main"));
     assert.deepEqual(colpevoli, [],
       "`import.meta.main` non esiste prima di Node 24: su Node 20 la guardia e' `undefined` e il gate esce 0 muto");
+  });
+
+  it("il gate parla anche invocato dalla junction: e' il canale con cui lo vede un progetto", () => {
+    const casa = mkdtempSync(join(tmpdir(), "gestionale-crafter-junction-"));
+    const altrove = mkdtempSync(join(tmpdir(), "gestionale-crafter-junction-cwd-"));
+    const junction = join(casa, "skill");
+    try {
+      try {
+        // Su Windows una junction NON chiede privilegi di amministratore (un
+        // symlink si'). Fuori da Windows il tipo e' ignorato e nasce un symlink:
+        // va bene uguale, perche' cio' che conta e' che il percorso di
+        // invocazione non sia canonico.
+        symlinkSync(SKILL_DIR, junction, "junction");
+      } catch (errore) {
+        assert.fail(
+          `junction non creata (${junction} → ${SKILL_DIR}): ${errore.message}. ` +
+          "Senza junction questo test non prova niente, e cio' che non e' provato e' MANCANTE, non PASS.");
+      }
+      // `cwd` e' una SECONDA cartella non-progetto: cosi' il gate si ferma per
+      // mancanza di progetto, e l'unica variabile in gioco e' il percorso di
+      // invocazione.
+      const res = spawnSync(process.execPath, [join(junction, "scripts", "verify.mjs")], { cwd: altrove, encoding: "utf8" });
+      const uscita = `${res.stdout}${res.stderr}`.trim();
+      assert.notEqual(res.status, 0,
+        `uscita ${res.status} invocando il gate dalla junction: non ha guardato niente e sembra verde`);
+      assert.notEqual(uscita, "",
+        "dalla junction il gate non ha stampato una riga: e' il difetto del 2026-08-04, tornato");
+    } finally {
+      // `rmSync` ricorsivo rimuove la junction, NON il suo bersaglio: verificato
+      // su Node 20.12.2 e 24.18.1 prima di scrivere questo test.
+      rmSync(casa, { recursive: true, force: true });
+      rmSync(altrove, { recursive: true, force: true });
+    }
   });
 });
