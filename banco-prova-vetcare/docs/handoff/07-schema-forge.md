@@ -25,7 +25,8 @@ Progetto: **VetCare Nord** — portale di tre cliniche veterinarie.
   `invoice_lines`. Una vista: `v_cartella_animale` (`security_invoker = on`).
 - Tipi generati in: `src/lib/database.types.ts`
 - Diagramma: `docs/schema/ERD.md` (rigenerabile con `scripts/erd.mjs`)
-- Test delle policy: `supabase/tests/rls_policy.test.sql` (12 asserzioni) e
+- Test delle policy: `supabase/tests/rls_policy.test.sql` (11 asserzioni,
+  l'undicesima riallineata a `throws_ok` il 2026-08-04 — D9) e
   `supabase/tests/rls_negativi.test.sql` (23 asserzioni, di cui **2 rosse**)
 
 ## 2. Modello assunto (Specchio del dominio)
@@ -124,7 +125,7 @@ per scelta, documentata qui.
 
 ## 6. Residui di `verify` e problemi noti
 
-**Gate: ROSSO** (2 falliti, 0 verifiche mancanti su 9 passi) — rilancio del 2026-08-03.
+**Gate: ROSSO** (2 falliti, 0 verifiche mancanti su 9 passi) — rilancio del 2026-08-04.
 
 > Questo schema **non è consegnabile**, ed è tracciato apposta in quello stato: è
 > il caso di prova di uno schema difettoso per le regole del blocco n°1
@@ -147,9 +148,9 @@ per scelta, documentata qui.
 
 **Le tre migrazioni che porterebbero il banco a verde** — non scritte, perché sono lavoro sul banco e il banco serve rosso: `grant update` per colonna su `staff` (togliendo `job_title`), vincolo sullo stato iniziale di `visits`, `revoke execute … from public, anon` sulle undici funzioni `security definer`.
 
-### Una quarta riga rossa, nata il 2026-08-03 e non ancora decisa
+### La quarta riga rossa del 2026-08-03, decisa e chiusa il 2026-08-04 (D9)
 
-`rls_policy.test.sql` esegue 10 asserzioni su 11 e si ferma sull'undicesima:
+`rls_policy.test.sql` eseguiva 10 asserzioni su 11 e si fermava sull'undicesima:
 
 ```
 set local role anon;  select count(*) from public.owners;
@@ -157,7 +158,7 @@ set local role anon;  select count(*) from public.owners;
 Parse errors: Bad plan.  You planned 11 tests but ran 10.
 ```
 
-Non è una regressione dello schema, ed è il contrario di un allentamento: quel
+Non era una regressione dello schema, ed è il contrario di un allentamento: quel
 test — «la chiave anonima non legge nessun cliente» — asseriva **zero righe**,
 cioè la forma del rifiuto che dava la RLS quando `anon` aveva `select` su tutto
 per grazia del default dell'immagine. Il modello di accesso qui sopra dice
@@ -167,15 +168,23 @@ della RLS. Il cliente anonimo continua a non leggere nessun cliente — con più
 margine di prima, non con meno.
 
 Il test è un consumatore dello schema come il seed (`STATO.md` §Il primo
-consumatore a valle, punto 2), e questo è il caso in cui va riallineato: la forma
-corretta oggi è `throws_ok(…, '42501', …)`, che asserisce qualcosa di **più
-forte** di `count = 0`. Non è stato fatto qui perché chi ha scritto la migrazione
-non riscrive il test che la giudica: la riga resta rossa e dichiarata, e la
-decisione è del proprietario del banco.
+consumatore a valle, punto 2), e andava riallineato — non da chi ha scritto la
+migrazione, che non riscrive il test che la giudica. La decisione l'ha presa il
+proprietario del banco (**D9**, registro di cantiere): l'undicesima asserzione è
+ora `throws_ok('select * from public.owners', '42501', null, …)` — la forma
+**più forte** del rifiuto, con `errmsg` a `null` perché il testo di Postgres non
+è un contratto. Riallineo della ripresa P.7c, rilancio e chiusura del direttore.
 
-L'alternativa — una riga `grant select on public.owners to anon` — riporterebbe
-il test al verde concedendo un privilegio che il modello di accesso nega. Non è
-stata presa: è la scorciatoia che questa migrazione esiste per chiudere.
+L'alternativa — una riga `grant select on public.owners to anon` — avrebbe
+riportato il test al verde concedendo un privilegio che il modello di accesso
+nega. Non è stata presa: è la scorciatoia che questa migrazione esiste per
+chiudere.
+
+Col riallineo, gate rilanciato il 2026-08-04 (node di sistema, dalla radice del
+banco): `rls_policy.test.sql` **11/11**, e i motivi del rosso tornano **tutti
+storici** — pgTAP fallisce le sole asserzioni 22-23 di `rls_negativi.test.sql`,
+l'audit RLS tiene i suoi `block`/`issue` noti. ROSSO, 2 falliti, 0 verifiche
+mancanti su 9 passi.
 
 ### Residui che restano anche a gate verde
 
@@ -187,4 +196,4 @@ stata presa: è la scorciatoia che questa migrazione esiste per chiudere.
 | debito | i promemoria vaccinali non esistono più nello schema: `reminders` è stata droppata dall'`evolve` del 26/07 (servizio esterno) | scelta del committente, dati esportati in `docs/export/promemoria-2026-07-26.csv` | nessuno |
 | debito | nessuna anonimizzazione automatica alla cancellazione GDPR di un cliente | `owners.anonymized_at` esiste, la procedura no | prima del rilascio |
 
-Verifiche mancanti (strumenti non eseguiti): **nessuna** — 0 `skipped` su 9 passi, verificato col rilancio del 2026-08-03. `sqlfluff` (4.2.2) e `squawk` (2.61.0) sono installati e leggono **tutte e sette** le migrazioni: `20260726120200_clinico.sql` sta a 20 384 byte e il default `large_file_skip_byte_limit = 20000` lo faceva saltare in silenzio, quindi il `.sqlfluff` di questo progetto porta ora `large_file_skip_byte_limit = 0`, con la motivazione nel file. `semgrep` e `gitleaks` non sono nel gate dello schema (sono di `code-maniac`) e non sono installati su questa macchina.
+Verifiche mancanti (strumenti non eseguiti): **nessuna** — 0 `skipped` su 9 passi, verificato col rilancio del 2026-08-03. `sqlfluff` (4.2.2) e `squawk` (2.61.0) sono installati e leggono **tutte e sette** le migrazioni: `20260726120200_clinico.sql` sta a 20 384 byte e il default `large_file_skip_byte_limit = 20000` lo faceva saltare in silenzio, quindi il `.sqlfluff` di questo progetto porta ora `large_file_skip_byte_limit = 0`, con la motivazione nel file. `semgrep` e `gitleaks` non sono nel gate dello schema (sono di `code-maniac`); al 2026-08-04 `semgrep` è installato (1.171.0) ma resta fuori da questo gate, `gitleaks` non c'è.

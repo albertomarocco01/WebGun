@@ -190,9 +190,10 @@ verdi**. Il gate verifica che la RLS *esista*, non che *funzioni*.
     su Postgres reale prima di diventare codice del gate, e provarla richiede un
     banco vivo con Docker: scriverla senza provarla sarebbe esattamente il modo
     in cui sono nate le tre premesse smentite di questo file. Costo: medio.
-12. **semgrep e gitleaks non sono installati**: sicurezza e segreti sugli script
-    restano **MANCANTI**, non `PASS`. È anche l'unica difesa automatica contro
-    una `service_role` finita nel client.
+12. **Sicurezza e segreti sugli script restano MANCANTI**, non `PASS`: al
+    2026-08-04 `semgrep` è installato (1.171.0) ma mai puntato su questi script;
+    `gitleaks` non è installato. È anche l'unica difesa automatica contro
+    una `service_role` finita nel client. In carico a P.7c-ripresa-2.
 13. ~~**Nessun consumatore reale a valle.**~~ — **chiuso il 2026-07-28**,
     riconfermato il 2026-07-30. Gestionale Crafter esiste e ha costruito un
     backoffice reale sopra uno schema di questa skill; l'analisi di impatto di
@@ -1032,6 +1033,18 @@ quello, quindi il rifiuto arriva **prima** della RLS (`42501`). Non è un allent
 più stretto di prima. Il test è un consumatore dello schema come il seed, e va riallineato
 a `throws_ok(…, '42501', …)` — **non fatto qui**: chi scrive la migrazione non riscrive il
 test che la giudica. Dichiarato nell'handoff del banco.
+  **Riallineato il 2026-08-04** (decisione D9 del registro di cantiere, dentro P.7c):
+asserzione 11 → `throws_ok('select * from public.owners', '42501', null, …)`, `errmsg` a
+`null` perché il testo di Postgres non è un contratto. L'edit è della ripresa P.7c, il
+rilancio e il commit sono del direttore. Gate rilanciato sul banco col node di sistema:
+**ROSSO, 2 falliti, 0 mancanti su 9**, pgTAP alle sole storiche 22-23 di `rls_negativi` e
+`rls_policy` **11/11** — i motivi del rosso tornati tutti storici, handoff aggiornato.
+Nota di esercizio: al primo lancio, con la macchina satura (due gate e due batterie
+insieme), il passo `tipi` è uscito **FAIL col dettaglio vuoto** — è la forma che
+`passoTipi` prende quando `supabase gen types` muore senza stderr (qui: memoria di paging
+esaurita, stesso minuto del rosso del gate della regia). Non era lo schema: rigenerazione
+manuale uscita 0, tipi **identici** ai committati, secondo lancio OK. Un FAIL di quel
+passo senza dettaglio va riletto come sospetto d'ambiente prima che come tipi divergenti.
 
 ### Cosa resta fuori, dichiarato
 

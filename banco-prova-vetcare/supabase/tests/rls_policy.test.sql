@@ -86,9 +86,17 @@ select is(
 set local role anon;
 set local request.jwt.claims = '';
 
-select is(
-    (select count(*) from public.owners)::bigint, 0::bigint,
-    'la chiave anonima non legge nessun cliente'
+-- Il rifiuto arriva PRIMA della RLS: dopo i privilegi espliciti (migrazione
+-- `20260803120000_permessi_espliciti.sql`) `anon` non ha il `select` sulla
+-- tabella, quindi non c'e' nessuna riga da filtrare — c'e' un `permission
+-- denied` (SQLSTATE 42501). Asserire «zero righe» pretendeva un privilegio che
+-- il modello di accesso nega: si asserisce la forma piu' forte del rifiuto.
+-- L'`errmsg` resta `null` perche' il testo di Postgres non e' un contratto.
+select throws_ok(
+    'select * from public.owners',
+    '42501'::char(5),
+    null,
+    'la chiave anonima non ha nemmeno il privilegio di leggere i clienti'
 );
 
 select * from finish();
