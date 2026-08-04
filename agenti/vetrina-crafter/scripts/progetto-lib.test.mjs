@@ -18,6 +18,7 @@ import {
   combacia,
   contrattoUscita,
   dataConfermaDa,
+  diagnosiTipi,
   decodificaEntita,
   eLaMiaBuild,
   esclusa,
@@ -817,6 +818,40 @@ describe("dati visibili a un anonimo: il firmato contro il concesso", () => {
     assert.deepEqual(findings, []);
     assert.equal(mancanti.length, 1);
     assert.match(mancanti[0], /privilegi di colonna non interrogati/);
+  });
+});
+
+describe("diagnosi degli errori di tsc", () => {
+  // Difetto n°12 del collaudo 2026-08-04, seconda trappola di Next del §7:
+  // cancellato un `route.ts` e rilanciato il gate senza ricostruire, `tsc`
+  // falliva su `.next/types/validator.ts`, che il progetto non ha scritto — e la
+  // riga in coda mandava a cercare una migrazione di schema-forge.
+  const DA_NEXT = ".next/types/validator.ts(134,39): error TS2307: Cannot find module '../../src/app/disponibilita/route.js'";
+  const PROPRIO = "src/modules/camere/query.ts(18,7): error TS2339: Property 'foto_alt' does not exist";
+
+  it("un errore che viene da `.next/` manda a buttare la cache, non da schema-forge", () => {
+    const testo = diagnosiTipi([DA_NEXT]);
+    assert.match(testo, /1 errore viene da `\.next\/`/);
+    assert.match(testo, /rm -rf \.next\/types \.next\/dev\/types/);
+    assert.doesNotMatch(testo, /schema-forge/);
+  });
+
+  it("un errore dei sorgenti del progetto manda dove mandava prima", () => {
+    const testo = diagnosiTipi([PROPRIO]);
+    assert.match(testo, /il segnale e' di schema-forge/);
+    assert.doesNotMatch(testo, /\.next/);
+  });
+
+  it("mescolati, li conta separati e nomina tutti e due gli imputati", () => {
+    const testo = diagnosiTipi([DA_NEXT, PROPRIO, DA_NEXT]);
+    assert.match(testo, /2 errori vengono da `\.next\/`/);
+    assert.match(testo, /Gli altri 1/);
+    assert.match(testo, /schema-forge/);
+  });
+
+  it("regge le barre rovesce di Windows e il prefisso `./`", () => {
+    assert.match(diagnosiTipi([String.raw`./.next\types\validator.ts(3,1): error TS2307: x`]), /viene da `\.next\/`/);
+    assert.match(diagnosiTipi([String.raw`.next\dev\types\routes.d.ts(9,1): error TS2307: x`]), /viene da `\.next\/`/);
   });
 });
 

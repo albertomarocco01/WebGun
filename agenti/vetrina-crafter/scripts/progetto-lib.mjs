@@ -1219,6 +1219,43 @@ export function righeDaPsql(stdout) {
     .map((r) => r.split(CAMPO_PSQL));
 }
 
+// ------------------------------------------------------------- i tipi
+/**
+ * La riga di diagnosi in coda agli errori di `tsc`, e a chi mandano.
+ *
+ * MISURATO sul banco il 2026-08-04, ed e' la seconda delle due trappole di Next
+ * dichiarate nel §7 del verbale di costruzione. Cancellato un `route.ts` e
+ * rilanciato il gate senza ricostruire, `tsc` falliva su un file che il progetto
+ * non ha scritto:
+ *
+ *   .next/types/validator.ts(134,39): error TS2307: Cannot find module
+ *   '../../src/app/disponibilita/route.js'
+ *
+ * e la riga in coda diceva «se la colonna e' cambiata a monte, il segnale e' di
+ * schema-forge e si riporta»: manda a cercare una migrazione in un altro
+ * pacchetto, mentre la causa e' che **i tipi di rotta generati sono uno STATO**
+ * che sopravvive alla cancellazione del file, e si toglie con un comando.
+ *
+ * La gravita' non cambia — i tipi non compilano davvero, e un progetto cosi' non
+ * si consegna — ma l'imputato si': `.next/` non e' un sorgente di questo
+ * progetto, e un errore che viene solo da li' e' una cache da buttare.
+ */
+export function diagnosiTipi(righeErrore) {
+  const daNext = righeErrore.filter((r) => /^\s*\.?[\\/]?(\.next)[\\/]/.test(conBarre(r).replace(/^\.\//, "")));
+  const generati = daNext.length;
+  const propri = righeErrore.length - generati;
+
+  if (generati === 0) {
+    return "Costruire su tipi vecchi e' il modo n°1 di costruire sul falso: se la colonna e' cambiata a monte, il segnale e' di schema-forge e si riporta, non si aggiusta a mano.";
+  }
+  const dentroNext =
+    `${generati} ${generati === 1 ? "errore viene" : "errori vengono"} da \`.next/\`, che NON e' un sorgente di questo progetto: ` +
+    "i tipi di rotta che Next genera sono uno STATO, e sopravvivono alla build — una rotta cancellata o rinominata resta citata li' dentro. " +
+    "Si tolgono, non si aggiustano: `rm -rf .next/types .next/dev/types && npm run build`, poi rilancia il gate.";
+  if (propri === 0) return dentroNext;
+  return `${dentroNext}\nGli altri ${propri}: costruire su tipi vecchi e' il modo n°1 di costruire sul falso — se la colonna e' cambiata a monte, il segnale e' di schema-forge e si riporta, non si aggiusta a mano.`;
+}
+
 // ------------------------------------------------- il database del PROGETTO
 /**
  * Precedenza: `--db-url` esplicito > `config.toml` del progetto > MAI

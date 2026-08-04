@@ -42,6 +42,7 @@ import {
   argomentiPsql,
   contrattoUscita,
   dataConfermaDa,
+  diagnosiTipi,
   eLaMiaBuild,
   findingsContenuti,
   findingsContratto,
@@ -214,7 +215,7 @@ const PASSI = [
       const righeErrore = (res.stdout || res.stderr || "").split(/\r?\n/).filter((r) => /error TS/.test(r));
       return record(this.id, this.nome, "fail",
         `\`tsc --noEmit\`: ${righeErrore.length} errori\n${righeErrore.slice(0, 8).join("\n")}${righeErrore.length > 8 ? `\n… e altri ${righeErrore.length - 8}` : ""}\n` +
-        "Costruire su tipi vecchi e' il modo n°1 di costruire sul falso: se la colonna e' cambiata a monte, il segnale e' di schema-forge e si riporta, non si aggiusta a mano.");
+        diagnosiTipi(righeErrore));
     },
   },
 
