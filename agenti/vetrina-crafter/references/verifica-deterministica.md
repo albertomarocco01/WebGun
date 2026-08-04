@@ -39,7 +39,7 @@ gli `id` e il loro ordine (`DECISIONI.md` §15).
 | 6 | `app-identita` | un URL dichiarato o passato; `.next/BUILD_ID` esiste; l'app risponde | il `BUILD_ID` servito è quello di questo progetto, e non è una dev server | MANCANTE |
 | 7 | `pagine-vive` | passo 1 con un elenco di pagine **e** passo 6 `pass` | ogni rotta dichiarata risponde; ogni rotta pubblica servita è dichiarata | MANCANTE |
 | 8 | `segnaposto-serviti` | almeno una pagina scaricata dal passo 7 | `{{…}}`, *lorem ipsum*, formule del template nel testo servito | MANCANTE |
-| 9 | `contenuti-vivi` | slot dichiarati (o `Nessuno slot.`); `psql` nel PATH; database risolto | il testo dello slot è nel database e in pagina e **non** nei sorgenti; le fonti sono leggibili dall'anonimo | MANCANTE |
+| 9 | `contenuti-vivi` | slot dichiarati (o `Nessuno slot.`); `psql` nel PATH; database risolto | il testo dello slot è nel database e in pagina e **non** nei sorgenti; le fonti sono leggibili dall'anonimo; le tabelle di scrittura pubblica **no**; le colonne concesse ad `anon` sono quelle firmate | MANCANTE |
 | 10 | `contratto-uscita` | nessuna: legge sempre | handoff senza segnaposto, riga `Gate:` coerente coi nove passi | non si applica: `pass` o `fail` |
 
 Dieci passi sono più dei sette di gestionale-crafter, flow-sentinel e speed-demon, e più
@@ -338,6 +338,34 @@ rende verificabile la Legge n°3.
      `SKILL.md` §Modalità dichiara irreversibile — *cosa diventa visibile a un anonimo* —
      era una dichiarazione che nessuno dei dieci passi falsificava, anche se il gate
      aveva già in mano lo strumento per farlo.
+
+  5. **Il firmato contro il concesso.** Per ogni relazione di §Dati visibili a un anonimo
+     si legge da `information_schema.column_privileges` su quali colonne `anon` ha
+     davvero `select`, e si confronta con l'elenco firmato. Colonna **concessa e non
+     dichiarata** → `block`; colonna **dichiarata e non concessa** → `block` anche quello,
+     perché PostgREST rifiuta con `42501` l'**intera query** e non la sola colonna: se una
+     pagina la seleziona, quella pagina si serve **vuota** e nessun altro controllo lo
+     vede (il conteggio della regola 3 usa `count(*)`, che quella colonna non la tocca).
+     La riga `tutte le colonne` — quella che il template dice di non scrivere mai — è un
+     `block` per sé stessa.
+
+     Le colonne si leggono **in testa alla cella**, non ovunque nella prosa: raccoglierle
+     dovunque prendeva `security_invoker` da «filtrate a monte dalla vista con
+     `security_invoker`» e `anon` da «nessuna policy di lettura per `anon`», cioè due
+     `block` falsi su righe corrette. Una cella che non comincia con le colonne non è
+     confrontabile e resta **MANCANTE**: è il contratto a doverlo dire, non il gate a
+     indovinarlo.
+
+     **Perché questa regola esiste, misurato sullo stesso banco il 2026-08-04.** È il
+     gemello della regola 4 sul lato **lettura**, e fino a quel giorno §Dati visibili a un
+     anonimo non la leggeva nessuno dei dieci passi — questo template diceva perfino «il
+     gate non la verifica riga per riga, non sa quali colonne DOVREBBERO essere
+     pubbliche», e non era vero: gliele dichiara la tabella stessa. Su un contratto
+     scritto con cura, 22 colonne dichiarate su tre relazioni e **36 concesse ad `anon`**:
+     le quattordici in più (`id`, `pubblicata`, `created_at`, `updated_at`, `chiave`,
+     `in_evidenza`) nessuna pagina le seleziona e nessuno le aveva firmate, ma con la
+     chiave anonima — che sta nel bundle — PostgREST le serve a chiunque. `sabotaggio.md`
+     dichiarava questa classe **cieca**: non lo era.
 - **Rilievi:** `issue` se la pagina che mostra uno slot dichiara `Aggiornamento: statico`
   senza rigenerazione: il cliente cambierà il testo dal gestionale e non vedrà cambiare
   niente finché qualcuno non ripubblica. È `issue` e non `block` perché un sito che si

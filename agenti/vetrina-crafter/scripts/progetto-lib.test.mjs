@@ -666,6 +666,130 @@ describe("contenuti dal database", () => {
   });
 });
 
+describe("dati visibili a un anonimo: il firmato contro il concesso", () => {
+  // Il difetto n°9 del collaudo 2026-08-04, gemello del n°5 sul lato lettura:
+  // §Dati visibili a un anonimo e' la sezione per cui esiste la firma, e non la
+  // leggeva NESSUNO dei dieci passi. Sul banco `banco-prova-valscura` un
+  // contratto scritto con cura dichiarava 22 colonne su tre relazioni, e `anon`
+  // ne poteva leggere 36: le quattordici in piu' — `id`, `pubblicata`,
+  // `created_at`, `updated_at`, `chiave`, `in_evidenza` — nessuna pagina le
+  // seleziona, ma PostgREST le serve a chiunque abbia la chiave anonima, che sta
+  // nel bundle. `sabotaggio.md` dichiarava la classe CIECA: non lo era.
+  const conLetture = (righe) => leggiContratto(CONTRATTO.replace(
+    "## Percorsi di scrittura aperti al pubblico",
+    ["## Dati visibili a un anonimo", "",
+      "| Tabella o vista | Cosa vede un visitatore senza account | Chi l'ha autorizzato |",
+      "|---|---|---|",
+      ...righe, "",
+      "## Percorsi di scrittura aperti al pubblico"].join("\n"),
+  ));
+
+  const RIGA_PIANTE = "| `piante` | `slug`, `nome` delle piante con `pubblicata = true` | Elena Barbieri (titolare) (2026-07-24) |";
+  const base = (contratto) => ({
+    contratto,
+    valoriPerSlot: new Map([["home-hero", ["Il vivaio delle piante rare della Corte Vecchia"]]]),
+    testoPerPagina: new Map([["home", "Il vivaio delle piante rare della Corte Vecchia"], ["catalogo", "48 piante"]]),
+    cercaNeiSorgenti: () => [],
+    conteggiAnon: new Map([["piante", { stato: "letta", righe: 48 }]]),
+    soglia: SOGLIA_FRAMMENTO,
+  });
+
+  it("legge la tabella dalla sua intestazione, e le colonne dalla TESTA della cella", () => {
+    const c = conLetture([RIGA_PIANTE]);
+    assert.deepEqual(c.letture, [
+      { relazione: "piante", colonne: ["slug", "nome"], niente: false, tutte: false },
+    ]);
+  });
+
+  it("NON raccoglie gli apici sparsi nella prosa della cella", () => {
+    // Il falso positivo misurato mentre si scriveva la regola: `pubblicata` sta
+    // dentro `pubblicata = true` (e non e' un identificatore da solo), e
+    // `security_invoker` sta in coda a una frase. Nessuno dei due e' una colonna
+    // dichiarata, e prenderli produceva due `block` su righe corrette.
+    const c = conLetture([
+      "| `v_gite` | `slug`, `titolo` delle sole gite in evidenza, filtrate a monte dalla vista con `security_invoker` | Elena Barbieri (titolare) (2026-07-24) |",
+    ]);
+    assert.deepEqual(c.letture[0].colonne, ["slug", "titolo"]);
+  });
+
+  it("una cella che NON comincia con le colonne non e' confrontabile: MANCANTE, non verde", () => {
+    const c = conLetture([
+      "| `v_gite` | le stesse colonne di sopra, filtrate dalla vista | Elena Barbieri (titolare) (2026-07-24) |",
+    ]);
+    const { findings, mancanti } = findingsContenuti({
+      ...base(c), colonneConcesse: new Map([["v_gite", ["slug", "titolo"]]]),
+    });
+    assert.deepEqual(findings, []);
+    assert.equal(mancanti.length, 1);
+    assert.match(mancanti[0], /non elenca nessuna colonna fra apici/);
+  });
+
+  it("SCATTA (block) sulle colonne che `anon` legge e che la firma non dichiara", () => {
+    const { findings } = findingsContenuti({
+      ...base(conLetture([RIGA_PIANTE])),
+      colonneConcesse: new Map([["piante", ["slug", "nome", "id", "costo_acquisto", "created_at"]]]),
+    });
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].severity, "block");
+    assert.match(findings[0].message, /puo' leggere 3 colonne che la firma non dichiara: id, costo_acquisto, created_at/);
+    assert.match(findings[0].hint, /PostgREST serve `\?select=` a chiunque/);
+  });
+
+  it("NON scatta quando il firmato e il concesso coincidono", () => {
+    const { findings, mancanti } = findingsContenuti({
+      ...base(conLetture([RIGA_PIANTE])),
+      colonneConcesse: new Map([["piante", ["slug", "nome"]]]),
+    });
+    assert.deepEqual(findings, []);
+    assert.deepEqual(mancanti, []);
+  });
+
+  it("`niente` e' una dichiarazione: passa a zero colonne, e diventa `block` se ce n'e' una", () => {
+    const buca = "| `messaggi` | **niente.** Ci si scrive e non ci si legge: nessun `grant select` per `anon` | Elena Barbieri (titolare) (2026-07-24) |";
+    const pulito = findingsContenuti({
+      ...base(conLetture([buca])), colonneConcesse: new Map([["messaggi", []]]),
+    });
+    assert.deepEqual(pulito.findings, []);
+    assert.deepEqual(pulito.mancanti, []);
+
+    const aperto = findingsContenuti({
+      ...base(conLetture([buca])), colonneConcesse: new Map([["messaggi", ["email", "telefono"]]]),
+    });
+    assert.equal(aperto.findings[0].severity, "block");
+    assert.match(aperto.findings[0].message, /non ne vede niente, e `anon` ha invece `select` su 2 colonne/);
+  });
+
+  it("una colonna dichiarata e NON concessa e' un `block`: PostgREST rifiuta tutta la query", () => {
+    const { findings } = findingsContenuti({
+      ...base(conLetture([RIGA_PIANTE])),
+      colonneConcesse: new Map([["piante", ["slug"]]]),
+    });
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].severity, "block");
+    assert.match(findings[0].message, /dichiara 1 colonne che `anon` NON puo' leggere: nome/);
+    assert.match(findings[0].hint, /si serve VUOTA/);
+  });
+
+  it("«tutte le colonne» e' la riga che il template vieta, e si vede", () => {
+    const { findings } = findingsContenuti({
+      ...base(conLetture(["| `piante` | tutte le colonne della tabella | Elena Barbieri (titolare) (2026-07-24) |"])),
+      colonneConcesse: new Map([["piante", ["slug", "nome", "costo_acquisto"]]]),
+    });
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].severity, "block");
+    assert.match(findings[0].message, /«tutte le colonne» \(3 concesse a `anon`\)/);
+  });
+
+  it("una relazione non interrogata e' una verifica MANCANTE, non un verde", () => {
+    const { findings, mancanti } = findingsContenuti({
+      ...base(conLetture([RIGA_PIANTE])), colonneConcesse: new Map(),
+    });
+    assert.deepEqual(findings, []);
+    assert.equal(mancanti.length, 1);
+    assert.match(mancanti[0], /privilegi di colonna non interrogati/);
+  });
+});
+
 describe("percorsi di scrittura aperti al pubblico", () => {
   // Il difetto che ha fatto nascere questa suite, misurato sul banco
   // `banco-prova-valscura` il 2026-08-04: aperta la lettura della tabella del

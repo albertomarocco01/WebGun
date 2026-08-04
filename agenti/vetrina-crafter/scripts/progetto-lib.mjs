@@ -185,6 +185,64 @@ function scrittureDaTabella(righeTabella) {
   return scritture;
 }
 
+/**
+ * La tabella §Dati visibili a un anonimo, letta DALLA SUA INTESTAZIONE.
+ *
+ * E' la sezione per cui esiste la firma — pubblicare un dato e' irreversibile —
+ * e fino al 2026-08-04 non la leggeva NESSUNO dei dieci passi, esattamente come
+ * §Percorsi di scrittura prima del difetto n°5. Il template diceva «il gate non
+ * la verifica riga per riga, non sa quali colonne DOVREBBERO essere pubbliche»:
+ * non e' vero, gliele dichiara questa tabella, e quali siano concesse davvero lo
+ * dice `information_schema.column_privileges`.
+ *
+ * La cella «Cosa vede» e' prosa per costruzione — dice anche il filtro e cosa
+ * resta fuori — quindi le colonne si leggono SOLO nella testa della cella, come
+ * corsa iniziale di identificatori fra apici. Raccoglierli ovunque nella cella
+ * sarebbe un'euristica che sbaglia: sul banco del collaudo prendeva
+ * `security_invoker` da «filtrate a monte dalla vista con `security_invoker`» e
+ * `anon` da «nessuna policy di lettura per `anon`», cioe' due `block` falsi su
+ * righe corrette. Un rosso strutturale insegna a scavalcare i rossi veri.
+ *
+ * Se la testa non elenca colonne, la riga NON e' confrontabile e chi chiama la
+ * dichiara MANCANTE: e' il contratto a doverlo dire, non il gate a indovinarlo.
+ *
+ * Due dichiarazioni in testa alla cella hanno un significato proprio:
+ *   `niente` / `nessuna colonna`  → l'anonimo non deve leggerne NULLA
+ *   `tutte le colonne`            → la riga che il template dice di non scrivere
+ *                                    mai; se qualcuno la scrive, si vede
+ */
+const COLONNE_IN_TESTA = /^[\s*_]*((?:`[a-z_][a-z0-9_]*`\s*(?:,|\be\b)?\s*)+)/i;
+const NIENTE_IN_TESTA = /^[\s*_]*(niente|nessuna colonna|nulla)\b/i;
+
+function lettureDaTabella(righeTabella) {
+  const letture = [];
+  let indici = null;
+  for (const linea of righeTabella) {
+    if (eSeparatore(linea)) continue;
+    const c = celle(linea);
+    if (!indici) {
+      const dove = (parola) => c.findIndex((x) => new RegExp(parola, "i").test(x));
+      const relazione = dove("tabella|vista");
+      const vede = dove("vede|visitatore");
+      if (relazione >= 0 && vede >= 0) indici = { relazione, vede };
+      continue;
+    }
+    // La cella della relazione puo' portarsi dietro un'annotazione — `x` (vista)
+    // — e il nome e' quello fra apici, non tutta la cella.
+    const nome = /`([a-z_][a-z0-9_.]*)`/i.exec(c[indici.relazione] ?? "");
+    const cella = c[indici.vede] ?? "";
+    if (!nome) continue;
+    const testa = COLONNE_IN_TESTA.exec(cella);
+    letture.push({
+      relazione: nome[1].toLowerCase(),
+      colonne: testa ? [...testa[1].matchAll(/`([a-z_][a-z0-9_]*)`/gi)].map((m) => m[1].toLowerCase()) : [],
+      niente: NIENTE_IN_TESTA.test(cella),
+      tutte: /tutte le colonne/i.test(cella),
+    });
+  }
+  return letture;
+}
+
 /** `Tabella dei contenuti: site_content — chiave `slot`, pubblicato `is_published`` */
 export function tabellaContenutiDa(valore) {
   const testo = String(valore ?? "");
@@ -207,13 +265,14 @@ export const SOGLIA_FRAMMENTO = 24;
  */
 export function leggiContratto(testo) {
   const proprio = senzaZoneCitate(testo);
-  const stato = { pagine: [], righeSlot: [], righeScritture: [], escluse: [], errori: [], visti: new Set(), corrente: null, sezione: null };
+  const stato = { pagine: [], righeSlot: [], righeScritture: [], righeLetture: [], escluse: [], errori: [], visti: new Set(), corrente: null, sezione: null };
 
   for (const linea of righe(proprio)) {
     if (leggiIntestazione(linea, stato)) continue;
     if (stato.corrente) { leggiRigaPagina(linea, stato.corrente); continue; }
     if (stato.sezione === "slot" && /^\s*\|/.test(linea)) stato.righeSlot.push(linea);
     if (stato.sezione === "scritture" && /^\s*\|/.test(linea)) stato.righeScritture.push(linea);
+    if (stato.sezione === "letture" && /^\s*\|/.test(linea)) stato.righeLetture.push(linea);
     if (stato.sezione === "escluse") {
       const m = /^\s*[-*]\s+`?(\/[^`\s]*)`?/.exec(linea);
       if (m) stato.escluse.push(m[1]);
@@ -225,6 +284,7 @@ export function leggiContratto(testo) {
     pagine: stato.pagine,
     slot: slotDaTabella(stato.righeSlot),
     scritture: scrittureDaTabella(stato.righeScritture),
+    letture: lettureDaTabella(stato.righeLetture),
     escluse: stato.escluse,
     errori: stato.errori,
   };
@@ -281,7 +341,8 @@ const sezioneDa = (linea) =>
   /slot/i.test(linea) ? "slot"
     : /esclus/i.test(linea) ? "escluse"
       : /scrittur/i.test(linea) ? "scritture"
-        : null;
+        : /dati visibili|visibil\w* a un anonimo/i.test(linea) ? "letture"
+          : null;
 
 function leggiRigaPagina(linea, pagina) {
   for (const etichetta of RIGHE_OBBLIGATORIE) {
@@ -793,7 +854,7 @@ export function piuLungoDiContenuto(valori, escludi = []) {
  * tengono il passo su MANCANTE invece che su `pass`.
  */
 export function findingsContenuti(dati) {
-  const { contratto, valoriPerSlot, testoPerPagina, cercaNeiSorgenti, conteggiAnon, soglia, letturaScritture } = dati;
+  const { contratto, valoriPerSlot, testoPerPagina, cercaNeiSorgenti, conteggiAnon, soglia, letturaScritture, colonneConcesse } = dati;
   const findings = [];
   const mancanti = [];
   const percorsoDi = new Map(contratto.pagine.map((p) => [p.id, p]));
@@ -811,6 +872,7 @@ export function findingsContenuti(dati) {
     }
     findings.push(...findingsFontiLeggibili(contratto, conteggiAnon, mancanti));
     findings.push(...findingsScritturePubbliche(contratto, letturaScritture, mancanti));
+    findings.push(...findingsLetturePubbliche(contratto, colonneConcesse, mancanti));
     return { findings, mancanti };
   }
 
@@ -862,6 +924,7 @@ export function findingsContenuti(dati) {
 
   findings.push(...findingsFontiLeggibili(contratto, conteggiAnon, mancanti));
   findings.push(...findingsScritturePubbliche(contratto, letturaScritture, mancanti));
+  findings.push(...findingsLetturePubbliche(contratto, colonneConcesse, mancanti));
   return { findings, mancanti };
 }
 
@@ -1022,6 +1085,85 @@ function findingsScritturePubbliche(contratto, letturaScritture, mancanti) {
       message: `una sessione anonima RILEGGE ${esito.righe} righe della tabella in cui chiunque scrive: dentro ci sono i dati di chi ha scritto prima${scrittura.letturaPubblica ? " (il contratto lo dichiara: `lettura pubblica`)" : ""}`,
       hint: "una casella in cui chiunque puo' imbucare non e' una casella che chiunque puo' aprire: servono `revoke select ... from anon` e nessuna policy di lettura per `anon`. E' una richiesta a schema-forge",
     });
+  }
+  return findings;
+}
+
+/**
+ * Cio' che la firma dichiara pubblico e cio' che il `grant` concede davvero.
+ *
+ * MISURATO il 2026-08-04 sul banco del collaudo: la tabella §Dati visibili a un
+ * anonimo elencava 22 colonne su tre relazioni, e `anon` ne poteva leggere 36.
+ * Le quattordici in piu' — `id`, `pubblicata`, `created_at`, `updated_at`,
+ * `chiave`, `in_evidenza` — nessuna pagina le seleziona e nessuno le ha firmate,
+ * ma con la chiave anonima, che sta nel bundle, PostgREST le serve a chiunque:
+ * `?select=*` non chiede permesso all'elenco del `select` delle nostre query.
+ *
+ * `sabotaggio.md` dichiarava questa classe CIECA. Non lo e': la colonna
+ * concessa la dice `information_schema.column_privileges`, quella dichiarata la
+ * dice il contratto, e la differenza e' una sottrazione.
+ *
+ * @param colonneConcesse Mappa relazione → `string[]` di colonne leggibili da
+ *   `anon`, oppure `null` se la relazione non e' stata interrogata.
+ */
+function findingsLetturePubbliche(contratto, colonneConcesse, mancanti) {
+  const findings = [];
+  for (const lettura of contratto.letture ?? []) {
+    const concesse = colonneConcesse?.get(lettura.relazione);
+    if (concesse === null || concesse === undefined) {
+      mancanti.push(`\`${lettura.relazione}\` (§Dati visibili a un anonimo): privilegi di colonna non interrogati — non si e' potuto verificare che cio' che e' concesso sia cio' che e' firmato`);
+      continue;
+    }
+
+    // La riga che il template dice di non scrivere mai. Non si trasforma in un
+    // `block` sulle colonne: chi l'ha scritta ha firmato consapevolmente una
+    // cosa sbagliata, e il rilievo giusto e' su quella riga, non sull'elenco.
+    if (lettura.tutte) {
+      findings.push({
+        severity: "block",
+        object: `\`${lettura.relazione}\` (§Dati visibili a un anonimo)`,
+        message: `la riga dichiara «tutte le colonne» (${concesse.length} concesse a \`anon\`): il template la chiama la riga da non scrivere mai, perche' una colonna pubblicata non torna piu' privata`,
+        hint: "elenca le colonne che servono davvero alle pagine e chiedi a schema-forge un `grant select (…)` di sole quelle",
+      });
+      continue;
+    }
+
+    if (lettura.colonne.length === 0 && !lettura.niente) {
+      mancanti.push(`\`${lettura.relazione}\` (§Dati visibili a un anonimo): la riga non elenca nessuna colonna fra apici e non dichiara «niente» — non c'e' niente da confrontare col \`grant\`, e quella riga NON e' stata verificata`);
+      continue;
+    }
+
+    const dichiarate = new Set(lettura.colonne);
+    const inPiu = concesse.filter((c) => !dichiarate.has(c));
+    const promesse = lettura.colonne.filter((c) => !concesse.includes(c));
+
+    if (inPiu.length > 0) {
+      findings.push({
+        severity: "block",
+        object: `\`${lettura.relazione}\` (§Dati visibili a un anonimo)`,
+        message: lettura.niente
+          ? `la riga dichiara che un anonimo non ne vede niente, e \`anon\` ha invece \`select\` su ${inPiu.length} colonne: ${inPiu.join(", ")}`
+          : `\`anon\` puo' leggere ${inPiu.length} colonne che la firma non dichiara: ${inPiu.join(", ")}`,
+        hint: "cio' che e' pubblico lo decide il `grant` piu' la policy, non l'elenco del `select` delle pagine: con la chiave anonima, che sta nel bundle, PostgREST serve `?select=` a chiunque. O le si aggiunge alla riga e le si fa rifirmare, o si chiede a schema-forge un `grant select (…)` di sole quelle che servono",
+      });
+    }
+
+    if (promesse.length > 0) {
+      // `block` e non `issue`, e la ragione e' misurata (banco del collaudo,
+      // 2026-08-04): PostgREST rifiuta con `42501` l'INTERA query, non la sola
+      // colonna. Una colonna dichiarata e non concessa non impoverisce una
+      // cella — svuota la pagina, in silenzio, e il conteggio delle righe che
+      // il passo fa impersonando `anon` continua a riuscire perche' `count(*)`
+      // non ha bisogno di quella colonna. Nessun altro controllo lo vedrebbe.
+      // Non e' un rosso strutturale: se il `grant` e' di tabella — il caso
+      // normale — le concesse sono tutte, e questo ramo non puo' scattare.
+      findings.push({
+        severity: "block",
+        object: `\`${lettura.relazione}\` (§Dati visibili a un anonimo)`,
+        message: `la firma dichiara ${promesse.length} colonne che \`anon\` NON puo' leggere: ${promesse.join(", ")}`,
+        hint: "PostgREST risponde `42501` all'intera query, non alla singola colonna: se una pagina le seleziona, quella pagina si serve VUOTA senza nessun errore visibile. O si chiede il `grant` mancante a schema-forge, o la riga del contratto e' vecchia e va corretta e rifirmata",
+      });
+    }
   }
   return findings;
 }

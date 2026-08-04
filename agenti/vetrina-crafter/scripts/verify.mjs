@@ -343,6 +343,11 @@ const PASSI = [
       // qui «negata» e' l'esito giusto. Chi scrive non legge.
       const letturaScritture = misuraLetturaAnonima(
         dbUrl, new Set(contratto.scritture.map((s) => s.tabella)), schemi[0]);
+      // Cio' che la firma di §Dati visibili a un anonimo dichiara pubblico si
+      // confronta con cio' che il `grant` concede: sono due elenchi, e la
+      // differenza e' una sottrazione. Vedi `findingsLetturePubbliche`.
+      const colonneConcesse = misuraColonneConcesse(
+        dbUrl, contratto.letture.map((l) => l.relazione), schemi[0]);
 
       const { findings, mancanti } = findingsContenuti({
         contratto,
@@ -351,6 +356,7 @@ const PASSI = [
         cercaNeiSorgenti: (frammento) => frammentoNeiSorgenti(frammento, sorgenti),
         conteggiAnon,
         letturaScritture,
+        colonneConcesse,
         soglia,
       });
 
@@ -538,6 +544,32 @@ function misuraLetturaAnonima(dbUrl, nomi, schemaDefault) {
     esiti.set(nome, conteggio.righe.length > 0
       ? { stato: "letta", righe: Number(conteggio.righe[conteggio.righe.length - 1][0]) }
       : null);
+  }
+  return esiti;
+}
+
+/**
+ * Le colonne su cui `anon` ha `select`, relazione per relazione.
+ *
+ * `information_schema.column_privileges` e' la vista giusta e non
+ * `role_table_grants`: regge tutti e due i modi di concedere — `grant select on
+ * t` (che si espande a ogni colonna) e `grant select (a, b) on t`, che e' la
+ * forma con cui si rimedia quando questo controllo diventa rosso. Verificato
+ * sul banco il 2026-08-04 su una tabella sonda con un grant di sole due colonne.
+ *
+ * `null` = non interrogata, cioe' verifica MANCANTE. Un elenco vuoto invece e'
+ * una misura riuscita: `anon` non ne legge nemmeno una colonna.
+ */
+function misuraColonneConcesse(dbUrl, nomi, schemaDefault) {
+  const esiti = new Map();
+  for (const nome of new Set(nomi)) {
+    const [schema, relazione] = nome.includes(".") ? nome.split(".") : [schemaDefault, nome];
+    if (!IDENTIFICATORE.test(schema) || !IDENTIFICATORE.test(relazione)) { esiti.set(nome, null); continue; }
+    const righe = interroga(dbUrl,
+      `select column_name from information_schema.column_privileges ` +
+      `where table_schema = '${schema}' and table_name = '${relazione}' ` +
+      `and grantee = 'anon' and privilege_type = 'SELECT' order by column_name;`);
+    esiti.set(nome, righe === null ? null : righe.map((r) => r[0]).filter(Boolean));
   }
   return esiti;
 }

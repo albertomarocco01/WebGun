@@ -110,8 +110,16 @@ cosa va scritto qui:
 
 Quindi in questa tabella si scrivono DUE cose diverse e non una: le colonne che la
 pagina fetcha (dalle query) e le colonne che l'anonimo PUO' leggere (dalle policy).
-Se le seconde sono piu' delle prime, la differenza e' pubblicata lo stesso, e il gate
-non la vede: e' la riga che rende questa sezione l'unica difesa che esista.
+Se le seconde sono piu' delle prime, la differenza e' pubblicata lo stesso.
+
+DAL 2026-08-04 IL GATE LA VEDE, e questa riga e' l'unica di tutto il pacchetto che il
+collaudo P2 ha potuto cambiare in meglio: il passo `contenuti-vivi` confronta le
+colonne di §Dati visibili a un anonimo del CONTRATTO con quelle su cui `anon` ha
+davvero `select` (`information_schema.column_privileges`), e ogni colonna concessa e
+non firmata e' un `block`. Le colonne che scrivi qui devono quindi coincidere con
+quelle del contratto: se qui ne compare una in piu', il gate e' gia' rosso di la'.
+Questa sezione resta comunque l'unica difesa contro cio' che il gate NON puo'
+decidere — se quelle colonne DOVESSERO essere pubbliche. Quello lo dice solo la firma.
 -->
 
 ## 5. Decisioni e deroghe

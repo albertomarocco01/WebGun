@@ -114,14 +114,36 @@ scritta accanto alla propria firma.
 
 | Tabella o vista | Cosa vede un visitatore senza account | Chi l'ha autorizzato |
 |---|---|---|
-| `{{prodotti}}` | {{quali colonne, e con quale filtro}} | {{nome, ruolo}} ({{AAAA-MM-GG}}) |
+| `{{prodotti}}` | `{{col_a}}`, `{{col_b}}`, `{{col_c}}` {{con quale filtro, e cosa resta fuori}} | {{nome, ruolo}} ({{AAAA-MM-GG}}) |
 
 <!--
-SINTASSI la tabella, con queste tre colonne in quest'ordine. Il gate non la
-verifica riga per riga — non sa quali colonne DOVREBBERO essere pubbliche — ma
-questa e' la sezione per cui esiste la firma, e quindi non e' facoltativa. Se
-non c'e' nessuna tabella pubblica si scrive sotto, fuori dalla tabella,
-`Nessun dato pubblico.`
+SINTASSI la tabella, con queste tre colonne in quest'ordine, e questa e' la
+sezione per cui esiste la firma: non e' facoltativa. Se non c'e' nessuna tabella
+pubblica si scrive sotto, fuori dalla tabella, `Nessun dato pubblico.`
+
+SINTASSI DELLA CELLA «Cosa vede». Le colonne si scrivono FRA APICI E IN TESTA
+ALLA CELLA, separate da virgole; la prosa (il filtro, cosa resta fuori) viene
+dopo. Il gate legge solo la corsa iniziale di apici, e non gli apici sparsi nel
+resto della cella: raccogliendoli ovunque prenderebbe `security_invoker` da
+«filtrate a monte dalla vista con `security_invoker`» e produrrebbe un `block`
+falso su una riga corretta (misurato il 2026-08-04 sul banco del collaudo).
+
+Una cella che non comincia con le colonne NON e' confrontabile, e il gate la
+dichiara MANCANTE: «le stesse colonne di sopra» e' chiaro per un umano e non
+per una sottrazione. Due dichiarazioni in testa hanno un significato proprio:
+  `niente`             l'anonimo non ne legge NULLA (una buca delle lettere:
+                       ci scrive e non ci rilegge)
+  `tutte le colonne`   la riga da non scrivere mai — vedi sotto. Scriverla e'
+                       un `block`, non un modo di far tacere il gate.
+
+COSA IL GATE VERIFICA, DAL 2026-08-04. Confronta questo elenco con le colonne
+su cui `anon` ha davvero `select`
+(`information_schema.column_privileges`, che regge sia `grant select on t` sia
+`grant select (a, b) on t`). Ogni colonna concessa e non dichiarata e' un
+`block`; ogni colonna dichiarata e non concessa e' un `issue`. Prima di quella
+data la sezione non la leggeva NESSUNO dei dieci passi, e sul banco del collaudo
+un contratto scritto con cura dichiarava 22 colonne mentre `anon` ne poteva
+leggere 36.
 
 PERCHE' STA IN UN DOCUMENTO E NON IN UNA CHAT: pubblicare un dato e'
 irreversibile nel solo modo che conta — dopo, e' di chi l'ha copiato, indicizzato
@@ -130,11 +152,21 @@ modalita' pipeline questa e' una delle due domande che si fermano comunque a un
 umano (`DECISIONI.md` §6: si delega cio' che e' reversibile, mai cio' che non lo
 e').
 
-La riga da non scrivere mai: «tutte le colonne della tabella». Se una colonna
-non serve alla pagina, non deve arrivare al browser — e non perche' sia brutto,
-ma perche' quello che arriva al browser e' pubblicato anche se non e' disegnato.
-Nascondere un campo nel componente lascia il dato nell'HTML servito e nel payload
-RSC: se un anonimo non deve vederlo, non deve RICEVERLO.
+La riga da non scrivere mai: «tutte le colonne della tabella». E il motivo NON
+e' quello che questo template ha scritto fino al 2026-08-04 — «il dato arriva
+comunque nel browser dentro l'HTML servito e il payload RSC»: quella premessa e'
+stata MISURATA FALSA (`references/sabotaggio.md`, 2026-08-03: colonne aggiunte
+al `select` e non disegnate, zero occorrenze nell'HTML e zero nel payload RSC —
+con un Server Component che interroga e rende, cio' che non si disegna non lascia
+il server; vale invece per un Client Component che riceve la riga come prop).
+
+Il motivo vero e' un altro, e non passa dalle nostre pagine: LA CHIAVE ANONIMA
+STA NEL BUNDLE, e con quella chiunque chiede a PostgREST `?select=` di
+qualunque colonna concessa — anche di quelle che nessuna pagina seleziona e
+nessun componente disegna. Cio' che e' pubblico lo decidono il `grant` e la
+policy, non l'elenco del nostro `select`. Se un anonimo non deve vedere una
+colonna, non basta non disegnarla: non gliela si deve CONCEDERE, e la richiesta
+va a schema-forge come `grant select (…)` delle sole colonne che servono.
 -->
 
 ## Percorsi di scrittura aperti al pubblico
@@ -348,8 +380,8 @@ Non esistono, ed è una scelta: il blog (nessuno lo aggiornerebbe), il carrello
 
 | Tabella o vista | Cosa vede un visitatore senza account | Chi l'ha autorizzato |
 |---|---|---|
-| `piante` | nome, specie, foto, descrizione e fascia di prezzo delle piante con `pubblicata = true`. Restano fuori il costo d'acquisto e il fornitore | Elena Barbieri (titolare) (2026-07-24) |
-| `site_content` | i soli slot con `is_published = true` | Elena Barbieri (titolare) (2026-07-24) |
+| `piante` | `slug`, `nome`, `specie`, `foto_url`, `descrizione`, `prezzo_min`, `prezzo_max`, `pubblicata`, `id`, `created_at`, `updated_at` delle piante con `pubblicata = true`. Costo d'acquisto e fornitore non sono concessi ad `anon`, e non stanno in questa riga | Elena Barbieri (titolare) (2026-07-24) |
+| `site_content` | `slot`, `titolo`, `corpo`, `is_published`, `id`, `created_at`, `updated_at` dei soli slot con `is_published = true` | Elena Barbieri (titolare) (2026-07-24) |
 
 ## Percorsi di scrittura aperti al pubblico
 
