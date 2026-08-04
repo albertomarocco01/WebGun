@@ -35,7 +35,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -372,4 +372,20 @@ function main() {
 // chi legge il codice d'uscita crede di aver visto un verde. E' il difetto che
 // il passo `epiloghi-vivi` di questo stesso gate cerca: se lo avesse in casa,
 // sarebbe il primo a doverlo dichiarare.
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
+// E il confronto e' doppio perche' una junction non e' il suo bersaglio:
+// invocato da `.claude/skills/<skill>/...`, `resolve(argv[1])` restituisce il
+// percorso della junction mentre `import.meta.url` e' gia' canonico — il
+// confronto secco era falso e i cinque gate delle skill uscivano 0 muti
+// (misurato il 2026-08-04, P.4-pre, `PILOTA-PRE-2026-08-04.md` §2b).
+// A `scripts/` della regia nessuna junction punta, e quindi qui la forma non
+// corregge niente: e' allineata perche' e' quella che l'`hint` di
+// `epiloghi-vivi` prescrive due file piu' in la', e chi prescrive una forma la
+// porta in casa. `realpathSync` scioglie la junction; se solleva si ricade sul
+// confronto testuale: mai un errore che ammutolisce.
+if (process.argv[1]) {
+  const questoModulo = fileURLToPath(import.meta.url);
+  const invocato = resolve(process.argv[1]);
+  let invocatoReale = invocato;
+  try { invocatoReale = realpathSync(invocato); } catch { /* percorso sparito: vale il testuale */ }
+  if (invocato === questoModulo || invocatoReale === questoModulo) main();
+}

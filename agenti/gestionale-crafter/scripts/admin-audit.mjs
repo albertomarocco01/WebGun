@@ -13,7 +13,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -215,4 +215,18 @@ function stampa(doc, progetto) {
 // macchina (Node 20.12.2, l'unico Node di sistema) in una cartella
 // non-progetto — uscita 0, zero righe, dove Node 24.18.1 stampava il messaggio
 // e usciva 2. Il confronto qui sotto funziona su qualunque Node.
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
+// E il confronto e' doppio perche' una junction non e' il suo bersaglio:
+// invocato da `.claude/skills/<skill>/...`, `resolve(argv[1])` restituisce il
+// percorso della junction mentre `import.meta.url` e' gia' canonico — il
+// confronto secco era falso e questo guscio usciva 0 muto, cioe' di nuovo
+// «nessun bloccante» (misurato il 2026-08-04 sui cinque gate, P.4-pre
+// `PILOTA-PRE-2026-08-04.md` §2b, e su questo stesso file nell'istruttoria di
+// P.0-igiene-2). `realpathSync` scioglie la junction; se solleva si ricade sul
+// confronto testuale: mai un errore che ammutolisce.
+if (process.argv[1]) {
+  const questoModulo = fileURLToPath(import.meta.url);
+  const invocato = resolve(process.argv[1]);
+  let invocatoReale = invocato;
+  try { invocatoReale = realpathSync(invocato); } catch { /* percorso sparito: vale il testuale */ }
+  if (invocato === questoModulo || invocatoReale === questoModulo) main();
+}

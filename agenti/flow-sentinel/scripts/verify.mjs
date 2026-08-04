@@ -18,7 +18,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -459,4 +459,16 @@ async function main() {
 // l'unico Node di sistema) in una cartella non-progetto — uscita 0, zero righe,
 // dove Node 24.18.1 stampava il messaggio e usciva 2. I prerequisiti della
 // skill dicono «Node >= 20»: il confronto qui sotto li rispetta ovunque.
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
+// E il confronto e' doppio perche' una junction non e' il suo bersaglio:
+// invocato da `.claude/skills/<skill>/...`, `resolve(argv[1])` restituisce il
+// percorso della junction mentre `import.meta.url` e' gia' canonico — il
+// confronto secco era falso e il gate usciva 0 muto (misurato il 2026-08-04,
+// P.4-pre, PILOTA-PRE-2026-08-04.md §2b). `realpathSync` scioglie la junction;
+// se solleva si ricade sul confronto testuale: mai un errore che ammutolisce.
+if (process.argv[1]) {
+  const questoModulo = fileURLToPath(import.meta.url);
+  const invocato = resolve(process.argv[1]);
+  let invocatoReale = invocato;
+  try { invocatoReale = realpathSync(invocato); } catch { /* percorso sparito: vale il testuale */ }
+  if (invocato === questoModulo || invocatoReale === questoModulo) await main();
+}
