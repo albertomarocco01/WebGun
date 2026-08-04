@@ -45,3 +45,13 @@ node_modules/
 # cioe' era un backup che nessuno avrebbe potuto ripristinare da un clone.
 # Il documento si versiona in git, non in un `.bak` accanto.
 *.docx.bak
+
+# Permessi accumulati dalle sessioni di Claude Code su QUESTA macchina: dentro
+# ci sono percorsi assoluti, ID di sessione e comandi una-tantum. Sono stato
+# della macchina, non del repo — un clone pulito non li sa usare e non deve
+# ereditarli (stesso criterio dei banchi: DECISIONI.md §25). Il contratto
+# condiviso della regia sta in CLAUDE.md; se un giorno servisse un settings di
+# progetto davvero condiviso, questa regola va tolta con la motivazione al suo
+# posto.
+.claude/settings.json
+.claude/settings.local.json
