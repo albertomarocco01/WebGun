@@ -12,7 +12,13 @@ export default [
     languageOptions: {
       ecmaVersion: 2024,
       sourceType: "module",
-      globals: { console: "readonly", process: "readonly" },
+      // `URL` e' un globale di Node dalla 10: mancava dall'elenco, e `no-undef`
+      // lo segnalava come errore nei due test dell'epilogo (`verify.test.mjs`,
+      // `admin-audit.test.mjs`). Il rilievo era vivo dal 2026-08-03 e
+      // invisibile, perche' su questa macchina i `node_modules` della skill non
+      // erano installati e ESLint non girava affatto — stesso difetto e stessa
+      // correzione di schema-forge (P.8).
+      globals: { console: "readonly", process: "readonly", URL: "readonly" },
     },
     rules: {
       complexity: ["warn", 15],

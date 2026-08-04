@@ -33,8 +33,10 @@ import {
   contaGravita,
   contrattoUscita,
   dettaglioFindings,
+  dettaglioMisura,
   DISPERSIONE_MASSIMA,
   eLaMiaBuild,
+  esitoPagina,
   findingsBudget,
   findingsContratto,
   findingsSeo,
@@ -42,9 +44,10 @@ import {
   indiziDevServer,
   leggiContratto,
   metatagDaHtml,
-  misuraStabile,
+  motivoNessunaMisura,
   primoEseguibile,
   statoDaFindings,
+  statoMisura,
   verdettoDa,
 } from "./gate-lib.mjs";
 
@@ -261,15 +264,12 @@ const PASSI = [
     id: ID.misura,
     nome: "misura Lighthouse (mediana di N giri)",
     async esegui(ctx, args) {
-      if (!ctx.contratto || ctx.contratto.pagine.length === 0) {
-        return record(this.id, this.nome, "skipped", "nessuna pagina dichiarata da misurare");
-      }
-      if (!ctx.baseUrl) {
-        return record(this.id, this.nome, "skipped", "l'app non e' stata riconosciuta come build di produzione: misurarla direbbe altro");
-      }
-      if (!dove("lighthouse") && !dove("npx")) {
-        return record(this.id, this.nome, "skipped", "ne' `lighthouse` ne' `npx` nel PATH: la misura non e' MANCANTE per scelta, e' mancante e basta");
-      }
+      const motivo = motivoNessunaMisura({
+        contratto: ctx.contratto,
+        baseUrl: ctx.baseUrl,
+        strumento: dove("lighthouse") || dove("npx"),
+      });
+      if (motivo) return record(this.id, this.nome, "skipped", motivo);
 
       ctx.misure = new Map();
       // La soglia di dispersione la dichiara il CONTRATTO; il numero cablato e'
@@ -279,55 +279,22 @@ const PASSI = [
       const dirotate = [];
       let nonMisurate = 0;
       for (const pagina of ctx.contratto.pagine) {
-        const url = unisci(ctx.baseUrl, pagina.percorso);
-        const giri = [];
-        let dirottamento = null;
-        for (let i = 0; i < args.giri; i++) {
-          const esito = giroLighthouse(url, ctx.contratto.formFactor);
-          if (!esito) continue;
-          if (!stessaPagina(esito.urlRichiesto, esito.urlFinale)) {
-            dirottamento = esito.urlFinale;
-            break;
-          }
-          giri.push(esito.punteggi);
-        }
-        if (dirottamento) {
-          // Non e' una misura bassa: e' la misura di un'altra pagina. Scartarla
-          // e' l'unica cosa onesta, e dirlo qui evita che il numero finisca nel
-          // contratto accanto al nome sbagliato.
-          dirotate.push(`${pagina.id} (${pagina.percorso}) → ${dirottamento}`);
-          nonMisurate++;
-          continue;
-        }
-        if (giri.length === 0) {
-          righe.push(`${pagina.id}: nessun giro riuscito su ${args.giri}`);
-          nonMisurate++;
-          continue;
-        }
-        const perCategoria = {};
-        for (const categoria of CATEGORIE) {
-          const valori = giri.map((g) => g[categoria]).filter((v) => v !== null && v !== undefined);
-          if (valori.length > 0) perCategoria[categoria] = misuraStabile(valori, sogliaDispersione);
-        }
-        ctx.misure.set(pagina.id, perCategoria);
-        righe.push(
-          `${pagina.id} (${pagina.percorso}) · ${giri.length}/${args.giri} giri: ` +
-            CATEGORIE.filter((c) => perCategoria[c])
-              .map((c) => `${c} ${perCategoria[c].mediana}±${perCategoria[c].dispersione}`)
-              .join(" · "),
-        );
+        const { giri, dirottamento } = giriDiUnaPagina(
+          unisci(ctx.baseUrl, pagina.percorso), ctx.contratto.formFactor, args.giri);
+        const esito = esitoPagina({ pagina, giri, dirottamento, giriRichiesti: args.giri, sogliaDispersione });
+        if (esito.misura) ctx.misure.set(pagina.id, esito.misura);
+        else nonMisurate++;
+        if (esito.riga) righe.push(esito.riga);
+        if (esito.scartata) dirotate.push(esito.scartata);
       }
-      const dettaglio = [
-        `dispersione massima ammessa: ${sogliaDispersione} punti (${ctx.contratto.dispersioneMassima ? "dichiarata nel contratto" : "ripiego della casa: il contratto non la dichiara"})`,
-        ...righe,
-        ...dirotate.map((d) => `SCARTATA — ${d}: Lighthouse ha misurato un'altra pagina, il punteggio non e' di quella dichiarata`),
-      ];
-      // Una pagina dichiarata e non misurata NON lascia il passo verde: prima
-      // bastava che una sola pagina fosse riuscita perche' il passo dicesse
-      // `pass` e il residuo finisse in una riga di dettaglio.
-      const stato = ctx.misure.size === 0 ? "skipped" : nonMisurate > 0 ? "fail" : "pass";
-      return record(this.id, this.nome, stato,
-        dettaglio.join("\n") + (ctx.misure.size === 0 ? "\nnessuna pagina misurata" : ""));
+      return record(this.id, this.nome, statoMisura(ctx.misure.size, nonMisurate),
+        dettaglioMisura({
+          sogliaDispersione,
+          dichiarataNelContratto: Boolean(ctx.contratto.dispersioneMassima),
+          righe,
+          dirotate,
+          misurate: ctx.misure.size,
+        }));
     },
   },
 
@@ -473,6 +440,25 @@ function giroLighthouse(url, formFactor) {
   } catch {
     return null;
   }
+}
+
+/**
+ * I giri di UNA pagina: `{ giri, dirottamento }`. Impura — e' l'unica parte del
+ * passo `misura` che tocca il mondo, e per questo resta qui invece che in
+ * `gate-lib.mjs`.
+ *
+ * Si ferma al PRIMO dirottamento: gli altri giri misurerebbero comunque una
+ * pagina che nessuno ha dichiarato, e li si butterebbe uguale.
+ */
+function giriDiUnaPagina(url, formFactor, quanti) {
+  const giri = [];
+  for (let i = 0; i < quanti; i++) {
+    const esito = giroLighthouse(url, formFactor);
+    if (!esito) continue;
+    if (!stessaPagina(esito.urlRichiesto, esito.urlFinale)) return { giri, dirottamento: esito.urlFinale };
+    giri.push(esito.punteggi);
+  }
+  return { giri, dirottamento: null };
 }
 
 /** Due URL sono la stessa pagina se differiscono solo per la barra finale. */

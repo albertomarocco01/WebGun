@@ -16,8 +16,10 @@ import {
   CATEGORIE,
   contaGravita,
   contrattoUscita,
+  dettaglioMisura,
   dispersione,
   eDevServer,
+  esitoPagina,
   findingsBudget,
   findingsContratto,
   findingsSeo,
@@ -26,10 +28,13 @@ import {
   indiziDevServer,
   leggiContratto,
   mediana,
+  medianePerCategoria,
   metatagDaHtml,
   misuraStabile,
+  motivoNessunaMisura,
   primoEseguibile,
   statoDaFindings,
+  statoMisura,
   verdettoDa,
 } from "./gate-lib.mjs";
 
@@ -174,6 +179,135 @@ test("un giro fallito si scarta, NON vale zero", () => {
   const contatoZero = misuraStabile([95, 0, 96, 95]);
   assert.equal(contatoZero.stabile, false);
   assert.equal(contatoZero.dispersione, 96);
+});
+
+// -------------------------------------------------- il passo `misura`, puro
+//
+// Le cinque funzioni estratte il 2026-08-04 dal passo `misura` di `verify.mjs`
+// (`complexity 19`, soglia della casa 15). Prima di quel giorno questa
+// decisione non aveva NESSUN test: stava dentro un metodo che per essere
+// esercitato voleva Lighthouse, Chrome e un'app accesa. Regola della casa: il
+// caso che scatta e quello che non deve scattare.
+
+const CONTRATTO_UNA_PAGINA = { pagine: [{ id: "home", percorso: "/", soglie: {} }] };
+
+test("senza pagine dichiarate non si misura, e il motivo lo dice", () => {
+  assert.match(
+    motivoNessunaMisura({ contratto: { pagine: [] }, baseUrl: "http://x", strumento: "npx" }),
+    /nessuna pagina dichiarata/,
+  );
+  assert.match(
+    motivoNessunaMisura({ contratto: null, baseUrl: "http://x", strumento: "npx" }),
+    /nessuna pagina dichiarata/,
+  );
+});
+
+test("senza build di produzione riconosciuta non si misura", () => {
+  assert.match(
+    motivoNessunaMisura({ contratto: CONTRATTO_UNA_PAGINA, baseUrl: null, strumento: "npx" }),
+    /build di produzione/,
+  );
+});
+
+test("senza Lighthouse la misura e' mancante e basta, non MANCANTE per scelta", () => {
+  assert.match(
+    motivoNessunaMisura({ contratto: CONTRATTO_UNA_PAGINA, baseUrl: "http://x", strumento: null }),
+    /ne' `lighthouse` ne' `npx` nel PATH/,
+  );
+});
+
+test("con contratto, app e strumento la misura si fa: nessun motivo per saltarla", () => {
+  assert.equal(
+    motivoNessunaMisura({ contratto: CONTRATTO_UNA_PAGINA, baseUrl: "http://x", strumento: "npx" }),
+    null,
+  );
+});
+
+test("una categoria che nessun giro ha prodotto non entra nel risultato", () => {
+  // Meglio assente che con una mediana calcolata su niente: il passo `budget`
+  // legge questa mappa, e una categoria vuota li' diventerebbe uno zero.
+  const giri = [
+    { performance: 95, seo: null, accessibility: 90, "best-practices": 100 },
+    { performance: 96, seo: null, accessibility: 91, "best-practices": 100 },
+    { performance: 95, seo: null, accessibility: 90, "best-practices": 100 },
+  ];
+  const per = medianePerCategoria(giri);
+  assert.equal("seo" in per, false);
+  assert.equal(per.performance.mediana, 95);
+  assert.equal(per.performance.stabile, true);
+});
+
+test("un dirottamento scarta la pagina: non e' una misura bassa, e' un'altra pagina", () => {
+  const esito = esitoPagina({
+    pagina: { id: "riservata", percorso: "/riservata" },
+    giri: [{ performance: 100 }],
+    dirottamento: "http://127.0.0.1:3200/contatti",
+    giriRichiesti: 3,
+    sogliaDispersione: 5,
+  });
+  assert.equal(esito.misura, null);
+  assert.equal(esito.riga, null);
+  assert.match(esito.scartata, /riservata \(\/riservata\) → http:\/\/127\.0\.0\.1:3200\/contatti/);
+});
+
+test("zero giri riusciti non e' una misura: la pagina resta non misurata", () => {
+  const esito = esitoPagina({
+    pagina: { id: "home", percorso: "/" },
+    giri: [],
+    dirottamento: null,
+    giriRichiesti: 3,
+    sogliaDispersione: 5,
+  });
+  assert.equal(esito.misura, null);
+  assert.match(esito.riga, /nessun giro riuscito su 3/);
+});
+
+test("tre giri buoni danno la misura, e la riga porta mediana e dispersione", () => {
+  const punteggi = (p) => ({ performance: p, accessibility: 100, "best-practices": 100, seo: 100 });
+  const esito = esitoPagina({
+    pagina: { id: "home", percorso: "/" },
+    giri: [punteggi(94), punteggi(95), punteggi(96)],
+    dirottamento: null,
+    giriRichiesti: 3,
+    sogliaDispersione: 5,
+  });
+  assert.equal(esito.scartata, null);
+  assert.equal(esito.misura.performance.mediana, 95);
+  assert.match(esito.riga, /home \(\/\) · 3\/3 giri:/);
+  assert.match(esito.riga, /performance 95±2/);
+});
+
+test("una pagina dichiarata e non misurata NON lascia il passo verde", () => {
+  assert.equal(statoMisura(2, 0), "pass");
+  assert.equal(statoMisura(2, 1), "fail");
+  // Zero pagine misurate non e' un fallimento del sito: e' una verifica che
+  // non c'e' stata, cioe' MANCANTE — e il gate resta rosso lo stesso.
+  assert.equal(statoMisura(0, 3), "skipped");
+});
+
+test("il dettaglio dichiara da dove viene la soglia di dispersione", () => {
+  const dichiarata = dettaglioMisura({
+    sogliaDispersione: 5, dichiarataNelContratto: true, righe: ["home: ok"], dirotate: [], misurate: 1,
+  });
+  assert.match(dichiarata, /dispersione massima ammessa: 5 punti \(dichiarata nel contratto\)/);
+  assert.match(dichiarata, /home: ok/);
+
+  const ripiego = dettaglioMisura({
+    sogliaDispersione: 5, dichiarataNelContratto: false, righe: [], dirotate: [], misurate: 0,
+  });
+  assert.match(ripiego, /ripiego della casa/);
+  assert.match(ripiego, /nessuna pagina misurata/);
+});
+
+test("una pagina scartata si legge nel dettaglio, col motivo", () => {
+  const testo = dettaglioMisura({
+    sogliaDispersione: 5,
+    dichiarataNelContratto: true,
+    righe: [],
+    dirotate: ["riservata (/riservata) → /contatti"],
+    misurate: 1,
+  });
+  assert.match(testo, /SCARTATA — riservata \(\/riservata\) → \/contatti: Lighthouse ha misurato un'altra pagina/);
 });
 
 // ------------------------------------------------------------------ budget

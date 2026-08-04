@@ -10,7 +10,10 @@
  */
 
 // ------------------------------------------------------------------- comuni
-const senzaBom = (testo) => testo.replace(/^﻿/, "");
+// Il BOM si scrive `\uFEFF` e non come carattere: era letterale nella regex,
+// invisibile a chi legge e segnalato da `no-irregular-whitespace`. Stesso
+// comportamento, intenzione dichiarata.
+const senzaBom = (testo) => testo.replace(/^\uFEFF/, "");
 const righe = (testo) => senzaBom(testo).split(/\r?\n/);
 
 /**
@@ -150,6 +153,26 @@ function derogheDaTabella(righeTabella) {
 }
 
 /**
+ * Scrive una soglia dentro la pagina in corso. Ritorna l'errore da segnalare,
+ * o `null` se la riga non era una soglia o era una soglia buona.
+ *
+ * ESTRATTA il 2026-08-04 da `leggiContratto` (`complexity 16`, soglia 15):
+ * muta `corrente.soglie` come faceva prima, ma ora e' una decisione sola che
+ * si legge in dieci righe.
+ */
+function applicaRigaSoglia(corrente, linea) {
+  const soglia = RIGA_SOGLIA.exec(linea);
+  if (!soglia) return null;
+  const categoria = soglia[1].toLowerCase();
+  const valore = Number(soglia[2]);
+  if (valore > 100) {
+    return `pagina \`${corrente.id}\`, ${categoria}: soglia ${valore} — Lighthouse arriva a 100`;
+  }
+  corrente.soglie[categoria] = valore;
+  return null;
+}
+
+/**
  * Legge il contratto `docs/performance.md`.
  *
  * Ritorna le pagine dichiarate con le loro soglie, le deroghe scritte e la
@@ -193,16 +216,8 @@ export function leggiContratto(testo) {
     }
 
     if (corrente) {
-      const soglia = RIGA_SOGLIA.exec(linea);
-      if (soglia) {
-        const categoria = soglia[1].toLowerCase();
-        const valore = Number(soglia[2]);
-        if (valore > 100) {
-          errori.push(`pagina \`${corrente.id}\`, ${categoria}: soglia ${valore} — Lighthouse arriva a 100`);
-        } else {
-          corrente.soglie[categoria] = valore;
-        }
-      }
+      const errore = applicaRigaSoglia(corrente, linea);
+      if (errore) errori.push(errore);
       continue;
     }
 
@@ -386,6 +401,95 @@ export function misuraStabile(punteggi, sogliaDispersione = DISPERSIONE_MASSIMA)
     };
   }
   return { mediana: mediana(validi), dispersione: spread, stabile: true, motivo: null };
+}
+
+// -------------------------------------------------------- il passo `misura`
+/*
+ * Le cinque funzioni che seguono sono state ESTRATTE il 2026-08-04 dal passo
+ * `misura` di `verify.mjs`, che ESLint segnalava a `complexity 19` (soglia
+ * della casa: 15). Stessa mossa che schema-forge ha fatto con la sua regola
+ * d'audit in P.8: la decisione diventa pura e testabile, nel guscio di I/O
+ * resta solo il giro di Lighthouse, che e' l'unica cosa che tocca il mondo.
+ * Il rilievo era vivo dal 2026-07-30 e nessuno l'aveva mai visto, perche' in
+ * questa skill ESLint non era mai stato configurato.
+ */
+
+/**
+ * Perche' la misura NON si fa. `null` = si fa.
+ *
+ * Tre premesse, e nessuna delle tre produce un `pass`: senza pagine dichiarate
+ * non c'e' niente da misurare, su un'app che non e' una build di produzione la
+ * misura direbbe un'altra cosa (`references/misurazione.md`: i numeri di
+ * `next dev` sono finzione), e senza Lighthouse non c'e' misura affatto.
+ */
+export function motivoNessunaMisura({ contratto, baseUrl, strumento }) {
+  if (!contratto || contratto.pagine.length === 0) return "nessuna pagina dichiarata da misurare";
+  if (!baseUrl) return "l'app non e' stata riconosciuta come build di produzione: misurarla direbbe altro";
+  if (!strumento) return "ne' `lighthouse` ne' `npx` nel PATH: la misura non e' MANCANTE per scelta, e' mancante e basta";
+  return null;
+}
+
+/**
+ * Mediana e dispersione per categoria, dai punteggi di piu' giri.
+ *
+ * Una categoria che nessun giro ha prodotto non entra nel risultato: meglio
+ * assente che con una mediana calcolata su niente.
+ */
+export function medianePerCategoria(giri, sogliaDispersione = DISPERSIONE_MASSIMA) {
+  const perCategoria = {};
+  for (const categoria of CATEGORIE) {
+    const valori = giri.map((g) => g[categoria]).filter((v) => v !== null && v !== undefined);
+    if (valori.length > 0) perCategoria[categoria] = misuraStabile(valori, sogliaDispersione);
+  }
+  return perCategoria;
+}
+
+/**
+ * L'esito di UNA pagina: `{ misura, riga, scartata }`.
+ *
+ * `misura === null` significa **pagina non misurata**, e chi chiama la conta:
+ * una pagina dichiarata e non misurata non lascia il passo verde.
+ *
+ * Il dirottamento non e' una misura bassa: e' la misura di **un'altra pagina**.
+ * Scartarla e' l'unica cosa onesta, e dirlo qui evita che il numero finisca nel
+ * contratto accanto al nome sbagliato.
+ */
+export function esitoPagina({ pagina, giri, dirottamento, giriRichiesti, sogliaDispersione }) {
+  if (dirottamento) {
+    return { misura: null, riga: null, scartata: `${pagina.id} (${pagina.percorso}) → ${dirottamento}` };
+  }
+  if (giri.length === 0) {
+    return { misura: null, riga: `${pagina.id}: nessun giro riuscito su ${giriRichiesti}`, scartata: null };
+  }
+  const perCategoria = medianePerCategoria(giri, sogliaDispersione);
+  const riga =
+    `${pagina.id} (${pagina.percorso}) · ${giri.length}/${giriRichiesti} giri: ` +
+    CATEGORIE.filter((c) => perCategoria[c])
+      .map((c) => `${c} ${perCategoria[c].mediana}±${perCategoria[c].dispersione}`)
+      .join(" · ");
+  return { misura: perCategoria, riga, scartata: null };
+}
+
+/**
+ * Lo stato del passo.
+ *
+ * Una pagina dichiarata e non misurata NON lascia il passo verde: prima bastava
+ * che una sola pagina fosse riuscita perche' il passo dicesse `pass` e il
+ * residuo finisse in una riga di dettaglio.
+ */
+export function statoMisura(misurate, nonMisurate) {
+  if (misurate === 0) return "skipped";
+  return nonMisurate > 0 ? "fail" : "pass";
+}
+
+/** Il dettaglio stampato dal passo: la soglia usata, una riga per pagina, le scartate. */
+export function dettaglioMisura({ sogliaDispersione, dichiarataNelContratto, righe, dirotate, misurate }) {
+  const dettaglio = [
+    `dispersione massima ammessa: ${sogliaDispersione} punti (${dichiarataNelContratto ? "dichiarata nel contratto" : "ripiego della casa: il contratto non la dichiara"})`,
+    ...righe,
+    ...dirotate.map((d) => `SCARTATA — ${d}: Lighthouse ha misurato un'altra pagina, il punteggio non e' di quella dichiarata`),
+  ];
+  return dettaglio.join("\n") + (misurate === 0 ? "\nnessuna pagina misurata" : "");
 }
 
 // ------------------------------------------------------------------- budget
@@ -686,77 +790,99 @@ export function findingsSeo(pagine, metatagPerPagina, redirezioni = new Map()) {
       });
       continue;
     }
-    for (const campo of ["title", "description", "canonical"]) {
-      if (!tag[campo]) {
-        findings.push({
-          severity: "block",
-          object: `pagina ${pagina.id}`,
-          message: `manca \`${campo}\` nell'HTML servito di \`${pagina.percorso}\``,
-        });
-      }
-    }
+    findings.push(...findingsTagPagina(pagina, tag));
+    findings.push(...findingsCanonicalPagina(pagina, tag, chiPossiede));
+  }
+  return findings;
+}
 
-    // Contare, non trovare (seo.md §309). Due titoli sono un difetto; due
-    // canonical valgono come nessuno, perche' Google li ignora entrambi.
-    for (const [campo, elenco, conseguenza] of [
-      ["title", tag.titoli, "il motore ne sceglie uno e non sai quale"],
-      ["canonical", tag.canonici, "Google li ignora ENTRAMBI: due canonical corretti valgono come nessuno"],
-    ]) {
-      if (Array.isArray(elenco) && elenco.length > 1) {
-        findings.push({
-          severity: "block",
-          object: `pagina ${pagina.id}`,
-          message: `${elenco.length} \`${campo}\` nell'HTML servito di \`${pagina.percorso}\` (${elenco.map((v) => `«${v}»`).join(", ")}): ${conseguenza}`,
-        });
-      }
+/**
+ * I rilievi sui tag di UNA pagina: campi mancanti, doppioni, `noindex`.
+ *
+ * ESTRATTA il 2026-08-04 da `findingsSeo` (`complexity 17`, soglia 15). Pura e
+ * senza stato condiviso: quello che serve confrontando pagine diverse — i
+ * canonical — sta nella funzione qui sotto.
+ */
+function findingsTagPagina(pagina, tag) {
+  const findings = [];
+  for (const campo of ["title", "description", "canonical"]) {
+    if (!tag[campo]) {
+      findings.push({
+        severity: "block",
+        object: `pagina ${pagina.id}`,
+        message: `manca \`${campo}\` nell'HTML servito di \`${pagina.percorso}\``,
+      });
     }
+  }
 
-    // Il difetto SEO piu' comune di un sito con backoffice non e' un tag che
-    // manca: e' un `noindex` messo per sbaglio su una pagina che deve vendere.
-    // L'intestazione vale quanto il metatag e sta fuori dal corpo (seo.md §311).
-    for (const [origine, valore] of [
-      ["robots", tag.robots],
-      ["X-Robots-Tag", tag.xRobots],
-    ]) {
-      if (valore && /noindex/i.test(valore)) {
-        findings.push({
-          severity: "block",
-          object: `pagina ${pagina.id}`,
-          message: `\`${origine}: ${valore}\` su una pagina dichiarata pubblica: e' esclusa dall'indice, e nessun punteggio SEO lo dice`,
-        });
-      }
+  // Contare, non trovare (seo.md §309). Due titoli sono un difetto; due
+  // canonical valgono come nessuno, perche' Google li ignora entrambi.
+  for (const [campo, elenco, conseguenza] of [
+    ["title", tag.titoli, "il motore ne sceglie uno e non sai quale"],
+    ["canonical", tag.canonici, "Google li ignora ENTRAMBI: due canonical corretti valgono come nessuno"],
+  ]) {
+    if (Array.isArray(elenco) && elenco.length > 1) {
+      findings.push({
+        severity: "block",
+        object: `pagina ${pagina.id}`,
+        message: `${elenco.length} \`${campo}\` nell'HTML servito di \`${pagina.percorso}\` (${elenco.map((v) => `«${v}»`).join(", ")}): ${conseguenza}`,
+      });
     }
+  }
 
-    // Due pagine che dichiarano lo stesso canonical: al massimo una delle due
-    // e' l'originale, e l'altra si sta cancellando dall'indice. E' il difetto
-    // che seo.md §119 dice di cercare confrontando pagine diverse — «guardando
-    // solo la home il difetto e' invisibile, perche' la home il canonical
-    // giusto ce l'ha». Misurato sul banco: `/immobili` con `canonical` a `/`.
-    const mio = percorsoNormalizzato(tag.canonical);
-    if (mio) {
-      const gia = chiPossiede.get(mio);
-      if (gia) {
-        findings.push({
-          severity: "block",
-          object: `pagina ${pagina.id}`,
-          message: `dichiara lo stesso \`canonical\` di \`${gia}\` (${tag.canonical}): al massimo una delle due e' l'originale, l'altra sta chiedendo di uscire dall'indice`,
-        });
-      } else {
-        chiPossiede.set(mio, pagina.id);
-      }
-      // Un canonical che punta altrove puo' essere legittimo — una variante che
-      // si dichiara copia della principale — quindi e' un `warn`, non un
-      // `block`: quale delle due sia la principale e' una decisione di
-      // prodotto (seo.md §356), e il gate non la puo' prendere.
-      const suo = percorsoNormalizzato(pagina.percorso);
-      if (suo && mio !== suo) {
-        findings.push({
-          severity: "warn",
-          object: `pagina ${pagina.id}`,
-          message: `\`canonical\` punta a \`${mio}\` e non a \`${suo}\`: se e' voluto (una variante che si dichiara copia) va scritto nel contratto, altrimenti questa pagina sparisce dall'indice pur essendo perfetta`,
-        });
-      }
+  // Il difetto SEO piu' comune di un sito con backoffice non e' un tag che
+  // manca: e' un `noindex` messo per sbaglio su una pagina che deve vendere.
+  // L'intestazione vale quanto il metatag e sta fuori dal corpo (seo.md §311).
+  for (const [origine, valore] of [
+    ["robots", tag.robots],
+    ["X-Robots-Tag", tag.xRobots],
+  ]) {
+    if (valore && /noindex/i.test(valore)) {
+      findings.push({
+        severity: "block",
+        object: `pagina ${pagina.id}`,
+        message: `\`${origine}: ${valore}\` su una pagina dichiarata pubblica: e' esclusa dall'indice, e nessun punteggio SEO lo dice`,
+      });
     }
+  }
+  return findings;
+}
+
+/**
+ * I rilievi sul `canonical`, che si vedono solo confrontando piu' pagine.
+ *
+ * `chiPossiede` e' la memoria del confronto e viene AGGIORNATA qui: due pagine
+ * che dichiarano lo stesso canonical sono al massimo una originale, e l'altra
+ * si sta cancellando dall'indice. E' il difetto che seo.md §119 dice di cercare
+ * confrontando pagine diverse — «guardando solo la home il difetto e'
+ * invisibile, perche' la home il canonical giusto ce l'ha». Misurato sul banco:
+ * `/immobili` con `canonical` a `/`.
+ */
+function findingsCanonicalPagina(pagina, tag, chiPossiede) {
+  const mio = percorsoNormalizzato(tag.canonical);
+  if (!mio) return [];
+  const findings = [];
+  const gia = chiPossiede.get(mio);
+  if (gia) {
+    findings.push({
+      severity: "block",
+      object: `pagina ${pagina.id}`,
+      message: `dichiara lo stesso \`canonical\` di \`${gia}\` (${tag.canonical}): al massimo una delle due e' l'originale, l'altra sta chiedendo di uscire dall'indice`,
+    });
+  } else {
+    chiPossiede.set(mio, pagina.id);
+  }
+  // Un canonical che punta altrove puo' essere legittimo — una variante che si
+  // dichiara copia della principale — quindi e' un `warn`, non un `block`:
+  // quale delle due sia la principale e' una decisione di prodotto
+  // (seo.md §356), e il gate non la puo' prendere.
+  const suo = percorsoNormalizzato(pagina.percorso);
+  if (suo && mio !== suo) {
+    findings.push({
+      severity: "warn",
+      object: `pagina ${pagina.id}`,
+      message: `\`canonical\` punta a \`${mio}\` e non a \`${suo}\`: se e' voluto (una variante che si dichiara copia) va scritto nel contratto, altrimenti questa pagina sparisce dall'indice pur essendo perfetta`,
+    });
   }
   return findings;
 }
