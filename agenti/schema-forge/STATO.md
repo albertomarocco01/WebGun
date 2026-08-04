@@ -1101,3 +1101,77 @@ attraverso di essa. Gli altri due non potevano vederlo — lo statico vieta un t
 questo difetto non contiene, il funzionale usa il percorso reale, canonico per
 costruzione. Provato col **sabotaggio**: guardia vecchia rimessa, batteria su Node 24
 → **52 verdi e un rosso**, e il rosso è il test junction (verbale §4).
+
+## Il primo progetto pilota: `fornodoro` (2026-08-04, P.4a)
+
+Primo giro del Flusso 1 su un progetto **fuori dall'albero della regia**, con lo
+Specchio firmato da un committente in carne e ossa. Verbale:
+`PILOTA-2026-08-04.md`. Gate **VERDE 9/9** invocato **dalla junction** dalla
+radice del progetto, riconfermato per percorso assoluto — è la prima uscita vera
+del canale riparato da P.0-igiene-2, su un progetto vero.
+
+**Quello che è andato come promesso**, e non è poco: lo STOP dello Specchio ha
+tenuto (nessun DDL prima della firma, cinque domande strutturali portate al
+committente invece che risolte in silenzio, e una — «che succede a un ordine mai
+ritirato?» — nata dal disegno del ciclo di vita e non dal testo del brief); il
+gate è verde al primo colpo dopo `types` e `handoff`; l'ordine canonico del
+Flusso 1 non ha prodotto nessun rosso strutturale.
+
+### Le righe che questo pilota lascia alla skill — non applicate, come prescritto
+
+1. **`references/modellazione.md` §Seed copre l'idempotenza degli `insert` e tace
+   sugli `update`.** Con una macchina a stati nel seed non basta
+   `insert … where not exists`: gli ordini nascono tutti nello stato iniziale e
+   raggiungono gli altri con `update`, che alla seconda esecuzione a caldo
+   tenterebbero una transizione all'indietro e verrebbero **rifiutati dal
+   trigger**. La forma che regge è l'`update` **guardato dallo stato di
+   partenza** (`… and stato = 'in_preparazione'`). Provata sul pilota: tre
+   riesecuzioni a caldo, conteggi **e stati** identici.
+2. **`references/migrazioni.md` non dice se l'immutabilità valga anche dentro
+   `forge`**, cioè prima che esista un handoff e un consumatore. Il testo motiva
+   la regola con gli ambienti allineati («se è già in produzione…»), quindi
+   ammette due letture. Sul pilota ho letto «no» e l'ho dichiarato nel verbale;
+   un'altra chat leggerà «sì», e le due produrranno artefatti diversi.
+3. **Il punto 11 ha ora la premessa che gli mancava.** La strada — rieseguire
+   `supabase/seed.sql` sul database caldo dentro `passoReset` — chiedeva «un
+   banco vivo con Docker» per essere provata. Il pilota l'ha provata su un
+   progetto vero **con trigger di dominio e una macchina a stati**, che è la
+   condizione severa. Resta la decisione, non più la misura.
+4. **Il difetto del template di seed (`auth.users` + `auth.identities`) è ancora
+   lì.** Sul pilota il seed è nato **sanato a mano**; il template no. È la terza
+   volta che questa riga viene scritta.
+
+### Una classe che il gate non ha, trovata dal tribunale sul pilota
+
+`/code-inquisition` (tre esperti, un critico del roster, un Verificatore
+indipendente) ha prodotto **11 risultati, 0 fabbricazioni, 0 bloccanti** su uno
+schema che il gate dichiarava VERDE 9/9, e ne ha **abbassate quattro** in
+verifica. Cinque sono stati chiusi con una quarta migrazione, tre dichiarati
+come debito. Ma il risultato che riguarda **questa skill** è un altro:
+
+> Un'asserzione pgTAP dichiarava di provare il trigger e il `grant` per colonna,
+> e **restava verde con il trigger rimosso** — per quell'attore la policy
+> filtrava già tutto. Un test che sopravvive alla sparizione della difesa che
+> dice di provare non è un test debole: è un **timbro**.
+
+Lo `STATO.md` già dichiara che «il gate verifica che i test esistano e passino,
+non che siano severi». Qui ce n'è un esemplare vivo, prodotto da questa skill al
+primo giro su un progetto vero. Nessuna regola dell'audit può vederlo: la prova
+richiede di **sabotare ed eseguire**, cioè togliere la difesa e guardare se il
+test cade. È materia da decidere (un passo di mutazione nel gate? una regola di
+scrittura nelle reference?), non da chiudere in un verbale.
+
+E la riga del Verificatore, che è la conferma indipendente di
+`COME-PROVARLA.md` §4 su un progetto nuovo: **i quattro strumenti statici del
+gate — `sqlfluff`, `squawk`, `db lint`, `db advisors` — tacciono su tutti e
+undici i risultati.** Nessun marchio `tool-flagged`: ogni conferma è nata da una
+riproduzione del Verificatore.
+
+### Fuori dalla skill, ma misurato qui
+
+Le porte del pilota **non** sono quelle prenotate dalla regia: il blocco
+`57620-57629` sta dentro l'esclusione WinNAT `57464-57963` e Docker rifiuta il
+bind (*«a socket in a way forbidden by its access permissions»*).
+`Test-NetConnection` e `Get-NetTCPConnection`, con cui il blocco era stato
+misurato libero, **non vedono gli intervalli esclusi**. Vale per tutti i banchi
+di questo repo: `netsh interface ipv4 show excludedportrange protocol=tcp`.
