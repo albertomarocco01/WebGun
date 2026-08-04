@@ -9,6 +9,23 @@
 #
 # USO, dalla radice del repo:  powershell -ExecutionPolicy Bypass -File scripts/installa-skill.ps1
 # Poi riavvia Claude Code.
+#
+# DESTINAZIONE DIVERSA (dal 2026-08-04, P.4-pre):
+#   powershell -ExecutionPolicy Bypass -File scripts/installa-skill.ps1 -Destinazione C:\percorso\progetto\.claude\skills
+# Serve ai progetti generati, che vivono in repo separati (CLAUDE.md; CANTIERE.md
+# D11): una chat operaia aperta sul repo del progetto carica le skill dal SUO
+# `.claude/skills`, e senza questo parametro non ne vedrebbe nessuna.
+# Le junction puntano SEMPRE a `WebGun/agenti/<nome>`, ovunque nascano: la fonte
+# di verita' non si sposta, ed e' tutto il motivo per cui si linka invece di
+# copiare (vedi sopra: due copie divergono, e' successo).
+# Senza il parametro il comportamento e' identico a prima.
+#
+# `param()` DEVE restare la prima istruzione eseguibile del file: i commenti
+# sopra vanno bene, un'assegnazione no. Con `$ErrorActionPreference` prima,
+# PowerShell non esegue lo script con un parametro ignorato — muore in parsing.
+param(
+    [string]$Destinazione
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -46,8 +63,24 @@ $skill = @("schema-forge", "gestionale-crafter", "vetrina-crafter", "flow-sentin
 # script.)
 
 $radice = Split-Path -Parent $PSScriptRoot
-$destinazione = Join-Path $radice ".claude\skills"
+# `$radice` resta la regia anche con `-Destinazione`: e' la sorgente delle
+# junction, non il posto dove nascono.
+$destinazione = if ([string]::IsNullOrWhiteSpace($Destinazione)) {
+    Join-Path $radice ".claude\skills"
+} else {
+    $Destinazione
+}
+# La cartella puo' non esistere ancora — il repo di un progetto e' nuovo — e si
+# crea come si e' sempre fatto per `.claude\skills`.
 New-Item -ItemType Directory -Force -Path $destinazione | Out-Null
+# Assoluto DOPO averla creata: `Resolve-Path` fallisce su un percorso che non
+# c'e', e un `-Destinazione` relativo lascerebbe messaggi che non dicono dove
+# sono finite le junction.
+$destinazione = (Resolve-Path $destinazione).Path
+
+Write-Host "destinazione: $destinazione"
+Write-Host "sorgente:     $(Join-Path $radice 'agenti')"
+Write-Host ""
 
 foreach ($nome in $skill) {
     $sorgente = Join-Path $radice "agenti\$nome"
