@@ -23,6 +23,7 @@ import {
   regolaChiaviEClient,
   regolaCucitura,
   righe,
+  risolviRelativo,
   statoDaFindings,
 } from "./audit-lib.mjs";
 
@@ -137,6 +138,52 @@ describe("puntaA", () => {
       assert.equal(puntaA(da, "src/components/ui"), false, da);
     }
   });
+
+  // Le tre che seguono sono il difetto n°7 del collaudo 2026-08-04: la coda
+  // galleggiava in qualunque punto del percorso, e una cartella che si chiama
+  // come la cucitura rendeva la regola cieca ovunque stesse.
+  it("NON scambia per la cucitura una cartella omonima dentro le pagine (percorso relativo)", () => {
+    assert.equal(
+      puntaA("./components/ui/Bottone", "src/components/ui", "src/app/camere/page.tsx"),
+      false,
+    );
+  });
+
+  it("NON scambia per la cucitura una cartella omonima dentro le pagine (alias)", () => {
+    assert.equal(puntaA("@/app/camere/components/ui/Bottone", "src/components/ui"), false);
+    assert.equal(puntaA("@/features/shop/components/ui", "src/components/ui"), false);
+  });
+
+  it("riconosce la cucitura vera raggiunta con un percorso relativo", () => {
+    for (const [da, origine] of [
+      ["../../components/ui", "src/app/camere/page.tsx"],
+      ["../components/ui/Bottone", "src/app/page.tsx"],
+      ["./Card", "src/components/ui/Bottone.tsx"],
+    ]) {
+      assert.equal(puntaA(da, "src/components/ui", origine), true, `${da} da ${origine}`);
+    }
+  });
+});
+
+describe("risolviRelativo", () => {
+  it("conta i `..` e scende nelle sottocartelle", () => {
+    assert.equal(risolviRelativo("./components/ui/Bottone", "src/app/camere/page.tsx"),
+      "src/app/camere/components/ui/Bottone");
+    assert.equal(risolviRelativo("../../components/ui", "src/app/camere/page.tsx"),
+      "src/components/ui");
+    assert.equal(risolviRelativo("./Bottone.tsx", "src/components/ui/Card.tsx"),
+      "src/components/ui/Bottone");
+  });
+
+  it("non risolve cio' che non e' relativo, e non inventa quando manca l'origine", () => {
+    assert.equal(risolviRelativo("@/components/ui", "src/app/page.tsx"), null);
+    assert.equal(risolviRelativo("react", "src/app/page.tsx"), null);
+    assert.equal(risolviRelativo("./Bottone", null), null);
+  });
+
+  it("ritorna `null` quando i `..` scavalcano la radice invece di risolvere a caso", () => {
+    assert.equal(risolviRelativo("../../../fuori", "src/app/page.tsx"), null);
+  });
 });
 
 describe("regola: cucitura", () => {
@@ -152,6 +199,28 @@ describe("regola: cucitura", () => {
   it("NON scatta quando la primitiva arriva dalla cucitura", () => {
     const findings = regolaCucitura([
       file("src/app/page.tsx", `import { Bottone, Card } from "@/components/ui";`),
+    ], CONFIG);
+    assert.deepEqual(findings, []);
+  });
+
+  it("SCATTA su una cartella che si chiama come la cucitura ma sta nelle pagine", () => {
+    // Il sabotaggio di classe B nella forma che il gate non vedeva: la copia in
+    // `src/app/camere/components/ui/`, importata relativa e con l'alias.
+    for (const da of ["./components/ui/Bottone", "@/app/camere/components/ui/Bottone"]) {
+      const findings = regolaCucitura([
+        file("src/app/camere/page.tsx", `import { Bottone } from "${da}";`),
+        file("src/app/camere/components/ui/Bottone.tsx", "export const Bottone = () => null;"),
+      ], CONFIG);
+      const block = findings.filter((f) => f.severity === "block");
+      assert.equal(block.length, 1, `${da}: atteso un block, trovati ${block.length}`);
+      assert.match(block[0].message, /fuori la cucitura/);
+      assert.equal(statoDaFindings(findings), "fail", da);
+    }
+  });
+
+  it("NON scatta quando la pagina raggiunge la cucitura vera con un relativo", () => {
+    const findings = regolaCucitura([
+      file("src/app/camere/page.tsx", `import { Bottone } from "../../components/ui";`),
     ], CONFIG);
     assert.deepEqual(findings, []);
   });

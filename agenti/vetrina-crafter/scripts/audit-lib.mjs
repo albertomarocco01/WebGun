@@ -136,35 +136,79 @@ function nomiImportati(clausola) {
   return [...new Set(nomi)];
 }
 
+const SENZA_ESTENSIONE = /\.(m?[jt]sx?|cjs)$/i;
+
+/**
+ * `src/app/camere/page.tsx` + `./components/ui/Bottone`
+ *   → `src/app/camere/components/ui/Bottone`
+ *
+ * Per un import RELATIVO non serve nessuna euristica: la posizione del file che
+ * importa e' un dato che la regola ha gia' in mano, e il percorso si risolve
+ * esatto contando i `..`. Ritorna `null` quando non c'e' niente da risolvere —
+ * import non relativo, origine ignota, oppure `..` che scavalca la radice del
+ * progetto — e in quel caso chi chiama ripiega sull'euristica.
+ */
+export function risolviRelativo(da, origine) {
+  const imp = conBarre(da);
+  if (!/^\.\.?\//.test(imp) || !origine) return null;
+  const pezzi = conBarre(origine).split("/").slice(0, -1);
+  for (const pezzo of imp.split("/")) {
+    if (pezzo === "." || pezzo === "") continue;
+    if (pezzo === "..") {
+      if (pezzi.length === 0) return null;
+      pezzi.pop();
+      continue;
+    }
+    pezzi.push(pezzo);
+  }
+  return pezzi.join("/").replace(SENZA_ESTENSIONE, "");
+}
+
 /**
  * Un percorso di import punta a una cartella del progetto?
  *
- * EURISTICA DICHIARATA, e va letta per quello che e'. Gli alias (`@/`, `~/`) si
- * risolvono con `tsconfig.json`, i percorsi relativi con la posizione del file:
- * risolverli davvero vorrebbe dire implementare la risoluzione dei moduli di
- * TypeScript dentro un gate. Qui si confronta la CODA del percorso dichiarato
- * (`src/components/ui` → `components/ui`) con la coda dell'import, dopo aver
- * tolto prefissi relativi e alias.
+ * Due meta', e la prima non e' un'euristica. Se l'import e' RELATIVO e si sa da
+ * quale file parte, si risolve esatto: `origine` costa un parametro e toglie di
+ * mezzo l'intera classe di errori qui sotto. Gli alias (`@/`, `~/`) si
+ * risolverebbero solo leggendo `tsconfig.json`, e per quelli resta il confronto
+ * fra il percorso dichiarato (`src/components/ui` → `components/ui`) e l'import
+ * ripulito del prefisso — ma **ancorato in testa**.
  *
- * Cosa NON vede: due cartelle diverse con la stessa coda (`app/components/ui` e
- * `src/components/ui` in un monorepo). Cosa vede: tutte le forme che questa
- * skill genera e tutte quelle che un umano scrive a mano.
+ * MISURATO il 2026-08-04 sul banco del collaudo, ed e' il motivo di tutte e due
+ * le regole. Il confronto libero di prima diceva «punta alla cucitura» a
+ * `./components/ui/Bottone` scritto dentro `src/app/camere/` — cioe' a una
+ * cartella che si chiama come la cucitura ma sta nell'albero delle pagine — e
+ * la stessa cosa a `@/app/camere/components/ui/Bottone`. Il `block` sulla
+ * primitiva copiata non scattava, e l'audit statico usciva 0. La riga
+ * `endsWith`/`includes` faceva galleggiare la coda in qualunque punto del
+ * percorso: bastava una sottocartella con quel nome per rendere la regola cieca.
+ *
+ * Cosa ancora NON vede: un alias che punta a una cartella con lo stesso nome in
+ * un altro pacchetto di un monorepo. Cosa vede adesso: ogni percorso relativo,
+ * esatto, e ogni alias che parte dalla radice dichiarata.
  */
-export function puntaA(da, cartella) {
-  const coda = conBarre(cartella)
+export function puntaA(da, cartella, origine = null) {
+  const bersaglio = conBarre(cartella)
     .replace(/^\.?\/*/, "")
-    .replace(/^src\//, "")
     // L'estensione si toglie dal BERSAGLIO: `moduliClient` dichiara file
     // (`src/lib/supabase/public.ts`) e un import non porta mai l'estensione
     // (`@/lib/supabase/public`). Senza questa riga la regola che vieta alla
     // cucitura di importare il client dei dati non scattava MAI — trovato dal
     // suo stesso test, che si aspettava due rilievi e ne vedeva uno.
-    .replace(/\.(m?[jt]sx?|cjs)$/i, "")
+    .replace(SENZA_ESTENSIONE, "")
     .replace(/\/+$/, "");
-  if (!coda) return false;
-  const pulito = conBarre(da).replace(/^[@~]\//, "").replace(/^(\.\.?\/)+/, "").replace(/^src\//, "");
-  return pulito === coda || pulito.startsWith(`${coda}/`) || pulito.endsWith(`/${coda}`) ||
-    pulito.includes(`/${coda}/`);
+  if (!bersaglio) return false;
+
+  const risolto = risolviRelativo(da, origine);
+  if (risolto !== null) return risolto === bersaglio || risolto.startsWith(`${bersaglio}/`);
+
+  const coda = bersaglio.replace(/^src\//, "");
+  const pulito = conBarre(da)
+    .replace(/^[@~]\//, "")
+    .replace(/^(\.\.?\/)+/, "")
+    .replace(/^src\//, "")
+    .replace(SENZA_ESTENSIONE, "");
+  return pulito === coda || pulito.startsWith(`${coda}/`);
 }
 
 const dentro = (percorso, cartella) => {
@@ -198,7 +242,7 @@ export function regolaCucitura(file, config) {
 
     for (const imp of importazioni(testo)) {
       if (inCucitura) {
-        const colpevole = vietate.find((v) => puntaA(imp.da, v));
+        const colpevole = vietate.find((v) => puntaA(imp.da, v, percorso));
         if (colpevole) {
           findings.push({
             severity: "block",
@@ -211,7 +255,7 @@ export function regolaCucitura(file, config) {
       }
 
       const daFuori = imp.nomi.filter((n) => primitive.has(n));
-      if (daFuori.length > 0 && !puntaA(imp.da, cucitura)) {
+      if (daFuori.length > 0 && !puntaA(imp.da, cucitura, percorso)) {
         findings.push({
           severity: "block",
           object: `${conBarre(percorso)} → ${imp.da}`,
