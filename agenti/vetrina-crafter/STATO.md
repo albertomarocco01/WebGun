@@ -372,3 +372,31 @@ toccato da qui.
     `jscpd` gira solo col Node 24 di scoop, e va invocato come
     `node_modules/jscpd/bin/jscpd` (lo shim `.bin/jscpd` è uno script di shell che
     Node non sa eseguire). Con quello è **pulito: 0 cloni su 3 121 righe**.
+
+**Dal primo consumatore reale (P.4b, pilota `fornodoro`, 2026-08-05)**
+
+11. **Il contratto non ha un gettone per una fonte-FUNZIONE.** Le fonti si
+    dichiarano `tabella:`, `vista:` o `slot:`. Sul pilota due pagine
+    (`/ordine` e `/ordine/<codice>`) leggono da una RPC — `ordine_per_codice()`
+    — e hanno dovuto dichiarare `nessuna`, che il template glossa come «pagina
+    di solo markup»: vero a metà, perché la seconda legge dati veri. Dichiarare
+    `tabella:ordini` sarebbe stato **peggio che falso**: quella tabella
+    l'anonimo non la può leggere (è il punto del disegno) e `contenuti-vivi`
+    l'avrebbe segnalata come fonte negata. Proposta: un gettone `funzione:` che
+    il passo 9 tratti come «non conta righe, non cerca testo». Chiuso sul pilota
+    con `nessuna` più una prosa che dice cos'è.
+12. **Il gate pretende una colonna di pubblicazione anche dove il dominio non ha
+    una bozza.** `tabellaContenutiDa` esige `pubblicato <colonna>` e ci
+    costruisce un `where`; sul pilota `contenuti_sito` è nata senza stato di
+    bozza (scelta di schema-forge), quindi la riga dichiara la costante
+    `pubblicato `true``. Ha funzionato — `IDENTIFICATORE` accetta `true` e
+    `where true` è SQL valido — ma **per caso, non per disegno**: nessun test
+    copre il caso, e nessun `hint` dice a chi lo incontra che è la strada.
+    Proposta: ammettere esplicitamente una costante dichiarata, oppure una forma
+    `pubblicato: sempre` che il gate traduca lui.
+13. **Il verde al primo lancio non ha impedito sei rilievi.** Il gate ha chiuso
+    10/10 su codice in cui `/code-inquisition` ha poi trovato sei cose vere (due
+    delle quali portate dal **critico del roster**, non dagli esperti). Nessuna
+    era nel perimetro dei dieci passi, e va bene così — ma la riga §Cosa un gate
+    verde NON prova adesso ha un numero accanto, misurato su un progetto vero:
+    **sei**.

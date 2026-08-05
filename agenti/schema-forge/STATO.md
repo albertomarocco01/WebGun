@@ -1175,3 +1175,35 @@ bind (*«a socket in a way forbidden by its access permissions»*).
 `Test-NetConnection` e `Get-NetTCPConnection`, con cui il blocco era stato
 misurato libero, **non vedono gli intervalli esclusi**. Vale per tutti i banchi
 di questo repo: `netsh interface ipv4 show excludedportrange protocol=tcp`.
+
+### Una riga dal consumatore a valle: il cast precede il corpo (P.4b, 2026-08-05)
+
+Trovata dal tribunale dell'anello 08 sul pilota `fornodoro`, riprodotta da un
+verificatore indipendente, **non corretta qui** (il consumatore riporta, il
+proprietario decide).
+
+La disciplina «la **forma** si valida PRIMA del cast, o è il cast a parlare al
+posto nostro» — scritta dall'indurimento del 2026-08-04 e applicata a
+`voce_menu_id` e `quantita` dentro `crea_ordine` — **non copre gli argomenti
+tipizzati non-`text` della firma**. `crea_ordine(… ritiro_at timestamptz …)`:
+PostgREST casta l'argomento **al legame**, prima che il corpo della funzione
+giri, quindi la guardia `if ritiro_at is null or ritiro_at < now() …` non vede
+mai una stringa malformata. Misurato con la chiave anonima:
+
+```
+POST /rest/v1/rpc/crea_ordine  {"ritiro_at":"non-una-data", …}
+→ 400  {"code":"22007","message":"invalid input syntax for type timestamp with time zone: \"non-una-data\""}
+```
+
+Cioè esattamente l'errore nativo che il §6 di quella migrazione dichiara di aver
+chiuso, e per l'unico argomento a cui la regola non è stata applicata. Non è un
+difetto di quel progetto: è una **regola della skill che si ferma un passo
+prima**, e rinasce in ogni RPC futura con un argomento non-`text`.
+
+Proposta: la reference delle RPC dica che **ogni argomento di una funzione
+esposta a PostgREST si dichiara `text`** e si casta dentro, dopo un controllo
+esplicito; e che un `check` di tipo nella firma è, dal punto di vista del
+messaggio d'errore, indistinguibile da un `check` di tabella — cioè una riga di
+Postgres servita a uno sconosciuto. Un test pgTAP non lo intercetta: pgTAP chiama
+la funzione **da dentro il database**, dove il cast è già avvenuto sul valore
+tipizzato. Serve una prova che passi dall'endpoint HTTP.
