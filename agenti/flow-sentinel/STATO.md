@@ -239,3 +239,62 @@ silenzio, tre crash su report malformati, e tre rossi sbagliati su codice commen
    install`, `supabase start` e ricreare le chiavi. Lo stesso lavoro di prima, adesso dichiarato invece
    che presunto. **Nessun banco vivo significa che «batteria 16/16, gate 7/7» oggi non e' verificabile in
    un comando**: e' un'affermazione datata in `COLLAUDO-P3-2026-07-30.md`, non un fatto che si rilancia.
+
+---
+
+## Dal primo consumatore reale della pipeline completa — pilota `fornodoro`, P.4d (2026-08-05)
+
+Quarto anello di una catena vera (`07 → 08 → 10 → 12`), su un'app di produzione viva e un database
+seminato: 13 flussi, 22 test, gate **VERDE 7/7**. Verbale: `PILOTA-2026-08-05.md`.
+Quattro difetti della **skill**, non del progetto. Sono righe, non correzioni: decide chi possiede la skill.
+
+10. **`references/playwright.md` §L'helper di effetto DB prescrive una forma che non parte sul node
+    dei gate.** L'esempio costruisce l'helper con `createClient` di `@supabase/supabase-js`. Su
+    Node 20.12.2 — il node di sistema, cioe' quello con cui il `CLAUDE.md` della regia prescrive di
+    lanciare i gate, e quello con cui `verify.mjs` lancia `npx playwright test` — `createClient`
+    **muore in costruzione**: `Error: Node.js detected but native WebSocket not found`, perche'
+    inizializza il client realtime anche quando nessuno lo usa. Misurato il 2026-08-05. Nel pilota la
+    deroga e' stata scritta (PostgREST e GoTrue in HTTP diretto, con il perche' dentro il file), e ha
+    avuto un effetto collaterale buono: sulle spec ostili l'attacco si scrive nella forma esatta in
+    cui lo farebbe chi apre i DevTools. **La reference dovrebbe mostrare quella forma**, o almeno
+    dichiarare che l'esempio pretende Node 22+.
+
+11. **`references/sabotaggio.md` §Il ripristino prescrive un controllo che non puo' vedere il
+    residuo che il sabotaggio stesso produce.** Il passo 3 dice «`git status` pulito sui file
+    dell'applicazione e delle spec». Su una macchina con `core.autocrlf=true` — il default di Git per
+    Windows — `git restore` rimette il contenuto e **scrive CRLF**, e Prettier (`endOfLine: "lf"`)
+    segnala quei file. Git normalizza i fine-riga nel confronto con l'indice, quindi `git status`
+    resta **vuoto** mentre `code-maniac scan` diventa giallo su cinque file che nessuno ha
+    modificato. Misurato il 2026-08-05 dopo cinque classi di sabotaggio. Rimedio: aggiungere
+    `npx prettier --check` accanto a `git status` nel passo 3, oppure far nascere i progetti generati
+    con `core.autocrlf input`.
+
+12. **Il gate non ha nessun modo di accorgersi che la batteria sporca il database — e la skill non
+    chiede a `forge` di generarne uno.** Le asserzioni di conteggio che la reference insegna
+    (`contaProdotti()` prima, `contaProdotti()` dopo) sono tutte **relative**: una riga orfana non fa
+    diventare rossa nessuna spec, e si scopre solo al giro dopo sotto forma di un rosso che parla
+    d'altro. Nel pilota l'ha trovato il **tribunale**, non il gate, e la chiusura e' stata un
+    `e2e/global-teardown.ts` che confronta i totali con quelli del seed e solleva — collaudato
+    piantando un ordine a mano: **22 test passati e gate rosso lo stesso**. Quel file dovrebbe stare
+    nel contratto d'uscita di `forge` accanto a `global-setup`, non essere inventato da chi lo scopre.
+    E il passo `contratto-uscita` potrebbe pretenderlo, come gia' pretende `retries: 1`.
+
+13. **Il motivo «la firma e' nostra» resta aperto, e adesso ha un precedente.** Su `fornodoro` il
+    contratto dei flussi porta `Confermato da: Direzione lavori (per delega del committente Alberto
+    Marocco) il 2026-08-05` — firma per delega dichiarata (D14 della regia), scritta in tre posti
+    perche' non la si scambi per una vera. Il gate la legge e la ristampa, e **non puo' distinguerla
+    da una firma vera**: e' una scelta dichiarata di `flussi-critici` («il gate legge la riga, non la
+    sua verita'»), ma con l'autonomia della catena diventa la condizione normale, non l'eccezione.
+    Vale la pena decidere se il passo debba **riconoscere** la forma «per delega» e stamparla come
+    residuo invece che come conferma.
+
+### La lezione che vale oltre questa skill
+
+Il collaudo per sabotaggio ha detto che la batteria **sapeva fallire** su cinque classi piantate; il
+tribunale ha trovato **nove asserzioni che non potevano fallire** su difetti che nessuno aveva
+pensato di piantare — e sette avevano la stessa forma: **il contratto prometteva piu' di quanto la
+spec asserisse**. E' il caso 4 di `evolve`, che la `SKILL.md` dichiara invisibile al gate («e' l'unico
+dei quattro casi in cui la difesa sono io»). Su `fornodoro` la difesa **non** e' stato l'agente: un
+anello che scrive sia il contratto sia le spec non puo' essere il proprio revisore — le sue due meta'
+si confermano a vicenda per costruzione. Le due verifiche non si sostituiscono, e la Regola dei
+guardiani fa bene a chiederle entrambe.
