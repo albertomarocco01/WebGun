@@ -417,10 +417,180 @@ ESLint: **0 errori**, 7 avvisi di complessità. knip: **pulito**.
 
 ### 6.6 — Il tribunale
 
-<!-- riempito in §7 -->
+`/code-inquisition agenti/site-doctor/scripts --focus security,reliability --depth 1 --council 3`.
+Tre esperti in **isolamento**, con posture avversarie diverse e su due modelli
+diversi: *parsing di input ostile* («chi ha scritto il sito vuole far uscire il
+gate verde, oppure vuole bloccarlo per sempre»), *affidabilità del verdetto* («il
+gate verrà lanciato da uno script di CI che guarda solo il codice d'uscita»),
+*superficie di rete* («l'operatore punta il gate su un URL che gli è stato dato
+da qualcun altro»). Il terzo è morto una prima volta su un errore d'API ed è
+stato rilanciato: è scritto qui perché un esperto che non torna e non viene
+sostituito è una corsia d'ispezione **vuota** che il verbale farebbe sembrare
+piena.
+
+**33 rilievi in tutto.** E la riga che questa casa scrive da quattro tornate vale
+anche qui: **gli strumenti statici erano tutti verdi** — ESLint 0 errori, `knip`
+pulito, `gitleaks` pulito sui miei file, `semgrep` coi soli
+`detect-non-literal-regexp` — e **non hanno visto nessuno dei 33**.
+
+```
+$ npx eslint scripts/*.mjs         ->  0 errori, 13 avvisi di complessità
+$ npx knip                         ->  (nessun rilievo)
+$ gitleaks dir agenti/site-doctor  ->  no leaks found
+$ jscpd scripts --min-lines 8      ->  Found 1 clones   (l'epilogo, duplicato apposta)
+$ semgrep --config=auto scripts    ->  4 rilievi, tutti detect-non-literal-regexp
+```
+
+**Il più grave, e perché vale da solo il tribunale.** `SD-VERDE-01`: il
+ripulitore toglieva i commenti con una regexp, ma **in HTML un `<!--` dentro il
+valore di un attributo è testo**, non l'apertura di un commento. Bastava un
+`<div data-nota="<!--">` all'inizio di una regione e un `<div data-nota="-->">`
+alla fine per far sparire dal documento che il gate giudica **tutto quello che
+stava in mezzo**: immagini senza `alt`, campi che raccolgono dati personali,
+terzi non dichiarati, collegamenti. Il browser rendeva tutto; il gate non vedeva
+niente e firmava. **Non era un passo aggirabile: erano tutti e nove**, con due
+`<div>` invisibili — e la chiave la teneva in mano chi scrive il sito da
+certificare.
+
+Chiuso con un ripulitore a **una scansione** che conosce quattro stati (testo ·
+tag · valore quotato · commento) e riconosce le forme brusche `<!-->` e `<!--->`
+che lo standard chiude subito. Effetto secondario misurato: la vecchia catena di
+`replace` era anche **quadratica** — 200 KB di `<` ripetuti costavano **24,6 s**,
+adesso **16 ms** — cioè esisteva anche un modo per **appendere** il gate senza
+mai fargli dire ROSSO.
+
+#### I rilievi per gravità, con la sorte di ciascuno
+
+| # | rilievo | gravità | sorte |
+|---|---|---|---|
+| SD-VERDE-01 | `<!--` in un attributo cancella elementi veri da **tutti** i passi | Critical | **chiuso** — ripulitore a scansione singola, 2 test |
+| SD-01 | gli **script inline** non venivano mai letti: un sito che archivia da uno script scritto in pagina chiudeva `NON APPLICABILE` | Critical | **chiuso** — i corpi inline si leggono, escluso il carico RSC |
+| SD-REDOS-01 | ripulitore quadratico: gate appeso senza mai un rosso | High | **chiuso** dallo stesso ripulitore, con un test sul tempo |
+| SD-02 | `if (!ctx.pagine)` non ferma una superficie **vuota** (`![]` è `false`): tre passi verdi su zero pagine | High | **chiuso** — `superficieUsabile` più un `block` esplicito |
+| SD-03 · SD-ROSSO-01(3) | la **radice che rimanda** (multilingua, www, barra finale) svuotava il grafo dei collegamenti | High | **chiuso** — il rimando della sola radice si segue, la camminata parte da lì |
+| SD-04 | nessun `try`/`catch` in `main()`: un crash usciva **1 con stdout vuoto** mentre il contratto promette **2** | High | **chiuso** — `catch`, passi non eseguiti a `skipped`, uscita 2 col riepilogo |
+| SD-05 | il confronto §19 per voce si disattivava lasciando la cella `esito` **vuota** | High | **chiuso** — esito vuoto = `block`, e gli esiti ammessi sono un elenco chiuso |
+| SD-06 | una **superficie dichiarata vuota** disattivava in silenzio il confronto: chi dichiarava rischiava rilievi, chi taceva era verde | High | **chiuso** — `block`, distinguendo sezione assente da tabella vuota |
+| SD-VERDE-03 | un terzo entra anche da `@import`, `<video>`, `<source>`, `srcset` | High | **chiuso** — dieci elementi più gli `url()` degli stili |
+| SD-VERDE-03(4) | la sitemap **assente** non costava niente: il primo testimone poteva mentire da solo purché il secondo sparisse | High | **chiuso** — `block` quando anche la camminata non ha camminato |
+| SD-VERDE-04 | solo il candidato **più collegato** veniva scaricato: un'esca nascosta rendeva verde un sito il cui collegamento visibile è un 404 | High | **chiuso** — si scaricano **tutti**, i nascosti non sono candidati, il testo pesa più del percorso |
+| SD-PATH-01 | la colonna «dove è dichiarato» leggeva **qualunque file della macchina** | Medium | **chiuso** — `leggiDentroIlProgetto`, contenimento sotto la radice |
+| SD-07 | uno stato scritto male spariva dal conteggio e il gate usciva **verde** | Medium | **chiuso** — `ignoti` lo conta e lo blocca |
+| SD-08 | `--url --json` faceva diventare `--json` l'indirizzo; nessuna validazione | Medium | **chiuso** — validazione, forma `--url=`, argomenti sconosciuti rifiutati |
+| SD-10 | `informativaRaggiungibile ?? new Set()`: un intoppo di rete produceva il bloccante più grave del gate su un sito corretto | Medium | **chiuso** — tre stati distinti, `null` diventa `skipped` |
+| SD-12 | i `Set-Cookie` sulle risposte **3xx** venivano buttati insieme alla risposta | Medium | **chiuso** — i cookie si raccolgono nella camminata, rimandi compresi |
+| SD-VERDE-05 | un campo `hidden` con `autocomplete="email"` spariva prima della classificazione | Medium | **chiuso** — i campi di servizio si scartano per **nome**, non per tipo |
+| SD-VERDE-06 | `aria-labelledby` verso un id inesistente e `<label for>` vuota valevano come nome accessibile | Medium | **chiuso** — l'id si risolve, l'etichetta vuota non conta |
+| SD-ROSSO-01(1,2) | `<label>` avvolgente e icona SVG con `aria-label`: **bloccanti su markup corretto** | Medium | **chiuso** — entrambi riconosciuti |
+| SD-ROSSO-02 | `/prodotti/cookie-al-cioccolato` veniva eletto informativa (sottostringa) | Medium | **chiuso** — sul percorso si pretende un **segmento intero** |
+| SD-NET-01 | i caratteri di controllo del testo **scaricato** arrivavano al terminale, e qui l'uscita del gate si **incolla nei verbali** | Medium | **chiuso** — `perStampa` filtra per punto di codice |
+| SD-09 | il documento `--json` non diceva **quale indirizzo** era stato certificato | Medium | **chiuso** — `url`, `buildId`, `maxPagine` nel documento |
+| SD-NET-05 | il banco sovrascriveva `docs/conformita.md` di un progetto vero se lanciato con `--dir .` | Low | **chiuso** — cartella vuota o marcatore, altrimenti si rifiuta |
+| SD-13 | il verdetto era la **prima** riga, non l'ultima | Low | **chiuso** — si ristampa in fondo |
+| SD-15 | i percorsi dichiarati non erano normalizzati: una barra finale produceva due rilievi opposti sulla stessa pagina | Low | **chiuso** — passano da `percorsoInterno` |
+| semgrep ×4 | `detect-non-literal-regexp` | — | **chiuso nella sostanza** con `perRegexp` (escape dei metacaratteri). Semgrep continua a segnalarlo: la sua regola è **sintattica** e non può vedere l'escape. Scritto qui invece che silenziato |
+| SD-MEM-01 · SD-NET-04 | nessun tetto sul corpo scaricato né sul numero di bundle | High · Low | **APERTO** — `STATO.md` punto n°9. Il timeout per richiesta limita il tempo, non i byte |
+| SD-11 | nessuna **scadenza complessiva**: 60 pagine per 30,5 s è mezz'ora senza verdetto | Medium | **APERTO** — `STATO.md` punto n°10 |
+| SD-NET-02 | un `<script src>` della stessa origine che **rimanda** a un altro host viene scaricato e attribuito al sito | Low | **APERTO** — `STATO.md` punto n°11 |
+| SD-PROTO-01 | nessun inquinamento del prototipo possibile oggi (i valori sono sempre stringhe), ma due trappole latenti e le intestazioni duplicate che si sovrascrivono | Low | **APERTO**, con la misura accanto che dice perché non urge |
+| SD-URL-01 | senza `--url`, l'indirizzo lo sceglie **il documento sotto esame** | Low | **APERTO** — il ripiego resta, va marcato con un `issue` visibile |
+| SD-NET-03 | `--url` non ha restrizioni di destinazione (ricognizione verso reti interne) | Low | **accettato e dichiarato**: è la funzione dello strumento, e un divieto romperebbe i banchi su `127.0.0.1` |
+| SD-14 | la ricaduta del `catch` su `realpathSync` torna al confronto testuale, che dalla junction è quello noto come insufficiente | Low | **non corretto qui, e per una ragione**: quella forma è **prescritta dalla regia** (`hint` della regola `epiloghi-vivi`, P.0-igiene-2) e vale per **otto** script della casa. Cambiarla in uno solo li farebbe divergere, e il gate della regia guarda la forma → proposta alla regia |
+
+**Ventisei chiusi con un test, cinque aperti e scritti, uno accettato, uno
+rimandato alla regia.** La batteria è passata da **122 a 144**.
+
+**La cosa che il tribunale insegna, e non è nell'elenco.** Lo STOP di metà
+pacchetto (§4) aveva **progettato** la difesa di due di questi difetti — le due
+sorgenti indipendenti, e il ripulitore che toglie il carico RSC. Erano
+implementate. Il tribunale ha trovato che **erano implementate in un modo che le
+annullava**: la sitemap alimentava i collegamenti, e il ripulitore cancellava i
+tag che un altro passo doveva leggere.
+
+> Progettare la difesa non basta, e nemmeno scriverla. Bisogna provare a
+> scavalcarla.
 
 ---
 
 ## 7. Cosa lascia al collaudo avversario (P2)
 
-<!-- riempito dopo il tribunale -->
+### 7.1 — Le mie classi cieche, dichiarate
+
+Dove questo gate è cieco **per costruzione**. Non sono difetti da trovare: sono
+il perimetro di ciò che un programma senza browser può dire.
+
+1. **I contrasti di colore.** Delegati a speed-demon, che apre un browser.
+2. **Un cookie posto dopo un'azione** — l'invio di un modulo, l'accesso, il
+   consenso stesso. Si legge un anonimo che non fa nulla.
+3. **Un modulo costruito nel browser** dopo il caricamento: nell'HTML servito non
+   c'è, e se il sito non ne ha altri il passo chiude `NON APPLICABILE` con una
+   premessa vera e una conclusione sbagliata.
+4. **Codice caricato dinamicamente** e non referenziato nell'HTML.
+5. **Una pagina che nessuno linka e che non è nella `sitemap.xml`.** Sul pilota è
+   il caso di `/ordine/<codice>`.
+6. **Che l'informativa dica il vero.** Si prova che nomina le sette voci
+   dell'art. 13; che siano quelle giuste lo firma chi risponde.
+7. **Che il file citato da un vicino dica «fatto»** invece di «da fare».
+8. **Che la firma sia vera.**
+9. **L'offuscamento**: `window["local"+"Storage"]` sfugge a una ricerca di
+   sottostringa. È un indizio, non una misura, e va letto così.
+
+### 7.2 — Le domande che lascio a chi collauda
+
+Le scriverei io per prime, e chi collauda non deve fidarsi di questo elenco:
+
+- **Il ripulitore nuovo è il pezzo più delicato e ha un giorno di vita.** Le
+  forme che **non** ho provato: `<![CDATA[`, `<!DOCTYPE` con parentesi quadre,
+  attributi senza virgolette che contengono `>`, un `<script>` nominato dentro un
+  commento, `</script >` con lo spazio, `<svg>` con XML annidato. Ognuna può
+  riaprire la chiave universale.
+- **Le premesse di `NON APPLICABILE`.** Ne esistono tre. Ho reso indipendente
+  quella della lingua; **le altre due non le ho riattaccate a niente**: «zero
+  moduli» e «zero archiviazioni» sono misure fatte sullo stesso documento che
+  potrebbe essere stato amputato. Se il ripulitore ha ancora un buco, quei due
+  `n/a` mentono — ed è la forma più elegante di falso verde che questo gate
+  abbia.
+- **Il `perimetro` come superficie d'attacco.** Legge un documento e legge file
+  del progetto. Ho chiuso l'uscita dalla radice; restano i **link simbolici**, e
+  `realpathSync` lì non lo chiamo.
+- **La classe di sabotaggio che manca.** Le 25 classi sono nate dalla mia idea di
+  cosa può andare storto, e il tribunale ha trovato dieci cose che **nessuna**
+  classe copriva. Si parta da lì: *quali classi non ho immaginato?*
+- **Il pilota con l'app viva e la build allineata.** La mia misura è stata presa
+  con l'app servita **una build indietro**: un giro con `identita: pass` sul
+  pilota non l'ho mai visto.
+- **`certifica` e `handoff` non sono mai stati eseguiti** su un progetto vero
+  (pilota in sola lettura, D17). Sul banco quei documenti li genera il banco:
+  sono provati come **input** del gate, non come **prodotto** del comando.
+
+### 7.3 — E la cosa da dire per prima
+
+Questa è la prima skill della casa **nata senza la revisione del direttore fra
+progettazione e costruzione** (D17). Lo STOP di metà pacchetto ha sostituito
+quella revisione con un'autorevisione, e l'autorevisione ha trovato otto punti —
+tutti veri, e uno (la circolarità della premessa degli hreflang) che nessuna
+lettura successiva avrebbe più visto, perché sarebbe diventato codice.
+
+Ma **il sabotaggio ne ha trovati tre che l'autorevisione non aveva visto, e il
+tribunale trentatré.** Il rapporto fra questi tre numeri è il costo dell'unione
+di P0 e P1, misurato invece che temuto: *un'autorevisione trova ciò che chi ha
+scritto sa già di dover cercare.*
+
+---
+
+`P.6 (P0+P1) consegnata. Il gate di site-doctor esce ROSSO sul pilota per 5
+motivi veri che nessuno dei cinque gate esistenti vede: nessuna informativa
+privacy raggiungibile su 5 pagine pubbliche su 5; nome e telefono raccolti da
+/ordina senza nessuna base giuridica dichiarata (prova forte, autocomplete);
+dati personali raccolti senza rimando all'informativa al punto di raccolta;
+localStorage posto dal codice servito e dichiarato da nessuna parte; nessun
+certificato di idoneità, quindi nessuna tabella di proprietà delle voci.
+Sabotaggio: 25 classi, tutte rosse. Batteria 144/144. Gate della regia
+VERDE 5/5.`
+
+E la verità che va accanto, perché quella riga da sola direbbe meno di quello che
+è successo: **il tribunale ha trovato 33 rilievi su un gate che tutti gli
+strumenti statici dichiaravano pulito, e uno di essi — un `<!--` dentro un
+attributo — apriva contemporaneamente tutti e nove i passi.** Ventisei sono
+chiusi con un test, cinque restano aperti e scritti, e il collaudo avversario
+indipendente non è stato fatto: questa skill ne ha più bisogno delle altre.

@@ -4,8 +4,17 @@
   del cantiere). Il gate esiste, ha **nove passi** e **quattro stati**, chiude
   **VERDE 8/8 + 1 NON APPLICABILE** sul banco conforme e **ROSSO su 25 classi di
   sabotaggio su 25**. Sul pilota `fornodoro` esce **ROSSO per cinque motivi veri
-  che nessuno dei cinque gate esistenti vede**. **122 test verdi.** Verbale:
+  che nessuno dei cinque gate esistenti vede**. **144 test verdi.** Verbale:
   `COSTRUZIONE-2026-08-06.md`.
+- **Il tribunale ha trovato 33 rilievi**, e gli strumenti statici erano **tutti
+  verdi** su tutti e 33. Il piu' grave apriva **tutti e nove i passi insieme**:
+  in HTML un `<!--` dentro il valore di un attributo e' testo, non l'apertura di
+  un commento, e il ripulitore a regexp non lo sapeva — due `<div>` invisibili
+  facevano sparire dal documento che il gate giudica immagini senza `alt`, campi
+  che raccolgono dati personali, terzi non dichiarati e collegamenti. Chiuso con
+  un ripulitore a una scansione, che ha chiuso anche un costo **quadratico**
+  (200 KB di `<` ripetuti: 24,6 s → 16 ms). **26 rilievi chiusi con un test,
+  5 aperti e scritti qui sotto, 1 accettato, 1 rimandato alla regia.**
 - **Non usabile su un progetto cliente**, e il motivo principale non è tecnico:
   il **collaudo avversario indipendente (P2) non è stato fatto**, e questa è la
   prima skill della casa nata **senza la revisione del direttore fra
@@ -45,20 +54,21 @@ dichiarato **con il nome del proprietario e il file che lo dice**.
 
 | Cosa | Numero | Come è stato misurato |
 |---|---|---|
-| Test degli script | **122 verdi** | `npm test` (Node 24) |
+| Test degli script | **144 verdi** | `npm test` (Node 24) |
 | Passi del gate implementati | **9**, con `id` stabili e ordine bloccato da un test | `scripts/verify.mjs`, `ID` |
 | Stati del verdetto | **4** (`pass` · `fail` · `skipped` · `n/a`) | `riepilogo()`, con i test dei tre casi |
 | Classi di sabotaggio provate | **25 su 25 rosse**, ognuna sul passo che dichiara di sorvegliare | `scripts/banco.mjs`, uscite incollate nel verbale |
 | Difetti **del gate** trovati sabotando | **3**, tutti chiusi con un test | verbale §5 |
 | Difetti **del gate** trovati dalla batteria | **2** | verbale §5 |
 | Difetti **del gate** trovati al primo lancio sul pilota | **1** (la diagnosi d'identità) | verbale §5 |
+| Rilievi del **tribunale** | **33** — 26 chiusi con un test, 5 aperti, 1 accettato, 1 alla regia | verbale §6.6 |
 | Punti della progettazione cambiati dallo STOP di metà pacchetto | **8**, prima che diventassero codice | verbale §4 |
 | Voci di conformità nell'elenco | **16** — 6 mie, 9 delegate, 1 scoperta | `conformita-lib.mjs`, `VOCI` |
 | Comandi esercitati | **3 su 5** (`perimetro`, `scansiona`, `verify`) — `certifica` e `handoff` **non** esercitati su un progetto vero: il pilota è di sola lettura | verbale §7 |
 | Regole pure | 2 librerie | `servito-lib.mjs` · `conformita-lib.mjs` |
 | Gusci di I/O | 2 | `verify.mjs` · `banco.mjs` |
 | References | **5** | |
-| Guardiani | ESLint **0 errori** / 7 avvisi di complessità · knip **pulito** · jscpd **1 clone di 8 righe** (l'epilogo, duplicato apposta) | eseguiti |
+| Guardiani | ESLint **0 errori** / 13 avvisi di complessità · knip **pulito** · jscpd **1 clone di 8 righe** (l'epilogo, duplicato apposta) · `gitleaks` **pulito** · `semgrep` 4 rilievi, chiusi nella sostanza | eseguiti |
 
 ## Cosa un gate verde NON prova
 
@@ -104,8 +114,8 @@ più:
    chi l'ha scritta abbia letto il documento non lo sa nessuno strumento. È lo
    stesso limite che dichiarano speed-demon sull'elenco delle pagine e
    flow-sentinel sull'elenco dei flussi.
-5. **Sette avvisi di complessità** di ESLint (`complexity > 15`) su sei
-   funzioni. Zero errori. È il precedente di speed-demon, che ha portato un
+5. **Tredici avvisi di complessità** di ESLint (`complexity > 15`), saliti da
+   sette con le correzioni del tribunale. Zero errori. È il precedente di speed-demon, che ha portato un
    `complexity 19` per tre giorni prima che P.7c lo sciogliesse: è un residuo
    dichiarato, non un guardiano spento.
 6. **Un solo dominio, un solo stack.** Tutto quello che è scritto qui è vero su
@@ -119,6 +129,29 @@ più:
    script) è nell'ordine dei secondi; su un sito di trenta pagine con cinquanta
    bundle non lo sa nessuno, e il limite `--max-pagine 60` produrrebbe un
    `block` dichiarato invece di un troncamento silenzioso.
+9. **Nessun tetto sul corpo scaricato né sul numero di bundle** (tribunale,
+   `SD-MEM-01` e `SD-NET-04`). Il timeout per richiesta limita il **tempo**, non
+   i **byte**: un server che risponde 200 e riversa dati per quindici secondi
+   riempie la memoria, e oltre il limite di stringa di V8 l'errore viene
+   inghiottito dal `catch` di `preleva` e si presenta come «nessuna risposta:
+   avvia la build» — cioè con la diagnosi rovesciata, che accusa la macchina di
+   chi misura. Rimedio noto: lettura a flusso con un tetto esplicito, e un
+   `block` nominato al superamento invece di un `null`.
+10. **Nessuna scadenza complessiva.** 60 pagine × 2 tentativi × 15 s è mezz'ora
+    per le sole pagine, e il lavoro di CI viene ucciso dal proprio timeout prima
+    di produrre un verdetto: il gate resta «appeso» dal punto di vista di chi lo
+    guarda, che è la definizione che questo codice dà del difetto. Serve un
+    `--scadenza` con un default, e allo scadere `skipped` sui passi non
+    completati — mai una fine senza verdetto.
+11. **Un `<script src>` della stessa origine che rimanda a un altro host** viene
+    scaricato (`segui: true`) e il suo contenuto attribuito al sito, senza
+    comparire fra i terzi. `preleva` restituisce già l'URL finale: basta
+    confrontarne l'host e, se differisce, trattarlo come terzo.
+12. **Le premesse di due `NON APPLICABILE` su tre non sono indipendenti.**
+    Quella della lingua lo è (lo STOP l'ha resa tale); «zero moduli» e «zero
+    archiviazioni» sono misure fatte **sullo stesso documento** che un difetto
+    del ripulitore potrebbe amputare. È la forma più elegante di falso verde che
+    questo gate abbia, ed è il primo posto dove guarderei al collaudo P2.
 
 ## Proposte a monte/valle
 
@@ -179,14 +212,25 @@ toccato da qui.**
 
 **Alla regia**
 
-8. **Un banco può essere un file.** `DECISIONI.md` §25 traccia «il banco che un
+8. **La guardia dell'epilogo ha una ricaduta muta, ed è la forma che prescrivete
+   voi.** Il tribunale (`SD-14`) osserva che, se `realpathSync` solleva, il
+   confronto torna a quello **testuale** — cioè proprio a quello che P.0-igiene-2
+   ha misurato come insufficiente attraverso una junction: lì lo script uscirebbe
+   `0` senza stampare una riga. Non l'ho corretto qui **di proposito**: quella
+   forma è nell'`hint` della regola `epiloghi-vivi` e vale per **otto** script
+   della casa; cambiarla in uno solo li farebbe divergere, e il gate della regia
+   guarda la forma. Proposta: nel `catch`, eseguire `main()` comunque (meglio un
+   giro in più che nessuno) oppure uscire `2` con un messaggio — e aggiornare
+   l'`hint` per tutti e otto insieme.
+
+9. **Un banco può essere un file.** `DECISIONI.md` §25 traccia «il banco che un
    clone pulito sa rilanciare», e finora quel criterio ha selezionato un solo
    banco su cinque perché tutti erano progetti Next+Supabase con chiavi
    gitignorate. `scripts/banco.mjs` è un banco senza dipendenze, senza database e
    senza chiavi: 25 classi di sabotaggio rilanciabili con un comando su qualunque
    macchina. Dove il difetto da provare sta nell'**HTML servito** e non nel
    database, questa forma costa un file e rende ogni affermazione riproducibile.
-9. **La regola «un gate non lancia strumenti esterni» ha un valore misurabile.**
+10. **La regola «un gate non lancia strumenti esterni» ha un valore misurabile.**
    Questo gate usa solo `fetch` e la lettura di file: gli serve l'**interprete**,
    non il `PATH`, quindi la nota di macchina del 2026-08-06 non lo tocca e gira
    col node di sistema. Il prezzo è dichiarato e circoscritto (i contrasti sono
