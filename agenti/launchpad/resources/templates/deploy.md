@@ -168,3 +168,10 @@ Confermato da: {{NOME COGNOME (ruolo)}} — {{AAAA-MM-GG}}
 > Una firma è **una persona, un ruolo e una data**. Il gate rifiuta il
 > segnaposto, il nome dell'agente, e una firma più vecchia dell'ultimo commit di
 > codice — perché quella ha firmato un altro contenuto.
+>
+> **E rifiuta la delega** (`CANTIERE.md` D20): qui non si scrive
+> `Direzione lavori (per delega del committente …)`. Quella forma vale sui
+> **verbali** — i documenti che descrivono un lavoro già fatto — e questo
+> documento non descrive: **autorizza**, e autorizza l'unica azione della
+> pipeline che non si annulla. *Si può delegare la firma su un verbale, non su
+> un mandato.*

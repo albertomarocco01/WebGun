@@ -688,13 +688,29 @@ test("la firma dell'orchestratore e' rifiutata: in pipeline la colonna «chi con
   assert.equal(esitoFirma("Alberto Marocco (committente) — 2026-08-06").valida, true);
 });
 
-test("la firma PER DELEGA e' accettata e DICHIARATA: e' una tensione, non una decisione del gate", () => {
+// ====== D20: si puo' delegare la firma su un verbale, non su un mandato
+test("la firma PER DELEGA sul runbook e' un `block` (D20): questo documento autorizza, non descrive", () => {
   const delegato = RUNBOOK.replace("Confermato da: Alberto Marocco (committente) — 2026-08-06",
     "Confermato da: Direzione lavori (per delega del committente Alberto Marocco) — 2026-08-06");
   const f = findingsRunbook({ runbook: leggiRunbook(delegato), ultimoCommitCodice: "2026-08-06T09:00:00Z", adesso: "2026-08-07T00:00:00Z" });
-  assert.equal(f.filter((x) => x.severity === "block").length, 0, "il gate non cambia il contratto dello SKILL.md da solo");
-  assert.equal(f.filter((x) => x.severity === "warn" && /PER DELEGA/.test(x.message)).length, 1,
-    "ma la nomina nel punto in cui conta: la §6 vieta di delegare cio' che non si annulla");
+  const block = f.filter((x) => x.severity === "block");
+  assert.equal(block.length, 1, "un solo motivo, e nomina la delega");
+  assert.match(block[0].message, /PER DELEGA/);
+  assert.match(block[0].hint, /irreversibile/, "il messaggio dice PERCHE', non solo che non si puo'");
+});
+
+test("una firma col nome proprio e la data passa: e' l'altra meta' della D20", () => {
+  const f = findingsRunbook({ runbook: leggiRunbook(RUNBOOK), ultimoCommitCodice: "2026-08-06T09:00:00Z", adesso: "2026-08-07T00:00:00Z" });
+  assert.deepEqual(f.filter((x) => x.severity === "block"), [],
+    "`Confermato da: Alberto Marocco (committente) — 2026-08-06` e' esattamente cio' che questo passo chiede");
+});
+
+test("la delega resta una firma VALIDA ovunque altrove: la D20 tocca il solo runbook", () => {
+  // Cinque altri gate della casa leggono la stessa forma sui propri contratti
+  // (D14). Se `esitoFirma` la rifiutasse, la D20 uscirebbe dal suo perimetro.
+  const delega = esitoFirma("Direzione lavori (per delega del committente Alberto Marocco) — 2026-08-06");
+  assert.equal(delega.valida, true, "resta una persona, un ruolo e una data");
+  assert.equal(delega.data, "2026-08-06", "e la sua data continua a valere per la misura di freschezza");
 });
 
 test("una sezione obbligatoria presente come titolo e vuota e' un `issue`", () => {

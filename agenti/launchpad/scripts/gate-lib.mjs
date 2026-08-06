@@ -754,26 +754,28 @@ export function findingsRunbook({ runbook, ultimoCommitCodice = null, adesso = n
 
   const firma = esitoFirma(runbook.confermatoDa);
   /**
-   * LA FIRMA PER DELEGA — una tensione dichiarata, non una decisione presa qui.
+   * LA FIRMA PER DELEGA SUL RUNBOOK — decisione D20 del `CANTIERE.md`.
    *
-   * La D14 del `CANTIERE.md` ha introdotto la forma
-   * `Direzione lavori (per delega del committente <nome>)`, e la limita per
-   * iscritto a **due contratti di collaudo** (`docs/flussi-critici.md`,
-   * `docs/performance.md`). La §6 di `DECISIONI.md` vieta di delegare la
-   * conferma di cio' che e' irreversibile, e questo runbook e' l'unico
-   * documento della pipeline che autorizza esattamente quello.
+   * La D14 ha introdotto la forma `Direzione lavori (per delega del committente
+   * <nome>)` per i contratti che **descrivono un lavoro gia' fatto**
+   * (`docs/flussi-critici.md`, `docs/performance.md`): dei verbali. Il collaudo
+   * del 2026-08-06 ha misurato che il gate la accettava anche qui e ha scritto
+   * la meta' che gli spettava — *«la delega non va accettata, ma non va nemmeno
+   * rifiutata da un gate che cambia contratto da solo»*. La meta' mancante
+   * l'ha messa la direzione: **si puo' delegare la firma su un verbale, non su
+   * un mandato**, e `docs/deploy.md` non descrive — **autorizza**.
    *
-   * Il gate NON la rifiuta — rifiutarla sarebbe cambiare il contratto dello
-   * `SKILL.md` da qui, e non e' un lavoro del collaudo. La NOMINA, con un
-   * `warn`, nel punto e nel momento in cui la tensione conta: davanti a chi
-   * legge il verdetto prima di `pubblica`. Un `warn` non cambia il verdetto.
+   * Quindi qui, e **soltanto** qui, la delega e' un `block`. La forma resta
+   * valida ovunque altrove — `esitoFirma` continua a leggerla come una firma
+   * buona, con la sua data e il suo nome, perche' cinque altri gate della casa
+   * ci contano e questo non e' il posto per toccarli.
    */
   if (firma.valida && /per\s+delega/i.test(runbook.confermatoDa ?? "")) {
     findings.push({
-      severity: "warn",
+      severity: "block",
       object: "Confermato da",
-      message: "firma PER DELEGA su un'azione irreversibile",
-      hint: "la D14 ammette la delega per i due contratti di collaudo; la §6 vieta di delegare cio' che non si annulla, e pubblicare non si annulla. Il gate non la rifiuta: la dichiara. Prima di `pubblica` serve la controfirma di chi possiede la decisione",
+      message: "firma PER DELEGA sul documento che autorizza la pubblicazione",
+      hint: "pubblicare e' l'unico atto irreversibile di questa pipeline, e `DECISIONI.md` §6 vieta di delegarne la conferma: qui serve il nome proprio di chi decide, con la sua data. La delega della D14 vale sui verbali — documenti che descrivono un lavoro gia' fatto — non su un mandato (CANTIERE.md D20)",
     });
   }
   if (!firma.valida) {

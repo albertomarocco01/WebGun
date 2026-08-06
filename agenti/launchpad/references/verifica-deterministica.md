@@ -379,9 +379,19 @@ va detta: gli altri contratti dichiarano **cosa fare**; questo dichiara anche
 | la firma è **più vecchia** dell'ultimo commit di codice | `block` | ha firmato un altro contenuto. È la stessa misura di freschezza di `catena-gate`, sulla cosa che conta di più |
 | **una sezione obbligatoria c'è come titolo e non come contenuto** | `issue` | trovato dal collaudo del 2026-08-06: svuotata §Cosa diventa pubblico e lasciata l'intestazione, il passo chiudeva `pass`. Chi firma trovava la domanda e nessuna risposta, che è esattamente «far firmare un comando invece di un contenuto» |
 | **la firma nomina l'orchestratore** (`Orchestratore`, `Prompt Smith`, `pipeline`) | `block` | trovato dal collaudo del 2026-08-06: `Confermato da: Orchestratore (pipeline Web Gun)` chiudeva il passo `pass`, cioè il gate accettava proprio la firma che lo `SKILL.md` §Modalità dichiara impossibile — «in pipeline nessuno: l'orchestratore può preparare, non pubblicare» |
-| **la firma è PER DELEGA** (`per delega di …`) | `warn` | non è un rifiuto, ed è deliberato: la D14 del `CANTIERE.md` ha introdotto quella forma e la limita per iscritto ai **due contratti di collaudo**, mentre questo runbook autorizza l'unica azione irreversibile della pipeline (§6). Il gate non cambia il contratto dello `SKILL.md` da solo: **nomina** la tensione davanti a chi legge il verdetto prima di `pubblica`. Vedi «Tensioni» nel verbale del collaudo |
+| **la firma è PER DELEGA** (`per delega di …`) | `block` | **decisione D20 del `CANTIERE.md`**, presa il 2026-08-06 sulla misura del collaudo. La D14 ha introdotto quella forma per i contratti che **descrivono un lavoro già fatto** — dei verbali; `docs/deploy.md` non descrive, **autorizza**, e autorizza l'unico atto irreversibile della catena, quello che costa soldi e che dopo è di chi l'ha copiato. La riga che separa i due casi: **si può delegare la firma su un verbale, non su un mandato.** Il messaggio del gate dice tutte e tre le cose, perché un rifiuto che non si spiega è un rifiuto che si scavalca |
 | manca una delle sezioni obbligatorie: provider, dominio, variabili, **cosa diventa pubblico**, rollback, prescrizioni | `block` | «la conferma è sul contenuto, non sul comando»: chi firma deve trovare scritto cosa va online. Un runbook senza §Cosa diventa pubblico fa firmare un comando |
 | la procedura di rollback non nomina un identificativo di versione precedente | `block` | «si può tornare indietro» senza dire *a cosa* è un'intenzione |
+
+**Il perimetro della D20, perché non venga allargato per simmetria.** Il `block`
+vale su **questo documento e su nessun altro**. La forma
+`Direzione lavori (per delega del committente <nome>)` resta una firma valida
+dovunque la casa la usi — `esitoFirma` continua a leggerla come una persona, un
+ruolo e una data, e la sua data continua a valere per la misura di freschezza —
+perché cinque altri gate ci contano e perché la D14 non è stata revocata: è
+stata **circoscritta**. Chi un giorno leggesse questo `block` come «la delega non
+vale più» romperebbe quattro contratti di collaudo per generalizzare una regola
+che nasce da una differenza precisa: *un verbale descrive, un mandato autorizza*.
 
 ### 3.9 `contratto-uscita`
 

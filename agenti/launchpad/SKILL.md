@@ -33,6 +33,13 @@ che succede quando si apre.
    Un runbook che fa firmare un comando invece di un contenuto non è una
    conferma: è una ricevuta.
 
+   **E qui la firma non si delega** (`CANTIERE.md` D20). La forma
+   `Direzione lavori (per delega del committente <nome>)` che la D14 ha
+   introdotto vale sui **verbali** — i documenti che descrivono un lavoro già
+   fatto. `docs/deploy.md` non descrive: **autorizza**. Su questo file il gate
+   rifiuta la delega con un `block`, e vuole il nome proprio di chi decide con la
+   sua data. *Si può delegare la firma su un verbale, non su un mandato.*
+
 3. **Nel pacchetto che parte non viaggia nessun segreto.** La chiave
    `service_role` di Supabase **non entra mai** in un progetto generato: scavalca
    ogni policy, e su un sito pubblico è la differenza fra un catalogo e
