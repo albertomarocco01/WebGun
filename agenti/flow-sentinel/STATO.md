@@ -36,7 +36,7 @@
     componenti a monte, i componenti li scrive a mano chi costruisce il progetto
   - A valle: speed-demon (ottimizza con la batteria come rete di sicurezza), cyber-shield (parte dai
     flussi ostili dichiarati), launchpad (non pubblica su gate rosso)
-- **Guardiani:** ESLint **0 errori 0 warning** (riconfermato con `node_modules` locali veri — P.7c punti 1-2, commit `a6f6d1e`, 2026-08-03), `knip` **0 rilievi** (rieseguito dal direttore il 2026-08-04), `jscpd` **0 cloni** su `scripts/`.
+- **Guardiani:** ESLint **0 errori 0 warning** (riconfermato con `node_modules` locali veri — P.7c punti 1-2, commit `a6f6d1e`, 2026-08-03), `knip` **0 rilievi** (rieseguito dal direttore il 2026-08-04), `jscpd` **0 cloni** su `scripts/`. Batteria **131 verdi** dal 2026-08-06 sera (P.7d); erano 111.
 - **2026-08-03 — il gate non partiva sul Node di sistema, e usciva `0` muto.** *Il difetto:* l'epilogo era
   `if (import.meta.main) await main();`, e `import.meta.main` e' arrivato in **Node 24**; su Node 20.12.2
   — l'unico Node di sistema di questa macchina — vale `undefined`, `main()` non girava e **il gate usciva
@@ -78,6 +78,15 @@
   - **LOW — `references/playwright.md` non dichiara nessun `timeout`** (grep: zero occorrenze), ed e' il limite su cui il gate fa affidamento.
 
   **Sorte**: tutti **dichiarati**, nessuno chiuso qui — ognuno vuole un test che lo falsifichi e il gate rilanciato contro un'app viva, che questa chat non ha (D17).
+
+- **2026-08-06 — P.7d: i due rilievi gravi di questa skill sono CHIUSI, e il n°7 con loro** (verbale con le uscite incollate: `../../PROCESSO-GATE-2026-08-06.md`). Riprodotti **prima** di correggere e rimisurati dopo. Batteria **111 → 131**, ESLint 0, knip 0, gitleaks 0, jscpd **0 cloni**.
+  - **CRITICAL (C2) — CHIUSO, e non con una soglia.** Il passo conta i **flussi percorsi**, non i test girati: ogni flusso dichiarato vuole almeno un test ESEGUITO che porti `@flusso:<id>` nel titolo pieno. L'etichetta si legge dal titolo del test eseguito e non dal testo del file, perche' il testo del file dichiara la COPERTURA e il titolo di un test che gira dichiara l'ESECUZIONE — confonderle era il difetto. Misurato sullo stesso report (13 flussi, 13 spec `test.skip` motivate, un test banale verde): da **`pass` con «1 passati, 0 falliti, 13 saltati»** a **`MANC` con «0 flussi critici su 13 percorsi davvero dal browser»**, una riga per flusso col motivo giusto — se le spec sono state saltate, o se nessun test porta l'etichetta. Otto asserzioni su un report nella forma vera del reporter JSON. Il falso verde non si propaga piu' a speed-demon, perche' `ok` diventa `false`.
+  - **CRITICAL (C1, condiviso) — CHIUSO** con le stesse quattro chiusure delle sorelle: `where "$PATH:<nome>"`, `where.exe`/`cmd.exe` col percorso pieno, rifiuto dei candidati dentro il progetto, nessun nome nudo. Più `process.execPath` per l'ESLint delle spec. **Sabotaggio**: prima il finto `node` piantato nella radice comprava un `OK lint delle spec`; dopo il file-traccia non viene creato affatto.
+  - **H2 + L1 (condivisi) — CHIUSI**: questo gate non aveva **nessun** filtro sugli argomenti che passano da `cmd /c`, e ci passano l'SQL intero e l'URL del database. Il commento «non si abilita `shell: true`» dice ora anche che `cmd.exe /c` una shell lo è.
+  - **M14 + L10 — CHIUSI**: `timeout` più `PGCONNECT_TIMEOUT` su psql, e un tetto di 30 minuti su `npx playwright test` — il gate non fa più affidamento su un limite che il template della skill non dichiara. L'`AbortSignal.timeout` che questa skill aveva già è quello che il 2026-08-06 l'ha fatta tornare in **18,2 s con un ROSSO leggibile** dove speed-demon restava appeso: ora quel pattern vale su tutte e tre le chiamate.
+  - **M1 — CHIUSO** nella funzione riscritta: `-X` è arrivato con `interrogaDb`.
+  - **Restano aperti** (prossimo pacchetto): M5 (ReDoS su `IMPORT_HELPER_DB` — meno urgente ora che il gate ha limiti e si ferma con un messaggio), L11 (`motivato()` legge `//` dentro una stringa), L3 (ricorsione sul report), L7 (commento TOML), L8 (`righeDaPsql` ai delimitatori di default), L6 (inerte).
+  - **MANCANTE, con il suo nome**: il gate **non è stato rilanciato contro un'app viva e un database seedato** (D17: l'unico stack acceso è del pilota, di P.4h). C2 è stato provato su un report JSON nella forma vera del reporter, non su una batteria vera; il giro completo è l'atto di chiusura del prossimo pacchetto.
 - **2026-08-06 — `gitleaks` installato e puntato: il MANCANTE storico e' chiuso (P.7c punto 5).**
   `gitleaks` 8.30.1 (scoop, bucket `main`). Su questi `scripts/`: **nessun rilievo**. Sul repo
   intero: **storia** (`gitleaks git .`, 143 commit) **4 rilievi, 0 veri**; **disco**

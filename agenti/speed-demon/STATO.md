@@ -141,6 +141,50 @@
 
   **Sorte**: tutti **dichiarati**, nessuno chiuso qui — ognuno vuole un test che
   lo falsifichi e il gate rimisurato su un'app viva, che questa chat non ha (D17).
+
+- **2026-08-06 — P.7d: i rilievi del tribunale su questa skill sono CHIUSI, e il
+  punto aperto n°7 (Lighthouse non fissato) con loro** (verbale con le uscite
+  incollate: `../../PROCESSO-GATE-2026-08-06.md`). Ognuno riprodotto **prima** di
+  correggere e rimisurato dopo. Batteria **87 → 103**, ESLint 0 (nemmeno un
+  warning), knip 0, gitleaks 0, jscpd 1 clone invariato (5 righe) e dallo 0,32%
+  allo 0,28%.
+  - **H1 + L1 — CHIUSI.** Il filtro guardava i soli spazi: rifiutava l'unico caso
+    che a volte funziona e lasciava passare i quattro che eseguono codice.
+    Misurato su uno shim `.cmd` vero: `/&ver` **esegue `ver`** con status 0,
+    `%USERNAME%` arriva **espanso**, `/|ver` fa sì che lo shim non parta affatto,
+    `/>rubato.txt` **crea un file su disco**. E la precisazione che rovescia il
+    filtro: l'argomento con spazi passa benissimo quando il percorso dello shim
+    non ha spazi. Gli spazi **restano** rifiutati — restringere la regola su una
+    differenza che dipende da dove è installato lo strumento sarebbe indebolirla.
+  - **H4 — CHIUSO**, con due porte. `erroreDiPercorso` nel contratto (e la pagina
+    **non entra nell'elenco**, perché il passo `misura` gira anche su contratto
+    rosso) e `stessaOrigine(baseUrl, indirizzo)` prima di ogni giro di
+    Lighthouse. Misurato: da «pagine lette: 2 · findings 0 · Lighthouse misura
+    `https://example.com/`» a «pagine lette: **0** · findings **3**».
+  - **H11 + H12 + M15 — CHIUSI, e con essi il punto aperto n°7.** Lighthouse è
+    **13.4.1 dentro la skill**, lanciato con `process.execPath` e col suo limite:
+    `npx --yes` scaricava un pacchetto non fissato a ogni giro e lo cercava prima
+    nel `node_modules/.bin` del progetto misurato. Il `fetch` ha 20 s, il gate dei
+    flussi annidato un tetto di 30 minuti. **Misurato contro un server che accetta
+    e non risponde mai**: da *ucciso a 120 s con ZERO righe stampate* a **57,8 s
+    con sette passi motivati e 19 righe**.
+  - **C1 (condiviso) — CHIUSO, e qui in un modo che vale la pena scrivere.** Con
+    Lighthouse nella skill e il gate dei flussi lanciato con `process.execPath`,
+    **questo gate non cerca più nessun binario per nome**: esegue due percorsi
+    pieni, e basta. La macchina di C1/H1 esce dal guscio e resta in `gate-lib.mjs`
+    con i suoi test — la classe di guasto qui non esiste più per costruzione, non
+    per cura. È la stessa conclusione che launchpad ha scritto per il proprio gate
+    il 2026-08-06 (`5636373`).
+  - **Restano aperti** (prossimo pacchetto, ordine proposto nel verbale): M4
+    (recinti `~~~`: un esempio recintato firma il contratto), M9 (`## Deroghe` è
+    qualunque intestazione che contenga «deroghe»), M10 (la deroga declassa
+    `accessibility` senza firma, e il gate non legge la baseline), M11 (l'unico
+    contratto d'uscita dei quattro che non rifiuta i `{{…}}`), M6, M7, L5, L13.
+  - **MANCANTE, con il suo nome**: il gate **non è stato rimisurato su un'app
+    viva** (D17: l'unico stack acceso è del pilota, di P.4h) — le prove sono su
+    funzioni pure, su un progetto finto e sui due server costruiti apposta. Il
+    giro completo, con Lighthouse che gira davvero, è l'atto di chiusura del
+    prossimo pacchetto.
 - **2026-08-06 — `gitleaks` installato e puntato: il MANCANTE storico e' chiuso
   (P.7c punto 5).** `gitleaks` 8.30.1 (scoop, bucket `main`). Su questi
   `scripts/`: **nessun rilievo**. Sul repo intero: **storia** (`gitleaks git .`,
@@ -204,7 +248,7 @@ E la prima esecuzione vera di `plan` e `tune` su guadagni misurati: home
 | Cosa | Numero | Come e' stato misurato |
 |---|---|---|
 | Passi del gate | 7 | `verify.mjs --json`, `summary.passi` |
-| Test degli script | **87 verdi** (73 al collaudo, +2 con P.0-igiene il 2026-08-03, +11 sciogliendo la `complexity 19` di `verify.mjs` — P.7c punti 1-2, `a6f6d1e`; +1 col test junction di P.0-igiene-2 il 2026-08-04: 87/87, 0 fail) | `node --test "scripts/**/*.test.mjs"` |
+| Test degli script | **103 verdi** (73 al collaudo, +2 con P.0-igiene il 2026-08-03, +11 sciogliendo la `complexity 19` di `verify.mjs` — P.7c punti 1-2, `a6f6d1e`; +1 col test junction di P.0-igiene-2 il 2026-08-04, che fanno 87; **+16 con P.7d il 2026-08-06 sera**: 103/103, 0 fail) | `node --test "scripts/**/*.test.mjs"` |
 | References | 3 | `misurazione.md` · `ottimizzazioni.md` · `seo.md` |
 | Template | 2 | `performance.md` (il contratto) · `handoff-speed-demon.md` |
 | Banchi su cui il gate e' girato | **2** | `banco-prova-negozio` · `banco-prova-immobiliare` — **cancellati dal disco il 2026-07-30** (`../../DECISIONI.md` §25): tornano con `git checkout 67f9001 -- <banco>` |
