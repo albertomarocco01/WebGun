@@ -98,6 +98,8 @@ risponde, e `git rev-parse HEAD` dà un commit. Senza, MANCANTE — e non
 | finding | gravità | perché |
 |---|---|---|
 | working tree sporco (file modificati o non tracciati che non sono ignorati) | `block` | ciò che il provider riceve è il **commit**, non il disco. Un file modificato e non committato è codice che hai misurato e che non partirà — o peggio, che partirà se il deploy è da CLI e non da git |
+| **HEAD è avanti rispetto al suo `upstream`** | `block` | trovato dalla domanda di metà pacchetto (§8, n°1). Un deploy connesso a git pubblica ciò che sta **sul remoto**: con tre commit non spinti, il provider costruisce un commit più vecchio di quello che il gate ha appena misurato — e ogni altro passo resta verde, perché ha guardato il disco |
+| nessun `upstream` configurato | `issue` | si può pubblicare da CLI; ma allora il runbook deve dichiararlo, perché il resto del gate ha misurato un commit che nessun remoto conosce |
 | HEAD è distaccato o non ha un ramo | `warn` | si può pubblicare da un commit staccato; ma il rollback per ramo non esisterà |
 
 Stampa **sempre** il commit e il ramo, anche sul verde: un gate che ha guardato
@@ -114,7 +116,23 @@ fissa che la §19 ha imposto a tutta la casa, e:
 | un handoff dichiara `Gate: ROSSO` | `block` | **la legge n°1**: non si pubblica su gate rosso. Posta da flow-sentinel e da speed-demon prima che questo agente esistesse (`launchpad/STATO.md` §Dipendenze) |
 | un handoff non ha nessuna riga `Gate:` leggibile | `block` | un handoff senza verdetto non è un certificato: è prosa. La §19 esiste perché la prosa libera non si controlla |
 | l'handoff è **più vecchio** dell'ultimo commit che tocca `src/`, `supabase/`, `package.json` | `block` | il verde certificava un altro artefatto. È la stessa idea del `BUILD_ID`, applicata alla catena dei certificati invece che alle pagine |
-| un agente ha lasciato tracce nel progetto ma non ha handoff | `issue` | non è misurabile con certezza quali agenti *dovevano* passare; si segnala e si scrive |
+| **il contratto di un agente esiste e il suo handoff no** | `block` | trovato dalla domanda di metà pacchetto (§8, n°2). Un agente che non è mai passato non lascia nessun `Gate: ROSSO` da leggere: lascia **silenzio**, e il silenzio era verde. La prova che un agente *doveva* passare non è una dichiarazione — è il suo contratto sul disco, che ha scritto lui |
+
+**Le prove di appartenenza alla catena**, misurate e non dichiarate: ogni agente
+della casa lascia un contratto firmato, e il contratto è l'evidenza che l'agente
+faceva parte di questo progetto.
+
+| se esiste… | …allora deve esserci l'handoff di |
+|---|---|
+| `supabase/migrations/` non vuota | `schema-forge` |
+| `docs/vetrina.md` | `vetrina-crafter` |
+| `docs/gestionale.md` | `gestionale-crafter` |
+| `docs/flussi-critici.md` | `flow-sentinel` |
+| `docs/performance.md` | `speed-demon` |
+
+Il contrario **non** vale e non si controlla: un handoff senza contratto è un
+agente che ha lavorato senza far firmare niente, ed è un difetto suo, non un
+bloccante del deploy.
 
 **Il gate non rilancia i gate a monte, ed è una scelta, non una dimenticanza:**
 vedi §6.
@@ -133,6 +151,7 @@ deploy`, `il deploy … non può partire`, con o senza il riferimento a `P.5`.
 | una voce dichiara di bloccare il deploy e il runbook **non la nomina** | `block` | è la voce stessa a dire di essere un prerequisito. Ignorarla è pubblicare contro una prescrizione scritta |
 | il runbook nomina la voce ma non dichiara come è stata chiusa o mitigata | `block` | nominare non è rispondere. La forma richiesta è una riga per numero con l'esito |
 | una voce è dichiarata chiusa nel registro **e** risposta nel runbook | — | nessun finding: è il caso normale a lavoro fatto |
+| **un handoff cita un numero di debito che il registro non contiene** | `issue` | trovato dalla domanda di metà pacchetto (§8, n°3). Il registro lo scrivono le stesse mani che potrebbero volerlo alleggerire: una riga cancellata non lascia traccia in sé, ma **lascia il riferimento orfano** nell'handoff che la citava. È l'unico controllo possibile sulla completezza di un elenco che nessuno può verificare da fuori |
 
 **Questo è il passo che rende il gate del pilota rosso per i motivi giusti**, e
 lo fa **leggendo** — non lo sa da sé. La sua forza è che l'elenco lo hanno
@@ -195,6 +214,13 @@ produce un verde che non ha distinto niente.
 | una variabile dichiarata ha, nel runbook, un **valore** invece di un nome | `block` | il runbook è committato. Le variabili si dichiarano, non si scrivono |
 | una variabile `NEXT_PUBLIC_*` di indirizzo vale `localhost`/`127.0.0.1`/`http://` in produzione | `block` | misurato dal pilota stesso: da `NEXT_PUBLIC_SITO_URL` discendono `canonical`, Open Graph, `sitemap.xml` e `robots.txt`, **prerenderizzati una volta sola**. Sbagliata al deploy, resta sbagliata finché qualcuno non ricostruisce |
 | una variabile dichiarata non è letta da nessun sorgente spedito | `issue` | non è un guasto, ma è quasi sempre il residuo di un nome cambiato: `NEXT_PUBLIC_SITE_URL` invece di `NEXT_PUBLIC_SITO_URL` sul pannello dell'hosting **sembra lavoro fatto** |
+| **una `NEXT_PUBLIC_*` non è dichiarata come impostata prima della build** | `block` | trovato dalla domanda di metà pacchetto (§8, n°4). Una `NEXT_PUBLIC_*` viene **inserita nel bundle da `next build`**: impostarla solo a runtime sul pannello del provider ripara le pagine e lascia rotti `sitemap.xml` e `robots.txt`, che sono prerenderizzati una volta sola. Il pilota lo ha già scritto nel proprio `.env.example`, e nessuno strumento lo controllava |
+| **il codice destruttura `process.env`** (`const { X } = process.env`) | `issue` | i nomi non si risolvono staticamente: il passo dichiara il file e ammette di non poter contare le variabili che ci sono dentro. Un passo che tace su ciò che non ha potuto leggere è un passo che dichiara di aver letto tutto |
+
+**Come si contano le variabili lette.** `process.env.NOME`, `process.env["NOME"]`
+e `process.env['NOME']`. La sola forma con il punto è quella che si scrive per
+prima e quella che lascia scoperte le altre due: una variabile mancante che il
+codice legge con le parentesi quadre passerebbe il gate e romperebbe la pagina.
 
 ### 3.6 `runtime-riproducibile`
 
@@ -211,6 +237,7 @@ forma esatta del falso verde che la §18 vieta.
 | il lockfile non è tracciato da git | `block` | esiste sul disco e non parte: identico al caso sopra, con l'aggravante che sembra a posto |
 | più lockfile di gestori diversi | `issue` | il provider ne sceglie uno, e non è detto sia il tuo |
 | `packageManager` non dichiarato | `warn` | non blocca; ma è la riga che rende la scelta esplicita invece che inferita |
+| **il runbook non dichiara il runtime impostato sul provider**, o lo dichiara più basso del minimo richiesto | `block` | trovato dalla domanda di metà pacchetto (§8, n°5). `engines` **non è imposto da nessun provider** senza `engine-strict`: dichiararlo e basta produce una build che fallisce con la colpa assegnata, non una build che riesce. La riga `Runtime del provider: Node 24` nel runbook trasforma una prescrizione in un confronto |
 
 **Come si legge `engines` delle dipendenze.** Ogni `node_modules/*/package.json`
 e `node_modules/@scope/*/package.json`; si prende il **massimo** dei minimi
@@ -231,10 +258,16 @@ perfettamente corretto — un rifiuto indebito, che è il difetto peggiore di un
 gate perché insegna a scavalcarlo.
 
 **Scelta: l'impronta si deriva dal commit, non si registra.**
-`next.config.ts` dichiara
+`next.config.ts` dichiara una funzione che **risolve il commit dove si trova**,
+in quest'ordine, e **solleva** se non lo trova da nessuna parte:
 
 ```ts
-generateBuildId: () => process.env.WEBGUN_COMMIT ?? "<sha corto>",
+generateBuildId: () =>
+  process.env.WEBGUN_COMMIT            // impostata a mano, ha la precedenza
+  ?? process.env.VERCEL_GIT_COMMIT_SHA // Vercel, build connessa a git
+  ?? process.env.CF_PAGES_COMMIT_SHA   // Cloudflare Pages
+  ?? gitRevParseHead()                 // build locale
+  ?? (() => { throw new Error("impronta: commit non risolvibile"); })(),
 ```
 
 così il `BUILD_ID` è **una funzione del commit**: chiunque ricostruisca lo
@@ -246,6 +279,8 @@ ho approvato?*
 | finding | gravità | perché |
 |---|---|---|
 | `next.config.ts` non dichiara `generateBuildId` | `block` | l'impronta è casuale: dopo una ricostruzione del provider **nessuno può più dimostrare cosa c'è online**. Non è un dettaglio di comodità: è la sola prova d'identità che sopravvive al fatto che non siamo noi a costruire |
+| **`generateBuildId` contiene un SHA scritto come letterale** | `block` | trovato dalla domanda di metà pacchetto (§8, n°6), ed era **la mia prima versione**. Un letterale scritto il giorno di `impronta` resta lì al commit successivo: la build del provider dichiarerebbe con sicurezza il commit **sbagliato**. È peggio dell'impronta casuale — quella ammette di non sapere, questa afferma il falso |
+| `generateBuildId` non solleva quando il commit non è risolvibile | `issue` | un ripiego silenzioso è un artefatto che non sa dire chi è. Una build che non può identificarsi non deve nascere |
 | `.next/BUILD_ID` non corrisponde al commit di HEAD | `block` | l'artefatto sul disco è di un altro commit: si ricostruisce |
 | l'app servita su `--url` non porta l'impronta attesa | `block` | sta rispondendo un'altra applicazione, o una build precedente. È il caso che vetrina-crafter ha misurato per davvero il 2026-08-04 |
 | `--url` assente | MANCANTE | il meccanismo che verrà usato **dopo** il deploy non è stato esercitato. Approvare una pubblicazione la cui prova d'identità non si è mai vista funzionare è la definizione di firma in bianco |
@@ -410,5 +445,38 @@ esistesse è il caso vero, e lo prende `segreti`.
   stessa.
 - **`node --test` con glob vuole Node 21+.** I file di test si elencano per
   esteso.
+
+## 8. La domanda di metà pacchetto, e le sei risposte
+
+Il mandato di P.5 prescrive una sosta a metà, prima di scrivere il codice, con
+una sola domanda: **quale passo del mio gate potrebbe essere verde su un deploy
+che non si deve fare?** È il contrappeso dichiarato al fatto che progettazione e
+costruzione stanno nella stessa chat, senza un revisore in mezzo.
+
+Eseguita passo per passo. Sei risposte, tutte diventate regole sopra.
+
+| # | passo | il verde falso | cosa è cambiato |
+|---|---|---|---|
+| 1 | `radice-pulita` | albero pulito, **e HEAD avanti di tre commit rispetto al remoto**. Il provider costruisce dal remoto: pubblica un commit più vecchio di quello che ho misurato, e tutti gli altri passi restano verdi perché hanno guardato il disco | confronto con `@{upstream}`: avanti = `block`, nessun upstream = `issue` |
+| 2 | `catena-gate` | un agente **non è mai passato**. Non lascia un `Gate: ROSSO` da leggere: lascia silenzio, e il silenzio è verde | il contratto sul disco (`docs/vetrina.md`, `docs/flussi-critici.md`, `supabase/migrations/`…) è la **prova misurata** che un agente doveva passare. Contratto senza handoff = `block` |
+| 3 | `debito-bloccante` | qualcuno **cancella la riga** che blocca. L'elenco lo scrivono le stesse mani che vorrebbero alleggerirlo | i riferimenti orfani: un handoff che cita `n°32` mentre il registro non ce l'ha più = `issue`. È l'unico controllo di completezza possibile dall'esterno |
+| 4 | `ambiente` | il codice legge `process.env["X"]` invece di `process.env.X`, e una variabile mancante non viene contata; oppure una `NEXT_PUBLIC_*` viene impostata **solo a runtime** sul pannello, e `sitemap.xml` resta rotto per sempre | tre forme di lettura invece di una, destrutturazione dichiarata come non leggibile, e `NEXT_PUBLIC_*` da dichiarare come impostata **prima della build** |
+| 5 | `runtime-riproducibile` | `engines: ">=22"` dichiarato, provider a Node 20, **nessuno impone niente**. La build fallisce esattamente come prima, solo con la colpa scritta | il runbook dichiara `Runtime del provider: Node <n>` e il gate lo **confronta** col minimo richiesto. Una prescrizione diventa una misura |
+| 6 | `impronta-artefatto` | **era un difetto mio, e l'avrei spedito.** La prima stesura scriveva `process.env.WEBGUN_COMMIT ?? "<sha corto>"`: un letterale, messo lì il giorno di `impronta`. Al commit successivo quel letterale è ancora lì, e la build del provider **dichiara con sicurezza il commit sbagliato** — peggio dell'impronta casuale, che almeno ammette di non sapere | la funzione risolve da `WEBGUN_COMMIT`, `VERCEL_GIT_COMMIT_SHA`, `CF_PAGES_COMMIT_SHA`, `git rev-parse`, e **solleva** se non trova niente. Un letterale in `generateBuildId` è ora un `block` del gate |
+
+**Due osservazioni che vanno tenute insieme al risultato.**
+
+La prima: cinque risposte su sei non erano falsi verdi del *codice* — erano
+falsi verdi della *progettazione*, cioè cose che il gate non avrebbe mai
+guardato perché nessuno gli aveva detto di guardarle. Un collaudo del codice non
+le avrebbe trovate: si trovano solo rileggendo la specifica con l'intenzione di
+scavalcarla.
+
+La seconda: la sesta è di un'altra specie. Non era un buco, era **una riga
+sbagliata scritta con sicurezza**, ed è la classe di errore che il verbale di
+catena di P.4 ha misurato quattro volte su cinque anelli — *cause attribuite
+male a fatti giusti*. Il fatto («l'impronta deve derivare dal commit») era
+giusto; la conclusione («allora scrivo il commit nel file») era sbagliata, e
+sembrava la stessa cosa.
 </content>
 </invoke>
