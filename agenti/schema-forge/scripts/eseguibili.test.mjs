@@ -21,7 +21,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  argomentiOstiliACmd,
   comandoRicerca,
+  motivoOstile,
   dentroLaRadice,
   formaEseguibile,
   scegliEseguibile,
@@ -68,7 +70,7 @@ test("la radice non e' dentro se stessa, e senza radice non si rifiuta niente", 
 });
 
 // `C:\prog-altro` comincia per `C:\prog`: un confronto per prefisso di stringa
-// lo direbbe dentro. `relative` no, ed e' il motivo per cui si usa lui.
+// lo direbbe dentro. Il confronto a segmenti no, ed e' il motivo per cui si usa quello.
 test("una cartella sorella col nome che comincia uguale non e' dentro", () => {
   assert.equal(dentroLaRadice("C:\\prog-altro\\supabase.exe", "C:\\prog"), false);
 });
@@ -132,4 +134,39 @@ test("fuori da Windows si cerca lo stesso: il nome nudo non si lancia piu'", () 
 test("comando davvero assente: file null, e chi lancia deve dire MANCANTE", () => {
   assert.deepEqual(formaEseguibile("squawk", () => null, "win32"), { file: null, prefisso: [] });
   assert.deepEqual(formaEseguibile("squawk", () => null, "linux"), { file: null, prefisso: [] });
+});
+
+// -------- argomenti ostili a `cmd /c` (referto § H2/L1, 2026-08-06)
+// Questo gate non aveva nessun filtro. Misurato su uno shim `.cmd` vero, con
+// `cmd.exe /c`:
+//   /&ver         → lo shim riceve `/`, e `ver` ESEGUE. status 0
+//   %USERNAME%    → lo shim riceve `Utente`: l'argomento arriva espanso
+//   /|ver         → lo shim non parte affatto, parte `ver`. status 0
+//   />rubato.txt  → status 0, e su disco compare `rubato.txt`
+// Il commento della casa «NON si abilita `shell: true`» era una garanzia falsa:
+// `cmd.exe /c` E' una shell.
+
+test("i metacaratteri di cmd sono ostili: attraverso `cmd /c` eseguono codice", () => {
+  for (const arg of ["/&ver", "%USERNAME%", "/|ver", "/>rubato.txt", "a<b", "(x)", 'dice"quello', "a^b"]) {
+    assert.deepEqual(argomentiOstiliACmd([arg], "win32"), [arg], `passava: ${arg}`);
+  }
+});
+
+test("gli spazi restano ostili: con lo shim in `C:/Program Files` il programma si tronca", () => {
+  assert.deepEqual(argomentiOstiliACmd(["--config C:/x/.sqlfluff"], "win32"), ["--config C:/x/.sqlfluff"]);
+});
+
+test("gli argomenti veri di `supabase db reset` restano leciti", () => {
+  assert.deepEqual(argomentiOstiliACmd(["db", "reset"], "win32"), []);
+  assert.deepEqual(argomentiOstiliACmd(["db", "advisors", "--local", "--level", "warn", "--fail-on", "error"], "win32"), []);
+});
+
+test("fuori da Windows non c'e' cmd, e nessun argomento e' ostile", () => {
+  assert.deepEqual(argomentiOstiliACmd(["/&ver", "db reset"], "linux"), []);
+});
+
+test("il motivo nomina i caratteri colpevoli, non dice solo `errore`", () => {
+  const motivo = motivoOstile(["/&ver"]);
+  assert.match(motivo, /E' una shell/);
+  assert.ok(motivo.includes('"/&ver"'));
 });

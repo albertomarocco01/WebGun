@@ -16,7 +16,7 @@ import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "n
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { formaEseguibile, risolviEseguibile } from "./eseguibili.mjs";
+import { argomentiOstiliACmd, formaEseguibile, motivoOstile, risolviEseguibile } from "./eseguibili.mjs";
 
 const SKILL_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 // Le configurazioni dei linter viaggiano con la SKILL, non col progetto: il
@@ -97,6 +97,15 @@ function run(cmd, cmdArgs, opts = {}) {
       error: new Error(`${cmd} non risolto nel PATH${rifiutoDi(cmd)}`),
       status: null, stdout: "", stderr: "",
     };
+  }
+  // Il controllo vale SOLO quando si passa davvero da `cmd /c` (`prefisso`
+  // pieno): un `.exe` riceve gli argomenti come vettore e non c'e' nessuna
+  // shell a ri-analizzarli.
+  if (prefisso.length > 0) {
+    const ostili = argomentiOstiliACmd(cmdArgs);
+    if (ostili.length > 0) {
+      return { error: new Error(motivoOstile(ostili)), status: null, stdout: "", stderr: "" };
+    }
   }
   return spawnSync(file, [...prefisso, ...cmdArgs], { encoding: "utf8", cwd: PROJECT, ...opts });
 }

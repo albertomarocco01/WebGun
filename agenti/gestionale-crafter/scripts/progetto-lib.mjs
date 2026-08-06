@@ -55,6 +55,46 @@ export function chiaviDiPrimoLivello(blocco) {
 // passare per «audit completo» un audit su una cartella inesistente.
 const CHIAVI_OBBLIGATORIE = ["adminRoot", "guardie", "entita"];
 
+/**
+ * `adminRoot` non e' una stringa qualsiasi: e' un percorso che questo gate
+ * concatena e passa a `cmd.exe /c` (il passo `a11y` lo da' a ESLint) e con cui
+ * costruisce le rotte da cercare su disco. Lo scrive il PROGETTO AUDITATO.
+ *
+ * Fino al 2026-08-06 `validaConfig` lo controllava con `!== undefined`: nemmeno
+ * un controllo di tipo (referto § H2). Misurato lo stesso giorno: `src/app/admin&calc`
+ * si crea davvero su Windows, e attraverso `cmd /c` l'argomento si troncava —
+ * con lo status che restava 0, cioe' ESLint girava su un'altra cartella e il
+ * passo diventava verde.
+ *
+ * Le quattro condizioni sono le sole che rendono `adminRoot` cio' che il resto
+ * del gate presume: una stringa, non vuota, RELATIVA alla radice del progetto e
+ * senza risalite. Non e' una restrizione nuova: e' quella che il codice dava
+ * gia' per scontata senza dirlo.
+ */
+// I caratteri di CONTROLLO sono proprio cio' che si cerca: un a capo dentro
+// un argomento e' una riga di comando in piu' per `cmd`. `no-control-regex`
+// esiste per chi ce li mette per sbaglio (DECISIONI.md §8: ogni esenzione ha
+// il motivo sulla riga sopra).
+// eslint-disable-next-line no-control-regex
+const OSTILE_IN_PERCORSO = /[\s&|<>^()"%*?]|[\u0000-\u001f]/;
+
+export function erroriAdminRoot(valore) {
+  if (typeof valore !== "string") return [`\`adminRoot\` deve essere una stringa, non ${valore === null ? "null" : typeof valore}`];
+  const pulito = valore.trim();
+  if (pulito === "") return ["`adminRoot` e' vuoto: la radice del gestionale sarebbe la radice del progetto, e ogni rotta esisterebbe"];
+  const errori = [];
+  if (/^([a-zA-Z]:)?[\\/]/.test(pulito)) {
+    errori.push("`adminRoot` deve essere RELATIVO alla radice del progetto: un percorso assoluto porta l'audit fuori dal progetto che sta giudicando");
+  }
+  if (pulito.split(/[\\/]/).includes("..")) {
+    errori.push("`adminRoot` contiene `..`: risalire sopra la radice porta l'audit fuori dal progetto che sta giudicando");
+  }
+  if (OSTILE_IN_PERCORSO.test(pulito)) {
+    errori.push("`adminRoot` contiene un metacarattere di shell (& | < > ^ ( ) \" % * ?): questo percorso viene passato a `cmd.exe /c`, che lo ri-analizza — l'argomento arriverebbe troncato e lo strumento risponderebbe 0 su un'altra cartella");
+  }
+  return errori;
+}
+
 export function validaConfig(oggetto) {
   const errori = [];
   if (!oggetto || typeof oggetto !== "object") {
@@ -63,6 +103,7 @@ export function validaConfig(oggetto) {
   for (const chiave of CHIAVI_OBBLIGATORIE) {
     if (oggetto[chiave] === undefined) errori.push(`manca la chiave \`${chiave}\``);
   }
+  if (oggetto.adminRoot !== undefined) errori.push(...erroriAdminRoot(oggetto.adminRoot));
   if (Array.isArray(oggetto.guardie) && oggetto.guardie.length === 0) {
     errori.push("`guardie` e' vuoto: senza il nome delle funzioni di guardia, la regola sulle rotte non puo' scattare mai");
   }

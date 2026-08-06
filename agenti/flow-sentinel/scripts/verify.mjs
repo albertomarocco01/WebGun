@@ -23,8 +23,10 @@ import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  argomentiOstiliACmd,
   batteriaHaEseguito,
   comandoRicerca,
+  motivoOstile,
   contaGravita,
   contrattoUscita,
   dentroLaRadice,
@@ -135,6 +137,16 @@ function run(cmd, cmdArgs, opts = {}) {
   const { file, prefisso } = formaEseguibile(cmd, dove);
   if (file === null) {
     return { error: new Error(`${cmd} non risolto nel PATH${rifiutoDi(cmd)}`), status: null, stdout: "", stderr: "" };
+  }
+  // Solo quando si passa davvero da `cmd /c`: un `.exe` — e `psql` lo e' —
+  // riceve gli argomenti come vettore, e nessuna shell li ri-analizza. Qui
+  // passano l'SQL intero e l'URL del database: attraverso una shell sarebbero
+  // gia' due argomenti diversi da quelli scritti (referto § H1/H2/L1).
+  if (prefisso.length > 0) {
+    const ostili = argomentiOstiliACmd(cmdArgs);
+    if (ostili.length > 0) {
+      return { error: new Error(motivoOstile(ostili)), status: null, stdout: "", stderr: "" };
+    }
   }
   return spawnSync(file, [...prefisso, ...cmdArgs], {
     encoding: "utf8", cwd: PROGETTO, maxBuffer: 64 * 1024 * 1024, ...opts,

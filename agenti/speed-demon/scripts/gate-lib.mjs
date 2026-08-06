@@ -1000,10 +1000,10 @@ export function formaEseguibile(
 }
 
 /**
- * Gli argomenti che NON sopravvivono a `cmd /c`.
+ * Gli argomenti che NON sopravvivono a `cmd /c` — e quelli che ne APPROFITTANO.
  *
- * Misurato il 2026-07-30, con lo stesso comando e un argomento solo di
- * differenza:
+ * PRIMA META', misurata il 2026-07-30: gli spazi. Con lo stesso comando e un
+ * argomento solo di differenza:
  *
  *   ...npx.cmd lighthouse <url> --preset=desktop
  *     → status 0, 181688 byte di JSON
@@ -1016,15 +1016,42 @@ export function formaEseguibile(
  * argomenti prima, e finisce troncato al primo spazio del suo percorso. Il
  * messaggio d'errore parla quindi di `C:\\Program`, cioe' di tutt'altro
  * argomento: e' il motivo per cui la diagnosi ha richiesto due giri.
+ * Rimisurato il 2026-08-06 e PRECISATO: il collasso avviene quando anche il
+ * percorso dello shim contiene uno spazio (`C:\\Program Files\\nodejs\\npx.cmd`
+ * su questa macchina). Con uno shim senza spazi, l'argomento con spazi passa.
+ * La riga resta com'era — restringerla sarebbe indebolire una regola su una
+ * differenza che dipende da DOVE e' installato lo strumento.
  *
- * La difesa non e' virgolettare meglio — e' non passare argomenti con spazi. Un
- * gate che li passasse in silenzio riporterebbe «strumento assente» dove lo
- * strumento c'e', cioe' MANCANTE invece di un errore vero: direzione sicura,
- * diagnosi bugiarda.
+ * SECONDA META', misurata il 2026-08-06 (referto § H1/L1): i metacaratteri, che
+ * questa funzione lasciava passare tutti. Stesso shim, stessa forma:
+ *
+ *   ...shim.cmd /&ver          → SHIM ricevuto: /   + «Microsoft Windows […]»
+ *                                cioe' `ver` ESEGUITO, e status 0
+ *   ...shim.cmd %USERNAME%     → SHIM ricevuto: Utente
+ *   ...shim.cmd /|ver          → lo shim non parte affatto, parte `ver`, status 0
+ *   ...shim.cmd />rubato.txt   → status 0, e su disco compare `rubato.txt`
+ *
+ * Il commento della casa «NON si usa `shell: true`» diceva il vero e non
+ * bastava: `cmd.exe /c` **e' una shell**, e ri-analizza `& | < > ^ ( ) " %`
+ * prima che gli argomenti diventino argomenti. La riga che filtrava i soli
+ * spazi rifiutava l'unico caso che a volte funziona e lasciava passare i quattro
+ * che eseguono codice.
+ *
+ * La difesa non e' virgolettare meglio: dentro `"…"` cmd neutralizza `&|<>()`
+ * ma NON `%`, e Node virgoletta solo cio' che contiene spazi. Si rifiuta e si
+ * dice perche' — un gate che li passasse in silenzio misurerebbe qualcos'altro
+ * e stamperebbe un numero: direzione sicura, diagnosi bugiarda.
  */
+// I caratteri di CONTROLLO sono proprio cio' che si cerca: un a capo dentro
+// un argomento e' una riga di comando in piu' per `cmd`. `no-control-regex`
+// esiste per chi ce li mette per sbaglio (DECISIONI.md §8: ogni esenzione ha
+// il motivo sulla riga sopra).
+// eslint-disable-next-line no-control-regex
+const OSTILI_A_CMD = /[\s&|<>^()"%]|[\u0000-\u001f]/;
+
 export function argomentiOstiliACmd(args, piattaforma = process.platform) {
   if (piattaforma !== "win32") return [];
-  return args.filter((a) => typeof a === "string" && /\s/.test(a));
+  return (args ?? []).filter((a) => OSTILI_A_CMD.test(String(a)));
 }
 
 // --------------------------------------------------------- contratto d'uscita

@@ -501,6 +501,39 @@ test("fuori da Windows gli spazi negli argomenti non sono un problema", () => {
   assert.deepEqual(argomentiOstiliACmd(["--flags=a b c"], "linux"), []);
 });
 
+// --------- i metacaratteri, che passavano tutti (referto § H1/L1, 2026-08-06)
+// Il filtro guardava i soli spazi: rifiutava l'unico caso che a volte funziona
+// e lasciava passare i quattro che eseguono codice. Misurato su uno shim `.cmd`
+// vero, con `cmd.exe /c`:
+//   /&ver         → lo shim riceve `/`, e `ver` ESEGUE. status 0
+//   %USERNAME%    → lo shim riceve `Utente`: l'argomento arriva espanso
+//   /|ver         → lo shim non parte affatto, parte `ver`. status 0
+//   />rubato.txt  → status 0, e su disco compare `rubato.txt`
+test("i metacaratteri di cmd sono ostili: eseguono codice, e prima passavano", () => {
+  for (const arg of ["/&ver", "%USERNAME%", "/|ver", "/>rubato.txt", "a<b", "(x)", 'dice"quello', "a^b"]) {
+    assert.deepEqual(argomentiOstiliACmd([arg], "win32"), [arg], `passava: ${arg}`);
+  }
+});
+
+test("un a capo dentro un argomento e' una riga di comando in piu'", () => {
+  assert.deepEqual(argomentiOstiliACmd(["ok\r\nver"], "win32"), ["ok\r\nver"]);
+});
+
+test("gli argomenti veri del giro di Lighthouse restano tutti leciti", () => {
+  // La regola non deve scattare su cio' che il gate passa DAVVERO, o sarebbe
+  // un rosso strutturale: e un rosso strutturale insegna a ignorare il rosso.
+  const veri = [
+    "--yes", "lighthouse", "http://127.0.0.1:3200/catalogo", "--output=json",
+    "--output-path=stdout", "--quiet", "--chrome-flags=--headless=new",
+    "--only-categories=performance,accessibility,best-practices,seo", "--preset=desktop",
+  ];
+  assert.deepEqual(argomentiOstiliACmd(veri, "win32"), []);
+});
+
+test("fuori da Windows nemmeno i metacaratteri sono un problema: non c'e' cmd", () => {
+  assert.deepEqual(argomentiOstiliACmd(["/&ver", "%USERNAME%"], "linux"), []);
+});
+
 // CORREZIONE del 2026-08-06. Prima: «fuori da Windows non si passa da nessuna
 // shell» asseriva `{ file: "lighthouse" }`, cioe' il NOME NUDO — che e' proprio
 // cio' che `spawnSync` risolve dalla directory corrente (§ C1 del referto).

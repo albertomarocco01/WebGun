@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   HANDOFF,
+  erroriAdminRoot,
   chiaviDiPrimoLivello,
   contrattoUscita,
   normalizzaTipi,
@@ -213,5 +214,52 @@ shadow_port = 57420
 
   it("senza `[db].port` non inventa la 54322", () => {
     assert.equal(urlDbProgetto("[api]\nport = 1\n"), null);
+  });
+});
+
+// ---- `adminRoot` non e' una stringa qualsiasi (referto § H2, 2026-08-06)
+// `validaConfig` lo controllava con `!== undefined`: nemmeno un controllo di
+// tipo. Da li' il valore va a finire in `cmd.exe /c` (passo `a11y`) e nella
+// costruzione delle rotte cercate su disco — e lo scrive il progetto AUDITATO.
+// Misurato: `src/app/admin&calc` si crea davvero su Windows, e attraverso
+// `cmd /c` l'argomento si tronca con lo status che resta 0.
+
+describe("erroriAdminRoot", () => {
+  it("una radice relativa e pulita non produce nessun errore", () => {
+    assert.deepEqual(erroriAdminRoot("src/app/admin"), []);
+    assert.deepEqual(erroriAdminRoot("src/app/area-riservata"), [], "il trattino e' legittimo");
+    assert.deepEqual(erroriAdminRoot("src\\app\\admin"), [], "le barre di Windows pure");
+  });
+
+  it("un metacarattere di shell si rifiuta, e il messaggio dice perche'", () => {
+    const errori = erroriAdminRoot("src/app/admin&calc");
+    assert.equal(errori.length, 1);
+    assert.match(errori[0], /metacarattere di shell/);
+  });
+
+  it("lo spazio si rifiuta: attraverso `cmd /c` tronca il programma", () => {
+    assert.equal(erroriAdminRoot("src/app/mia admin").length, 1);
+  });
+
+  it("un percorso assoluto porta l'audit fuori dal progetto che giudica", () => {
+    assert.match(erroriAdminRoot("C:/Windows").join(""), /RELATIVO/);
+    assert.match(erroriAdminRoot("/etc").join(""), /RELATIVO/);
+  });
+
+  it("un `..` risale sopra la radice: stesso guasto, altra strada", () => {
+    assert.match(erroriAdminRoot("src/../../altrove").join(""), /contiene `\.\.`/);
+  });
+
+  it("non una stringa, o vuota: due errori diversi, perche' due sbagli diversi", () => {
+    assert.match(erroriAdminRoot(42).join(""), /deve essere una stringa/);
+    assert.match(erroriAdminRoot(null).join(""), /deve essere una stringa, non null/);
+    assert.match(erroriAdminRoot(["src/app/admin"]).join(""), /deve essere una stringa/);
+    assert.match(erroriAdminRoot("   ").join(""), /e' vuoto/);
+  });
+
+  it("validaConfig lo applica: la configurazione ostile non passa piu'", () => {
+    const base = { adminRoot: "src/app/admin&calc", guardie: ["richiediStaff"], entita: [] };
+    assert.equal(validaConfig(base).errori.length, 1);
+    assert.deepEqual(validaConfig({ ...base, adminRoot: "src/app/admin" }).errori, []);
   });
 });

@@ -31,7 +31,7 @@ import {
   verdettoDa,
 } from "./progetto-lib.mjs";
 import { conBarre } from "./audit-lib.mjs";
-import { formaEseguibile, risolviEseguibile } from "./eseguibili.mjs";
+import { argomentiOstiliACmd, formaEseguibile, motivoOstile, risolviEseguibile } from "./eseguibili.mjs";
 
 const SKILL_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -122,6 +122,18 @@ function esegui(progetto, cmd, argomentiCmd) {
   const { file, prefisso } = formaEseguibile(cmd, dove);
   if (file === null) {
     return { error: new Error(`${cmd} non risolto nel PATH${rifiutoDi(cmd)}`), status: null, stdout: "", stderr: "" };
+  }
+  // Solo quando si passa davvero da `cmd /c`: un `.exe` riceve gli argomenti
+  // come vettore, e nessuna shell li ri-analizza. Qui ci passa `adminRoot`, che
+  // lo scrive il progetto auditato (referto § H2): `src/app/admin&calc` si crea
+  // davvero su Windows, e attraverso `cmd /c` l'argomento si troncava con lo
+  // status che restava 0 — cioe' ESLint girava su un'altra cartella e il passo
+  // `a11y` diventava verde.
+  if (prefisso.length > 0) {
+    const ostili = argomentiOstiliACmd(argomentiCmd);
+    if (ostili.length > 0) {
+      return { error: new Error(motivoOstile(ostili)), status: null, stdout: "", stderr: "" };
+    }
   }
   return spawnSync(file, [...prefisso, ...argomentiCmd], {
     encoding: "utf8",

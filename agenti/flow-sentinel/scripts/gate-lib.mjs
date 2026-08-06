@@ -658,6 +658,49 @@ export function dentroLaRadice(percorso, radice) {
 }
 
 /**
+ * Gli argomenti che non sopravvivono a `cmd /c` — e quelli che ne APPROFITTANO.
+ *
+ * Il commento della casa «NON si abilita `shell: true`», qui sopra, diceva il
+ * vero e non bastava: `cmd.exe /c` **E' una shell**, e ri-analizza
+ * `& | < > ^ ( ) " %` prima che gli argomenti diventino argomenti. Questo gate
+ * non aveva nessun filtro (referto § H2/L1). Misurato il 2026-08-06 su uno shim
+ * `.cmd` qualsiasi:
+ *
+ *   shim.cmd /&ver         → SHIM ricevuto: /  + «Microsoft Windows […]»: `ver`
+ *                             ESEGUITO, e status 0
+ *   shim.cmd %USERNAME%    → SHIM ricevuto: Utente (l'argomento arriva espanso)
+ *   shim.cmd /|ver         → lo shim non parte affatto, parte `ver`, status 0
+ *   shim.cmd />rubato.txt  → status 0, e su disco compare `rubato.txt`
+ *
+ * Gli spazi restano rifiutati, ed e' la regola misurata da speed-demon il
+ * 2026-07-30: quando anche il percorso dello shim contiene uno spazio — e
+ * `C:\Program Files\nodejs\npx.cmd` ce l'ha — un argomento con spazi fa
+ * collassare il virgolettato del PROGRAMMA, e l'errore accusa `C:\Program`.
+ *
+ * Non si virgoletta meglio: dentro `"…"` cmd neutralizza `&|<>()` ma NON `%`, e
+ * Node virgoletta da solo soltanto cio' che contiene spazi. Si rifiuta e si dice
+ * perche': uno strumento che riceve un altro argomento risponde comunque, e
+ * risponde di un'altra cosa.
+ */
+// I caratteri di CONTROLLO sono proprio cio' che si cerca: un a capo dentro
+// un argomento e' una riga di comando in piu' per `cmd`. `no-control-regex`
+// esiste per chi ce li mette per sbaglio (DECISIONI.md §8: ogni esenzione ha
+// il motivo sulla riga sopra).
+// eslint-disable-next-line no-control-regex
+const OSTILI_A_CMD = /[\s&|<>^()"%]|[\u0000-\u001f]/;
+
+export function argomentiOstiliACmd(args, piattaforma = process.platform) {
+  if (piattaforma !== "win32") return [];
+  return (args ?? []).filter((a) => OSTILI_A_CMD.test(String(a)));
+}
+
+/** Il messaggio, uguale nelle quattro skill: dice il carattere colpevole. */
+export const motivoOstile = (ostili) =>
+  "argomenti non passabili da `cmd.exe /c`, che E' una shell e li ri-analizza " +
+  "(spazi, oppure uno fra & | < > ^ ( ) \" % o un carattere di controllo): " +
+  `${ostili.map((a) => JSON.stringify(String(a))).join(", ")}`;
+
+/**
  * `file: null` quando il nome non si risolve: il nome nudo NON si lancia,
  * perche' lo risolverebbe la directory corrente. Strumento assente = verifica
  * MANCANTE, che e' la regola della casa, mai un `pass`.

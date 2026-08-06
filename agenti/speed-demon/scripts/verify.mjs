@@ -135,7 +135,10 @@ function esegui(cmd, args, opzioni = {}) {
     if (ostili.length > 0) {
       return {
         error: new Error(
-          `argomenti con spazi non passabili da cmd.exe: ${ostili.map((a) => JSON.stringify(a)).join(", ")}`,
+          "argomenti non passabili da `cmd.exe /c`, che E' una shell e li ri-analizza " +
+          "(spazi, oppure uno fra & | < > ^ ( ) \" % o un carattere di controllo): " +
+          `${ostili.map((a) => JSON.stringify(a)).join(", ")}. ` +
+          "Misurato il 2026-08-06: `/&ver` esegue `ver` con status 0, `/>x.txt` scrive un file, `%VAR%` arriva espanso.",
         ),
         status: null,
         stdout: "",

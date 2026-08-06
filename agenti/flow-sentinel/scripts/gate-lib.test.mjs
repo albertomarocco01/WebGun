@@ -14,7 +14,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  argomentiOstiliACmd,
   contaGravita,
+  motivoOstile,
   contrattoUscita,
   copertura,
   dettaglioPlaywright,
@@ -995,4 +997,39 @@ test("senza playwright.config.ts la batteria non e' rilanciabile da chi viene do
 
 test("handoff coerente e configurazione in regola: passo verde", () => {
   assert.equal(contrattoUscita("docs/handoff/12.md", "Gate: VERDE\n", CONFIG_PW, "VERDE").status, "pass");
+});
+
+// ------- argomenti ostili a `cmd /c` (referto § H2/L1, 2026-08-06)
+// Questo gate non aveva nessun filtro: passava a `cmd.exe /c` l'SQL intero e
+// l'URL del database. Misurato su uno shim `.cmd` vero:
+//   /&ver         → lo shim riceve `/`, e `ver` ESEGUE. status 0
+//   %USERNAME%    → lo shim riceve `Utente`: l'argomento arriva espanso
+//   /|ver         → lo shim non parte affatto, parte `ver`. status 0
+//   />rubato.txt  → status 0, e su disco compare `rubato.txt`
+
+test("i metacaratteri di cmd sono ostili: attraverso `cmd /c` eseguono codice", () => {
+  for (const arg of ["/&ver", "%USERNAME%", "/|ver", "/>rubato.txt", "a<b", "(x)", 'dice"quello', "a^b"]) {
+    assert.deepEqual(argomentiOstiliACmd([arg], "win32"), [arg], `passava: ${arg}`);
+  }
+});
+
+test("l'SQL con gli spazi e' ostile a cmd: e' l'argomento che questo gate passa piu' spesso", () => {
+  const sql = "select count(*) from information_schema.tables";
+  assert.deepEqual(argomentiOstiliACmd([sql], "win32"), [sql]);
+});
+
+test("gli argomenti veri di psql senza spazi restano leciti", () => {
+  assert.deepEqual(argomentiOstiliACmd(
+    ["postgresql://postgres:postgres@127.0.0.1:54322/postgres", "-At", "-X"], "win32"), []);
+});
+
+test("fuori da Windows non c'e' cmd, e nessun argomento e' ostile", () => {
+  assert.deepEqual(argomentiOstiliACmd(["/&ver", "select 1"], "linux"), []);
+});
+
+test("il motivo nomina i caratteri colpevoli, non dice solo `errore`", () => {
+  const motivo = motivoOstile(["/&ver"]);
+  assert.match(motivo, /E' una shell/);
+  assert.match(motivo, /& \| < > \^ \( \) " %/);
+  assert.ok(motivo.includes('"/&ver"'));
 });
