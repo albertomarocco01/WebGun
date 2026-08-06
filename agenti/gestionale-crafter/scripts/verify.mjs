@@ -452,8 +452,22 @@ function passoA11y(progetto, config) {
   // La configurazione si stampa SEMPRE, anche sul verde: un `pass` non deve
   // poter nascondere CON QUALI regole e' stato ottenuto.
   const premessa = `controllate: ${bersagli.map(conBarre).join(", ")} · regole: ${conBarre(CONFIG_A11Y)} (della skill, non del progetto)`;
-  record(ID.a11y, etichetta, res.status === 0 ? "pass" : "fail",
-    premessa + (res.status === 0 ? "" : `\n${(res.stdout || res.stderr || "").trim().split("\n").slice(0, 20).join("\n")}`));
+  const coda = `\n${(res.stdout || res.stderr || "").trim().split("\n").slice(0, 20).join("\n")}`;
+  if (res.status === 0) {
+    record(ID.a11y, etichetta, "pass", premessa);
+    return;
+  }
+  // 1 = ESLint ha misurato e ha trovato. 2 = ESLint NON ha misurato: config
+  // illeggibile, oppure nessun file lintabile sotto i bersagli. Misurato il
+  // 2026-08-06 su cartelle che esistono e contengono solo file che la
+  // configurazione non copre: uscita 2, «all of the files matching the glob
+  // pattern are ignored». Farlo valere `fail` e' un rosso strutturale, e un
+  // rosso strutturale insegna a ignorare il rosso; farlo valere `pass` sarebbe
+  // peggio. E' una verifica MANCANTE, come ogni strumento che non ha misurato.
+  record(ID.a11y, etichetta, res.status === 1 ? "fail" : "skipped",
+    res.status === 1
+      ? premessa + coda
+      : `${premessa}\nESLint non ha misurato niente (uscita ${res.status}): o la configurazione non e' leggibile, o sotto quelle cartelle non c'e' nessun file che la configurazione copre. L'accessibilita' delle viste NON e' stata verificata.${coda}`);
 }
 
 // --------------------------------------------------------- 7. contratto d'uscita
