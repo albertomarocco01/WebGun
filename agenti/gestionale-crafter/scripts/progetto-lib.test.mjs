@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   HANDOFF,
   erroriAdminRoot,
+  erroreDiRotta,
   chiaviDiPrimoLivello,
   contrattoUscita,
   normalizzaTipi,
@@ -300,5 +301,63 @@ describe("premessaTsc", () => {
     const { strict, motivo } = premessaTsc("{ questo non e' json }");
     assert.equal(strict, false);
     assert.match(motivo, /non interpretabile/);
+  });
+});
+
+// ── la rotta che fa esistere qualunque rotta (referto § H9 e § M8, 2026-08-06)
+// Il gate chiedeva soltanto «esiste?», con `join(progetto, adminRoot, rotta)`.
+// Misurato su una radice che esiste:
+//   rotta ""                       → join = <adminRoot>  esiste = true   findings = 0
+//   rotta assente                  → join = <adminRoot>  esiste = true   findings = 0
+//   rotta "../../../../../Windows" → join = C:\Windows   esiste = true   findings = 0
+//   rotta "prodotti"               → esiste = false      findings = 1
+// La stringa vuota faceva esistere QUALUNQUE rotta — la radice admin esiste
+// sempre — e un `..` spostava la domanda su una cartella che col progetto non
+// c'entra. In entrambi i casi il passo stampava «N tabelle nei tipi» e chiudeva
+// verde.
+describe("erroreDiRotta", () => {
+  it("una rotta vera non produce nessun errore di forma", () => {
+    assert.equal(erroreDiRotta("prodotti"), null);
+    assert.equal(erroreDiRotta("ordini/righe"), null);
+    assert.equal(erroreDiRotta("area-riservata"), null, "il trattino e' legittimo");
+  });
+
+  it("la rotta vuota non e' una rotta, e il messaggio non parla di cartelle", () => {
+    assert.match(erroreDiRotta(""), /la vista sarebbe la radice admin stessa/);
+    assert.match(erroreDiRotta("   "), /la vista sarebbe la radice admin stessa/);
+  });
+
+  it("la rotta assente si distingue dalla rotta vuota", () => {
+    assert.match(erroreDiRotta(undefined), /non dichiarata/);
+    assert.match(erroreDiRotta(null), /non dichiarata/);
+  });
+
+  it("`..` e percorso assoluto spostano la domanda fuori dal gestionale", () => {
+    assert.match(erroreDiRotta("../../../../../Windows"), /contiene `\.\.`/);
+    assert.match(erroreDiRotta("C:/Windows"), /RELATIVA/);
+    assert.match(erroreDiRotta("/etc"), /RELATIVA/);
+  });
+
+  it("una rotta che non e' una stringa non e' una rotta", () => {
+    assert.match(erroreDiRotta(42), /deve essere una stringa/);
+  });
+
+  it("la regola lo usa PRIMA di chiedere se la vista esiste", () => {
+    // il predicato dice sempre di si', come faceva `existsSync` sulla radice
+    const semprePresente = () => true;
+    for (const rotta of ["", undefined, "../../../../../Windows"]) {
+      const config = { adminRoot: "src/app/admin", entita: [{ tabella: "prodotti", rotta }], escluse: [] };
+      const findings = regolaEntitaAncorate(["prodotti"], config, semprePresente);
+      assert.equal(findings.length, 1, `passava con rotta ${JSON.stringify(rotta)}`);
+      assert.equal(findings[0].severity, "block");
+      assert.match(findings[0].message, /entita' dichiarata gestita, ma/);
+    }
+  });
+
+  it("e una rotta vera che non esiste resta il rilievo di prima", () => {
+    const config = { adminRoot: "src/app/admin", entita: [{ tabella: "prodotti", rotta: "prodotti" }], escluse: [] };
+    const findings = regolaEntitaAncorate(["prodotti"], config, () => false);
+    assert.equal(findings.length, 1);
+    assert.match(findings[0].message, /la rotta `prodotti` non esiste/);
   });
 });

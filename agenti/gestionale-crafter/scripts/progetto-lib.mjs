@@ -159,6 +159,43 @@ export function premessaTsc(testoTsconfig) {
 // scopre in produzione, quando gli serve.
 const MOTIVO_MINIMO = 20;
 
+/**
+ * Una rotta e' un pezzo di percorso sotto la radice admin, e non altro.
+ *
+ * Il gate chiedeva soltanto «esiste?», con `join(progetto, adminRoot, rotta)`.
+ * Misurato il 2026-08-06 (referto § H9 e § M8), su una radice che esiste:
+ *
+ *   rotta ""                       → join = <adminRoot>     esiste = true   findings = 0
+ *   rotta assente                  → join = <adminRoot>     esiste = true   findings = 0
+ *   rotta "../../../../../Windows" → join = C:\Windows      esiste = true   findings = 0
+ *   rotta "prodotti"               → join = …\prodotti      esiste = false  findings = 1
+ *
+ * Cioe': la stringa vuota faceva esistere QUALUNQUE rotta — la radice admin
+ * esiste sempre — e un `..` bastava a spostare la domanda su una cartella che
+ * col progetto non c'entra niente. In entrambi i casi il passo stampava
+ * «N tabelle nei tipi» e chiudeva verde.
+ *
+ * Il messaggio conta quanto il verdetto: «la rotta `` non esiste» manderebbe a
+ * cercare una cartella, quando il difetto e' che quella non e' una rotta.
+ */
+export function erroreDiRotta(rotta) {
+  if (rotta === undefined || rotta === null) {
+    return "`rotta` non dichiarata: senza, il gate cercherebbe la radice admin — che esiste sempre — e ogni entita' risulterebbe gestita";
+  }
+  if (typeof rotta !== "string") return `\`rotta\` deve essere una stringa, non ${typeof rotta}`;
+  const pulita = rotta.trim();
+  if (pulita === "") {
+    return "`rotta` vuota: la vista sarebbe la radice admin stessa, che esiste sempre — e ogni entita' risulterebbe gestita senza che nessuno abbia guardato";
+  }
+  if (/^([a-zA-Z]:)?[\\/]/.test(pulita)) {
+    return "`rotta` deve essere RELATIVA alla radice admin: un percorso assoluto sposta la domanda fuori dal progetto";
+  }
+  if (pulita.split(/[\\/]/).includes("..")) {
+    return "`rotta` contiene `..`: risalendo sopra la radice admin la domanda «la vista esiste?» finisce su una cartella che col gestionale non c'entra (misurato: `../../../../../Windows` esiste, e cancellava il rilievo)";
+  }
+  return null;
+}
+
 export function regolaEntitaAncorate(tabelle, config, esisteRotta) {
   const findings = [];
   const gestite = new Map((config.entita ?? []).map((e) => [e.tabella, e]));
@@ -167,7 +204,17 @@ export function regolaEntitaAncorate(tabelle, config, esisteRotta) {
   for (const tabella of tabelle) {
     const gestita = gestite.get(tabella);
     if (gestita) {
-      if (!esisteRotta(gestita.rotta)) {
+      // PRIMA la forma, poi l'esistenza: chiedere «esiste?» a una rotta che non
+      // e' una rotta ha gia' dato tre risposte sbagliate su quattro.
+      const errata = erroreDiRotta(gestita.rotta);
+      if (errata) {
+        findings.push({
+          severity: "block",
+          object: tabella,
+          message: `entita' dichiarata gestita, ma ${errata}`,
+          hint: "scrivi la rotta come pezzo di percorso sotto la radice admin, per esempio `prodotti` o `ordini/righe`",
+        });
+      } else if (!esisteRotta(gestita.rotta)) {
         findings.push({
           severity: "block",
           object: tabella,

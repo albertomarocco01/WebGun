@@ -32,7 +32,7 @@ import {
   verdettoDa,
 } from "./progetto-lib.mjs";
 import { conBarre } from "./audit-lib.mjs";
-import { argomentiOstiliACmd, formaEseguibile, motivoOstile, risolviEseguibile } from "./eseguibili.mjs";
+import { argomentiOstiliACmd, dentroLaRadice, formaEseguibile, motivoOstile, risolviEseguibile } from "./eseguibili.mjs";
 
 const SKILL_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 // Le regole con cui si MISURA viaggiano con la skill, non col progetto: il gate
@@ -112,6 +112,22 @@ function argomenti(argv) {
 }
 
 const dentroProgetto = (progetto, ...pezzi) => join(progetto, ...pezzi);
+
+/**
+ * La vista di una rotta esiste — e sta DENTRO la radice admin.
+ *
+ * `dentroProgetto` si chiama cosi' ma non contiene niente: e' `join`, e
+ * `join(prog, "src/app/admin", "../../../../../Windows")` da' `C:\Windows`, che
+ * esiste (referto § M8, misurato il 2026-08-06). La forma della rotta la
+ * controlla gia' `erroreDiRotta`; questa riga e' la seconda porta, quella che
+ * vale anche se la prima cambiasse: si risolve, e si guarda dove si e' finiti.
+ */
+function rottaEsistente(progetto, adminRoot, rotta) {
+  const base = resolve(dentroProgetto(progetto, adminRoot));
+  const pieno = resolve(base, String(rotta ?? ""));
+  if (!dentroLaRadice(pieno, base)) return false;
+  return existsSync(pieno);
+}
 
 /**
  * Il dettaglio di un comando andato male. Se il processo non e' nemmeno
@@ -203,7 +219,7 @@ function passoEntita(progetto, config) {
   }
 
   const findings = regolaEntitaAncorate(tabelle, config, (rotta) =>
-    existsSync(dentroProgetto(progetto, config.adminRoot, String(rotta ?? ""))),
+    rottaEsistente(progetto, config.adminRoot, rotta),
   );
 
   const dettaglio = [`${tabelle.length} tabelle nei tipi: ${tabelle.join(", ")}`]
