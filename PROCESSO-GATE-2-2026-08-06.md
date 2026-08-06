@@ -29,11 +29,11 @@ E le batterie:
 
 | Skill | Prima (P.7d) | Dopo | Δ |
 |---|---:|---:|---:|
-| schema-forge | 186 | **216** | +30 |
-| gestionale-crafter | 173 | **208** | +35 |
-| flow-sentinel | 131 | **158** | +27 |
-| speed-demon | 103 | **144** | +41 |
-| **totale** | **593** | **726** | **+133** |
+| schema-forge | 186 | **228** | +42 |
+| gestionale-crafter | 173 | **230** | +57 |
+| flow-sentinel | 131 | **171** | +40 |
+| speed-demon | 103 | **147** | +44 |
+| **totale** | **593** | **776** | **+183** |
 
 ---
 
@@ -630,6 +630,187 @@ VERDE 9/9 con 7 migrazioni e 18 tabelle.
    toccato.** Nessuna porta aperta: le misure di §1, §3, §4 e §5 sono tutte su
    funzioni pure o su cartelle di lavoro.
 
+7. **Undici rilievi del concilio restano aperti, con nome e verso.** Non sono
+   stati chiusi per scelta di perimetro o di budget, non per svista, e ognuno ha
+   la sua misura nel referto del concilio:
+
+   | # | Dove | Cosa | Verso |
+   |---|---|---|---|
+   | P2 | `schema-forge/audit-lib.mjs` | una E-string con la fuga a barra rovesciata e' SQL Postgres valido e ribalta la parita' degli apici: § M3 si riapre, e ci si arriva da SQL corretto invece che da un file rotto | **verde falso** |
+   | P4 | `flow-sentinel/gate-lib.mjs` | un `import … from './helpers/db'` scritto **dentro una stringa** soddisfa la Terza Legge: basta una riga di documentazione | **verde falso** |
+   | P5 | `speed-demon/gate-lib.mjs` | `metatagDaHtml` taglia i tag con una classe negata e `attributo` cerca il nome ovunque nel tag: un `name=` dentro il **valore** di un altro attributo fabbrica un metatag fantasma che scavalca quello vero, e il `noindex` sparisce. La cura esiste gia' nello stesso file (`fineTag`), e i consumatori non la usano | **verde falso** |
+   | P8 | `gestionale-crafter/audit-lib.mjs` | `scrittureNelCodice` scarta in silenzio le scritture che non sa leggere (una catena costruita a pezzi), e `misure.scritture` ne dichiara meno di quante ce ne sono: e' il gemello di «azioni server: 1» sull'altro passo, e manca il `scrittureNonLette` | **verde falso** |
+   | P9 | `flow-sentinel/gate-lib.mjs` | `retries: 1` dentro un template **multi-riga** fa passare una configurazione che non lo dichiara: correzione incompleta di n.53 | verde falso |
+   | P11 | `speed-demon/gate-lib.mjs` | un `<svg>` mai chiuso mangia il resto del documento, nei due versi | entrambi |
+   | P12 | `schema-forge/verify.mjs` | `primoArrayJson` accetta il primo array che si interpreta, non quello degli advisors | rosso falso (residuo perso) |
+   | SD-2 | `speed-demon/gate-lib.mjs` | `motivoNonDerogabile` vale solo per `accessibility`: la scelta ora e' **dichiarata** nel codice con le sue due ragioni, ma resta una scelta di perimetro che la direzione puo' ribaltare | — |
+   | — | `speed-demon/gate-lib.mjs` | `TITOLO_DEROGHE` ammette un titolo senza spazio dopo i cancelletti, il cancello che lo interroga no: una tabella sotto quel titolo sparisce in silenzio | rosso falso |
+   | — | `schema-forge/audit-lib.mjs` | `regolaTestNegativi` accetta come attacco una scrittura che vive dentro una stringa | verde falso |
+   | — | tre copie | `mascheraUrl`/`credenzialiPsql` sono **tre copie identiche** in tre skill: la duplicazione e' dichiarata, ma e' la ragione per cui due mutazioni sono sopravvissute | — |
+   | — | `gestionale-crafter/audit-lib.mjs` | `chiudeLaStringa` limita la scansione alla riga per `'` e `"` ma non per il backtick: un backtick spaiato costa una scansione dell'intero file. Al piu' una per file — chi scandisce salta alla chiusura quando la trova — ma va scritto | costo |
+
+8. **Il `--db-url` resta nell'`argv` dei due processi Node a monte di `psql`**, e
+   la riga «L2 chiuso» di questo verbale va letta con questa precisazione: L2 e'
+   chiuso **alla foglia** (la chiamata a `psql`), non lungo tutta la catena. Il
+   `verify.mjs` di tre skill riceve la URL come argomento e la ripassa al proprio
+   script di audit, sempre come argomento: per l'intera durata del gate la
+   password e' leggibile nella tabella dei processi. Chiuderlo vuol dire cambiare
+   l'interfaccia fra `verify.mjs` e i suoi audit — e il primo salto e' la riga di
+   comando che scrive un umano, che questa casa **non** vuole leggere
+   dall'ambiente (e' la difesa contro l'auditare il database di un altro
+   progetto, DECISIONI.md §11). Va deciso, non fatto di corsa.
+
+9. **`CLAUDE.md` dichiara 7 passi per speed-demon; ne ha 8.** L'ottavo e'
+   `contrasto`, nato in questo pacchetto. `SKILL.md` e `STATO.md` sono stati
+   aggiornati; `CLAUDE.md` **e' fuori dal perimetro di scrittura di questo
+   pacchetto** e la riga resta da correggere alla direzione. Le altre tre righe
+   della tabella (9 · 7 · 7) sono state verificate e sono giuste.
+
+---
+
+## 9. Il tribunale sul pacchetto stesso
+
+Il mandato chiedeva `/code-inquisition --scope diff` sul codice cambiato. E' stato
+convocato sui 25 file di P.7e: **cinque esperti** (due modelli, per de-correlare
+gli errori) piu' un **critico del roster**, che ha trovato il buco del roster —
+nessuno guardava i test come imputati ne' i documenti come testimoni — e si e'
+guadagnato il quinto esperto.
+
+**Diciannove rilievi. Otto chiusi qui, e due erano regressioni di questo stesso
+pacchetto.** E' il risultato che conta piu' di tutto il resto del verbale: la
+correzione di una classe di difetto ha reintrodotto la stessa classe, e a
+trovarla non e' stata nessuna delle 776 asserzioni.
+
+### Le due regressioni, e il verso e' il peggiore
+
+**P1 — `senzaCommenti`, un apice che non si chiude.** Su una riga di TSX in
+italiano, cioe' la cosa piu' comune che ci sia:
+
+```
+  return <p>Elenco degli ordini dell'utente</p>; // TODO: qui manca richiediStaff()
+
+PRIMA  l'apostrofo apre una stringa fino a fine riga, il commento in coda
+       sopravvive, `chiamaUnaDi` ci trova dentro il nome della guardia
+       -> rotta admin SCOPERTA, zero findings
+       (e nel layout: 0 rilievi su 3 rotte figlie, tutte scoperte)
+DOPO   1 block, come sulla stessa riga senza l'apostrofo
+```
+
+Variante peggiore, stessa causa: **un backtick spaiato** spegneva lo spogliatore
+fino a fine file — cinque commenti su cinque sopravvivevano.
+
+**Le due `replace` di prima davano la risposta giusta.** Lo scanner «che sa dove
+si trova» aveva imparato a entrare in una stringa e non a chiedersi se quella
+stringa fosse una stringa.
+
+**P3 — `codiceSenzaCommenti`, lo stato che rinasce a ogni riga.** `inBlocco`
+attraversa le righe, `delimitatore` no: la riga che **chiude** un template
+multi-riga comincia con un backtick, che quindi ne apriva uno nuovo e spegneva
+il resto della riga. `.only` committato -> zero rilievi. Anche qui: prima della
+correzione di L11 le stringhe non si guardavano affatto, e il rilievo usciva.
+
+La regola per entrambe e' quella che un lettore umano applica senza pensarci:
+**si entra in una stringa solo se la stringa si chiude.** Gli apici non
+attraversano la fine della riga, il backtick si'.
+
+### Tre porte ancora aperte sui segreti, dopo M2 e L2
+
+| Porta | Misura | Esito |
+|---|---|---|
+| `decodeURIComponent` che solleva | `new URL` accetta `Segreta%Finale` e lo lascia testuale, `decodeURIComponent` no — e il `try` avvolgeva entrambe: la ricaduta restituiva la URL **originale**, password in chiaro di nuovo in `argv`. E psql la rimanda nel proprio stderr (`invalid percent-encoded token`), che **tre gate stampano grezzo** | chiusa: `errore`, e i tre chiamanti lo onorano — non si misura |
+| `?password=` in query | forma che libpq accetta, e che si usa proprio per evitare le fughe nell'userinfo: **sfuggiva a entrambe le funzioni** — in chiaro su stdout, nel `--json`, e in `argv` | chiusa: si **rifiuta**, non si riscrive |
+| `PGPASSWORD` ereditato | con una URL senza password, un residuo d'ambiente autenticava al posto nostro, in silenzio | chiusa: `ambientePsql` lo cancella |
+
+**Perche' si rifiuta invece di riscrivere.** Togliere il parametro dalla query
+vorrebbe dire riserializzarla, e `searchParams` ricodifica `%20` in `+` —
+misurato: `options=-c%20statement_timeout%3D0` diventa `options=-c+statement…`,
+che per libpq **non e' uno spazio**. Il gate interrogherebbe il database con
+un'altra configurazione. Meglio nessuna misura di una misura su un'altra cosa.
+
+### Quattro mutazioni sopravvissute alla batteria
+
+L'esperto dei test ha applicato **11 mutazioni** al codice di produzione e
+rilanciato le batterie. Sette uccise, quattro sopravvissute:
+
+| Mutazione | Batteria | Esito |
+|---|---|---|
+| `credenzialiPsql` -> no-op in **schema-forge** | 216/216 verdi | **SOPRAVVISSUTA** |
+| `credenzialiPsql` -> no-op in **gestionale-crafter** | 208/208 verdi | **SOPRAVVISSUTA** |
+| `clausoleHelperDb`: tolto il controllo `FINE_ISTRUZIONE` | 158/158 verdi | **SOPRAVVISSUTA** |
+| `chiusuraQuadra`: tolto il salto delle stringhe | 216/216 verdi | **SOPRAVVISSUTA** |
+| `stringheOscurate` non conserva la lunghezza | **14 rossi** | uccisa |
+| `senzaCommentiSql` senza annidamento · `motivoNonDerogabile` -> null · `esitoContrasto` senza il fail · `cellaFirmata` -> true · `motivoPremessaVuota` -> null · `mascheraUrl` senza il ramo `host===""` | 1-2 rossi ciascuna | uccise |
+
+La prima coppia e' la piu' istruttiva: **una difesa contro le password si poteva
+spegnere del tutto in due skill su tre senza che una batteria diventasse
+rossa**, perche' i test esistevano in una copia sola — e in questo stesso
+pacchetto quella funzione era appena cresciuta. I test sono stati portati dove
+la funzione vive.
+
+### E tre difetti che il concilio ha trovato, non miei ma reali
+
+- **`chiaviOggetto` non leggeva la proprieta' abbreviata.** `.update({ ruolo })`
+  produceva **zero colonne**: ne' la regola dei permessi per colonna ne' quella
+  dell'auto-promozione potevano scattare. E' la forma che l'esempio scritto in
+  cima a quella stessa sezione usa (`.update({ status })`).
+- **`corpoFunzione` prendeva la graffa del parametro destrutturato per il
+  corpo.** Su `export async function salvaOrdine({ id }: { id: string })` il
+  corpo letto era `{ id }`, e un'azione che chiama `richiediStaff()` come prima
+  riga usciva `block` — un rosso su codice corretto.
+- **`chiaviDiPrimoLivello` contava le graffe dentro le stringhe.** Una graffa
+  spaiata dentro un tipo letterale (l'etichetta di un enum, che la scrive il
+  progetto auditato) faceva sparire **in silenzio** tutte le tabelle successive
+  dall'ancoraggio: due `block` diventavano zero.
+
+### I costi che le riscritture avevano nascosto
+
+Il quinto esperto ha misurato quello che nessun altro aveva misurato: non se le
+funzioni nuove danno la risposta giusta, ma **quanto costano**. Quattro
+quadratiche, e la peggiore l'ha introdotta il n°52.
+
+| Funzione | Ingresso | PRIMA di P.7e | DOPO P.7e | ORA |
+|---|---|---:|---:|---:|
+| `scrittureNelCodice` | 3 200 scritture / 144 kB | 650 ms | **15 466 ms** | **555 ms** |
+| `primoArrayJson` | 64 000 quadre mai chiuse | (non esisteva) | **9 228 ms** | **4 ms** |
+| `visita` | profondità 40 000 | `RangeError` | **14 484 ms** | **16 ms** |
+| `clausoleHelperDb` | 3 200 import | 180 ms | 750 ms | **99 ms** |
+| `usaHelperDb` (§ M5) | 40 000 spazi fra `import` e `from` | non finiva a 4 000 | 0,1 ms | **0,6 ms** |
+
+Il n°52 ha corretto la semantica e ha spostato `stringheOscurate` **dentro il
+ciclo**: due maschere per ogni scrittura del file. È lo stesso ordine di
+grandezza del ReDoS che questo pacchetto ha appena chiuso — **su un file che
+nessuno definirebbe ostile**. La maschera ora si calcola una volta e viaggia; il
+valore è identico.
+
+E `visita` è la lezione più stretta: **§ L3 ha tolto la `RangeError` e ha
+lasciato il costo.** Un gate che non muore e non risponde è MUTO lo stesso, che
+è esattamente lo stato che L3 voleva evitare. Correggere la terminazione senza
+misurare il costo non è correggere la terminazione.
+
+### E due comportamenti persi, trovati confrontando col codice di prima
+
+- **Un `<svg` mai chiuso** — o con una virgoletta spaiata dentro, che rende
+  illeggibile il tag — teneva `profondita` a 1 fino in fondo e **si portava via
+  il resto del documento**. Un `<meta name="robots" content="noindex">` più sotto
+  spariva con lui, e il `block` sulla pagina dichiarata pubblica passava da 1 a
+  **0**: è il verso che § M7 chiama «il peggiore», rientrato dalla porta opposta.
+  La regexp di prima, senza `</svg>`, non cancellava niente — e lì si torna.
+- **`visita` iterativa registrava tutte le spec di un livello prima di
+  scendere**: i conteggi e il verdetto erano identici, l'**ordine** dei falliti
+  no. La lista che un umano legge per triare usciva in un ordine che non era né
+  quello dei file né quello d'esecuzione. La pila ora porta un nodo per elemento.
+
+
+### Un test mio che asseriva una cosa falsa
+
+Ne avevo scritto uno che pretendeva che l'interno di un template multi-riga non
+producesse rilievi. Non e' vero, e non lo era nemmeno prima: lo scanner delle
+spec analizza **riga per riga**, quindi le righe interne sono «codice». Il test
+e' stato corretto in un **limite dichiarato**, con il verso scritto: e' il rosso
+rumoroso, e portare lo stato della stringa attraverso tutto il file
+riaprirebbe P3, che e' quello silenzioso.
+
+
 ---
 
 ## 8. I guardiani alla chiusura
@@ -637,11 +818,11 @@ VERDE 9/9 con 7 migrazioni e 18 tabelle.
 ```
 ########## BATTERIE (Node 24.18.1 — le quattro package.json usano un glob,
                      che vuole Node 21+; il node del PATH e' v20.12.2)
-schema-forge         ℹ tests 216 ℹ pass 216 ℹ fail 0
-gestionale-crafter   ℹ tests 208 ℹ pass 208 ℹ fail 0
-flow-sentinel        ℹ tests 158 ℹ pass 158 ℹ fail 0
-speed-demon          ℹ tests 144 ℹ pass 144 ℹ fail 0
-                              726 verdi su 726
+schema-forge         ℹ tests 228 ℹ pass 228 ℹ fail 0
+gestionale-crafter   ℹ tests 230 ℹ pass 230 ℹ fail 0
+flow-sentinel        ℹ tests 171 ℹ pass 171 ℹ fail 0
+speed-demon          ℹ tests 147 ℹ pass 147 ℹ fail 0
+                              776 verdi su 776
 
 ########## ESLINT                    ########## KNIP
 schema-forge         0 rilievi       schema-forge         0 rilievi

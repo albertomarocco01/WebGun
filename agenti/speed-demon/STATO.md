@@ -4,7 +4,7 @@
   avversario lo stesso giorno da una sessione indipendente**, su un secondo
   banco costruito apposta con pagine davvero lente
   (`banco-prova-immobiliare`, Case di Langa). Gli script hanno test propri
-  (`node --test`, **144 verdi** dal 2026-08-07 con P.7e; **103** con P.7d, **87**
+  (`node --test`, **147 verdi** dal 2026-08-07 con P.7e; **103** con P.7d, **87**
   alla costruzione), il gate `verify` ha **8 passi** con id stabili — l'ottavo,
   `contrasto`, e' nato con P.7e ed e' la delega §D21 che nessuno onorava.
   Il gate corretto e' stato **rilanciato sul banco vecchio**, `banco-prova-negozio`,
@@ -421,3 +421,8 @@ E la prima esecuzione vera di `plan` e `tune` su guadagni misurati: home
   - **L5 — CHIUSO** (`.toUpperCase()`, come nelle tre sorelle: `Gate: verde` non fa più chiudere rosso un handoff giusto). **L13 — CHIUSO**: il difetto ERA l'assenza di rete sul confine di `misuraStabile`, e ora ci sono tre test. **L15 — CHIUSO**: `trovaHandoff` confronta il numero come numero.
   - **MANCANTE, con il suo nome**: il gate **non è stato rilanciato dopo queste correzioni**. La direzione lo ha rilanciato contro il pilota vivo il 2026-08-06 sera, a regia `d147f52`, e chiudeva **VERDE 7/7** su cinque pagine con tre giri — ma quella misura è **prima** dell'ottavo passo. Il rilancio di chiusura è della direzione: il pilota e il suo stack sono di un'altra chat in questa ondata.
 
+- **2026-08-07 — il tribunale sul pacchetto stesso.** `/code-inquisition --scope diff` sui 25 file di P.7e: cinque esperti, un critico del roster, **diciannove rilievi**. Referto e misure: `../../PROCESSO-GATE-2-2026-08-06.md` §9. Per questa skill:
+  - **Un `<svg` mai chiuso si portava via il resto del documento.** La correzione di § M7 teneva `profondita` a 1 fino in fondo su un `<svg>` senza chiusura — o con una virgoletta spaiata dentro, che rende illeggibile il tag — e un `<meta name="robots" content="noindex">` piu' sotto spariva con lui: il `block` sulla pagina dichiarata pubblica passava da 1 a **0**. E' il verso che § M7 chiama «il peggiore», rientrato dalla porta opposta. La regexp di prima, senza `</svg>`, non cancellava niente — e li' si torna.
+  - **La scelta di perimetro di `motivoNonDerogabile`** (solo `accessibility`, non `best-practices`) e' ora **dichiarata nel codice** con le sue due ragioni: il template non ha firmato altro, e allargarla trasformerebbe in `block` deroghe gia' firmate. Resta una scelta che la direzione puo' ribaltare.
+  - **Lo `STATO.md` si contraddiceva**: 8 passi in testa, 7 nella tabella «Cosa esiste, misurato». Allineato.
+  - **Resta aperto**: `metatagDaHtml` taglia i tag con una classe negata e `attributo` cerca il nome ovunque nel tag — un `name=` dentro il **valore** di un altro attributo fabbrica un metatag fantasma che scavalca quello vero e fa sparire il `noindex` (verde falso). La cura esiste gia' nello stesso file (`fineTag`) e i consumatori non la usano. E `TITOLO_DEROGHE` ammette un titolo senza spazio dopo i cancelletti mentre il cancello che lo interroga no.

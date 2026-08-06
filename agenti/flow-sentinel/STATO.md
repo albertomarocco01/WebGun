@@ -17,7 +17,7 @@
   modifica e' del 2026-07-30, quando il collaudo di `evolve` ha scoperto che quella procedura
   copriva un caso su quattro (`COLLAUDO-EVOLVE-2026-07-30.md` §4); esistono le
   **4 references**, il gate `verify.mjs` a **7 passi** con id stabili, le regole pure in
-  `scripts/gate-lib.mjs` con **103 test verdi allora** (**158 oggi**, con P.7e il 2026-08-07; **131** con P.7d, **111** rimisurati il 2026-08-06 — questa riga diceva 110 mentre §Cosa esiste diceva 111), i **3 template** e la configurazione
+  `scripts/gate-lib.mjs` con **103 test verdi allora** (**171 oggi**, con P.7e il 2026-08-07; **131** con P.7d, **111** rimisurati il 2026-08-06 — questa riga diceva 110 mentre §Cosa esiste diceva 111), i **3 template** e la configurazione
   ESLint delle spec. Il gate e' stato **eseguito davvero** su due banchi Next.js + Supabase locale,
   scritti da due mani diverse: `banco-prova-flow/` (P1, e-commerce) e `banco-prova-collaudo-fs/`
   (P2, palestra) — **VERDE 7 su 7 su entrambi**, e rosso ogni volta che qualcosa e' stato rotto apposta.
@@ -358,3 +358,9 @@ guardiani fa bene a chiederle entrambe.
 tabella
 public.ok")` dà **tre righe invece di due**. Oggi è innocuo (le due query di questa skill hanno **una colonna sola**) e pericoloso al primo riuso; neutralizzare i separatori in SQL vuole un Postgres vivo per essere provato, e applicarlo alla cieca renderebbe **silenzioso** un guasto che oggi è **rumoroso**. Va nel pacchetto che ha un banco.
 
+- **2026-08-07 — il tribunale sul pacchetto stesso.** `/code-inquisition --scope diff` sui 25 file di P.7e: cinque esperti, un critico del roster, **diciannove rilievi**. Referto e misure: `../../PROCESSO-GATE-2-2026-08-06.md` §9. Per questa skill, e **una era una regressione di P.7e**:
+  - **P3 — lo stato della stringa rinasceva a ogni riga** mentre `inBlocco` no: la riga che CHIUDE un template multi-riga comincia con un backtick, che quindi ne apriva uno nuovo e spegneva il resto della riga. **`.only` committato, zero rilievi** — e `.only` e', per ammissione della skill, «il modo piu' economico che esista per produrre un falso verde». Prima della correzione di § L11 le stringhe non si guardavano affatto e il rilievo usciva.
+  - **`visita`: § L3 ha tolto la `RangeError` e ha lasciato il costo.** Il percorso era un array ricopiato a ogni nodo: profondita' 40 000 in **14,5 secondi**. Un gate che non muore e non risponde e' MUTO lo stesso, che e' lo stato che L3 voleva evitare. Ora **16 ms**, e l'ORDINE dei falliti — che era cambiato senza che nessuno lo notasse — e' di nuovo quello in profondita'.
+  - **`clausoleHelperDb` quadratica** (750 ms su 3 200 import, ×4 sul codice di prima): l'ultimo `import` si cerca all'indietro invece di rifare `matchAll` su tutto il prefisso. **99 ms**, e il ReDoS di § M5 resta chiuso (40 000 spazi in 0,6 ms).
+  - **Una mutazione sopravvissuta**: la riga `if (FINE_ISTRUZIONE.test(clausola)) continue;` — la guardia che impedisce alla clausola di risalire all'import di `@playwright/test` — non la provava nessuno. Ora ha la sua rete.
+  - **Resta aperto**: un `import … from './helpers/db'` scritto dentro una stringa soddisfa la Terza Legge (verde falso); `retries: 1` dentro un template multi-riga fa passare una configurazione che non lo dichiara — correzione incompleta di n°53; l'interno di un template multi-riga si legge come codice, ed e' un **limite dichiarato** col suo test, nel verso rumoroso.
