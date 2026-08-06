@@ -653,6 +653,41 @@ test("due verdetti diversi nello stesso certificato bloccano: non si indovina qu
   assert.ok(f.some((x) => x.severity === "block" && /2 verdetti diversi/.test(x.message)));
 });
 
+// ====== D23 §1: la citazione non e' un verdetto, e vale per il solo `catena-gate`
+const CITATO = (verdetto) => [{
+  percorso: "docs/handoff/07-schema-forge.md", agente: "schema-forge", data: "2026-08-06T10:00:00Z",
+  testo: `# Handoff 07\n\n> Gate: ${verdetto} (dal progetto Val Scura, come promemoria)\n`,
+}];
+
+test("un `> Gate: VERDE` citato non e' il verdetto di questo progetto (D23 §1)", () => {
+  const f = findingsCatena({ handoff: CITATO("VERDE"), ultimoCommitCodice: "2026-08-05T10:00:00Z" });
+  const block = f.filter((x) => x.severity === "block");
+  assert.equal(block.length, 1, "prima passava: era l'unico posto della casa in cui la citazione di un altro progetto diventava il verdetto di questo");
+  assert.match(block[0].message, /citazione non e' un verdetto/);
+  assert.match(block[0].hint, /togli il `>`/i, "un falso rosso che non dice come si toglie vale meno di un falso verde");
+});
+
+test("il rosso di D23 §1 dice CITAZIONE e non «nessuna riga leggibile»: sono due difetti diversi", () => {
+  const senzaNiente = [{ percorso: "docs/handoff/07-schema-forge.md", agente: "schema-forge", data: "2026-08-06T10:00:00Z", testo: "# Handoff 07\n\nProsa e basta.\n" }];
+  const f = findingsCatena({ handoff: senzaNiente, ultimoCommitCodice: "2026-08-05T10:00:00Z" });
+  assert.ok(f.some((x) => /nessuna riga `Gate: VERDE\|ROSSO` leggibile/.test(x.message)),
+    "chi non ha scritto niente va mandato a scrivere, non a togliere un carattere che non ha messo");
+});
+
+test("lo stesso verdetto scritto in proprio passa: la citazione accanto non lo cancella", () => {
+  const h = [{ percorso: "docs/handoff/07-schema-forge.md", agente: "schema-forge", data: "2026-08-06T10:00:00Z",
+    testo: "> Gate: VERDE (dal progetto Val Scura, come promemoria)\n\n**Gate: VERDE** (0 falliti su 9 passi)\n" }];
+  assert.deepEqual(findingsCatena({ handoff: h, ultimoCommitCodice: "2026-08-05T10:00:00Z" }), []);
+});
+
+test("la §19 GENERALE non cambia: il passo 9 legge ancora un verdetto citato", () => {
+  // `contratto-uscita` giudica l'handoff che ha scritto launchpad, non un
+  // certificato altrui: li' la citazione resta una delle tre decorazioni che la
+  // §19 tollera, e cinque gate della casa contano su quella lettura.
+  assert.equal(verdettoHandoff("> Gate: VERDE (0 falliti)"), "VERDE");
+  assert.deepEqual(contrattoUscita("docs/handoff/14-launchpad.md", "> Gate: ROSSO (4 falliti)\n", "ROSSO"), []);
+});
+
 test("un handoff datato nel FUTURO blocca: un certificato che non scade mai non e' un certificato", () => {
   const h = [{ percorso: "docs/handoff/07-schema-forge.md", agente: "schema-forge", data: "2030-01-01T00:00:00Z",
     testo: "**Gate: VERDE**\n" }];

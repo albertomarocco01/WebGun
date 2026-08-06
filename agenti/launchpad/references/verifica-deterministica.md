@@ -126,7 +126,8 @@ fissa che la §19 ha imposto a tutta la casa, e:
 | un handoff non ha nessuna riga `Gate:` leggibile | `block` | un handoff senza verdetto non è un certificato: è prosa. La §19 esiste perché la prosa libera non si controlla |
 | l'handoff è **più vecchio** dell'ultimo commit che tocca `src/`, `supabase/`, `package.json` | `block` | il verde certificava un altro artefatto. È la stessa idea del `BUILD_ID`, applicata alla catena dei certificati invece che alle pagine |
 | **il verdetto è leggibile solo dentro un blocco recintato o indentato** | (non è un verdetto) | trovato dal collaudo del 2026-08-06. Il passo toglieva i fence a ``` e **non** quelli a `~~~`, e non guardava l'indentazione: un handoff che dichiarava `Gate: ROSSO` veniva letto **VERDE** perché un esempio recintato con tre tilde combaciava per primo. La Legge n°1 si scavalcava con tre caratteri. `segreti-lib.mjs` toglieva già entrambi i fence (SEG-5): due librerie della stessa skill leggevano il markdown in due modi, e a decidere il verdetto era quella che ne sapeva meno |
-| **due verdetti diversi nello stesso handoff** | `block` | la §19 accetta di proposito elenco, citazione e grassetto — tre modi di scrivere la stessa riga. Non aveva previsto due righe che dicono cose **opposte**: lì quale valga lo deciderebbe l'ordine di impaginazione. Il passo si rifiuta di indovinare |
+| **due verdetti diversi nello stesso handoff** | `block` | la §19 accetta di proposito elenco, citazione e grassetto — tre modi di scrivere la stessa riga. Non aveva previsto due righe che dicono cose **opposte**: lì quale valga lo deciderebbe l'ordine di impaginazione. Il passo si rifiuta di indovinare. Questo controllo guarda **anche le citazioni**, e resta com'è: un file che contiene due verdetti opposti non diventa un certificato perché uno dei due è citato |
+| **il verdetto è leggibile solo dentro una citazione** (`> Gate: VERDE`) | `block` | **decisione D23 §1 del `CANTIERE.md`.** Misurato dal collaudo del 2026-08-06: un handoff il cui unico verdetto era `> Gate: VERDE (dal progetto Val Scura, come promemoria)` **passava**. Per gli altri cinque agenti la §19 vale su un documento che scrivono loro; qui vale su **certificati altrui**, e la citazione è esattamente il modo in cui si riporta il verdetto di un altro progetto — questo è l'unico posto della casa in cui quella riga può diventare il verdetto di questo progetto |
 | **l'handoff è datato nel futuro** | `block` | trovato dal collaudo del 2026-08-06. Con `GIT_COMMITTER_DATE=2030-01-01` la misura di freschezza — che è l'unica metà **misurata** di questo passo — si spegne per sempre su quel file. È la regola che il tribunale aveva già imposto alla firma del runbook (VER-5) e che qui mancava |
 | **il contratto di un agente esiste e il suo handoff no** | `block` | trovato dalla domanda di metà pacchetto (§8, n°2). Un agente che non è mai passato non lascia nessun `Gate: ROSSO` da leggere: lascia **silenzio**, e il silenzio era verde. La prova che un agente *doveva* passare non è una dichiarazione — è il suo contratto sul disco, che ha scritto lui |
 
@@ -145,6 +146,29 @@ faceva parte di questo progetto.
 Il contrario **non** vale e non si controlla: un handoff senza contratto è un
 agente che ha lavorato senza far firmare niente, ed è un difetto suo, non un
 bloccante del deploy.
+
+**La regola della citazione è più stretta qui, e solo qui.** La §19 di
+`DECISIONI.md` dichiara che «il regex tollera elenco, citazione e grassetto —
+sono tre modi di scrivere la stessa riga in markdown, non tre significati», e
+per cinque agenti su sei è vero: quella riga sta in un documento che hanno
+scritto loro. Per `catena-gate` no. Qui si leggono i certificati **degli altri**,
+e la citazione è il modo in cui si riporta il verdetto di un altro progetto —
+quindi un `> Gate: VERDE` non conta come dichiarazione (**D23 §1**).
+
+**Il costo è accettato e va pagato ad alta voce:** un agente che scrive
+legittimamente il proprio verdetto dentro una citazione, da oggi, prende un
+rosso. Per questo il messaggio del gate non dice soltanto che non va bene: dice
+la causa e la cura — *«la citazione è il modo in cui si riporta il verdetto di un
+altro progetto: se quella riga è il verdetto di questo handoff, togli il `>`»* —
+e dichiara che la restrizione vale solo qui. Un falso rosso che parla vale più di
+un falso verde silenzioso; un falso rosso che non si spiega vale meno di
+entrambi.
+
+**Cosa NON è cambiato**, perché nessuno lo generalizzi: `RIGA_GATE` — la
+lettura della §19 usata dal passo 9 e riprodotta in cinque altri gate della casa
+— resta identica, citazione compresa. `contratto-uscita` giudica l'handoff che
+launchpad ha scritto, cioè un documento proprio, e lì la citazione è ancora una
+delle tre decorazioni ammesse.
 
 **Quali percorsi contano come «codice», e l'unico commit esente.** La scadenza
 di un certificato si misura sull'ultimo commit che tocca

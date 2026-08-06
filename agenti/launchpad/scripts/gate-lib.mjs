@@ -177,10 +177,28 @@ export function findingsRadice({ sporco = [], ramo = null, upstream = null, avan
  */
 const RIGA_GATE = /^(?! {4}|\t)[ \t>*_-]*Gate[ \t*_]*:[ \t*_]*(VERDE|ROSSO)\b/gim;
 
+/**
+ * La stessa riga, ma **senza il `>`** — decisione D23 §1 del `CANTIERE.md`.
+ *
+ * La §19 tollera elenco, citazione e grassetto perche' sono tre modi di
+ * scrivere la stessa riga. Per cinque agenti su sei quella riga sta in un
+ * documento che hanno scritto loro; per launchpad sta in **certificati altrui**,
+ * ed e' l'unico posto della casa in cui la citazione di un altro progetto puo'
+ * diventare il verdetto di questo. Misurato dal collaudo del 2026-08-06: un
+ * handoff il cui unico verdetto era
+ * `> Gate: VERDE (dal progetto Val Scura, come promemoria)` chiudeva il passo
+ * `pass`.
+ *
+ * La regola generale NON si tocca: vive in cinque gate e romperla li' non
+ * comprerebbe niente. Si restringe la sola lettura di `catena-gate`.
+ */
+const RIGA_GATE_NON_CITATA = /^(?! {4}|\t)[ \t*_-]*Gate[ \t*_]*:[ \t*_]*(VERDE|ROSSO)\b/gim;
+
 /** Tutti i verdetti leggibili, in ordine. Serve a scoprirne DUE diversi. */
-function verdettiHandoff(testo) {
-  return [...senzaZoneCitate(testo ?? "").matchAll(RIGA_GATE)].map((m) => m[1]);
-}
+const verdettiCon = (testo, regola) =>
+  [...senzaZoneCitate(testo ?? "").matchAll(regola)].map((m) => m[1]);
+
+const verdettiHandoff = (testo) => verdettiCon(testo, RIGA_GATE);
 
 export const verdettoHandoff = (testo) => verdettiHandoff(testo)[0] ?? null;
 
@@ -265,8 +283,12 @@ export function eSoloFrammentoImpronta(aggiunte) {
 export function findingsCatena({ handoff = [], proveTrovate = [], ultimoCommitCodice = null, adesso = null } = {}) {
   const findings = [];
   for (const h of handoff.filter((x) => !MIO.test(x.agente))) {
+    // `tutti` comprende anche le citazioni, e serve **solo** a scoprire due
+    // verdetti opposti nello stesso file: quella protezione non si allenta.
+    // A DECIDERE e' `propri`, che le citazioni non le legge (D23 §1).
     const tutti = verdettiHandoff(h.testo);
-    const verdetto = tutti[0] ?? null;
+    const propri = verdettiCon(h.testo, RIGA_GATE_NON_CITATA);
+    const verdetto = propri[0] ?? null;
     /**
      * DUE verdetti diversi nello stesso certificato non sono un certificato.
      *
@@ -301,7 +323,24 @@ export function findingsCatena({ handoff = [], proveTrovate = [], ultimoCommitCo
         hint: "una data futura non e' mai «piu' vecchia» di niente: quel certificato non scadrebbe mai piu'. Si ricommitta con la data vera",
       });
     }
-    if (verdetto === null) {
+    if (verdetto === null && tutti.length > 0) {
+      /**
+       * IL COSTO DELLA D23 §1, pagato ad alta voce.
+       *
+       * Un agente che scrive il proprio verdetto dentro una citazione — cosa
+       * che la §19 gli permette — da oggi trova un rosso. E' un falso rosso, e
+       * si accetta a una condizione sola: che il messaggio dica la causa **e**
+       * la cura, in una riga che chi legge puo' eseguire. Un falso rosso che
+       * parla vale piu' di un falso verde silenzioso; un falso rosso che non si
+       * spiega vale meno di tutti e due.
+       */
+      findings.push({
+        severity: "block",
+        object: h.percorso,
+        message: "il verdetto e' leggibile solo dentro una citazione, e una citazione non e' un verdetto",
+        hint: "la citazione (`>`) e' il modo in cui si riporta il verdetto di un ALTRO progetto, e questo e' l'unico passo della casa che legge certificati altrui: se quella riga e' il verdetto di questo handoff, togli il `>`. Vale solo qui — negli altri cinque gate la §19 non cambia (CANTIERE.md D23 §1)",
+      });
+    } else if (verdetto === null) {
       findings.push({
         severity: "block",
         object: h.percorso,

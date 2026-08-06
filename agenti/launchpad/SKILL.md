@@ -192,6 +192,16 @@ essere verde senza aver guardato, i passi **scartati** col perché — sta in
 vale lo stesso per uno strumento presente che non ha letto il suo input. Un gate
 rosso per verifiche mancanti resta rosso.
 
+**Una citazione non è un verdetto** (`CANTIERE.md` D23 §1), e vale per il solo
+passo `catena-gate`. La §19 tollera elenco, citazione e grassetto perché sono
+tre modi di scrivere la stessa riga; ma per gli altri cinque agenti quella riga
+sta in un documento che hanno scritto loro, mentre qui sta in **certificati
+altrui** — e la citazione (`>`) è esattamente il modo in cui si riporta il
+verdetto di un altro progetto. Un handoff il cui unico verdetto è
+`> Gate: VERDE` è un `block`, e il messaggio dice come si toglie. Negli altri
+gate della casa, e nel passo 9 che legge l'handoff di launchpad, la §19 non
+cambia.
+
 **L'eccezione si dichiara, non si aggira** (precedente della §10). Un progetto
 può avere una credenziale in un file per un motivo legittimo — il seed di
 sviluppo che serve a ventidue test E2E è il caso vero, misurato sul pilota. La
