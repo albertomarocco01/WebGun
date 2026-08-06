@@ -66,6 +66,25 @@ export const piuVecchioDi = (aIso, bIso) => {
 };
 
 // ======================================================== 1. radice-pulita
+/**
+ * I percorsi di `git status --porcelain`, letti bene.
+ *
+ * `gitRighe` fa il `trim` di ogni riga, quindi ` M src/lib/seo.ts` arriva qui
+ * come `M src/lib/seo.ts`: un `slice(3)` fisso mangiava un carattere del
+ * percorso e il gate stampava `rc/lib/seo.ts` — un file che non esiste.
+ * Misurato dal collaudo del 2026-08-06 rifacendo il sabotaggio P1. In una casa
+ * in cui «il gate dichiara sempre cosa ha guardato», dichiararlo con un nome
+ * sbagliato manda chi corregge a cercare a vuoto.
+ *
+ * Le rinomine (`R  vecchio -> nuovo`) si leggono col nome NUOVO: e' quello che
+ * il commit porterebbe.
+ */
+export const percorsiSporchi = (righeStato) =>
+  (righeStato ?? [])
+    .map((r) => String(r).replace(/^\S{1,2}\s+/, ""))
+    .map((r) => (r.includes(" -> ") ? r.slice(r.indexOf(" -> ") + 4) : r))
+    .filter(Boolean);
+
 export function findingsRadice({ sporco = [], ramo = null, upstream = null, avanti = 0, indietro = 0, bugiardi = [] } = {}) {
   const findings = [];
   /**

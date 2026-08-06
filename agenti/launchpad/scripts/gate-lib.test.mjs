@@ -19,6 +19,7 @@ import {
   leggiRunbook,
   minimoNode,
   numeriCitati,
+  percorsiSporchi,
   leggiRuntimeProvider,
   piuVecchioDi,
   VARIABILI_IMPRONTA,
@@ -732,4 +733,14 @@ test("`packageManager` che contraddice il lockfile blocca: il provider sceglie d
   assert.equal(
     findingsRuntime({ engines: ">=22", richieste, lockfile, runbook, packageManager: "npm@10.5.0" }).filter((x) => x.severity === "block").length,
     0, "il gestore coerente col lockfile non produce niente");
+});
+
+test("i percorsi di `git status --porcelain` si leggono interi, anche dopo il trim", () => {
+  // Le righe arrivano gia' ripulite da `gitRighe`: e' li' che nasceva il difetto.
+  assert.deepEqual(percorsiSporchi(["M src/lib/seo.ts", "?? src/lib/nuovo.ts", "A  supabase/seed/00.sql"]),
+    ["src/lib/seo.ts", "src/lib/nuovo.ts", "supabase/seed/00.sql"]);
+});
+
+test("una rinomina si dichiara col nome NUOVO: e' quello che il commit porterebbe", () => {
+  assert.deepEqual(percorsiSporchi(["R  src/lib/seo.ts -> src/lib/seo-nuovo.ts"]), ["src/lib/seo-nuovo.ts"]);
 });

@@ -43,6 +43,7 @@ import {
   leggiRunbook,
   minimoNode,
   numeriCitati,
+  percorsiSporchi,
   riepilogo,
   statoDaFindings,
   VARIABILI_IMPRONTA,
@@ -285,7 +286,7 @@ const PASSI = [
         indietro = soloRemoto;
         avanti = soloLocale;
       }
-      const sporco = (gitRighe(["status", "--porcelain"]) ?? []).map((r) => r.slice(3));
+      const sporco = percorsiSporchi(gitRighe(["status", "--porcelain"]));
       // `git status` puo' MENTIRE: `assume-unchanged` (lettera minuscola) e
       // `skip-worktree` (`S`) tolgono un file dal suo sguardo, e l'albero
       // sembra pulito mentre il disco e il commit divergono.
