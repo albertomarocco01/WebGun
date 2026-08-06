@@ -352,24 +352,27 @@ export function findingsCatena({ handoff = [], proveTrovate = [], ultimoCommitCo
 }
 
 // ===================================================== 3. debito-bloccante
+// Nascono gia' `g`: `matchAll` lo pretende, e costruirle a mano con
+// `new RegExp(r.source, …)` a ogni riga era un regex non letterale (rilievo di
+// semgrep) oltre che una ricompilazione per riga di tabella.
 const BLOCCA_DEPLOY = [
-  /blocca(?:no)?\s+(?:il\s+)?deploy/i,
-  /blocca(?:no)?\s+la\s+pubblicazione/i,
-  /prescrizione\s+di\s+deploy/i,
+  /blocca(?:no)?\s+(?:il\s+)?deploy/gi,
+  /blocca(?:no)?\s+la\s+pubblicazione/gi,
+  /prescrizione\s+di\s+deploy/gi,
   // `[^\n]` e non `[^.]`, ed e' una correzione misurata: la voce n°4 del pilota
   // scrive «e il deploy (P.5) non puo' partire senza», e il PUNTO dentro `P.5`
   // faceva fallire la classe di caratteri. Il gate leggeva tre bloccanti su
   // quattro e taceva sul quarto — cioe' faceva esattamente quello che il
   // criterio di accettazione di P.5 esiste per scoprire.
-  /il\s+deploy\b[^\n]{0,40}non\s+pu[oò]\s+partire/i,
-  /prerequisit\w*\s+(?:di|per|del|alla|della)\s+(?:deploy|P\.5|pubblicazione|messa\s+online)/i,
+  /il\s+deploy\b[^\n]{0,40}non\s+pu[oò]\s+partire/gi,
+  /prerequisit\w*\s+(?:di|per|del|alla|della)\s+(?:deploy|P\.5|pubblicazione|messa\s+online)/gi,
   // Aggiunte dal collaudo del 2026-08-06: sono le forme che una persona scrive
   // senza pensarci, e ognuna faceva passare un bloccante vero. L'elenco resta
   // per costruzione APERTO — vedi la nota in `references/verifica-deterministica.md`
   // §3.3: la difesa che regge non e' questo elenco, e' che il registro nasca da
   // un template con una riga di forma fissa.
-  /non\s+si\s+pubblica\b/i,
-  /blocca(?:no)?\s+la\s+messa\s+online/i,
+  /non\s+si\s+pubblica\b/gi,
+  /blocca(?:no)?\s+la\s+messa\s+online/gi,
 ];
 
 /**
@@ -397,7 +400,8 @@ const NEGAZIONE_PRIMA = /\bnon\b(?:\s+(?:lo|la|ne|ci|piu'|più))?[\s*_`~]*$/i;
 function dichiaraDiBloccare(riga) {
   const t = String(riga ?? "");
   for (const r of BLOCCA_DEPLOY) {
-    for (const m of t.matchAll(new RegExp(r.source, r.flags.includes("g") ? r.flags : `${r.flags}g`))) {
+    r.lastIndex = 0;
+    for (const m of t.matchAll(r)) {
       if (!NEGAZIONE_PRIMA.test(t.slice(0, m.index))) return true;
     }
   }
@@ -553,6 +557,11 @@ export function findingsDebito({ voci = [], citati = new Set(), risposte = new M
 }
 
 // ================================================================ il runbook
+// Regex costruito, e semgrep lo segnala (`detect-non-literal-regexp`):
+// `etichetta` arriva **solo** dai sette letterali dei chiamanti qui sotto
+// (`Provider`, `Dominio`, …), mai dal documento. La riga resta segnalata e la
+// motivazione sta qui, dove si esercita — precedente della §8 di `DECISIONI.md`:
+// un'esenzione si scrive accanto alla regola che disattiva.
 const riga1 = (testo, etichetta) =>
   senzaZoneCitate(testo).match(new RegExp(`^[ \\t>*_-]*${etichetta}[ \\t*_]*:[ \\t*_]*(.+)$`, "im"))?.[1]
     ?.replace(/\*\*/g, "").trim() ?? null;
