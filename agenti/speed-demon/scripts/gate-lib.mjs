@@ -201,7 +201,7 @@ const eSeparatore = (linea) => /^\|[\s:|-]+\|?\s*$/.test(linea.trim());
 // tollerano la decorazione markdown e il due punti finale, non le parole in
 // piu': «Deroghe RESPINTE» e «Storico delle deroghe scadute» sono sezioni che
 // parlano di deroghe che NON valgono.
-const TITOLO_DEROGHE = /^#{1,6}[ 	*_]*Deroghe[ 	*_:]*$/i;
+const TITOLO_DEROGHE = /^#{1,6}[ \t*_]*Deroghe[ \t*_:]*$/i;
 
 /**
  * La tabella delle deroghe si legge DALLA SUA INTESTAZIONE, non da una forma
@@ -235,6 +235,37 @@ const TITOLO_DEROGHE = /^#{1,6}[ 	*_]*Deroghe[ 	*_:]*$/i;
  */
 const cellaFirmata = (valore) => /[\p{L}\p{N}]/u.test(valore) && !valore.includes("{{");
 
+/**
+ * Le colonne, lette dall'intestazione. `null` se questa riga non e'
+ * l'intestazione della tabella delle deroghe: si aspetta la prossima invece di
+ * indovinare le posizioni, perche' indovinare qui significa attribuire una
+ * deroga a una pagina che non l'ha chiesta.
+ */
+function indiciDeroghe(celleIntestazione) {
+  const dove = (parola) => celleIntestazione.findIndex((x) => new RegExp(parola, "i").test(x));
+  const pagina = dove("pagina");
+  const categoria = dove("categoria");
+  const motivo = dove("motivo");
+  if (pagina < 0 || categoria < 0 || motivo < 0) return null;
+  return { pagina, categoria, motivo, firma: dove("confermat") };
+}
+
+/** Una riga della tabella: `{ deroga }`, `{ errore }`, o nessuna delle due. */
+function derogaDaRiga(c, indici) {
+  const pagina = (c[indici.pagina] ?? "").replace(/`/g, "").trim();
+  const categoria = (c[indici.categoria] ?? "").replace(/`/g, "").trim().toLowerCase();
+  const motivo = (c[indici.motivo] ?? "").trim();
+  // Una deroga senza motivo scritto e' una soglia tolta, non una deroga.
+  if (!pagina || !CATEGORIE.includes(categoria) || motivo.replace(/[-—\s]/g, "").length === 0) return {};
+  const firma = indici.firma >= 0 ? (c[indici.firma] ?? "").trim() : "";
+  if (!cellaFirmata(firma)) {
+    // NON si scarta in silenzio: una riga che sembra una deroga e non lo e' e'
+    // esattamente cio' che qualcuno rileggera' fra sei mesi come valida.
+    return { errore: `deroga \`${pagina}\` · \`${categoria}\`: la colonna \`Confermata da\` e' vuota o porta ancora un segnaposto. Una deroga autorizza a consegnare sotto la soglia: senza un nome non l'ha autorizzata nessuno, e non vale` };
+  }
+  return { deroga: { pagina, categoria, motivo, firma } };
+}
+
 function derogheDaTabella(righeTabella) {
   const deroghe = [];
   const errori = [];
@@ -243,35 +274,15 @@ function derogheDaTabella(righeTabella) {
     if (eSeparatore(linea)) continue;
     const c = celle(linea);
     if (!indici) {
-      const dove = (parola) => c.findIndex((x) => new RegExp(parola, "i").test(x));
-      const pagina = dove("pagina");
-      const categoria = dove("categoria");
-      const motivo = dove("motivo");
-      // Senza le tre colonne obbligatorie questa non e' l'intestazione della
-      // tabella delle deroghe: si aspetta la prossima riga invece di indovinare
-      // le posizioni, perche' indovinare qui significa attribuire una deroga a
-      // una pagina che non l'ha chiesta.
-      if (pagina >= 0 && categoria >= 0 && motivo >= 0) {
-        indici = { pagina, categoria, motivo, firma: dove("confermat") };
-        if (indici.firma < 0) {
-          errori.push("la tabella delle deroghe non ha la colonna `Confermata da`: una deroga autorizza a consegnare sotto la soglia, e senza un nome non e' una decisione di nessuno");
-        }
+      indici = indiciDeroghe(c);
+      if (indici && indici.firma < 0) {
+        errori.push("la tabella delle deroghe non ha la colonna `Confermata da`: una deroga autorizza a consegnare sotto la soglia, e senza un nome non e' una decisione di nessuno");
       }
       continue;
     }
-    const pagina = (c[indici.pagina] ?? "").replace(/`/g, "").trim();
-    const categoria = (c[indici.categoria] ?? "").replace(/`/g, "").trim().toLowerCase();
-    const motivo = (c[indici.motivo] ?? "").trim();
-    // Una deroga senza motivo scritto e' una soglia tolta, non una deroga.
-    if (!pagina || !CATEGORIE.includes(categoria) || motivo.replace(/[-—\s]/g, "").length === 0) continue;
-    const firma = indici.firma >= 0 ? (c[indici.firma] ?? "").trim() : "";
-    if (!cellaFirmata(firma)) {
-      // NON si scarta in silenzio: una riga che sembra una deroga e non lo e'
-      // e' esattamente cio' che qualcuno rileggera' fra sei mesi come valida.
-      errori.push(`deroga \`${pagina}\` · \`${categoria}\`: la colonna \`Confermata da\` e' vuota o porta ancora un segnaposto. Una deroga autorizza a consegnare sotto la soglia: senza un nome non l'ha autorizzata nessuno, e non vale`);
-      continue;
-    }
-    deroghe.push({ pagina, categoria, motivo, firma });
+    const { deroga, errore } = derogaDaRiga(c, indici);
+    if (errore) errori.push(errore);
+    if (deroga) deroghe.push(deroga);
   }
   return { deroghe, errori };
 }
@@ -806,6 +817,46 @@ function motivoNonDerogabile(categoria, baseline, mediana) {
   return null;
 }
 
+/**
+ * I due casi in cui il confronto con la soglia NON si puo' fare, e per cui non
+ * esiste una deroga: la categoria che Lighthouse non ha prodotto, e la misura
+ * che c'e' ma non e' affidabile. `null` se il confronto si puo' fare.
+ */
+function motivoSenzaConfronto(pagina, categoria, misura) {
+  if (!misura) {
+    return {
+      severity: "block",
+      object: `pagina ${pagina.id}`,
+      message: `soglia dichiarata per \`${categoria}\` e nessuna misura: Lighthouse non ha prodotto quella categoria`,
+    };
+  }
+  if (!misura.stabile) {
+    return {
+      severity: "block",
+      object: `pagina ${pagina.id} · ${categoria}`,
+      message: `misura inaffidabile, non bassa: ${misura.motivo}`,
+    };
+  }
+  return null;
+}
+
+/** Il rilievo di una soglia non raggiunta, con o senza la sua deroga. */
+function findingSottoSoglia({ pagina, categoria, soglia, misura, deroga }) {
+  const irrevocabile = deroga && motivoNonDerogabile(categoria, pagina.baseline?.[categoria], misura.mediana);
+  const testa = `${misura.mediana} sotto la soglia ${soglia}`;
+  if (irrevocabile) {
+    return { severity: "block", object: `pagina ${pagina.id} · ${categoria}`, message: `${testa}, e la deroga NON vale: ${irrevocabile}` };
+  }
+  if (deroga) {
+    return { severity: "warn", object: `pagina ${pagina.id} · ${categoria}`, message: `${testa}, con deroga scritta e firmata da ${deroga.firma}: «${deroga.motivo}»` };
+  }
+  return {
+    severity: "block",
+    object: `pagina ${pagina.id} · ${categoria}`,
+    message: `${testa} e nessuna deroga scritta nel contratto: o si ottimizza, o si scrive perche' non si puo'`,
+  };
+}
+
 export function findingsBudget(pagine, misure, deroghe) {
   const derogata = (pagina, categoria) =>
     deroghe.find((d) => d.pagina === pagina && d.categoria === categoria);
@@ -826,35 +877,15 @@ export function findingsBudget(pagine, misure, deroghe) {
     }
     for (const [categoria, soglia] of Object.entries(pagina.soglie)) {
       const m = misurate[categoria];
-      if (!m) {
-        findings.push({
-          severity: "block",
-          object: `pagina ${pagina.id}`,
-          message: `soglia dichiarata per \`${categoria}\` e nessuna misura: Lighthouse non ha prodotto quella categoria`,
-        });
-        continue;
-      }
-      if (!m.stabile) {
-        findings.push({
-          severity: "block",
-          object: `pagina ${pagina.id} · ${categoria}`,
-          message: `misura inaffidabile, non bassa: ${m.motivo}`,
-        });
+      const premessa = motivoSenzaConfronto(pagina, categoria, m);
+      if (premessa) {
+        findings.push(premessa);
         continue;
       }
       if (m.mediana < soglia) {
         const d = derogata(pagina.id, categoria);
         if (d) servite.add(d);
-        const irrevocabile = d && motivoNonDerogabile(categoria, pagina.baseline?.[categoria], m.mediana);
-        findings.push({
-          severity: d && !irrevocabile ? "warn" : "block",
-          object: `pagina ${pagina.id} · ${categoria}`,
-          message: irrevocabile
-            ? `${m.mediana} sotto la soglia ${soglia}, e la deroga NON vale: ${irrevocabile}`
-            : d
-              ? `${m.mediana} sotto la soglia ${soglia}, con deroga scritta e firmata da ${d.firma}: «${d.motivo}»`
-              : `${m.mediana} sotto la soglia ${soglia} e nessuna deroga scritta nel contratto: o si ottimizza, o si scrive perche' non si puo'`,
-        });
+        findings.push(findingSottoSoglia({ pagina, categoria, soglia, misura: m, deroga: d }));
       }
     }
   }
@@ -1037,6 +1068,21 @@ function fineTag(html, da) {
 const NOME_TAG = /^<\/?\s*([a-zA-Z][\w:-]*)/;
 const TESTO_GREZZO = new Set(["script", "style"]);
 
+/** Il tag letto: nome, se chiude, se si autochiude. */
+function leggiTag(tag) {
+  return {
+    nome: (NOME_TAG.exec(tag)?.[1] ?? "").toLowerCase(),
+    chiusura: tag.startsWith("</"),
+    autochiuso: /\/>$/.test(tag),
+  };
+}
+
+/** Dove finisce il contenuto grezzo di `<script>`/`<style>` aperto in `da`. */
+function fineTestoGrezzo(html, da, nome) {
+  const chiude = new RegExp(`</\\s*${nome}\\b`, "i").exec(html.slice(da));
+  return chiude ? da + chiude.index : html.length;
+}
+
 function senzaSvg(html) {
   let fuori = "";
   let profondita = 0;
@@ -1059,20 +1105,18 @@ function senzaSvg(html) {
       break;
     }
     const tag = html.slice(i, fine + 1);
-    const nome = (NOME_TAG.exec(tag)?.[1] ?? "").toLowerCase();
-    const chiusura = tag.startsWith("</");
+    const { nome, chiusura, autochiuso } = leggiTag(tag);
 
     if (nome === "svg") {
       if (chiusura) profondita = Math.max(0, profondita - 1);
-      else if (!/\/>$/.test(tag)) profondita += 1;
+      else if (!autochiuso) profondita += 1;
       i = fine + 1;
       continue;
     }
     if (profondita === 0) fuori += tag;
     i = fine + 1;
-    if (TESTO_GREZZO.has(nome) && !chiusura && !/\/>$/.test(tag)) {
-      const chiude = new RegExp(`</\\s*${nome}\\b`, "i").exec(html.slice(i));
-      i = chiude ? i + chiude.index : html.length;
+    if (TESTO_GREZZO.has(nome) && !chiusura && !autochiuso) {
+      i = fineTestoGrezzo(html, i, nome);
     }
   }
 

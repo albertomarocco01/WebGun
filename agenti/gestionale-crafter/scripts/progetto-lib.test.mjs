@@ -11,6 +11,7 @@ import {
   premessaTsc,
   regolaEntitaAncorate,
   senzaCommentiJson,
+  senzaCommentoToml,
   tabelleDaiTipi,
   urlDbProgetto,
   validaConfig,
@@ -457,5 +458,29 @@ describe("erroreDiRotta", () => {
     const findings = regolaEntitaAncorate(["prodotti"], config, () => false);
     assert.equal(findings.length, 1);
     assert.match(findings[0].message, /la rotta `prodotti` non esiste/);
+  });
+});
+
+// ── il `#` che apre un commento TOML, e quello che non lo apre ───────────────
+// Qui la chiave letta e' una sola (`[db].port`) e il `/^(\d+)/` che la
+// interpreta reggeva gia' un commento in coda: lo scanner arriva perche' e' la
+// stessa forma di `valoreToml` che nelle due skill sorelle produceva schemi
+// fantasma (§ M13) e mezze URL (§ L7), e la prossima chiave che qualcuno
+// leggera' da qui non avra' un `/^(\d+)/` a proteggerla.
+
+describe("senzaCommentoToml", () => {
+  it("taglia il commento in coda", () => {
+    assert.equal(senzaCommentoToml("port = 7622 # il banco del pilota"), "port = 7622 ");
+    assert.equal(senzaCommentoToml("# tutta la riga"), "");
+  });
+
+  it("ma non un `#` dentro una stringa", () => {
+    assert.equal(senzaCommentoToml('url = "http://x/#/app"'), 'url = "http://x/#/app"');
+    assert.equal(senzaCommentoToml("nome = 'a#b'"), "nome = 'a#b'");
+    assert.equal(senzaCommentoToml('a = "una \\" virgoletta # dentro"'), 'a = "una \\" virgoletta # dentro"');
+  });
+
+  it("e la porta si legge lo stesso, col commento accanto", () => {
+    assert.equal(urlDbProgetto("[db]\nport = 7622 # il banco\n"), "postgresql://postgres:postgres@127.0.0.1:7622/postgres");
   });
 });

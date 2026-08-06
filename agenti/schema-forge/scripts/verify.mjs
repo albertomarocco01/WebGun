@@ -197,29 +197,32 @@ export function dettaglioReset(res, ritentato, migrazioni) {
  * del n°52, applicata al JSON invece che al codice. Una `]` dentro il messaggio
  * di un advisor non chiude niente.
  */
+/** L'indice della quadra che chiude quella aperta in `da`, saltando le stringhe. */
+function chiusuraQuadra(testo, da) {
+  let livello = 0;
+  let inStringa = false;
+  for (let j = da; j < testo.length; j++) {
+    const c = testo[j];
+    if (inStringa) {
+      if (c === "\\") j += 1;
+      else if (c === '"') inStringa = false;
+      continue;
+    }
+    if (c === '"') inStringa = true;
+    else if (c === "[") livello += 1;
+    else if (c === "]" && --livello === 0) return j;
+  }
+  return -1;
+}
+
 function primoArrayJson(testo) {
   for (let i = testo.indexOf("["); i !== -1; i = testo.indexOf("[", i + 1)) {
-    let livello = 0;
-    let inStringa = false;
-    for (let j = i; j < testo.length; j++) {
-      const c = testo[j];
-      if (inStringa) {
-        if (c === "\\") { j += 1; continue; }
-        if (c === '"') inStringa = false;
-        continue;
-      }
-      if (c === '"') { inStringa = true; continue; }
-      if (c === "[") livello += 1;
-      else if (c === "]") {
-        livello -= 1;
-        if (livello > 0) continue;
-        try {
-          const forse = JSON.parse(testo.slice(i, j + 1));
-          if (Array.isArray(forse)) return forse;
-        } catch { /* questa quadra non apriva il JSON: si prova la prossima */ }
-        break;
-      }
-    }
+    const fine = chiusuraQuadra(testo, i);
+    if (fine === -1) continue;
+    try {
+      const forse = JSON.parse(testo.slice(i, fine + 1));
+      if (Array.isArray(forse)) return forse;
+    } catch { /* questa quadra non apriva il JSON: si prova la prossima */ }
   }
   return null;
 }

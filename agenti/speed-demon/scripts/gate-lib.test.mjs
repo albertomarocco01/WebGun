@@ -783,7 +783,7 @@ test("ma «Deroghe RESPINTE» e «Storico delle deroghe scadute» non aprono nie
   assert.deepEqual(leggiContratto(conSezione("## Storico delle deroghe scadute")).deroghe, []);
 });
 
-test("e un `###` chiude la sezione: `^##\s+` non lo vedeva", () => {
+test("e un `###` chiude la sezione, che l'intestazione a due cancelletti non vedeva", () => {
   assert.deepEqual(leggiContratto(conSezione("## Deroghe\n\n### Archivio")).deroghe, []);
 });
 

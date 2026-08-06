@@ -81,6 +81,37 @@ const trova = (severity, object, message, hint) => ({ severity, object, message,
 // Il `\` fuori da una stringa si copia con cio' che segue: fuori da una stringa
 // il solo posto in cui compare e' un letterale di espressione regolare, e senza
 // questa riga `/https:\/\//` aprirebbe un commento di riga sul suo stesso `\/`.
+/**
+ * Un passo DENTRO una stringa: il testo si copia com'e', e si decide solo se la
+ * stringa e' finita.
+ *
+ * Una stringa a virgolette non attraversa la fine della riga: se ci arriva, il
+ * delimitatore non era un delimitatore (JSX, un apostrofo dentro un commento
+ * gia' tolto, un file troncato). Meglio riprendere il conto che portarsi dietro
+ * uno stato sbagliato fino in fondo al file.
+ */
+function passoDentroStringa(sorgente, i, delimitatore) {
+  const c = sorgente[i];
+  if (c === "\\") return { pezzo: c + (sorgente[i + 1] ?? ""), prossimo: i + 2, delimitatore };
+  const chiusa = c === delimitatore || (c === "\n" && delimitatore !== "`");
+  return { pezzo: c, prossimo: i + 1, delimitatore: chiusa ? null : delimitatore };
+}
+
+/**
+ * Un commento, saltato. Gli a capo si tengono: un rilievo che cita una riga
+ * deve citare la riga giusta. Il `\n` che chiude un commento di riga NON si
+ * consuma, per la stessa ragione.
+ */
+function saltaCommento(sorgente, i) {
+  if (sorgente[i + 1] === "*") {
+    const fine = sorgente.indexOf("*/", i + 2);
+    const corpo = fine === -1 ? sorgente.slice(i) : sorgente.slice(i, fine + 2);
+    return { pezzo: ` ${corpo.replace(/[^\n]/g, "")}`, prossimo: fine === -1 ? sorgente.length : fine + 2 };
+  }
+  const fine = sorgente.indexOf("\n", i + 2);
+  return { pezzo: " ", prossimo: fine === -1 ? sorgente.length : fine };
+}
+
 export function senzaCommenti(testo) {
   const sorgente = String(testo ?? "");
   let fuori = "";
@@ -91,19 +122,10 @@ export function senzaCommenti(testo) {
     const c = sorgente[i];
 
     if (delimitatore !== null) {
-      if (c === "\\") {
-        fuori += c + (sorgente[i + 1] ?? "");
-        i += 2;
-        continue;
-      }
-      // Una stringa a virgolette non attraversa la fine della riga: se ci
-      // arriva, il delimitatore non era un delimitatore (JSX, un apostrofo in
-      // un commento gia' tolto, un file troncato). Meglio riprendere il conto
-      // che portarsi dietro uno stato sbagliato fino in fondo al file.
-      if (c === "\n" && delimitatore !== "`") delimitatore = null;
-      else if (c === delimitatore) delimitatore = null;
-      fuori += c;
-      i += 1;
+      const passo = passoDentroStringa(sorgente, i, delimitatore);
+      fuori += passo.pezzo;
+      delimitatore = passo.delimitatore;
+      i = passo.prossimo;
       continue;
     }
 
@@ -118,19 +140,10 @@ export function senzaCommenti(testo) {
       i += 1;
       continue;
     }
-    if (c === "/" && sorgente[i + 1] === "*") {
-      const fine = sorgente.indexOf("*/", i + 2);
-      const corpo = fine === -1 ? sorgente.slice(i) : sorgente.slice(i, fine + 2);
-      // Gli a capo del commento si tengono: un rilievo che cita una riga deve
-      // citare la riga giusta.
-      fuori += ` ${corpo.replace(/[^\n]/g, "")}`;
-      i = fine === -1 ? sorgente.length : fine + 2;
-      continue;
-    }
-    if (c === "/" && sorgente[i + 1] === "/") {
-      const fine = sorgente.indexOf("\n", i + 2);
-      fuori += " ";
-      i = fine === -1 ? sorgente.length : fine;
+    if (c === "/" && (sorgente[i + 1] === "*" || sorgente[i + 1] === "/")) {
+      const passo = saltaCommento(sorgente, i);
+      fuori += passo.pezzo;
+      i = passo.prossimo;
       continue;
     }
 

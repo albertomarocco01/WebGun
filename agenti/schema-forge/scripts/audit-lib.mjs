@@ -716,6 +716,31 @@ const tentaScrittura = (testo, schema, tabella) => {
  * caso normale); e un commento DENTRO un corpo quotato col dollaro resta dov'e',
  * perche' li' dentro il testo e' opaco a questo scanner.
  */
+/** Dove finisce una stringa che raddoppia il delimitatore per fuggirlo. */
+function fineStringaRaddoppiata(sorgente, da, delimitatore) {
+  let j = da + 1;
+  while (j < sorgente.length) {
+    if (sorgente[j] !== delimitatore) { j += 1; continue; }
+    if (sorgente[j + 1] === delimitatore) { j += 2; continue; }
+    return j + 1;
+  }
+  return sorgente.length;
+}
+
+/** Dove finisce un commento a blocco, contando l'annidamento (Postgres lo fa). */
+function fineCommentoAnnidato(sorgente, da) {
+  let profondita = 1;
+  let j = da + 2;
+  while (j < sorgente.length && profondita > 0) {
+    if (sorgente[j] === "/" && sorgente[j + 1] === "*") { profondita += 1; j += 2; continue; }
+    if (sorgente[j] === "*" && sorgente[j + 1] === "/") { profondita -= 1; j += 2; continue; }
+    j += 1;
+  }
+  return j;
+}
+
+const APRE_DOLLARO = /^\$([A-Za-z_]\w*)?\$/;
+
 export function senzaCommentiSql(testo) {
   const sorgente = String(testo ?? "");
   let fuori = "";
@@ -725,21 +750,13 @@ export function senzaCommentiSql(testo) {
     const c = sorgente[i];
 
     if (c === "'" || c === '"') {
-      // fine alla prima occorrenza non raddoppiata del delimitatore
-      let j = i + 1;
-      while (j < sorgente.length) {
-        if (sorgente[j] === c) {
-          if (sorgente[j + 1] === c) { j += 2; continue; }
-          break;
-        }
-        j += 1;
-      }
-      fuori += sorgente.slice(i, Math.min(j + 1, sorgente.length));
-      i = j + 1;
+      const fine = fineStringaRaddoppiata(sorgente, i, c);
+      fuori += sorgente.slice(i, fine);
+      i = fine;
       continue;
     }
 
-    const dollaro = /^\$([A-Za-z_][\w]*)?\$/.exec(sorgente.slice(i));
+    const dollaro = APRE_DOLLARO.exec(sorgente.slice(i));
     if (dollaro) {
       const chiusura = sorgente.indexOf(dollaro[0], i + dollaro[0].length);
       const fine = chiusura === -1 ? sorgente.length : chiusura + dollaro[0].length;
@@ -756,17 +773,11 @@ export function senzaCommentiSql(testo) {
     }
 
     if (c === "/" && sorgente[i + 1] === "*") {
-      let profondita = 1;
-      let j = i + 2;
-      while (j < sorgente.length && profondita > 0) {
-        if (sorgente[j] === "/" && sorgente[j + 1] === "*") { profondita += 1; j += 2; continue; }
-        if (sorgente[j] === "*" && sorgente[j + 1] === "/") { profondita -= 1; j += 2; continue; }
-        j += 1;
-      }
+      const fine = fineCommentoAnnidato(sorgente, i);
       // gli a capo del commento si tengono: un rilievo che cita una riga deve
       // citare la riga giusta
-      fuori += ` ${sorgente.slice(i, j).replace(/[^\n]/g, "")}`;
-      i = j;
+      fuori += ` ${sorgente.slice(i, fine).replace(/[^\n]/g, "")}`;
+      i = fine;
       continue;
     }
 

@@ -247,7 +247,6 @@ const SOLO = /\b(test|describe|it)(?:\.[a-z]+)*\.only\s*\(/;
 // verde e `spec-coverage` dichiarava COPERTO un flusso critico che nessun test
 // percorreva. Il tag `@flusso:` sta nel titolo: al gate la spec c'e' e attacca.
 const SALTA = /\b(test|describe|it)(?:\.[a-z]+)*\.(skip|fixme)\s*\(/;
-const COMMENTO = /^\s*(\/\/|\*|\/\*)/;
 
 /**
  * Le stesse righe, senza cio' che e' commentato — e senza perdere il conto:
@@ -280,9 +279,25 @@ const COMMENTO = /^\s*(\/\/|\*|\/\*)/;
 //                svuotato — cosi' nemmeno un `.only` NOMINATO dentro una
 //                stringa vale come un `.only` chiamato;
 //   `commento` = `true` se su quella riga c'era un commento VERO.
+/**
+ * Un passo DENTRO una stringa. Il delimitatore torna sempre — chiuso o no — e
+ * il pezzo da tenere dipende dalla domanda che si sta facendo: `svuotaStringhe`
+ * decide se il contenuto e' struttura o rumore.
+ */
+function dentroStringa(linea, i, delimitatore, svuotaStringhe) {
+  const c = linea[i];
+  if (c === "\\") {
+    return { pezzo: svuotaStringhe ? "" : c + (linea[i + 1] ?? ""), prossimo: i + 2, delimitatore };
+  }
+  if (c === delimitatore) return { pezzo: c, prossimo: i + 1, delimitatore: null };
+  return { pezzo: svuotaStringhe ? "" : c, prossimo: i + 1, delimitatore };
+}
+
 function codiceSenzaCommenti(linee, svuotaStringhe = true) {
+  // `inBlocco` attraversa le righe: un commento a blocco aperto qui si chiude
+  // due righe piu' giu'. Per questo lo stato sta fuori dalla funzione di riga.
   let inBlocco = false;
-  return linee.map((linea) => {
+  const analizzaRiga = (linea) => {
     let codice = "";
     let commento = false;
     let delimitatore = null;
@@ -301,18 +316,10 @@ function codiceSenzaCommenti(linee, svuotaStringhe = true) {
       }
 
       if (delimitatore !== null) {
-        if (c === "\\") {
-          if (!svuotaStringhe) codice += c + (linea[i + 1] ?? "");
-          i += 2;
-          continue;
-        }
-        if (c === delimitatore) {
-          delimitatore = null;
-          codice += c;
-        } else if (!svuotaStringhe) {
-          codice += c;
-        }
-        i += 1;
+        const passo = dentroStringa(linea, i, delimitatore, svuotaStringhe);
+        codice += passo.pezzo;
+        delimitatore = passo.delimitatore;
+        i = passo.prossimo;
         continue;
       }
 
@@ -338,7 +345,9 @@ function codiceSenzaCommenti(linee, svuotaStringhe = true) {
     }
 
     return { codice, commento };
-  });
+  };
+
+  return linee.map(analizzaRiga);
 }
 
 export function regoleSpec(file, testo) {
