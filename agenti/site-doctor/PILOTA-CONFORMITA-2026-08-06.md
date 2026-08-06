@@ -5,6 +5,12 @@ Pacchetto **P.4i**, 2026-08-06 sera → 2026-08-07 notte.
 Regia: `d147f52` → `980e61a` → `cbcbdc7` → **`bee36c9`** (si è mossa tre volte
 mentre il pacchetto lavorava; ogni corsa porta lo `sha` catturato prima e dopo).
 
+> **Il commit non descrive tutto quello che ha girato.** Alla consegna la regia
+> ha **otto script dei gate modificati e non committati** — fra cui
+> `agenti/site-doctor/scripts/conformita-lib.mjs` — per 264 righe aggiunte e 141
+> tolte. Le corse di questo verbale hanno usato quelle versioni lì. Chi rilegge
+> questi verdetti a modifiche committate **rilanci**.
+
 Questo verbale è **della regia**: raccoglie le uscite per intero e i rilievi che
 riguardano **le skill**, non il pilota. Ciò che riguarda il pilota sta nei suoi
 documenti — `docs/conformita.md`, `docs/handoff/16-site-doctor.md`,
