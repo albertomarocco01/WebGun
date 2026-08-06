@@ -531,7 +531,7 @@ const RE_INFORMATIVA_PERCORSO = /(^|\/)(privacy|privacy-policy|cookie|cookie-pol
 const VUOTI = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"]);
 
 /** L'HTML dichiara nascosto questo tag di apertura? */
-export function tagNascosto(tag) {
+function tagNascosto(tag) {
   const attr = attributi(tag);
   if ("hidden" in attr || (attr["aria-hidden"] ?? "").toLowerCase() === "true") return true;
   return /display\s*:\s*none|visibility\s*:\s*hidden/i.test(attr.style ?? "");
@@ -903,7 +903,7 @@ const PAROLE_PERSONALI = new Set([
 const FRASI_PERSONALI = [/codice fiscale/, /partita iva/, /data (di )?nascita/, /luogo (di )?nascita/, /date of birth/, /ragione sociale/, /carta (d )?identita/];
 
 /** Le parole di un nome di campo: separatori e camelCase, senza accenti. */
-export function paroleDelNome(nome) {
+function paroleDelNome(nome) {
   return String(nome ?? "")
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .toLowerCase()
@@ -933,6 +933,42 @@ export function classificaCampo(campo) {
     return { personale: true, prova: "debole", motivo: 'e\' un caricamento di file (type="file") su un modulo pubblico' };
   }
   return { personale: false, prova: "nessuna", motivo: "" };
+}
+
+/** Dove va a finire il modulo: altra origine, chiaro, pagina non camminata. */
+function findingsDestinazioni(pagina, superficie) {
+  const findings = [];
+  for (const m of pagina.destinazioni ?? []) {
+    const personali = m.campi.filter((c) => classificaCampo(c).personale);
+    if (personali.length === 0) continue;
+    if (m.altraOrigine) {
+      findings.push({
+        severity: "block",
+        object: `${pagina.percorso} → modulo verso ${m.origine}`,
+        message: `raccoglie ${personali.length} dati personali e li invia a un'ALTRA ORIGINE (${m.origine}): e' un destinatario ai sensi dell'art. 13 e va dichiarato. Un terzo che riceve il modulo non deve nemmeno fare niente nel browser — i dati glieli consegna il sito`,
+      });
+    }
+    if (m.inChiaro) {
+      findings.push({
+        severity: "block",
+        object: `${pagina.percorso} → modulo verso ${m.origine}`,
+        message: `raccoglie ${personali.length} dati personali e li invia IN CHIARO (${m.azione}): attraversano la rete leggibili da chiunque stia in mezzo`,
+      });
+    }
+    // La camminata segue gli `<a href>`. Una pagina raggiungibile SOLO dal
+    // bottone di un modulo resta fuori dalla superficie — ed e' un limite
+    // dichiarato, ma il gate lo applicava in silenzio: restringeva l'insieme
+    // che poi dichiarava conforme. Adesso lo dice. `issue` perche' la pagina
+    // di destinazione di un POST spesso non e' navigabile da sola.
+    if (!m.altraOrigine && superficie && !superficie.has(m.destinazione)) {
+      findings.push({
+        severity: "issue",
+        object: `${pagina.percorso} → ${m.destinazione}`,
+        message: "il modulo consegna dati personali a una pagina che la camminata NON ha raggiunto (i collegamenti si seguono, i bottoni no): quella pagina riceve dati e non e' stata certificata",
+      });
+    }
+  }
+  return findings;
 }
 
 export function findingsDatiRaccolti({ pagineConModuli, basiDichiarate, informativaRaggiungibile, superficie = null }) {
@@ -967,36 +1003,7 @@ export function findingsDatiRaccolti({ pagineConModuli, basiDichiarate, informat
         });
       }
     }
-    for (const m of pagina.destinazioni ?? []) {
-      const personali = m.campi.filter((c) => classificaCampo(c).personale);
-      if (personali.length === 0) continue;
-      if (m.altraOrigine) {
-        findings.push({
-          severity: "block",
-          object: `${pagina.percorso} → modulo verso ${m.origine}`,
-          message: `raccoglie ${personali.length} dati personali e li invia a un'ALTRA ORIGINE (${m.origine}): e' un destinatario ai sensi dell'art. 13 e va dichiarato. Un terzo che riceve il modulo non deve nemmeno fare niente nel browser — i dati glieli consegna il sito`,
-        });
-      }
-      if (m.inChiaro) {
-        findings.push({
-          severity: "block",
-          object: `${pagina.percorso} → modulo verso ${m.origine}`,
-          message: `raccoglie ${personali.length} dati personali e li invia IN CHIARO (${m.azione}): attraversano la rete leggibili da chiunque stia in mezzo`,
-        });
-      }
-      // La camminata segue gli `<a href>`. Una pagina raggiungibile SOLO dal
-      // bottone di un modulo resta fuori dalla superficie — ed e' un limite
-      // dichiarato, ma il gate lo applicava in silenzio: restringeva l'insieme
-      // che poi dichiarava conforme. Adesso lo dice. `issue` perche' la pagina
-      // di destinazione di un POST spesso non e' navigabile da sola.
-      if (!m.altraOrigine && superficie && !superficie.has(m.destinazione)) {
-        findings.push({
-          severity: "issue",
-          object: `${pagina.percorso} → ${m.destinazione}`,
-          message: "il modulo consegna dati personali a una pagina che la camminata NON ha raggiunto (i collegamenti si seguono, i bottoni no): quella pagina riceve dati e non e' stata certificata",
-        });
-      }
-    }
+    findings.push(...findingsDestinazioni(pagina, superficie));
     if (pagina.campi.some((c) => classificaCampo(c).personale) && !informativaRaggiungibile.has(pagina.percorso)) {
       findings.push({
         severity: "block",

@@ -1,12 +1,28 @@
 # Stato — Site Doctor
 
-- **Stato attuale: P0+P1 CONSEGNATE il 2026-08-06, in un solo pacchetto** (D17
-  del cantiere). Il gate esiste, ha **nove passi** e **quattro stati**, chiude
-  **VERDE 8/8 + 1 NON APPLICABILE** sul banco conforme e **ROSSO su 25 classi di
-  sabotaggio su 25**. Sul pilota `fornodoro` esce **ROSSO (4 falliti, 3 verifiche
-  mancanti su 9, identità dell'app confermata) per cinque motivi veri che
-  nessuno dei cinque gate esistenti vede**. **144 test verdi.** Verbale:
-  `COSTRUZIONE-2026-08-06.md`.
+- **Stato attuale: P0+P1+P2 CONSEGNATE il 2026-08-06.** Il gate esiste, ha
+  **nove passi** e **quattro stati**, chiude **VERDE 8/8 + 1 NON APPLICABILE**
+  sul banco conforme, **VERDE 9/9** sul banco bilingue del collaudo, e **ROSSO
+  su 25 classi di sabotaggio su 25** più **25 su 32** delle classi nuove. Sul
+  pilota `fornodoro` esce **ROSSO (4 falliti, 3 verifiche mancanti su 9,
+  identità dell'app confermata) per cinque motivi veri che nessuno dei cinque
+  gate esistenti vede**. **168 test verdi.** Verbali:
+  `COSTRUZIONE-2026-08-06.md` e `COLLAUDO-2026-08-06.md`.
+- **Il collaudo avversario indipendente (P2) è stato fatto** il 2026-08-06 in
+  chat vergine, su un banco **studio legale bilingue**: **quattordici difetti
+  misurati, corretti e chiusi con un test**, dodici commit, batteria **144 →
+  168**. I due più gravi:
+  - **una chiave universale nuova che costa UN tag**: `</script>` veniva letta
+    come apertura e il ripulitore amputava il documento fino alla fine. Effetto
+    misurato: `dati-raccolti` chiude **`NON APPLICABILE` — «zero moduli e zero
+    campi»** su un sito che raccoglie nome, email, telefono e PEC. È il punto
+    aperto n°12 del costruttore avverato alla lettera;
+  - **sette deleghe su nove erano vuote**, `favicon` e `open-graph` comprese.
+    La parola «contrast» non compare in nessun file di speed-demon; `sitemap`,
+    `og:`, `favicon`, `application/ld` hanno **zero occorrenze** nel suo gate.
+    **La skill nata dalla favicon a 404 la delegava a un gate in cui quella
+    parola non compare**: il difetto non era corretto, era spostato di un
+    livello.
 - **Il tribunale ha trovato 33 rilievi**, e gli strumenti statici erano **tutti
   verdi** su tutti e 33. Il piu' grave apriva **tutti e nove i passi insieme**:
   in HTML un `<!--` dentro il valore di un attributo e' testo, non l'apertura di
@@ -16,12 +32,15 @@
   un ripulitore a una scansione, che ha chiuso anche un costo **quadratico**
   (200 KB di `<` ripetuti: 24,6 s → 16 ms). **26 rilievi chiusi con un test,
   5 aperti e scritti qui sotto, 1 accettato, 1 rimandato alla regia.**
-- **Non usabile su un progetto cliente**, e il motivo principale non è tecnico:
-  il **collaudo avversario indipendente (P2) non è stato fatto**, e questa è la
-  prima skill della casa nata **senza la revisione del direttore fra
-  progettazione e costruzione**. Sulle cinque skill che ce l'hanno avuta, il
-  collaudo avversario ha trovato in media dieci difetti veri a testa — su
-  vetrina-crafter, la più curata, ne ha trovati **quattordici**.
+- **Non ancora usabile su un progetto cliente**, e il motivo non è più il
+  collaudo: è **P3**, cioè un certificato firmato da un committente vero e non
+  per delega. Il collaudo avversario c'è stato e ha trovato **quattordici**
+  difetti — lo stesso numero di vetrina-crafter, che era la più curata. Il
+  rapporto completo del costo di D17 (P0+P1 uniti, senza la revisione del
+  direttore in mezzo) è ora **8 → 3 → 33 → 14**: autorevisione, sabotaggio,
+  tribunale, collaudo indipendente.
+- **Il tribunale non è stato riconvocato sul codice cambiato** dal collaudo, ed
+  è **MANCANTE**, non PASS: è la prima cosa da fare su questa skill.
 - **Proprietario:** Alberto
 - **Dipendenze:**
   - **A monte:** l'intera catena costruttiva — **schema-forge**,
@@ -48,14 +67,17 @@ dichiarato **con il nome del proprietario e il file che lo dice**.
 |---|---|---|---|
 | P0 | progettazione: `SKILL.md`, perimetro, specifica del gate a nove passi scritta **prima** del flusso, i quattro stati | qui | **fatta il 2026-08-06**, dentro lo stesso pacchetto di P1 (D17) — **senza revisione del direttore in mezzo**: è il costo dichiarato dell'unione |
 | P1 | costruzione: references, `scripts/`, banco, guardiani, sabotaggio, gate rosso sul pilota per motivi veri | qui | **fatta il 2026-08-06**. Verbale `COSTRUZIONE-2026-08-06.md` |
-| P2 | collaudo avversario indipendente in **chat vergine**, dominio diverso: caccia ai falsi verdi dei nove passi | chat vergine (chi costruisce non collauda) | **da fare — ed è il punto aperto n°1** |
+| P2 | collaudo avversario indipendente in **chat vergine**, dominio diverso: caccia ai falsi verdi dei nove passi | chat vergine (chi costruisce non collauda) | **fatta il 2026-08-06** su un banco **studio legale bilingue**. Verbale `COLLAUDO-2026-08-06.md`: 14 difetti, 12 commit, batteria 144 → 168 |
 | P3 | primo consumatore reale con un certificato firmato da un **committente**, non per delega | pacchetto di catena | da fare |
 
 ## Cosa esiste, misurato
 
 | Cosa | Numero | Come è stato misurato |
 |---|---|---|
-| Test degli script | **144 verdi** | `npm test` (Node 24) |
+| Test degli script | **168 verdi** | `node --test scripts/`, sul node di sistema (20.12.2) **e** su Node 24 |
+| Difetti trovati dal **collaudo avversario** (P2) | **14**, tutti chiusi con un test | `COLLAUDO-2026-08-06.md` |
+| Classi di sabotaggio del collaudo | **32**, di cui **25 rosse**; le 7 verdi sono limiti dichiarati che reggono | `banco-prova-collaudo-sd/`, gitignorato |
+| Deleghe misurate **vuote** | **7 su 9** — `grep` sui gate dei vicini | `SCOPERTE` in `conformita-lib.mjs` |
 | Passi del gate implementati | **9**, con `id` stabili e ordine bloccato da un test | `scripts/verify.mjs`, `ID` |
 | Stati del verdetto | **4** (`pass` · `fail` · `skipped` · `n/a`) | `riepilogo()`, con i test dei tre casi |
 | Classi di sabotaggio provate | **25 su 25 rosse**, ognuna sul passo che dichiara di sorvegliare | `scripts/banco.mjs`, uscite incollate nel verbale |
@@ -92,74 +114,93 @@ più:
 
 ## Punti aperti — ordinati per gravità
 
-1. **Il collaudo avversario (P2) non è stato fatto, e questa skill ne ha più
-   bisogno delle altre.** È l'unica nata senza revisione del direttore fra
-   progettazione e costruzione (D17). Lo STOP di metà pacchetto ha sostituito
-   quella revisione con un'autorevisione, e un'autorevisione trova ciò che chi
-   ha scritto sa già di dover cercare: ha infatti trovato otto punti, e il
-   sabotaggio — cioè la prima cosa che *esegue* invece di leggere — ne ha trovati
-   altri tre che l'autorevisione non aveva visto.
-2. **`certifica` e `handoff` non sono mai stati eseguiti su un progetto vero.**
-   Il pilota è di sola lettura per questo pacchetto (D17 §3): non è stato
-   possibile scrivere `docs/conformita.md` né `docs/handoff/<n>-site-doctor.md`
-   dentro `fornodoro`. Sul banco i due documenti li **genera il banco**, quindi
-   sono provati come *input del gate*, non come *prodotto del comando*. La prima
-   volta che qualcuno eseguirà `certifica` su un progetto vero sarà la prima
-   volta.
-3. **Nessuna informativa è mai stata generata.** Il comando `certifica`
-   prescrive di produrre la pagina dell'informativa **in bozza** quando manca, e
-   la procedura è scritta — ma non è mai stata eseguita, quindi non esiste un
-   modello di pagina provato. È la parte più delicata della skill (un documento
-   legale generato da un programma) ed è la meno provata.
-4. **La firma resta il limite non automatizzabile.** Il gate legge una riga; che
-   chi l'ha scritta abbia letto il documento non lo sa nessuno strumento. È lo
-   stesso limite che dichiarano speed-demon sull'elenco delle pagine e
-   flow-sentinel sull'elenco dei flussi.
-5. **Tredici avvisi di complessità** di ESLint (`complexity > 15`), saliti da
-   sette con le correzioni del tribunale. Zero errori. È il precedente di speed-demon, che ha portato un
-   `complexity 19` per tre giorni prima che P.7c lo sciogliesse: è un residuo
-   dichiarato, non un guardiano spento.
-6. **Un solo dominio, un solo stack.** Tutto quello che è scritto qui è vero su
-   Next 16 con Turbopack. Il banco è statico e il pilota è una pizzeria: nessun
-   sito multilingua **vero** è mai stato misurato — gli hreflang sono provati
-   solo sul banco sabotato.
-7. **`--json` non è stato esercitato oltre il driver del sabotaggio.** Il
-   contratto d'uscita in JSON esiste, ha il suo numero di versione e i suoi
-   `id`; nessun orchestratore lo ha ancora consumato.
-8. **Il tempo di esecuzione non è stato cronometrato.** Sul pilota (5 pagine, 9
-   script) è nell'ordine dei secondi; su un sito di trenta pagine con cinquanta
-   bundle non lo sa nessuno, e il limite `--max-pagine 60` produrrebbe un
-   `block` dichiarato invece di un troncamento silenzioso.
-9. **Nessun tetto sul corpo scaricato né sul numero di bundle** (tribunale,
-   `SD-MEM-01` e `SD-NET-04`). Il timeout per richiesta limita il **tempo**, non
-   i **byte**: un server che risponde 200 e riversa dati per quindici secondi
-   riempie la memoria, e oltre il limite di stringa di V8 l'errore viene
-   inghiottito dal `catch` di `preleva` e si presenta come «nessuna risposta:
-   avvia la build» — cioè con la diagnosi rovesciata, che accusa la macchina di
-   chi misura. Rimedio noto: lettura a flusso con un tetto esplicito, e un
-   `block` nominato al superamento invece di un `null`.
-10. **Nessuna scadenza complessiva.** 60 pagine × 2 tentativi × 15 s è mezz'ora
-    per le sole pagine, e il lavoro di CI viene ucciso dal proprio timeout prima
-    di produrre un verdetto: il gate resta «appeso» dal punto di vista di chi lo
-    guarda, che è la definizione che questo codice dà del difetto. Serve un
-    `--scadenza` con un default, e allo scadere `skipped` sui passi non
-    completati — mai una fine senza verdetto.
-11. **Un `<script src>` della stessa origine che rimanda a un altro host** viene
-    scaricato (`segui: true`) e il suo contenuto attribuito al sito, senza
-    comparire fra i terzi. `preleva` restituisce già l'URL finale: basta
-    confrontarne l'host e, se differisce, trattarlo come terzo.
-12. **Le premesse di due `NON APPLICABILE` su tre non sono indipendenti.**
-    Quella della lingua lo è (lo STOP l'ha resa tale); «zero moduli» e «zero
-    archiviazioni» sono misure fatte **sullo stesso documento** che un difetto
-    del ripulitore potrebbe amputare. È la forma più elegante di falso verde che
-    questo gate abbia, ed è il primo posto dove guarderei al collaudo P2.
+**Chiusi dal collaudo P2 del 2026-08-06**, e vale la pena dire quali: il n°1 (il
+collaudo stesso), il n°2 (`certifica` e `handoff` eseguiti come comandi su un
+progetto vero), il n°3 (l'informativa in bozza generata, con il modello che
+prima non esisteva), e il **n°12** — le premesse dei `NON APPLICABILE` fatte su
+un documento che poteva essere amputato: era la previsione più acuta del
+costruttore, si è avverata, ed è chiusa.
+
+1. **Il tribunale non è stato riconvocato sul codice cambiato.** Quattordici
+   correzioni sono entrate dopo l'ultimo `/code-inquisition`, fra cui il
+   ripulitore e due regole nuove. Su questa skill il tribunale ha trovato **33**
+   rilievi che tutti gli strumenti statici dichiaravano puliti: è **MANCANTE**,
+   non PASS, ed è la prima cosa da fare.
+2. **Sette voci di conformità sono delegate a gate che non le guardano**, e il
+   gate oggi lo dice con un `issue` a ogni esecuzione. Dichiararlo non è
+   coprirlo: finché la direzione non decide (proposta n°2 del collaudo), un
+   certificato può essere firmato con `favicon`, `open-graph`,
+   `dati-strutturati`, `sitemap`, `robots` e `contrasti` **scoperte**.
+3. **La firma resta il limite non automatizzabile.** Il gate legge una riga; che
+   chi l'ha scritta abbia letto il documento non lo sa nessuno strumento.
+4. **Nessuna scadenza complessiva.** Misurato al collaudo contro un server che
+   manda un byte al secondo e non chiude mai: il gate **non si appende** (il
+   timeout per richiesta funziona, 31 s e un `block` con la diagnosi giusta), ma
+   60 pagine ostili costano mezz'ora e in CI il lavoro viene ucciso prima di
+   produrre un verdetto. Serve `--scadenza` con un default e `skipped` sui passi
+   non completati — mai una fine senza verdetto. È un cambio di contratto:
+   proposta n°1 del collaudo.
+5. **Nessun tetto sul corpo scaricato né sul numero di bundle.** La forma temuta
+   — l'errore inghiottito e la diagnosi rovesciata che accusa la macchina di chi
+   misura — **non si è riprodotta**: contro un corpo da 900 MB il gate esce con
+   `1 pagine non scaricate`, che è vero. Resta il costo: 31 s per pagina e tutto
+   ciò che arriva in memoria.
+6. **Quattordici avvisi di complessità** di ESLint (era 13), zero errori. Il
+   nuovo è `regioniNascoste`, il parser a scansione singola: la sua alternativa
+   è la versione quadratica che il collaudo ha tolto.
+7. **`--json` non è stato consumato da un orchestratore.** I due runner del
+   collaudo lo leggono, ed è la prima volta che qualcosa lo fa fuori dal driver
+   del sabotaggio; un consumatore vero non c'è ancora.
+8. **Nessun sito multilingua costruito da vetrina-crafter è mai stato misurato.**
+   Il collaudo ha misurato un banco bilingue **statico**: gli hreflang, le due
+   informative e le rotte per lingua sono provati, ma le rotte per lingua di Next
+   potrebbero comportarsi diversamente. I domini misurati sono due (pizzeria,
+   studio legale), gli stack ancora uno e mezzo.
+9. **Un `<script src>` della stessa origine che rimanda a un altro host** viene
+   scaricato e il suo contenuto attribuito al sito, senza comparire fra i terzi.
+   Non attaccato dal collaudo: resta aperto. `preleva` restituisce già l'URL
+   finale, basta confrontarne l'host.
+10. **Il doppio conteggio dentro un `<title>`.** Un `<img>` scritto dentro un
+    `<title>` viene contato come elemento reale. Non corretto **di proposito**:
+    il corpo di `<title>` serve a `nomeAccessibile` per le icone SVG, che è il
+    rimedio `SD-ROSSO-01` del tribunale.
+11. **L'essenzialità di un'archiviazione è dichiarata, non misurata.** Chi scrive
+    il certificato può dichiarare essenziale il proprio contatore di visite e non
+    avere bisogno di banner secondo il gate. È il limite di un controllo
+    falsificabile, ora scritto in `SKILL.md` §Cosa un gate verde NON prova.
+12. **L'offuscamento resta cieco**: `window["local"+"Storage"]` sfugge a una
+    ricerca di sottostringa. È un indizio, non una misura, e va letto così.
 
 ## Proposte a monte/valle
 
 Il consumatore riporta, il proprietario decide. **Nessuno di questi file è stato
 toccato da qui.**
 
-**A speed-demon**
+**A speed-demon** — *le prime due nascono dal collaudo P2, e sono le più gravi
+che questa skill abbia da riportare a un vicino.*
+
+0a. **Sei voci che il certificato ti delega, il tuo gate non le guarda.**
+   Misurato il 2026-08-06 col `grep` sui tuoi script, non letto nel tuo handoff:
+   `sitemap` **0 occorrenze**, `og:` **0**, `favicon` **0**, `application/ld`
+   **0**; le occorrenze di `robots` sono tutte `<meta name="robots">`, cioè la
+   voce `noindex-private`, e `robots.txt` non lo richiede nessun passo. Reggono
+   `canonical` e `noindex-private`, e le misuri sull'HTML servito.
+   **La favicon è la voce da cui site-doctor è nata** — un `404` su ogni pagina
+   per tre anelli — e le delega a te. Finché non c'è un passo, il mio gate le
+   segnala `issue` a ogni esecuzione. Costo stimato: una richiesta HTTP per
+   voce, sull'app che il tuo gate già interroga. In alternativa passano a me,
+   che cammino già ogni pagina e scarico già la `sitemap.xml`: **la scelta è di
+   chi risponde della voce, non mia.**
+
+0b. **Leggi il punteggio della categoria, mai il singolo audit.** `audits` ha
+   **0 occorrenze** nei tuoi script: prendi `report.categories.<x>.score` e lo
+   confronti con una soglia scritta in `docs/performance.md` del progetto, che
+   non ha un pavimento e che una deroga declassa da `block` a `warn`. Per i
+   **contrasti** questo significa che un sito con `color-contrast` rosso perde
+   pochi punti su cento e passa qualunque soglia ragionevole. È la delega più
+   debole delle nove, ed è quella che io non posso riprendermi: i contrasti
+   vogliono un browser, e il browser ce l'hai tu. Proposta: leggere
+   `report.audits["color-contrast"]` e produrre un esito su quello.
 
 1. **L'identità dell'app merita una seconda via.** Il suo passo
    `build-produzione` confronta il solo `BUILD_ID` e, quando non combacia, dice
@@ -189,6 +230,20 @@ toccato da qui.**
    Qui il timeout c'è dalla nascita (`ATTESA_MS`), ed è quattro righe: un gate
    senza timeout, davanti a un server che accetta la connessione e non risponde,
    non è né verde né rosso — è appeso.
+
+**A gestionale-crafter**
+
+4b. **Il tuo passo `a11y` linta i sorgenti, e il certificato ti delega
+   l'accessibilità *servita* dell'area amministrativa.** `verify.mjs:326-347`
+   lancia `eslint-plugin-jsx-a11y` su `admin/` e `src/components`: è un
+   controllo vero e utile, e non è la stessa cosa. In questa casa è già
+   misurato che il sorgente mente — un `export const metadata` dentro un file
+   `"use client"` non produce nessun tag, un contenuto reso nel browser non
+   esiste per chi legge la risposta del server — ed è **esattamente** la ragione
+   per cui l'accessibilità del sito pubblico è mia. La delega resta tua perché
+   l'area protetta vuole una sessione e io leggo un anonimo; ma il mio gate la
+   segnala `issue`, e la riga giusta da mettere accanto al tuo passo verde è
+   *«l'HTML servito delle rotte protette non lo legge nessuno»*.
 
 **A flow-sentinel**
 
