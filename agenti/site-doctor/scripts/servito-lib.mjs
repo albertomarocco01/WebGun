@@ -1158,7 +1158,13 @@ function regoleDocumento(html, pulito, dove) {
   const lang = html5 ? attributi(html5[0]).lang : undefined;
   if (!lang || !lang.trim()) dove("nessun attributo `lang` su <html>: la sintesi vocale non sa in che lingua leggere");
 
-  if (tagDi(pulito, "main").length === 0) dove("nessun elemento <main>: chi naviga con la tastiera non ha un punto di salto al contenuto", "issue");
+  const main = tagDi(pulito, "main").length;
+  if (main === 0) dove("nessun elemento <main>: chi naviga con la tastiera non ha un punto di salto al contenuto", "issue");
+  // Collaudo P2: si guardava solo l'assenza. Due `<main>` sono HTML non valido
+  // e il punto di salto smette di essere un punto: chi naviga per landmark ne
+  // trova due e non sa quale sia il contenuto. `issue` come l'assenza, per la
+  // stessa ragione — un documento puo' restare usabile con altri landmark.
+  else if (main > 1) dove(`${main} elementi <main> nella stessa pagina: il punto di salto al contenuto non e' piu' uno`, "issue");
 }
 
 /**
@@ -1303,7 +1309,27 @@ export function esitoLingua({ pagine, lingueDichiarate, percorsi }) {
     if (!p.hreflang.some((h) => h.hreflang.toLowerCase() === "x-default")) {
       findings.push({ severity: "issue", object: p.percorso, message: "nessun `hreflang=\"x-default\"`" });
     }
+    // Un hreflang che punta FUORI dall'origine misurata non si puo' giudicare
+    // da qui, e tacere sarebbe un falso verde silenzioso: si dice.
+    if (p.hreflang.every((h) => !h.interno)) {
+      findings.push({
+        severity: "issue",
+        object: p.percorso,
+        message: "tutti gli `hreflang` di questa pagina puntano fuori dall'origine misurata: la reciprocita' NON e' stata verificata su nessuno di essi",
+      });
+    }
     for (const h of p.hreflang) {
+      // Collaudo P2: qui c'era un `continue` muto. Un `hreflang` — `x-default`
+      // compreso — verso una pagina che la camminata non ha raggiunto usciva
+      // VERDE, cioe' il passo taceva proprio sulla dichiarazione falsa.
+      if (h.interno && !perPagina.has(h.percorso)) {
+        findings.push({
+          severity: "block",
+          object: p.percorso,
+          message: `dichiara \`${h.percorso}\` come versione "${h.hreflang}", e quella pagina non e' nella superficie camminata: o non risponde, o non la linka nessuno. Un rimando alternativo verso il vuoto i motori lo ignorano insieme a tutto il gruppo`,
+        });
+        continue;
+      }
       if (h.hreflang.toLowerCase() === "x-default") continue;
       const altra = perPagina.get(h.percorso);
       if (!altra) continue;
@@ -1329,7 +1355,8 @@ export function hreflangDi(html, base) {
   for (const tag of tagDi(senzaScript(html), "link")) {
     const a = attributi(tag);
     if ((a.rel ?? "").toLowerCase() !== "alternate" || !a.hreflang) continue;
-    trovati.push({ hreflang: a.hreflang, percorso: percorsoInterno(a.href, base) ?? a.href });
+    const interno = percorsoInterno(a.href, base);
+    trovati.push({ hreflang: a.hreflang, percorso: interno ?? a.href, interno: interno !== null });
   }
   return trovati;
 }

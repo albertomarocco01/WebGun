@@ -462,6 +462,19 @@ describe("archiviazione e terzi", () => {
     assert.deepEqual(f, []);
   });
 
+  // Collaudo P2: i cookie si raccoglievano dalle sole risposte delle PAGINE.
+  // Spostare il Set-Cookie sul bundle — che il browser scarica da solo, e che
+  // questo gate scarica gia' — lo faceva sparire: «0 cookie» su un sito che ne
+  // poneva uno a ogni pagina.
+  it("un cookie posto da una SOTTORISORSA e' un cookie posto", () => {
+    const f = findingsArchiviazione({
+      cookie: [{ nome: "traccia_bundle", percorso: "/ → /_next/static/chunks/main.js" }],
+      archiviazioni: [], terzi: [], dichiarate: [], banner: false,
+    });
+    assert.equal(blocchi(f).length, 1);
+    assert.match(blocchi(f)[0].object, /main\.js/);
+  });
+
   it("un terzo non dichiarato e' un BLOCCANTE, e il messaggio dice perche'", () => {
     const f = findingsArchiviazione({ cookie: [], archiviazioni: [], terzi: [{ origine: "https://cdn.test", elementi: ["script"] }], dichiarate: [], banner: false });
     assert.equal(blocchi(f).length, 1);
@@ -587,7 +600,13 @@ describe("lingua e hreflang", () => {
 
   it("legge lang e hreflang dall'HTML", () => {
     assert.equal(langDi('<html lang="it-IT">'), "it-IT");
-    assert.deepEqual(hreflangDi('<link rel="alternate" hreflang="en" href="/en">', BASE), [{ hreflang: "en", percorso: "/en" }]);
+    // `interno` distingue un rimando che questa camminata puo' giudicare da uno
+    // che punta fuori dall'origine misurata: senza, il giro sulla reciprocita'
+    // taceva su entrambi allo stesso modo (collaudo P2).
+    assert.deepEqual(hreflangDi('<link rel="alternate" hreflang="en" href="/en">', BASE), [{ hreflang: "en", percorso: "/en", interno: true }]);
+    assert.deepEqual(hreflangDi('<link rel="alternate" hreflang="en" href="https://altro.example/en">', BASE), [
+      { hreflang: "en", percorso: "https://altro.example/en", interno: false },
+    ]);
   });
 
   it("riconosce le rotte per lingua e non si fa ingannare da /privacy", () => {
@@ -621,6 +640,36 @@ describe("lingua e hreflang", () => {
       lingueDichiarate: ["it", "en"], percorsi: ["/", "/en"],
     });
     assert.ok(blocchi(e.findings).some((x) => /non rimanda indietro/.test(x.message)));
+  });
+
+  // Collaudo P2, sul primo banco multilingua VERO che questa skill abbia mai
+  // misurato: nel giro sulla reciprocita' c'era un `continue` muto per i
+  // rimandi che la camminata non riconosceva. Un `x-default` verso il vuoto —
+  // cioe' una dichiarazione falsa — usciva VERDE.
+  it("un hreflang interno verso una pagina fuori dalla superficie e' un bloccante", () => {
+    const hreflang = hreflangDi(
+      `<link rel="alternate" hreflang="it" href="${BASE}/">
+       <link rel="alternate" hreflang="en" href="${BASE}/en">
+       <link rel="alternate" hreflang="x-default" href="${BASE}/non-esiste">`,
+      BASE,
+    );
+    assert.deepEqual(hreflang.map((h) => h.interno), [true, true, true]);
+    const e = esitoLingua({
+      pagine: [p("/", "it", hreflang), p("/en", "en", hreflang)],
+      lingueDichiarate: ["it", "en"], percorsi: ["/", "/en"],
+    });
+    assert.ok(blocchi(e.findings).some((x) => /non e' nella superficie camminata/.test(x.message)));
+  });
+
+  it("un hreflang verso un'ALTRA origine non si giudica da qui, e lo si dice", () => {
+    const hreflang = hreflangDi(
+      '<link rel="alternate" hreflang="it" href="https://studio.example/"><link rel="alternate" hreflang="en" href="https://studio.example/en">',
+      BASE,
+    );
+    assert.deepEqual(hreflang.map((h) => h.interno), [false, false]);
+    const e = esitoLingua({ pagine: [p("/", "it", hreflang), p("/en", "en", hreflang)], lingueDichiarate: ["it", "en"], percorsi: ["/", "/en"] });
+    assert.deepEqual(blocchi(e.findings), [], "fuori origine: non si accusa");
+    assert.ok(e.findings.some((x) => /reciprocita' NON e' stata verificata/.test(x.message)));
   });
 
   it("una pagina che dichiara una lingua fuori dal certificato e' un bloccante", () => {

@@ -457,6 +457,15 @@ const PASSI = [
             const r = await preleva(unisci(ctx.baseUrl, src), { segui: true });
             if (!r || r.stato >= 400) { bundleFalliti.push(src); bundleVisti.set(src, null); continue; }
             bundleLetti++;
+            // Un `Set-Cookie` sulla risposta di un BUNDLE e' un cookie posto a
+            // chi visita esattamente come quello del documento: il browser lo
+            // scarica da solo, senza che nessuno faccia niente. Si guardavano
+            // solo le risposte delle pagine, e il collaudo P2 ha misurato che
+            // spostare il cookie sulla sottorisorsa lo faceva sparire — «0
+            // cookie» su un sito che ne poneva uno a ogni pagina.
+            for (const riga of r.cookie ?? []) {
+              cookie.push({ nome: nomeCookie(riga), percorso: `${pagina.percorso} → ${src}`, riga });
+            }
             bundleVisti.set(src, apiArchiviazioneIn(r.corpo));
           }
           const trovate = bundleVisti.get(src);
