@@ -26,6 +26,7 @@ import {
   etichettePerId,
   findingsAccessibilitaPagina,
   findingsArchiviazione,
+  destinazioniModuli,
   findingsDatiRaccolti,
   findingsInformativa,
   findingsSuperficie,
@@ -389,6 +390,46 @@ describe("archiviazione e terzi", () => {
     const f = findingsArchiviazione({
       cookie: [], archiviazioni: [{ api: "localStorage", percorso: "/c" }], terzi: [],
       dichiarate: [{ chiave: "localStorage", essenziale: "sì" }], banner: false,
+    });
+    assert.deepEqual(f, []);
+  });
+
+  // Collaudo P2: il passo guardava i CAMPI e mai l'`action`. Un modulo con
+  // nome, email e telefono che posta a un endpoint di terzi usciva verde su
+  // tutti e nove i passi — e nemmeno il censimento dei terzi lo vedeva.
+  it("un modulo che consegna dati personali a un'altra origine e' un BLOCCANTE", () => {
+    const html = `<form action="https://moduli.esempio.com/raccogli">
+      <input name="nome" autocomplete="name"><input name="email" type="email"></form>`;
+    const destinazioni = destinazioniModuli(html, BASE);
+    assert.equal(destinazioni.length, 1);
+    assert.equal(destinazioni[0].altraOrigine, true);
+    const f = findingsDatiRaccolti({
+      pagineConModuli: [{ percorso: "/contatti", campi: [], destinazioni }],
+      basiDichiarate: [], informativaRaggiungibile: new Set(["/contatti"]),
+    });
+    assert.equal(blocchi(f).length, 1);
+    assert.match(blocchi(f)[0].message, /ALTRA ORIGINE/);
+    assert.match(blocchi(f)[0].message, /destinatario ai sensi dell'art\. 13/);
+  });
+
+  it("un modulo che consegna dati personali IN CHIARO e' un BLOCCANTE", () => {
+    const destinazioni = destinazioniModuli('<form action="http://moduli.esempio.com/x"><input name="t" autocomplete="tel"></form>', BASE);
+    assert.equal(destinazioni[0].inChiaro, true);
+    const f = findingsDatiRaccolti({
+      pagineConModuli: [{ percorso: "/", campi: [], destinazioni }],
+      basiDichiarate: [], informativaRaggiungibile: new Set(["/"]),
+    });
+    assert.ok(blocchi(f).some((x) => /IN CHIARO/.test(x.message)));
+  });
+
+  it("un modulo della stessa origine, o senza campi personali, non produce niente", () => {
+    const sueDestinazioni = destinazioniModuli('<form action="/contatti"><input name="nome" autocomplete="name"></form>', BASE);
+    assert.equal(sueDestinazioni[0].altraOrigine, false);
+    assert.equal(sueDestinazioni[0].inChiaro, false, "un banco su 127.0.0.1 non e' «in chiaro»: e' locale");
+    const senzaPersonali = destinazioniModuli('<form action="https://cerca.esempio.com"><input name="q"></form>', BASE);
+    const f = findingsDatiRaccolti({
+      pagineConModuli: [{ percorso: "/", campi: [], destinazioni: [...sueDestinazioni, ...senzaPersonali] }],
+      basiDichiarate: [], informativaRaggiungibile: new Set(["/"]),
     });
     assert.deepEqual(f, []);
   });

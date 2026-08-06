@@ -700,6 +700,57 @@ export function campiDiPagina(html) {
 
 export const moduliDiPagina = (html) => tagDi(senzaScript(html), "form").length;
 
+/**
+ * **Dove va a finire quello che il modulo raccoglie.**
+ *
+ * Il passo `dati-raccolti` provava che ogni campo personale avesse una base
+ * giuridica scritta e che il punto di raccolta rimandasse all'informativa. Non
+ * guardava l'`action`, e il collaudo P2 ha misurato cosa costa: un modulo
+ * pubblico con `autocomplete="name"`, `type="email"` e `autocomplete="tel"` e
+ * `action="https://moduli.esempio.com/raccogli"` usciva **VERDE su tutti e nove
+ * i passi**. Nome, email e telefono di chi visita se ne andavano a un terzo che
+ * il certificato non nominava, e nemmeno il censimento dei terzi lo vedeva —
+ * l'`action` di un `<form>` non era nell'elenco degli elementi.
+ *
+ * E' il caso piu' grave possibile per questa skill: la regola sui terzi dice
+ * che non dichiararli e' un **bloccante** «proprio perche' cosa fanno nel
+ * browser questo gate non lo puo' misurare», e un terzo che riceve il modulo
+ * non deve nemmeno fare niente nel browser — i dati glieli consegna il sito.
+ *
+ * Due bloccanti, e per tutti e due la prova sta **interamente nel documento**
+ * (`DECISIONI.md` §17):
+ *   - l'`action` porta a un'**altra origine**: e' un destinatario ai sensi
+ *     dell'art. 13, e va dichiarato;
+ *   - l'`action` viaggia in **chiaro** (`http:`): i dati attraversano la rete
+ *     leggibili da chiunque. L'ambiente locale e' escluso, perche' i banchi di
+ *     questa casa vivono su `127.0.0.1`.
+ */
+export function destinazioniModuli(html, base) {
+  const pulito = senzaScript(html);
+  const mia = new URL(base);
+  const fuori = [];
+  for (const { tag, dentro } of elementiDi(pulito, "form")) {
+    const azione = (attributi(tag).action ?? "").trim();
+    if (!azione) continue;
+    let url;
+    try {
+      url = new URL(azione, base);
+    } catch {
+      continue;
+    }
+    if (!/^https?:$/.test(url.protocol)) continue;
+    const locale = /^(localhost|127\.0\.0\.1|\[::1\]|::1)$/i.test(url.hostname);
+    fuori.push({
+      azione,
+      origine: url.origin,
+      altraOrigine: url.host !== mia.host,
+      inChiaro: url.protocol === "http:" && !locale,
+      campi: campiDiPagina(dentro),
+    });
+  }
+  return fuori;
+}
+
 /** Le etichette `<label for=…>` presenti nella pagina. */
 export function etichettePerId(html) {
   const mappa = new Map();
@@ -799,6 +850,24 @@ export function findingsDatiRaccolti({ pagineConModuli, basiDichiarate, informat
           severity: "block",
           object: `${pagina.percorso} → campo "${campo.nome || campo.id}"`,
           message: "dichiarato nel certificato con la base giuridica vuota",
+        });
+      }
+    }
+    for (const m of pagina.destinazioni ?? []) {
+      const personali = m.campi.filter((c) => classificaCampo(c).personale);
+      if (personali.length === 0) continue;
+      if (m.altraOrigine) {
+        findings.push({
+          severity: "block",
+          object: `${pagina.percorso} → modulo verso ${m.origine}`,
+          message: `raccoglie ${personali.length} dati personali e li invia a un'ALTRA ORIGINE (${m.origine}): e' un destinatario ai sensi dell'art. 13 e va dichiarato. Un terzo che riceve il modulo non deve nemmeno fare niente nel browser — i dati glieli consegna il sito`,
+        });
+      }
+      if (m.inChiaro) {
+        findings.push({
+          severity: "block",
+          object: `${pagina.percorso} → modulo verso ${m.origine}`,
+          message: `raccoglie ${personali.length} dati personali e li invia IN CHIARO (${m.azione}): attraversano la rete leggibili da chiunque stia in mezzo`,
         });
       }
     }

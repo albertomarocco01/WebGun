@@ -47,6 +47,7 @@ import {
   assetDaProvare,
   attributi,
   campiDiPagina,
+  destinazioniModuli,
   candidatiInformativa,
   collegamentiInterni,
   contaGravita,
@@ -394,7 +395,7 @@ const PASSI = [
           "il passo `informativa-privacy` non ha potuto stabilire quali pagine rimandano all'informativa: senza, «non rimanda» e «non ho guardato» sarebbero la stessa frase");
       }
       const pagineConModuli = ctx.pagine
-        .map((p) => ({ percorso: p.percorso, moduli: moduliDiPagina(p.corpo), campi: campiDiPagina(p.corpo) }))
+        .map((p) => ({ percorso: p.percorso, moduli: moduliDiPagina(p.corpo), campi: campiDiPagina(p.corpo), destinazioni: destinazioniModuli(p.corpo, ctx.baseUrl) }))
         .filter((p) => p.moduli > 0 || p.campi.length > 0);
       const campiTotali = pagineConModuli.reduce((n, p) => n + p.campi.length, 0);
 
