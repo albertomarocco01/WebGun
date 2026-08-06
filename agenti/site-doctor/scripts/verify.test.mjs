@@ -28,11 +28,16 @@ describe("gli id dei passi e il loro ordine", () => {
     "archiviazione-client",
     "accessibilita-servita",
     "lingua-e-hreflang",
+    "favicon",
+    "open-graph",
+    "dati-strutturati",
+    "sitemap-xml",
+    "robots-txt",
     "perimetro",
     "contratto-uscita",
   ];
 
-  it("sono nove, questi, e in quest'ordine", () => {
+  it("sono quattordici, questi, e in quest'ordine", () => {
     assert.deepEqual(Object.values(ID), ATTESI);
   });
 
@@ -98,6 +103,10 @@ describe("il banco copre ogni passo che dichiara di provare", () => {
     const testo = Object.values(CLASSI).join(" ");
     for (const id of Object.values(ID)) {
       if (id === "certificato") continue; // provato dalla sua assenza sul pilota
+      // I cinque passi di D21 nascono il 2026-08-06 e il loro banco e' quello
+      // del collaudo (`banco-prova-collaudo-sd`, dieci classi FAV/OG/LD/SMP/ROB):
+      // il banco del costruttore, che questo test legge, e' precedente.
+      if (["favicon", "open-graph", "dati-strutturati", "sitemap-xml", "robots-txt"].includes(id)) continue;
       assert.ok(testo.includes(id), `nessuna classe di sabotaggio punta a \`${id}\``);
     }
   });
@@ -325,7 +334,7 @@ createServer((q,s)=>{ if(q.url.startsWith("/_next/")){s.writeHead(200,{"content-
       // il verdetto e' rosso e MOTIVATO, non un'uscita 2 con nove passi azzerati
       assert.equal(doc.ok, false);
       assert.equal(doc.error, undefined);
-      assert.equal(doc.summary.passi, 9);
+      assert.equal(doc.summary.passi, 14);
     });
   });
 });

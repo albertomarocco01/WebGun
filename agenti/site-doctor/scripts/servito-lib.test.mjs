@@ -12,6 +12,7 @@ import { describe, it } from "node:test";
 import {
   apiArchiviazioneIn,
   archiviazioneIncertaIn,
+  blocchiJsonLd,
   assetDaProvare,
   attributi,
   campiAvvolti,
@@ -26,17 +27,25 @@ import {
   esitoLingua,
   etichettePerId,
   findingsAccessibilitaPagina,
+  findingsDatiStrutturati,
+  findingsFavicon,
+  findingsOpenGraph,
+  findingsRobots,
+  findingsSitemap,
   findingsArchiviazione,
   destinazioniModuli,
   findingsDatiRaccolti,
   findingsInformativa,
   findingsSuperficie,
   hreflangDi,
+  iconeDichiarate,
   langDi,
+  leggiRobots,
   livelliTitoli,
   lingueDaRotte,
   moduliDiPagina,
   nomeAccessibile,
+  openGraphDi,
   percorsiDaSitemap,
   percorsoInterno,
   perStampa,
@@ -48,6 +57,7 @@ import {
   statoNonApplicabile,
   tagDi,
   terziDi,
+  vietatoAiMotori,
   testoDellId,
   testoVisibile,
   VOCI_INFORMATIVA,
@@ -1229,5 +1239,188 @@ describe("tribunale P.6-P3 — quattro quadratiche, e nessuna era la stessa", ()
     assert.deepEqual(campiDiPagina('<input type="email" name="a"><a href="' + "x".repeat(100)), [
       { elemento: "input", tipo: "email", nome: "a", id: "", form: "", autocomplete: "", ariaLabel: "", obbligatorio: false },
     ]);
+  });
+});
+
+// ════════════════════ le cinque voci tornate a casa — decisione D21 (P.6-P3)
+/**
+ * Per ogni voce due forme ostili, e sono le due che il mandato distingue:
+ * **il dichiarato che mente** (il markup promette e il server non consegna) e
+ * **l'assenza**. La prima e' un bloccante, la seconda un rilievo — e il test
+ * che conta di piu' e' sempre il terzo: quello che dice che la forma CORRETTA
+ * continua a passare.
+ */
+describe("D21 — le cinque voci che ora si misurano", () => {
+  const BASE3 = "http://sito.test/";
+  const pagina = (dentroTesta, dentroCorpo = "") =>
+    `<!DOCTYPE html><html lang="it"><head><title>T</title>${dentroTesta}</head><body><main><h1>T</h1>${dentroCorpo}</main></body></html>`;
+  const blocchiDi = (f) => f.filter((x) => x.severity === "block");
+
+  describe("favicon — la voce da cui questa skill e' nata", () => {
+    it("dichiarata e SERVITA: nessun rilievo", () => {
+      const pagine = [{ percorso: "/", icone: iconeDichiarate(pagina('<link rel="icon" href="/favicon.svg">'), BASE3) }];
+      assert.deepEqual(findingsFavicon({ pagine, risposte: new Map([["http://sito.test/favicon.svg", 200]]), predefinita: null }), []);
+    });
+
+    it("dichiarata e ASSENTE e' un bloccante: e' il difetto del pilota", () => {
+      const pagine = [{ percorso: "/", icone: ["http://sito.test/favicon.svg"] }];
+      const f = findingsFavicon({ pagine, risposte: new Map([["http://sito.test/favicon.svg", 404]]), predefinita: null });
+      assert.equal(blocchiDi(f).length, 1);
+      assert.match(f[0].message, /404 su ogni pagina per tre anelli/);
+    });
+
+    it("nessuna dichiarata e `/favicon.ico` che risponde 404 e' un bloccante", () => {
+      const f = findingsFavicon({ pagine: [{ percorso: "/", icone: [] }], risposte: new Map(), predefinita: 404 });
+      assert.equal(blocchiDi(f).length, 1);
+      assert.match(f[0].message, /ogni browser che apre questo sito fa una richiesta e prende un errore/);
+    });
+
+    it("nessuna dichiarata ma `/favicon.ico` c'e': niente da dire", () => {
+      assert.deepEqual(findingsFavicon({ pagine: [{ percorso: "/", icone: [] }], risposte: new Map(), predefinita: 200 }), []);
+    });
+
+    it("un `data:` non e' un'icona da scaricare", () => {
+      assert.deepEqual(iconeDichiarate(pagina('<link rel="icon" href="data:image/png;base64,iVBORw0KGgo=">'), BASE3), []);
+    });
+  });
+
+  describe("Open Graph", () => {
+    const og = (html) => openGraphDi(html);
+    const completo = '<meta property="og:type" content="website"><meta property="og:title" content="T">'
+      + '<meta property="og:url" content="http://sito.test/"><meta property="og:image" content="/logo.svg">';
+
+    it("completo, con l'immagine che risponde: nessun rilievo", () => {
+      const pagine = [{ percorso: "/", og: og(pagina(completo)), immagine: "http://sito.test/logo.svg" }];
+      assert.deepEqual(findingsOpenGraph({ pagine, risposte: new Map([["http://sito.test/logo.svg", 200]]) }), []);
+    });
+
+    it("`og:image` verso un 404 e' un bloccante: l'anteprima promessa non esiste", () => {
+      const pagine = [{ percorso: "/", og: og(pagina(completo)), immagine: "http://sito.test/anteprima.png" }];
+      const f = findingsOpenGraph({ pagine, risposte: new Map([["http://sito.test/anteprima.png", 404]]) });
+      assert.equal(blocchiDi(f).length, 1);
+      assert.match(f[0].message, /l'anteprima promessa non esiste/);
+    });
+
+    it("nessun tag Open Graph su nessuna pagina e' un rilievo, non un bloccante", () => {
+      const f = findingsOpenGraph({ pagine: [{ percorso: "/", og: {}, immagine: null }], risposte: new Map() });
+      assert.deepEqual(blocchiDi(f), []);
+      assert.match(f[0].message, /un'anteprima che il sito non ha scelto/);
+    });
+
+    it("dichiarato a meta' e' un rilievo con i nomi che mancano", () => {
+      const pagine = [{ percorso: "/", og: og(pagina('<meta property="og:title" content="T">')), immagine: null }];
+      const f = findingsOpenGraph({ pagine, risposte: new Map() });
+      assert.match(f.find((x) => x.object === "/").message, /og:type, og:url, og:image/);
+    });
+  });
+
+  describe("dati strutturati (JSON-LD)", () => {
+    const conLd = (json) => pagina(`<script type="application/ld+json">${json}</script>`);
+
+    it("un blocco valido con `@type`: nessun rilievo", () => {
+      const pagine = [{ percorso: "/", jsonld: blocchiJsonLd(conLd('{"@context":"https://schema.org","@type":"LegalService","name":"X"}')) }];
+      assert.deepEqual(findingsDatiStrutturati({ pagine }), []);
+    });
+
+    it("presente e NON valido e' un bloccante: un motore lo scarta per intero", () => {
+      const pagine = [{ percorso: "/", jsonld: blocchiJsonLd(conLd('{"@type":"LegalService","name":"X",}')) }];
+      const f = findingsDatiStrutturati({ pagine });
+      assert.equal(blocchiDi(f).length, 1);
+      assert.match(f[0].message, /NON e' JSON valido/);
+    });
+
+    it("assente su tutto il sito e' un rilievo", () => {
+      const f = findingsDatiStrutturati({ pagine: [{ percorso: "/", jsonld: [] }] });
+      assert.deepEqual(blocchiDi(f), []);
+      assert.match(f[0].message, /nessuna delle 1 pagine dichiara dati strutturati/);
+    });
+
+    it("valido ma senza `@type` e' un rilievo: non dice di che cosa parla", () => {
+      const pagine = [{ percorso: "/", jsonld: blocchiJsonLd(conLd('{"name":"X"}')) }];
+      assert.match(findingsDatiStrutturati({ pagine })[0].message, /non dichiara `@type`/);
+    });
+  });
+
+  describe("sitemap.xml", () => {
+    const XML = '<?xml version="1.0"?><urlset><url><loc>http://sito.test/</loc></url></urlset>';
+
+    it("XML vera, con gli indirizzi serviti: nessun rilievo", () => {
+      assert.deepEqual(findingsSitemap({
+        risposta: { stato: 200, corpo: XML }, percorsi: ["/"], superficie: new Set(["/"]), rimandi: new Map(),
+      }), []);
+    });
+
+    it("200 con HTML dentro e' un bloccante: un 200 che serve un'altra cosa e' peggio di un 404", () => {
+      const f = findingsSitemap({
+        risposta: { stato: 200, corpo: "<!DOCTYPE html><html><body><h1>Sitemap</h1></body></html>" },
+        percorsi: [], superficie: new Set(["/"]), rimandi: new Map(),
+      });
+      assert.equal(blocchiDi(f).length, 1);
+      assert.match(f[0].message, /il corpo non e' una sitemap/);
+    });
+
+    it("404 e' un rilievo, e dice che la camminata ha perso una sorgente", () => {
+      const f = findingsSitemap({ risposta: { stato: 404, corpo: "" }, percorsi: [], superficie: new Set(["/"]), rimandi: new Map() });
+      assert.deepEqual(blocchiDi(f), []);
+    });
+
+    it("un indirizzo dichiarato e non servito e' un bloccante", () => {
+      const f = findingsSitemap({
+        risposta: { stato: 200, corpo: XML }, percorsi: ["/", "/sparita"],
+        superficie: new Set(["/"]), rimandi: new Map([["/sparita", "HTTP 404"]]),
+      });
+      assert.equal(blocchiDi(f).length, 1);
+      assert.match(f[0].message, /HTTP 404/);
+    });
+  });
+
+  describe("robots.txt — e il confronto che nessun gate della casa faceva", () => {
+    const leggi = (t) => leggiRobots(t);
+
+    it("`Allow: /` con la riga `Sitemap:`: nessun rilievo", () => {
+      const f = findingsRobots({
+        risposta: { stato: 200 }, robots: leggi("User-agent: *\nAllow: /\nSitemap: http://sito.test/sitemap.xml\n"),
+        superficie: new Set(["/", "/contatti"]), inSitemap: new Set(["/", "/contatti"]), base: BASE3,
+      });
+      assert.deepEqual(f, []);
+    });
+
+    it("`Disallow: /` su un sito che la sitemap pubblicizza e' un BLOCCANTE", () => {
+      const f = findingsRobots({
+        risposta: { stato: 200 }, robots: leggi("User-agent: *\nDisallow: /\nSitemap: http://sito.test/sitemap.xml\n"),
+        superficie: new Set(["/", "/contatti"]), inSitemap: new Set(["/", "/contatti"]), base: BASE3,
+      });
+      assert.equal(blocchiDi(f).length, 1);
+      assert.match(blocchiDi(f)[0].message, /due file dello stesso sito che dicono il contrario/);
+    });
+
+    it("`Disallow:` VUOTO non vieta niente: e' la forma che ammette tutto", () => {
+      const f = findingsRobots({
+        risposta: { stato: 200 }, robots: leggi("User-agent: *\nDisallow:\nSitemap: http://sito.test/sitemap.xml\n"),
+        superficie: new Set(["/"]), inSitemap: new Set(["/"]), base: BASE3,
+      });
+      assert.deepEqual(f, []);
+    });
+
+    it("vince la regola piu' lunga: un `Allow` piu' specifico batte il `Disallow`", () => {
+      const r = leggi("User-agent: *\nDisallow: /area\nAllow: /area/pubblica\n");
+      assert.equal(vietatoAiMotori(r, "/area/riservata"), true);
+      assert.equal(vietatoAiMotori(r, "/area/pubblica"), false);
+      assert.equal(vietatoAiMotori(r, "/"), false);
+    });
+
+    it("le regole di un altro agente non valgono per tutti", () => {
+      const r = leggi("User-agent: GPTBot\nDisallow: /\n\nUser-agent: *\nAllow: /\n");
+      assert.equal(vietatoAiMotori(r, "/"), false);
+    });
+
+    it("404 e' un rilievo, e senza riga `Sitemap:` e' un altro rilievo", () => {
+      assert.deepEqual(blocchiDi(findingsRobots({ risposta: null, robots: leggi(""), superficie: new Set(["/"]), inSitemap: new Set(), base: BASE3 })), []);
+      const f = findingsRobots({
+        risposta: { stato: 200 }, robots: leggi("User-agent: *\nAllow: /\n"),
+        superficie: new Set(["/"]), inSitemap: new Set(["/"]), base: BASE3,
+      });
+      assert.match(f[0].message, /nessuna riga `Sitemap:`/);
+    });
   });
 });

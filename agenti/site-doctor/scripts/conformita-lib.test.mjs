@@ -170,22 +170,28 @@ describe("il perimetro — la Legge n°1, resa falsificabile", () => {
   // Collaudo P2: le voci scoperte NON sono una. Sette deleghe su nove sono
   // state misurate vuote leggendo il gate del vicino invece della sua prosa —
   // fra queste la favicon, che e' la voce da cui questa skill e' nata.
-  const SCOPERTE_ATTESE = ["contrasti", "sitemap", "robots", "open-graph", "favicon", "dati-strutturati", "accessibilita-admin", "antispam"];
+  // D21, 2026-08-06: cinque delle otto sono tornate a casa. Non perche' il
+  // vicino abbia aggiunto il passo, ma perche' la proprieta' segue la misura —
+  // e ognuna ha ora un passo suo, confrontato dal §19.
+  const SCOPERTE_ATTESE = ["contrasti", "accessibilita-admin", "antispam"];
 
-  it("una tabella completa e coerente produce SOLO le voci scoperte, e sono otto", () => {
+  it("una tabella completa e coerente produce SOLO le voci scoperte, e sono tre", () => {
     const f = perimetro(RIGHE_BUONE);
     assert.deepEqual(blocchi(f), []);
     assert.deepEqual(f.map((x) => x.object).sort(), [...SCOPERTE_ATTESE].sort());
     assert.match(f.find((x) => x.object === "antispam").message, /SCOPERTA/);
   });
 
-  it("una delega che il gate del vicino non guarda e' un rilievo, e nomina la misura", () => {
+  it("una delega che il gate del vicino non guarda e' un rilievo, e nomina la misura E il commit", () => {
     const f = perimetro(RIGHE_BUONE);
-    const fav = f.find((x) => x.object === "favicon");
-    assert.equal(fav.severity, "issue");
-    assert.match(fav.message, /il suo GATE non la guarda/);
-    assert.match(fav.message, /0 occorrenze di `favicon`/);
-    assert.match(fav.message, /nominare non e' misurare/);
+    const con = f.find((x) => x.object === "contrasti");
+    assert.equal(con.severity, "issue");
+    assert.match(con.message, /il suo GATE non la guarda/);
+    assert.match(con.message, /0 file/);
+    // D18 §3: una misura che dipende dal vicino porta il commit della regia a
+    // cui si riferisce, o non e' ripetibile.
+    assert.match(con.message, /sulla regia a `[0-9a-f]{7}`/);
+    assert.match(con.message, /nominare non e' misurare/);
   });
 
   it("le due deleghe che REGGONO non producono nessun rilievo", () => {
@@ -196,7 +202,11 @@ describe("il perimetro — la Legge n°1, resa falsificabile", () => {
   });
 
   it("IL DIFETTO: una voce con due proprietari e' una voce di nessuno", () => {
-    const f = perimetro(`${RIGHE_BUONE}\n| open-graph | site-doctor | — | conforme |`);
+    // La forma esatta del 2026-08-06: l'Open Graph assegnato a speed-demon E a
+    // site-doctor nello stesso documento. Dopo D21 la voce e' mia, quindi la
+    // riga di troppo e' quella che la ridelega al vicino — la contesa e' la
+    // stessa, girata di 180 gradi.
+    const f = perimetro(`${RIGHE_BUONE}\n| open-graph | speed-demon | docs/handoff/13.md | delegato |`);
     const og = blocchi(f).find((x) => x.object === "open-graph");
     assert.ok(og, "due proprietari sulla stessa voce devono bloccare");
     assert.match(og.message, /2 proprietari diversi/);
@@ -281,12 +291,13 @@ describe("il perimetro — la Legge n°1, resa falsificabile", () => {
     assert.equal(f.length, 1);
   });
 
-  it("l'elenco delle voci copre le sei mie e le dieci degli altri", () => {
+  it("l'elenco delle voci copre le undici mie e le cinque degli altri", () => {
     assert.equal(VOCI.length, 16);
-    assert.equal(VOCI.filter((v) => v.mio).length, 6);
+    assert.equal(VOCI.filter((v) => v.mio).length, 11);
     assert.deepEqual(
       VOCI.filter((v) => v.mio).map((v) => v.mio).sort(),
-      ["accessibilita-servita", "archiviazione-client", "archiviazione-client", "dati-raccolti", "informativa-privacy", "lingua-e-hreflang"],
+      ["accessibilita-servita", "archiviazione-client", "archiviazione-client", "dati-raccolti", "dati-strutturati",
+        "favicon", "informativa-privacy", "lingua-e-hreflang", "open-graph", "robots-txt", "sitemap-xml"],
     );
   });
 });

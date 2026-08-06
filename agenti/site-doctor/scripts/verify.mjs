@@ -47,6 +47,7 @@ import {
   archiviazioneIncertaIn,
   assetDaProvare,
   attributi,
+  blocchiJsonLd,
   campiDiPagina,
   destinazioniModuli,
   candidatiInformativa,
@@ -59,11 +60,19 @@ import {
   findingsAccessibilitaPagina,
   findingsArchiviazione,
   findingsDatiRaccolti,
+  findingsDatiStrutturati,
+  findingsFavicon,
   findingsInformativa,
+  findingsOpenGraph,
+  findingsRobots,
+  findingsSitemap,
   findingsSuperficie,
   hreflangDi,
+  iconeDichiarate,
   langDi,
+  leggiRobots,
   moduliDiPagina,
+  openGraphDi,
   percorsiDaSitemap,
   perStampa,
   percorsoInterno,
@@ -88,6 +97,14 @@ export const ID = Object.freeze({
   archiviazione: "archiviazione-client",
   a11y: "accessibilita-servita",
   lingua: "lingua-e-hreflang",
+  // Le cinque voci tornate a casa con D21: erano delegate a un gate che, misura
+  // alla mano, non le guardava. Vengono DOPO i passi che leggono l'HTML e PRIMA
+  // del `perimetro`, che confronta il dichiarato con lo stato di questi passi.
+  favicon: "favicon",
+  openGraph: "open-graph",
+  datiStrutturati: "dati-strutturati",
+  sitemap: "sitemap-xml",
+  robots: "robots-txt",
   perimetro: "perimetro",
   uscita: "contratto-uscita",
 });
@@ -742,6 +759,138 @@ const PASSI = [
         dettaglioFindings(findings),
       ].filter(Boolean).join("\n");
       return record(this.id, this.nome, stato, dettaglio);
+    },
+  },
+
+  // ══════════════════ le cinque voci tornate a casa — decisione D21 ══════════
+  // Cinque passi e non uno solo, ed e' una decisione con la sua ragione: la
+  // tabella di proprieta' assegna UNA voce a UN proprietario, e il confronto
+  // §19 lega la riga del certificato allo stato del passo. Un passo unico
+  // «indicizzazione» darebbe a cinque voci lo stesso `id`, cioe' rifarebbe al
+  // contrario il difetto che questa skill esiste per chiudere.
+
+  {
+    id: ID.favicon,
+    nome: "favicon: dichiarata e servita",
+    async esegui(ctx) {
+      if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
+      const pagine = ctx.pagine.map((p) => ({ percorso: p.percorso, icone: iconeDichiarate(p.corpo, ctx.baseUrl) }));
+      const tutte = [...new Set(pagine.flatMap((p) => p.icone))];
+      const risposte = new Map();
+      for (const url of tutte) {
+        const r = await preleva(url, { segui: true });
+        risposte.set(url, r ? r.stato : null);
+      }
+      let predefinita = null;
+      if (pagine.every((p) => p.icone.length === 0)) {
+        const r = await preleva(unisci(ctx.baseUrl, "/favicon.ico"), { segui: true });
+        predefinita = r ? r.stato : null;
+      }
+      const findings = findingsFavicon({ pagine, risposte, predefinita });
+      const dettaglio = [
+        `${tutte.length} icone dichiarate su ${pagine.length} pagine, ognuna scaricata: ${tutte.map((u) => `${u.replace(ctx.baseUrl, "")} → ${risposte.get(u) ?? "nessuna risposta"}`).join(" · ") || "nessuna"}`,
+        predefinita !== null ? `nessuna icona dichiarata: \`/favicon.ico\` risponde ${predefinita}` : "",
+        findings.length === 0 ? "ogni icona dichiarata risponde 200" : "",
+        dettaglioFindings(findings),
+      ].filter(Boolean).join("\n");
+      return record(this.id, this.nome, statoDaFindings(findings), dettaglio);
+    },
+  },
+
+  {
+    id: ID.openGraph,
+    nome: "Open Graph: l'anteprima che il sito sceglie",
+    async esegui(ctx) {
+      if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
+      const pagine = ctx.pagine.map((p) => {
+        const og = openGraphDi(p.corpo);
+        let immagine = null;
+        if (og["og:image"]) {
+          try {
+            immagine = new URL(og["og:image"], ctx.baseUrl).toString();
+          } catch { immagine = null; }
+        }
+        return { percorso: p.percorso, og, immagine };
+      });
+      const immagini = [...new Set(pagine.map((p) => p.immagine).filter(Boolean))];
+      const risposte = new Map();
+      for (const url of immagini) {
+        const r = await preleva(url, { segui: true });
+        risposte.set(url, r ? r.stato : null);
+      }
+      const findings = findingsOpenGraph({ pagine, risposte });
+      const conOg = pagine.filter((p) => Object.keys(p.og).length > 0).length;
+      const dettaglio = [
+        `${conOg} pagine su ${pagine.length} dichiarano l'Open Graph · ${immagini.length} immagini di anteprima scaricate`,
+        immagini.length > 0 ? `og:image: ${immagini.map((u) => `${u.replace(ctx.baseUrl, "")} → ${risposte.get(u) ?? "nessuna risposta"}`).join(" · ")}` : "",
+        findings.length === 0 ? "ogni pagina dichiara l'anteprima, e l'immagine promessa risponde" : "",
+        dettaglioFindings(findings),
+      ].filter(Boolean).join("\n");
+      return record(this.id, this.nome, statoDaFindings(findings), dettaglio);
+    },
+  },
+
+  {
+    id: ID.datiStrutturati,
+    nome: "dati strutturati (JSON-LD)",
+    async esegui(ctx) {
+      if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
+      const pagine = ctx.pagine.map((p) => ({ percorso: p.percorso, jsonld: blocchiJsonLd(p.corpo) }));
+      const totale = pagine.reduce((n, p) => n + p.jsonld.length, 0);
+      const findings = findingsDatiStrutturati({ pagine });
+      const dettaglio = [
+        `${totale} blocchi \`application/ld+json\` su ${pagine.length} pagine, ognuno interpretato come JSON`,
+        totale > 0 && findings.length === 0 ? "ogni blocco e' JSON valido e dichiara un `@type`" : "",
+        dettaglioFindings(findings),
+      ].filter(Boolean).join("\n");
+      return record(this.id, this.nome, statoDaFindings(findings), dettaglio);
+    },
+  },
+
+  {
+    id: ID.sitemap,
+    nome: "sitemap.xml: la promessa fatta ai motori",
+    async esegui(ctx) {
+      if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
+      const risposta = await preleva(unisci(ctx.baseUrl, "/sitemap.xml"), { segui: true });
+      const percorsi = risposta && risposta.stato === 200 ? percorsiDaSitemap(risposta.corpo, ctx.baseUrl) : [];
+      ctx.inSitemap = new Set(percorsi);
+      const findings = findingsSitemap({
+        risposta,
+        percorsi,
+        superficie: new Set(ctx.pagine.map((p) => p.percorso)),
+        rimandi: ctx.rimandi ?? new Map(),
+      });
+      const dettaglio = [
+        `\`/sitemap.xml\` → ${risposta ? `HTTP ${risposta.stato}` : "nessuna risposta"} · ${percorsi.length} indirizzi dichiarati, confrontati con le ${ctx.pagine.length} pagine servite`,
+        findings.length === 0 ? "ogni indirizzo dichiarato nella sitemap e' servito" : "",
+        dettaglioFindings(findings),
+      ].filter(Boolean).join("\n");
+      return record(this.id, this.nome, statoDaFindings(findings), dettaglio);
+    },
+  },
+
+  {
+    id: ID.robots,
+    nome: "robots.txt: cosa il sito ammette",
+    async esegui(ctx) {
+      if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
+      const risposta = await preleva(unisci(ctx.baseUrl, "/robots.txt"), { segui: true });
+      const robots = leggiRobots(risposta && risposta.stato === 200 ? risposta.corpo : "");
+      const findings = findingsRobots({
+        risposta,
+        robots,
+        superficie: new Set(ctx.pagine.map((p) => p.percorso)),
+        inSitemap: ctx.inSitemap ?? new Set(),
+        base: ctx.baseUrl,
+      });
+      const dettaglio = [
+        `\`/robots.txt\` → ${risposta ? `HTTP ${risposta.stato}` : "nessuna risposta"} · ${robots.gruppi.length} gruppi di regole · ${robots.sitemap.length} righe \`Sitemap:\``,
+        `confrontato con la superficie camminata (${ctx.pagine.length} pagine) e con la sitemap (${(ctx.inSitemap ?? new Set()).size} indirizzi)`,
+        findings.length === 0 ? "niente di cio' che il sito pubblicizza e' vietato ai motori" : "",
+        dettaglioFindings(findings),
+      ].filter(Boolean).join("\n");
+      return record(this.id, this.nome, statoDaFindings(findings), dettaglio);
     },
   },
 

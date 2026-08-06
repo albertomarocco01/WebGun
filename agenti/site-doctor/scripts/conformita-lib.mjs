@@ -46,22 +46,34 @@ import { perRegexp } from "./servito-lib.mjs";
  *
  * Si toglie una riga da qui il giorno in cui il vicino aggiunge il passo, e la
  * si toglie **rilanciando il `grep`**, non fidandosi di un handoff.
+ *
+ * **2026-08-06, decisione D21: cinque righe si sono tolte in un altro modo.**
+ * Non perche' il vicino abbia aggiunto il passo, ma perche' la proprieta' e'
+ * passata a chi la misura: `favicon`, `open-graph`, `dati-strutturati`,
+ * `sitemap` e `robots` si leggono nell'HTML che questa skill sta gia'
+ * scaricando, o costano una richiesta HTTP a chi cammina gia' ogni pagina. Ora
+ * hanno un passo ciascuna, e il §19 confronta la riga del certificato con
+ * l'esito di QUESTA esecuzione: la delega non e' piu' un'affermazione, e' una
+ * misura.
+ *
+ * Restano due deleghe misurate vuote, e il perche' e' diverso per ognuna.
  */
 const SCOPERTE = Object.freeze({
+  // `contrasti` resta di speed-demon perche' vuole un browser — cascata,
+  // specificita', `currentColor`, gradienti — e questo gate non ne apre nessuno.
+  // Ma la delega resta VUOTA finche' il suo passo non legge il singolo audit.
+  // **Questa misura dipende dal vicino, quindi porta il commit della regia a cui
+  // si riferisce** (`DECISIONI.md` §18 n°3): i gate di questa casa si stanno
+  // cambiando sotto a vicenda apposta, in questa ondata, e una misura senza il
+  // suo commit non e' ripetibile.
   contrasti:
-    "misurato il 2026-08-06: la parola «contrast» non compare in NESSUN file di `agenti/speed-demon/` (grep, 0 file). Il suo gate esegue Lighthouse con la categoria `accessibility`, che contiene l'audit `color-contrast`, ma legge solo il PUNTEGGIO della categoria (0 occorrenze di `audits` nei suoi script): il singolo audit non lo apre mai, la soglia sta in `docs/performance.md` del progetto e non ha un pavimento, e una deroga porta il rilievo da `block` a `warn`",
-  sitemap:
-    "misurato il 2026-08-06: 0 occorrenze di `sitemap` in `agenti/speed-demon/scripts/verify.mjs` e `gate-lib.mjs`. La scrive e non la rilegge nessun passo — lo dichiara il suo stesso `STATO.md`",
-  robots:
-    "misurato il 2026-08-06: le occorrenze di `robots` nel gate di speed-demon sono tutte `<meta name=\"robots\">`, cioe' la voce `noindex-private`. Il file `robots.txt` non viene richiesto da nessun passo",
-  "open-graph":
-    "misurato il 2026-08-06: 0 occorrenze di `og:` nel gate di speed-demon. Nessun passo guarda l'Open Graph, ed e' meta' della voce che il 2026-08-06 risultava assegnata a DUE agenti insieme",
-  favicon:
-    "misurato il 2026-08-06: 0 occorrenze di `favicon` nel gate di speed-demon. E' LA VOCE DEL DIFETTO: la favicon del pilota e' stata un `404` su ogni pagina per tre anelli, e questa skill nasce da li'",
-  "dati-strutturati":
-    "misurato il 2026-08-06: 0 occorrenze di `application/ld` nel gate di speed-demon. Nessun passo guarda i dati strutturati",
+    "misurato il 2026-08-06 sulla regia a `d147f52`: la parola «contrast» non compare in NESSUN file di `agenti/speed-demon/` (grep, 0 file). Il suo gate esegue Lighthouse con la categoria `accessibility`, che contiene l'audit `color-contrast`, ma legge solo il PUNTEGGIO della categoria (0 occorrenze di `audits` nei suoi script): il singolo audit non lo apre mai, la soglia sta in `docs/performance.md` del progetto e non ha un pavimento, e una deroga porta il rilievo da `block` a `warn`. Un'altra chat sta aggiungendo la lettura del singolo audit in questa stessa ondata: quando sara' in regia, questa riga si toglie RILANCIANDO IL GREP, non leggendo un handoff",
+  // `accessibilita-admin` resta di gestionale-crafter per la ragione opposta:
+  // l'area protetta vuole una sessione, e questo gate non ne apre nessuna. La
+  // dichiarazione pero' deve dire COSA misura — «sui sorgenti» — perche' in
+  // questa casa e' gia' misurato che i sorgenti mentono.
   "accessibilita-admin":
-    "misurato il 2026-08-06: il passo `a11y` di gestionale-crafter lancia `eslint-plugin-jsx-a11y` sui SORGENTI (`verify.mjs:326-347`), non sull'HTML servito delle rotte protette. In questa casa e' gia' misurato che il sorgente mente, ed e' il motivo per cui l'accessibilita' del sito pubblico e' mia: qui la stessa ragione vale e la delega resta",
+    "misurato il 2026-08-06 sulla regia a `d147f52`: il passo `a11y` di gestionale-crafter lancia `eslint-plugin-jsx-a11y` sui SORGENTI (`verify.mjs:326-347`), non sull'HTML servito delle rotte protette. E' una misura vera e dichiarata «sui sorgenti», non una delega vuota come le altre — ma non e' la stessa cosa che questa skill fa sul sito pubblico, ed e' per quella differenza che l'accessibilita' del pubblico e' mia. La delega resta perche' l'area protetta vuole una sessione",
 });
 
 export const VOCI = Object.freeze([
@@ -73,12 +85,15 @@ export const VOCI = Object.freeze([
   { id: "lingua-hreflang", nome: "lingua dichiarata e hreflang", mio: "lingua-e-hreflang", re: /hreflang|lingua|multilingua/i },
   { id: "contrasti", nome: "contrasti di colore", mio: null, re: /contrast/i, scoperta: SCOPERTE.contrasti },
   { id: "canonical", nome: "canonical", mio: null, re: /canonical/i },
-  { id: "sitemap", nome: "sitemap.xml", mio: null, re: /sitemap/i, scoperta: SCOPERTE.sitemap },
-  { id: "robots", nome: "robots.txt", mio: null, re: /robots/i, scoperta: SCOPERTE.robots },
+  // D21: cinque voci tornate a casa. `mio` non e' una promessa — e' l'`id` del
+  // passo che le misura, e il §19 confronta la riga del certificato con lo
+  // stato di QUEL passo in questa esecuzione.
+  { id: "sitemap", nome: "sitemap.xml", mio: "sitemap-xml", re: /sitemap/i },
+  { id: "robots", nome: "robots.txt", mio: "robots-txt", re: /robots/i },
   { id: "noindex-private", nome: "noindex sulle pagine private", mio: null, re: /noindex/i },
-  { id: "open-graph", nome: "Open Graph", mio: null, re: /open ?graph|og:(title|image|url)|anteprim/i, scoperta: SCOPERTE["open-graph"] },
-  { id: "favicon", nome: "favicon", mio: null, re: /favicon|icona del sito|rel="icon"|icon\.svg/i, scoperta: SCOPERTE.favicon },
-  { id: "dati-strutturati", nome: "dati strutturati", mio: null, re: /dati strutturati|json-?ld|schema\.org/i, scoperta: SCOPERTE["dati-strutturati"] },
+  { id: "open-graph", nome: "Open Graph", mio: "open-graph", re: /open ?graph|og:(title|image|url)|anteprim/i },
+  { id: "favicon", nome: "favicon", mio: "favicon", re: /favicon|icona del sito|rel="icon"|icon\.svg/i },
+  { id: "dati-strutturati", nome: "dati strutturati", mio: "dati-strutturati", re: /dati strutturati|json-?ld|schema\.org/i },
   { id: "accessibilita-admin", nome: "accessibilita dell'area amministrativa", mio: null, re: /accessibilit|a11y/i, scoperta: SCOPERTE["accessibilita-admin"] },
   { id: "antispam", nome: "antispam e limiti di frequenza sui moduli pubblici", mio: null, re: /antispam|spam|rate.?limit|limiti di frequenza|abusi/i },
 ]);

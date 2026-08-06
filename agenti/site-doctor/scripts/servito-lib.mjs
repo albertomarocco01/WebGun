@@ -1963,3 +1963,291 @@ export function langDi(html) {
   const lang = tag ? attributi(tag[0]).lang : "";
   return lang && lang.trim() ? lang.trim() : null;
 }
+
+// ═══════════════════════════ le cinque voci tornate a casa — decisione D21
+/**
+ * **Perché queste cinque voci sono qui dal 2026-08-06.**
+ *
+ * Erano delegate a speed-demon, e il collaudo P2 ha misurato che il suo gate non
+ * le guarda: zero occorrenze di `favicon`, di `og:`, di `application/ld` nei suoi
+ * script; `sitemap` e `robots.txt` scritti e mai riletti. La delega non era
+ * sbagliata per argomento — era **vuota**, e una voce delegata a un gate che non
+ * la misura e' la favicon a 404 del pilota spostata di un piano.
+ *
+ * La direzione ha deciso che la proprieta' segue la MISURA, non l'argomento:
+ * queste cinque si leggono nell'HTML che questa skill sta gia' scaricando, o
+ * costano una richiesta HTTP a chi cammina gia' ogni pagina. I `contrasti`
+ * restano di speed-demon, perche' vogliono un browser e questo gate non ne apre
+ * nessuno.
+ *
+ * **Il criterio comune delle cinque regole**, e vale la pena scriverlo una volta
+ * sola: *il dichiarato che non risponde e' un bloccante, l'assenza e' un
+ * rilievo.* Una pagina che scrive `<link rel="icon" href="/favicon.svg">` e
+ * serve un 404 ha **mentito nel markup servito**, e chi legge quel markup — un
+ * browser, un motore, il prossimo agente — sbaglia per causa sua. Un'assenza
+ * invece e' una scelta, e una scelta si firma in una deroga.
+ */
+
+/** Gli `href` delle icone dichiarate da una pagina, senza duplicati. */
+export function iconeDichiarate(html, base) {
+  const pulito = senzaScript(html);
+  const trovate = new Set();
+  for (const tag of tagDi(pulito, "link")) {
+    const a = attributi(tag);
+    const rel = (a.rel ?? "").toLowerCase().split(/\s+/);
+    if (!rel.some((r) => r === "icon" || r === "shortcut" || r === "apple-touch-icon" || r === "mask-icon")) continue;
+    const href = (a.href ?? "").trim();
+    if (!href || /^data:/i.test(href)) continue;
+    try {
+      trovate.add(new URL(href, base).toString());
+    } catch { /* href illeggibile: non e' un'icona dichiarata */ }
+  }
+  return [...trovate];
+}
+
+/**
+ * La favicon: **la voce da cui questa skill e' nata**.
+ *
+ * Sul pilota e' stata un `404` su ogni pagina per tre anelli, perche' due
+ * documenti dicevano che se ne occupava qualcun altro. `risposte` e' una mappa
+ * `url → stato HTTP` (o `null` se non si e' potuto scaricare).
+ */
+export function findingsFavicon({ pagine, risposte, predefinita }) {
+  const findings = [];
+  const senza = [];
+  for (const p of pagine) {
+    const icone = p.icone ?? [];
+    if (icone.length === 0) { senza.push(p.percorso); continue; }
+    for (const url of icone) {
+      const stato = risposte.get(url);
+      if (stato === null || stato === undefined) {
+        findings.push({ severity: "block", object: p.percorso, message: `dichiara l'icona \`${url}\` e quell'indirizzo non risponde: il markup promette una cosa che il server non consegna` });
+      } else if (stato !== 200) {
+        findings.push({ severity: "block", object: p.percorso, message: `dichiara l'icona \`${url}\` e quell'indirizzo risponde HTTP ${stato}. E' il difetto del pilota: la favicon e' stata un 404 su ogni pagina per tre anelli, e questa skill nasce da li'` });
+      }
+    }
+  }
+  if (senza.length === pagine.length && pagine.length > 0) {
+    // Nessuna pagina dichiara un'icona: il browser chiede `/favicon.ico` da solo.
+    if (predefinita !== 200) {
+      findings.push({
+        severity: "block",
+        object: "favicon",
+        message: `nessuna delle ${pagine.length} pagine dichiara un'icona, e \`/favicon.ico\` risponde ${predefinita === null ? "niente" : `HTTP ${predefinita}`}: ogni browser che apre questo sito fa una richiesta e prende un errore, su ogni pagina`,
+      });
+    }
+  } else if (senza.length > 0) {
+    findings.push({ severity: "issue", object: "favicon", message: `${senza.length} pagine su ${pagine.length} non dichiarano un'icona (${senza.slice(0, 5).join(", ")}${senza.length > 5 ? " …" : ""})` });
+  }
+  return findings;
+}
+
+/** I metatag Open Graph di una pagina: `{ proprieta: valore }`. */
+export function openGraphDi(html) {
+  const mappa = {};
+  for (const tag of tagDi(senzaScript(html), "meta")) {
+    const a = attributi(tag);
+    const nome = (a.property ?? a.name ?? "").toLowerCase();
+    if (!nome.startsWith("og:")) continue;
+    if (!(nome in mappa)) mappa[nome] = (a.content ?? "").trim();
+  }
+  return mappa;
+}
+
+/** Le voci che un'anteprima social deve avere per essere un'anteprima. */
+export const OG_OBBLIGATORIE = Object.freeze(["og:title", "og:type", "og:url", "og:image"]);
+
+export function findingsOpenGraph({ pagine, risposte }) {
+  const findings = [];
+  const senza = pagine.filter((p) => Object.keys(p.og ?? {}).length === 0);
+  if (senza.length === pagine.length && pagine.length > 0) {
+    return [{ severity: "issue", object: "open-graph", message: `nessuna delle ${pagine.length} pagine dichiara un solo tag Open Graph: chi condivide un indirizzo di questo sito ottiene un'anteprima che il sito non ha scelto` }];
+  }
+  if (senza.length > 0) {
+    findings.push({ severity: "issue", object: "open-graph", message: `${senza.length} pagine su ${pagine.length} non dichiarano nessun tag Open Graph (${senza.slice(0, 5).map((p) => p.percorso).join(", ")}${senza.length > 5 ? " …" : ""})` });
+  }
+  for (const p of pagine) {
+    const og = p.og ?? {};
+    if (Object.keys(og).length === 0) continue;
+    const mancanti = OG_OBBLIGATORIE.filter((k) => !og[k]);
+    if (mancanti.length > 0) {
+      findings.push({ severity: "issue", object: p.percorso, message: `dichiara l'Open Graph e gli mancano ${mancanti.join(", ")}: un'anteprima a meta' e' quella che decide il motore, non il sito` });
+    }
+    const immagine = p.immagine;
+    if (!immagine) continue;
+    const stato = risposte.get(immagine);
+    if (stato === null || stato === undefined) {
+      findings.push({ severity: "block", object: p.percorso, message: `\`og:image\` punta a \`${immagine}\` e quell'indirizzo non risponde` });
+    } else if (stato !== 200) {
+      findings.push({ severity: "block", object: p.percorso, message: `\`og:image\` punta a \`${immagine}\` e quell'indirizzo risponde HTTP ${stato}: l'anteprima promessa non esiste` });
+    }
+  }
+  return findings;
+}
+
+/** I corpi dei blocchi `application/ld+json` di una pagina. */
+export function blocchiJsonLd(html) {
+  return ripulisciDocumento(html).inline
+    .filter(({ tag }) => /type\s*=\s*["']?application\/ld\+json/i.test(tag))
+    .map(({ corpo }) => corpo);
+}
+
+export function findingsDatiStrutturati({ pagine }) {
+  const findings = [];
+  let conBlocchi = 0;
+  for (const p of pagine) {
+    const blocchi = p.jsonld ?? [];
+    if (blocchi.length === 0) continue;
+    conBlocchi += 1;
+    for (const corpo of blocchi) {
+      let dati;
+      try {
+        dati = JSON.parse(corpo);
+      } catch (e) {
+        findings.push({ severity: "block", object: p.percorso, message: `un blocco \`application/ld+json\` NON e' JSON valido (${perStampa(e.message, 100)}): un motore lo scarta per intero, e il sito crede di avere dati strutturati` });
+        continue;
+      }
+      const elenco = Array.isArray(dati) ? dati : [dati];
+      for (const d of elenco) {
+        if (!d || typeof d !== "object") {
+          findings.push({ severity: "block", object: p.percorso, message: "un blocco `application/ld+json` contiene JSON valido che non e' un oggetto: non dichiara niente" });
+        } else if (!d["@type"]) {
+          findings.push({ severity: "issue", object: p.percorso, message: "un blocco `application/ld+json` non dichiara `@type`: senza, non dice di che cosa parla" });
+        }
+      }
+    }
+  }
+  if (conBlocchi === 0 && pagine.length > 0) {
+    findings.push({ severity: "issue", object: "dati-strutturati", message: `nessuna delle ${pagine.length} pagine dichiara dati strutturati (\`application/ld+json\`)` });
+  }
+  return findings;
+}
+
+const RE_SITEMAP_XML = /<\s*(urlset|sitemapindex)\b/i;
+
+/**
+ * La `sitemap.xml`, misurata invece che scritta e dimenticata.
+ *
+ * Il passo `superficie-pubblica` la usa come **seconda sorgente** e non la
+ * verifica: sono due domande diverse, ed e' il motivo per cui questa voce
+ * esiste come passo suo.
+ */
+export function findingsSitemap({ risposta, percorsi, superficie, rimandi }) {
+  if (!risposta) {
+    return [{ severity: "issue", object: "sitemap.xml", message: "`/sitemap.xml` non risponde: i motori non hanno l'elenco che il sito dichiara di pubblicare, e la camminata di questo gate perde la sua seconda sorgente" }];
+  }
+  if (risposta.stato !== 200) {
+    return [{ severity: "issue", object: "sitemap.xml", message: `\`/sitemap.xml\` risponde HTTP ${risposta.stato}` }];
+  }
+  const findings = [];
+  if (!RE_SITEMAP_XML.test(risposta.corpo)) {
+    findings.push({
+      severity: "block",
+      object: "sitemap.xml",
+      message: `\`/sitemap.xml\` risponde 200 e il corpo non e' una sitemap (nessun \`<urlset>\` ne' \`<sitemapindex>\`; primi byte: ${perStampa(risposta.corpo.slice(0, 80), 80)}). Un 200 che serve un'altra cosa e' peggio di un 404: chi lo interroga crede di avere una risposta`,
+    });
+    return findings;
+  }
+  if (percorsi.length === 0) {
+    findings.push({ severity: "issue", object: "sitemap.xml", message: "`/sitemap.xml` e' una sitemap e non dichiara nessun indirizzo: e' rotta, non assente" });
+    return findings;
+  }
+  for (const p of percorsi) {
+    if (superficie.has(p)) continue;
+    const perche = rimandi.get(p);
+    findings.push({
+      severity: "block",
+      object: p,
+      message: `dichiarato nella sitemap e non servito${perche ? ` (${perStampa(perche, 80)})` : ""}: la sitemap e' la promessa che il sito fa ai motori, e questa non la mantiene`,
+    });
+  }
+  return findings;
+}
+
+/**
+ * `robots.txt`, e **il confronto che nessun gate della casa faceva**.
+ *
+ * Il collaudo P2 l'aveva elencato fra le cose scoperte: «un `robots.txt` che
+ * vieta la pagina che la `sitemap.xml` pubblicizza — due file che scrive lo
+ * stesso agente e che nessuno confronta». Con D21 sono tutti e due di questa
+ * skill, e il confronto e' finalmente di qualcuno.
+ */
+export function leggiRobots(testo) {
+  const gruppi = [];
+  let corrente = null;
+  const sitemap = [];
+  for (const riga of String(testo ?? "").split(/\r?\n/)) {
+    const pulita = riga.replace(/#.*$/, "").trim();
+    if (!pulita) continue;
+    const i = pulita.indexOf(":");
+    if (i < 0) continue;
+    const campo = pulita.slice(0, i).trim().toLowerCase();
+    const valore = pulita.slice(i + 1).trim();
+    if (campo === "user-agent") {
+      if (!corrente || corrente.regole.length > 0) {
+        corrente = { agenti: [], regole: [] };
+        gruppi.push(corrente);
+      }
+      corrente.agenti.push(valore.toLowerCase());
+    } else if (campo === "disallow" || campo === "allow") {
+      if (!corrente) { corrente = { agenti: ["*"], regole: [] }; gruppi.push(corrente); }
+      corrente.regole.push({ tipo: campo, percorso: valore });
+    } else if (campo === "sitemap") {
+      sitemap.push(valore);
+    }
+  }
+  return { gruppi, sitemap };
+}
+
+/** Le regole che valgono per tutti (`User-agent: *`). */
+const regolePerTutti = (robots) => robots.gruppi.filter((g) => g.agenti.includes("*")).flatMap((g) => g.regole);
+
+/** Un percorso e' vietato a tutti? Vince la regola PIU' LUNGA, come da standard. */
+export function vietatoAiMotori(robots, percorso) {
+  let vincente = null;
+  for (const r of regolePerTutti(robots)) {
+    if (r.tipo === "disallow" && r.percorso === "") continue; // `Disallow:` vuoto NON vieta niente
+    if (!percorso.startsWith(r.percorso.replace(/\*$/, ""))) continue;
+    if (!vincente || r.percorso.length > vincente.percorso.length) vincente = r;
+  }
+  return vincente ? vincente.tipo === "disallow" : false;
+}
+
+export function findingsRobots({ risposta, robots, superficie, inSitemap, base }) {
+  if (!risposta) {
+    return [{ severity: "issue", object: "robots.txt", message: "`/robots.txt` non risponde: ogni motore che passa fa una richiesta e prende un errore, e nessuno ha scritto cosa il sito ammette" }];
+  }
+  if (risposta.stato !== 200) {
+    return [{ severity: "issue", object: "robots.txt", message: `\`/robots.txt\` risponde HTTP ${risposta.stato}` }];
+  }
+  const findings = [];
+  const vietate = [...superficie].filter((p) => vietatoAiMotori(robots, p)).sort();
+  const vietateEPubblicizzate = vietate.filter((p) => inSitemap.has(p));
+  if (vietateEPubblicizzate.length > 0) {
+    findings.push({
+      severity: "block",
+      object: "robots.txt",
+      message: `vieta ${vietateEPubblicizzate.length} indirizzi che la \`sitemap.xml\` pubblicizza (${vietateEPubblicizzate.slice(0, 5).join(", ")}${vietateEPubblicizzate.length > 5 ? " …" : ""}). Sono due file dello stesso sito che dicono il contrario, e uno dei due e' sbagliato: finche' non si decide quale, il sito chiede di essere indicizzato e lo vieta`,
+    });
+  }
+  const soloVietate = vietate.filter((p) => !inSitemap.has(p));
+  if (soloVietate.length > 0) {
+    findings.push({ severity: "issue", object: "robots.txt", message: `vieta ${soloVietate.length} pagine pubbliche raggiungibili camminando (${soloVietate.slice(0, 5).join(", ")}${soloVietate.length > 5 ? " …" : ""}): se e' voluto va scritto nel certificato, perche' quelle pagine non compariranno in nessuna ricerca` });
+  }
+  if (robots.sitemap.length === 0) {
+    findings.push({ severity: "issue", object: "robots.txt", message: "non contiene nessuna riga `Sitemap:`: e' il modo in cui un motore trova l'elenco senza doverlo indovinare" });
+  } else {
+    for (const s of robots.sitemap) {
+      let url = null;
+      try {
+        url = new URL(s, base);
+      } catch { /* riga illeggibile */ }
+      if (!url) {
+        findings.push({ severity: "issue", object: "robots.txt", message: `la riga \`Sitemap: ${perStampa(s, 80)}\` non e' un indirizzo leggibile` });
+      } else if (url.host !== new URL(base).host) {
+        findings.push({ severity: "issue", object: "robots.txt", message: `la riga \`Sitemap:\` rimanda a un'altra origine (${url.origin}): un motore la ignora` });
+      }
+    }
+  }
+  return findings;
+}
