@@ -173,7 +173,7 @@ Verbale completo: `COLLAUDO-2026-07-28.md`.
 | difetti piantati sul banco sporco | **6 su 6 rilevati** (5 `block`, 4 `issue`: alcuni difetti ne producono due) |
 | gemello pulito | **0 findings** su 32 file, 8 rotte, 6 azioni server, 10 scritture |
 | gate sul banco pulito | **VERDE 7/7**, uscita `0` |
-| test degli script | **105 verdi** |
+| test degli script | **111 verdi** (rimisurati il 2026-08-06; `105` era il numero del 2026-07-28) |
 | secondo banco, dominio non e-commerce (accademia musicale) | gate **6/7** al primo colpo, unico rosso l'handoff non ancora scritto; **0 falsi positivi** |
 | `/code-inquisition` sulla superficie critica | **6 difetti reali** trovati dove il gate diceva pulito, 2 confermati da esperti indipendenti con evidenze disgiunte; 5 su 6 erano nel *pattern prescritto dalla skill*, non nel banco |
 | correzioni dei rilievi | 5 su 6 **corrette e riprovate** (10 asserzioni pgTAP nuove sull'accademia, 20/20 sull'e-commerce); 1 resta aperta e dichiarata |

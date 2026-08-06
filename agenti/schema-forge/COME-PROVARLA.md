@@ -111,7 +111,8 @@ cd "agenti/schema-forge"
 npm test          # equivale a: node --test "scripts/**/*.test.mjs"
 ```
 
-132 test verdi, zero dipendenze runtime, nessun Docker. Verificano le **regole**
+**156** test verdi (rimisurati il 2026-08-06; questa riga ha detto `132` fino ad
+allora, mentre `STATO.md` era già a 156), zero dipendenze runtime, nessun Docker. Verificano le **regole**
 dell'audit e del diagramma come funzioni pure. Se vuoi capire cosa becca l'audit
 RLS senza montare niente, questo è il punto d'ingresso.
 

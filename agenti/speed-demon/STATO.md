@@ -70,6 +70,77 @@
   limite dello strumento, non una proprietà del codice — e vale come
   **MANCANTE parziale**, non come `PASS`: quello 0,3% nessuno l'ha guardato.
 
+- **2026-08-06 — `/code-inquisition` sugli script, la prima volta, e il punto
+  aperto n°5 ha una risposta: quattordici difetti, e questa skill ne ha piu' di
+  tutte (P.7c punto 4).** Referto con le uscite incollate:
+  `../../INQUISIZIONE-GATE-2026-08-06.md`. Sette esperti, due verificatori che
+  hanno rifatto le misure. Lo stesso giorno: ESLint 0, semgrep 3 (0 veri),
+  gitleaks 0, batteria **87/87**.
+  - **HIGH — `argomentiOstiliACmd` filtra SOLO gli spazi** (`gate-lib.mjs:974`):
+    `&`, `%VAR%` e i metacaratteri di `cmd.exe` passano. Misurato:
+    `cmd /c shim.cmd … /&ver` esegue `ver` e **lo status resta 0**, con **e
+    senza** spazi nel percorso dello shim (la tesi «con gli spazi si rompe» e'
+    stata smentita dal verificatore). Il valore arriva dal `docs/performance.md`
+    del progetto: il percorso di pagina e' letto come `(\S+)`.
+  - **HIGH — il percorso di una pagina puo' essere un URL assoluto**: Lighthouse
+    misura **un altro sito** e il gate scrive i numeri accanto al nome della
+    pagina. `## \`home\` — https://example.com/` → `unisci` restituisce
+    `https://example.com/`; `//evil.example.com/` funziona ugualmente.
+    `stessaPagina` non confronta mai con `baseUrl`. E' il difetto del 2026-07-30
+    («misurare l'app di un altro progetto») riaperto dal lato del contratto.
+  - **HIGH — i gate sono muti per costruzione e nessuna chiamata ha un
+    `timeout`**: contro un server che accetta e non risponde, questo gate resta
+    **45 secondi senza stampare una riga** e va ucciso (misurato). Flow-sentinel
+    sullo stesso server torna in **15,2 s** con un ROSSO leggibile: la
+    differenza e' un solo `AbortSignal.timeout`, che qui manca (`verify.mjs:145`
+    e' l'**unico** `fetch` senza `signal` dei quattro gate — lo dice semgrep).
+  - **HIGH — `npx --yes lighthouse`**: pacchetto non fissato, installazione da
+    rete senza conferma, `npx` che gira nella radice del progetto auditato e
+    preferisce il suo `node_modules/.bin`. E nessun timeout: se la rete non
+    risponde, resta appeso in silenzio.
+  - **MEDIUM — i recinti `~~~` non sono riconosciuti** (`gate-lib.mjs:26-29`):
+    un esempio recintato **firma il contratto** e dichiara le pagine. Misurato:
+    recinto ` ``` ` → `pagine = []`; recinto `~~~` → la pagina d'esempio entra.
+    E' il difetto che flow-sentinel ha misurato e chiuso il 2026-07-28,
+    ricomparso qui — e la sua correzione (`senzaZoneCitate` a macchina a stati,
+    entrambi i recinti, recinto aperto = tutto spento) e' gia' scritta li'.
+  - **MEDIUM — `## Deroghe` e' qualunque intestazione che contenga «deroghe», e
+    un `###` non la chiude**: «Deroghe RESPINTE», «deroghe scadute» e una
+    tabella sotto un `### Archivio` **raccolgono tutte la deroga come viva**
+    (4 casi su 4).
+  - **MEDIUM — la deroga declassa anche `accessibility` e non vuole nessuna
+    firma**: la colonna «Confermata da» del template **non viene letta**, e una
+    deroga vuota vale; `accessibility` 61 contro soglia 95 → `warn` → passo
+    `pass`. Il template dichiara non derogabile l'accessibilita' **sotto la
+    baseline**, e il gate la baseline non la legge affatto (unica occorrenza in
+    un commento).
+  - **MEDIUM — il contratto d'uscita e' l'unico dei quattro che non rifiuta i
+    segnaposto `{{…}}`**: handoff con 5 segnaposto → nessun finding (gli altri
+    tre gate lo bocciano). Il template di handoff di questa skill ne ha **53**:
+    si consegna un modulo in bianco con una riga vera.
+  - **MEDIUM — `attributo()` prende il primo `name=` del tag, `data-name=`
+    compreso**: `<meta data-name="viewport" name="robots" content="noindex">` →
+    `robots: null`, e una pagina esclusa dall'indice risulta pubblica. Stessa
+    classe del difetto dichiarato chiuso nella docstring, per un'altra via.
+  - **MEDIUM — `senzaSvg` cancella dal primo `<svg` (anche dentro un CSS) fino
+    al `</svg>`** (`gate-lib.mjs:693`): un data-URI SVG in un `<style>` azzera
+    `title`, `description` e `canonical` — tre `block` che accusano l'imputato
+    sbagliato.
+  - **MEDIUM — nidifica l'intero gate di flow-sentinel senza timeout** e ne
+    legge **solo `esito.ok`**: il falso verde del gate figlio arriva qui senza
+    attenuazione, e uno stallo produce due processi fermi e zero righe.
+  - **LOW — `Gate: verde` minuscolo** produce un rosso strutturale nel solo
+    speed-demon (regex `i`, confronto case-sensitive; gli altri tre normalizzano).
+  - **LOW — il confine di `misuraStabile` non e' mai esercitato**: `>` → `>=`
+    e **87/87 passano**. I casi di test hanno dispersione 38 e 2; la soglia 5 non
+    la tocca nessuno.
+  - **LOW (latente) — `trovaHandoff` ordina lessicograficamente**: **contraddetto
+    dal verificatore** — con la convenzione scritta nel `CLAUDE.md`
+    (`07-schema-forge.md`) ordina giusto fino a 99. Rompe solo con numeri senza
+    zero. Resta vero che il gate non dice **quale** handoff ha letto.
+
+  **Sorte**: tutti **dichiarati**, nessuno chiuso qui — ognuno vuole un test che
+  lo falsifichi e il gate rimisurato su un'app viva, che questa chat non ha (D17).
 - **2026-08-06 — `gitleaks` installato e puntato: il MANCANTE storico e' chiuso
   (P.7c punto 5).** `gitleaks` 8.30.1 (scoop, bucket `main`). Su questi
   `scripts/`: **nessun rilievo**. Sul repo intero: **storia** (`gitleaks git .`,
@@ -197,8 +268,9 @@ E la prima esecuzione vera di `plan` e `tune` su guadagni misurati: home
 5. **`semgrep` e `gitleaks` sono passati di qui il 2026-08-06** (3 rilievi 0 veri
    il primo, **nessun rilievo** il secondo — §2026-08-06). Resta MANCANTE una
    striscia sottile e vera: su `gate-lib.mjs` semgrep si e' fermato al **99,7%
-   delle righe**, e quello 0,3% non l'ha guardato nessuno. `code-inquisition`:
-   P.7c punto 4.
+   delle righe**, e quello 0,3% non l'ha guardato nessuno. **`code-inquisition` e'
+   stato eseguito il 2026-08-06**: quattordici difetti, quattro HIGH, nessuno dei
+   quali visto da ESLint, semgrep, gitleaks o dagli 87 test (§2026-08-06).
    La riga precedente dichiarava mancante anche semgrep, ed era
    falsa gia' quando e' stata scritta — `schema-forge/STATO.md` l'aveva misurato
    presente due giorni prima. Il collaudo avversario ha fatto crescere

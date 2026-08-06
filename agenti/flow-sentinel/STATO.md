@@ -17,7 +17,7 @@
   modifica e' del 2026-07-30, quando il collaudo di `evolve` ha scoperto che quella procedura
   copriva un caso su quattro (`COLLAUDO-EVOLVE-2026-07-30.md` §4); esistono le
   **4 references**, il gate `verify.mjs` a **7 passi** con id stabili, le regole pure in
-  `scripts/gate-lib.mjs` con **103 test verdi allora** (**110 oggi**, §Cosa esiste), i **3 template** e la configurazione
+  `scripts/gate-lib.mjs` con **103 test verdi allora** (**111 oggi**, rimisurati il 2026-08-06 — questa riga diceva 110 mentre §Cosa esiste diceva 111), i **3 template** e la configurazione
   ESLint delle spec. Il gate e' stato **eseguito davvero** su due banchi Next.js + Supabase locale,
   scritti da due mani diverse: `banco-prova-flow/` (P1, e-commerce) e `banco-prova-collaudo-fs/`
   (P2, palestra) — **VERDE 7 su 7 su entrambi**, e rosso ogni volta che qualcosa e' stato rotto apposta.
@@ -65,6 +65,19 @@
   `site_url`, `schemas`). Nessuna correzione, nessun `nosemgrep`: quattro rilievi **dichiarati**.
   Nessuno script toccato, quindi **batteria non ripetuta** (nulla da misurare prima e dopo).
 
+- **2026-08-06 — `/code-inquisition` sugli script, la prima volta, e il punto aperto n°7 ha una risposta: il difetto piu' grave e' qui (P.7c punto 4).** Referto con le uscite incollate: `../../INQUISIZIONE-GATE-2026-08-06.md`. Sette esperti, due verificatori che hanno rifatto le misure. Lo stesso giorno: ESLint 0, semgrep 4 (0 veri), gitleaks 0, batteria **111/111**.
+  - **CRITICAL — un flusso critico dichiarato puo' non essere mai eseguito, e il gate resta VERDE 7/7.** `batteriaHaEseguito` (`gate-lib.mjs:503-504`) e' un **OR globale**: `esito.passati > 0` per **tutta** la batteria. Caso costruito con le funzioni pure: 13 flussi, 13 spec con `test.skip` **motivato** piu' un test banale che passa → **tutti e sette i passi `pass`**, dettaglio `1 passati, 0 falliti, 13 saltati`. `spec-coverage` misura i tag `@flusso:` nel **testo del file**, mai l'esito. E' la stessa classe che lo STATO dichiara chiusa dal collaudo P2 — chiusa per il 100% dei test saltati, **aperta per il 92%**. Smentita tentata e fallita: non esiste nessun passo che confronti i flussi *eseguiti* con quelli *dichiarati*. Aggravante: **speed-demon legge solo `esito.ok`**, quindi il falso verde si propaga muto al gate a valle. Seconda via, piu' silenziosa: `testIgnore`/`grep` in `playwright.config.ts`, di cui il gate legge **solo** `retries` (l'esclusione totale cade in `skipped`; quella parziale no).
+  - **CRITICAL (condiviso) — `which`/`where` cercano anche nella directory corrente**, che e' il progetto auditato (`verify.mjs:102`): un `npx.cmd` o un `psql.exe` piantato nella radice del progetto vince sul PATH (misurato).
+  - **MEDIUM — ReDoS vero su `IMPORT_HELPER_DB`** (`gate-lib.mjs:354`), e il costo si paga **una volta per flusso** (`:389`): 500 → 218 ms · 1000 → 262 ms · 2000 → 2 049 ms · **4000 → 19 552 ms**. Bastano 8 000 caratteri di spazio bianco in una spec del progetto. Un gate che non risponde non e' ne' verde ne' rosso.
+  - **MEDIUM — nessun timeout su psql e su `npx playwright test`**: l'unico limite dei quattro gate della pipeline e' il `AbortSignal.timeout(15_000)` di `verify.mjs:297` — ed e' proprio quello che fa uscire questo gate **ROSSO e leggibile in 15,2 s** dove speed-demon resta appeso 45 secondi in silenzio. La lezione e' che il pattern giusto e' gia' in casa, in questo file.
+  - **LOW — `motivato()` legge `//` senza distinguere una stringa da un commento**: un `.skip` il cui titolo contiene `https://…//home` risulta motivato → nessun rilievo.
+  - **LOW — ricorsione sull'albero del report Playwright** (`gate-lib.mjs:453`): profondita' 20 000 → `RangeError` non catturato, il processo muore senza JSON. La docstring della funzione dichiara l'opposto («un report malformato deve portare a MANCANTE, mai a un'eccezione»).
+  - **LOW — il passo `playwright` non consulta mai `res.status`** del runner: difetto reale ma **inerte** (ogni suo esito e' gia' intercettato da `res.error` e dal parse del report).
+  - **LOW — `righeDaPsql` di questa skill e' tornato ai delimitatori di default di psql**: innocuo oggi (query a colonna singola), pericoloso al primo riuso — e' la classe che schema-forge ha gia' pagato.
+  - **LOW — commento TOML nell'array multi-riga**: `senzaVirgolette` toglie la cella col `#`, non la coda del commento dopo la virgola → uno schema fantasma nella riga stampata.
+  - **LOW — `references/playwright.md` non dichiara nessun `timeout`** (grep: zero occorrenze), ed e' il limite su cui il gate fa affidamento.
+
+  **Sorte**: tutti **dichiarati**, nessuno chiuso qui — ognuno vuole un test che lo falsifichi e il gate rilanciato contro un'app viva, che questa chat non ha (D17).
 - **2026-08-06 — `gitleaks` installato e puntato: il MANCANTE storico e' chiuso (P.7c punto 5).**
   `gitleaks` 8.30.1 (scoop, bucket `main`). Su questi `scripts/`: **nessun rilievo**. Sul repo
   intero: **storia** (`gitleaks git .`, 143 commit) **4 rilievi, 0 veri**; **disco**
@@ -240,9 +253,11 @@ silenzio, tre crash su report malformati, e tre rossi sbagliati su codice commen
    del progetto generato, e su quello il gate non ha nessun controllo automatico — solo la prosa di
    `references/playwright.md`. **`semgrep` e `gitleaks` sono stati puntati su questi script il
    2026-08-06** (semgrep 1.172.0 `--config auto`: **4 rilievi, 0 veri**, tutti dichiarati con la
-   prova a fianco; gitleaks 8.30.1: **nessun rilievo** — §2026-08-06). Resta `code-inquisition`,
-   ed e' la parte che pesa: il punto critico e' la chiave amministrativa negli helper del progetto
-   generato, e li' nessuno strumento deterministico guarda.
+   prova a fianco; gitleaks 8.30.1: **nessun rilievo** — §2026-08-06). **`code-inquisition` e' stato
+   eseguito il 2026-08-06** e ha risposto alla domanda che questo punto poneva: la parte che pesa non
+   era la chiave amministrativa negli helper — era che **un flusso critico dichiarato puo' non essere
+   mai eseguito col gate VERDE 7/7** (CRITICAL, §2026-08-06). Il punto resta aperto per quel difetto,
+   non piu' per la verifica mancante.
 8. **Il gate non ha nessun passo che usi la chiave di servizio.** *(Numero in coda per non
    spostare le citazioni degli altri punti; per gravita' starebbe subito dopo il n°2.)*
    Il 2026-07-30, sul banco
