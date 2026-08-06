@@ -28,6 +28,7 @@ import {
   motivoOstile,
   dentroLaRadice,
   formaEseguibile,
+  mascheraUrl,
   scegliEseguibile,
   shellDiSistema,
 } from "./eseguibili.mjs";
@@ -194,4 +195,47 @@ test("il motivo dice QUALE comando, QUANTO ha aspettato, e che vale MANCANTE", (
   assert.match(motivo, /`supabase db reset`/);
   assert.match(motivo, /entro 600 s/);
   assert.match(motivo, /MANCANTE, non un successo/);
+});
+
+// ── la password non esce dal gate (referto § M2, 2026-08-06) ────────────────
+// Il mascheramento in casa era `replace(/:[^:@]*@/, ":***@")`
+// (`vetrina-crafter/verify.mjs:378`). Le tre forme qui sotto sono quelle su cui
+// una regexp sbaglia e `new URL` no: sono la ragione per cui questa funzione
+// non e' una regexp.
+
+test("la password sparisce dalla URL di connessione", () => {
+  assert.equal(
+    mascheraUrl("postgresql://postgres:postgres@127.0.0.1:54322/postgres"),
+    "postgresql://postgres:***@127.0.0.1:54322/postgres",
+  );
+});
+
+test("una password con `:` dentro sparisce TUTTA (la regexp ne lasciava meta')", () => {
+  const mascherata = mascheraUrl("postgresql://postgres:p%40ss:word@db.example.com:5432/prod?sslmode=require");
+  assert.equal(mascherata, "postgresql://postgres:***@db.example.com:5432/prod?sslmode=require");
+  assert.doesNotMatch(mascherata, /p%40ss/, "la regexp fermandosi al primo `:` lasciava in chiaro `p%40ss`");
+});
+
+test("una URL senza password resta intatta (la regexp la distruggeva)", () => {
+  assert.equal(
+    mascheraUrl("postgresql://postgres@127.0.0.1:54322/postgres"),
+    "postgresql://postgres@127.0.0.1:54322/postgres",
+  );
+  // `:[^:@]*@` non e' ancorato all'autorita': qui mordeva dentro la query.
+  assert.equal(
+    mascheraUrl("postgres://127.0.0.1:5432/db?opt=a:b@c"),
+    "postgres://127.0.0.1:5432/db?opt=a:b@c",
+  );
+});
+
+test("cio' che non e' una URL e contiene una `@` non si stampa affatto", () => {
+  assert.match(mascheraUrl("postgres:pw@host senza schema"), /nascosta/);
+  assert.equal(mascheraUrl("non-una-url"), "non-una-url", "senza `@` non c'e' niente da nascondere");
+  assert.equal(mascheraUrl(null), "");
+  assert.equal(mascheraUrl(undefined), "");
+});
+
+test("mascherare due volte non cambia niente: il gate a valle puo' rifarlo", () => {
+  const una = mascheraUrl("postgresql://postgres:postgres@127.0.0.1:54322/postgres");
+  assert.equal(mascheraUrl(una), una);
 });

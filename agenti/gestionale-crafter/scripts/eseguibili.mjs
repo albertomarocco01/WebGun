@@ -224,3 +224,57 @@ export const motivoScaduto = (comando, ms) =>
   `\`${comando}\` non ha risposto entro ${Math.round(ms / 1000)} s ed e' stato interrotto. ` +
   "La verifica NON e' stata eseguita: MANCANTE, non un successo. " +
   "Un servizio che accetta la connessione e non risponde e' il guasto tipico — la porta e' aperta, il processo e' vivo, la risposta non arriva.";
+
+/**
+ * LA PASSWORD NON ESCE DAL GATE.
+ *
+ * Referto § M2: la URL di connessione col suo `--db-url` finisce in stdout e
+ * nel `--json` di tre gate su quattro, e da li' negli handoff COMMITTATI. Il
+ * 2026-08-06 il gate di launchpad ha bloccato la pubblicazione del pilota anche
+ * per questo: `docs/handoff/08-vetrina-crafter.md @ fff715b` contiene una
+ * `postgresql://…:…@…` scritta lo stesso giorno. E' MEDIUM finche' la password
+ * e' `postgres:postgres` su loopback; torna HIGH il primo giorno in cui un
+ * `--db-url` punta a un database che non e' locale — cosa che i gate accettano
+ * senza obiezioni.
+ *
+ * PERCHE' `new URL` E NON UNA REGEXP. Il mascheramento esisteva gia' in casa,
+ * a `vetrina-crafter/verify.mjs:378`, ed e' `replace(/:[^:@]*@/, ":***@")`.
+ * Misurato il 2026-08-06, la regexp sbaglia in tre modi su cinque forme:
+ *
+ *   postgresql://postgres:p%40ss:word@db.example.com/prod
+ *     regexp → postgresql://postgres:p%40ss:***@…   META' PASSWORD IN CHIARO
+ *   postgresql://postgres@127.0.0.1:54322/postgres      (nessuna password)
+ *     regexp → postgresql:***@127.0.0.1:54322/postgres  URL DISTRUTTA
+ *   postgres://127.0.0.1:5432/db?opt=a:b@c              (nessuna password)
+ *     regexp → postgres://127.0.0.1:5432/db?opt=a:***@c QUERY MANGIATA
+ *
+ * E' lo stesso guasto del difetto n°50 e degli altri tre di questa classe: uno
+ * scanner scritto a mano che non sa dentro quale parte della struttura si trova.
+ * `new URL` la struttura la conosce: `password` e' un campo, non un pezzo di
+ * testo fra due caratteri. E' nel runtime, non e' una dipendenza.
+ *
+ * Se la URL non si interpreta affatto NON si stampa il testo originale: un
+ * testo che contiene una `@` puo' contenere una credenziale, e un mascheratore
+ * che in caso di dubbio stampa tutto non e' un mascheratore.
+ */
+export function mascheraUrl(url) {
+  const testo = String(url ?? "");
+  if (testo === "") return testo;
+  const nascosta = "<url non interpretabile: nascosta perche' poteva contenere una password>";
+  try {
+    const analizzata = new URL(testo);
+    if (analizzata.password !== "") {
+      analizzata.password = "***";
+      return analizzata.href;
+    }
+    // `new URL` non solleva su cio' che ha una forma di schema: `postgres:pw@host`
+    // si analizza come schema + percorso opaco, con `password` VUOTA — e senza
+    // questa riga il testo uscirebbe intero. Misurato mentre si scriveva il test
+    // che doveva vederlo nascosto. Se il parser non ha riconosciuto nessun host,
+    // non ha riconosciuto nemmeno l'autorita': una `@` li' dentro non si stampa.
+    if (analizzata.host === "" && testo.includes("@")) return nascosta;
+    return testo;
+  } catch {
+    return testo.includes("@") ? nascosta : testo;
+  }
+}

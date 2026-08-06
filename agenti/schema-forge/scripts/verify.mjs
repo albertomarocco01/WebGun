@@ -16,7 +16,7 @@ import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "n
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { argomentiOstiliACmd, formaEseguibile, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
+import { argomentiOstiliACmd, formaEseguibile, mascheraUrl, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
 
 const SKILL_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 // Le configurazioni dei linter viaggiano con la SKILL, non col progetto: il
@@ -578,7 +578,7 @@ function registraAudit(audit, schemi, dbUrl) {
   // del database — o il database di un altro progetto — non deve poter passare
   // per un audit completo
   record(ID.auditRls, ETICHETTA_AUDIT, block === 0 ? "pass" : "fail",
-    `schemi esposti: ${schemi.join(", ")} · ${dbUrl}\n${residuo}`
+    `schemi esposti: ${schemi.join(", ")} · ${mascheraUrl(dbUrl)}\n${residuo}`
   ).counts = { block, issue, warn };
 }
 

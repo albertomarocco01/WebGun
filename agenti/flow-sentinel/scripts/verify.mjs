@@ -42,6 +42,7 @@ import {
   findingsEffettoDb,
   flussiPercorsi,
   formaEseguibile,
+  mascheraUrl,
   rigaFlussiPercorsi,
   leggiFlussi,
   primoEseguibile,
@@ -341,7 +342,7 @@ async function passoAppViva(ctx, args) {
   // ha guardato un'altra app o un altro database non deve poter assomigliare a
   // un gate che ha guardato la tua (DECISIONI.md §11).
   record(ID.appViva, etichetta, "pass",
-    `app: ${ctx.urlApp} (HTTP ${app.stato}) · database: ${ctx.dbUrl}\n` +
+    `app: ${ctx.urlApp} (HTTP ${app.stato}) · database: ${mascheraUrl(ctx.dbUrl)}\n` +
     `schemi esposti: ${ctx.schemi.join(", ")} · ${db.tabelle} tabelle, ${db.righe} righe di seed`);
 }
 
@@ -383,15 +384,15 @@ function misuraDatabase(ctx) {
     return { errore: `psql non disponibile nel PATH: il database del progetto NON e' stato interrogato (su Windows sta in %USERPROFILE%\\scoop\\apps\\postgresql\\current\\bin)${rifiutoDi("psql")}` };
   }
   const tabelle = interrogaDb(ctx.dbUrl, sqlTabelleEsposte(ctx.schemi));
-  if (tabelle.errore) return { errore: `database non raggiungibile su ${ctx.dbUrl}: ${tabelle.errore}` };
+  if (tabelle.errore) return { errore: `database non raggiungibile su ${mascheraUrl(ctx.dbUrl)}: ${tabelle.errore}` };
   if (tabelle.righe.length === 0) {
-    return { errore: `nessuna tabella negli schemi esposti (${ctx.schemi.join(", ")}) su ${ctx.dbUrl}: le migrazioni non sono applicate, la batteria girerebbe sul vuoto` };
+    return { errore: `nessuna tabella negli schemi esposti (${ctx.schemi.join(", ")}) su ${mascheraUrl(ctx.dbUrl)}: le migrazioni non sono applicate, la batteria girerebbe sul vuoto` };
   }
   const conteggio = interrogaDb(ctx.dbUrl, sqlConteggioRighe(tabelle.righe));
-  if (conteggio.errore) return { errore: `conteggio delle righe fallito su ${ctx.dbUrl}: ${conteggio.errore}` };
+  if (conteggio.errore) return { errore: `conteggio delle righe fallito su ${mascheraUrl(ctx.dbUrl)}: ${conteggio.errore}` };
   const righe = Number(conteggio.righe[0] ?? 0);
   if (righe === 0) {
-    return { errore: `database senza dati su ${ctx.dbUrl} (${tabelle.righe.length} tabelle, 0 righe): il seed non e' stato applicato, e i fallimenti della batteria sembrerebbero difetti dell'app` };
+    return { errore: `database senza dati su ${mascheraUrl(ctx.dbUrl)} (${tabelle.righe.length} tabelle, 0 righe): il seed non e' stato applicato, e i fallimenti della batteria sembrerebbero difetti dell'app` };
   }
   return { tabelle: tabelle.righe.length, righe };
 }

@@ -32,7 +32,7 @@ import {
   verdettoDa,
 } from "./progetto-lib.mjs";
 import { conBarre } from "./audit-lib.mjs";
-import { argomentiOstiliACmd, dentroLaRadice, formaEseguibile, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
+import { argomentiOstiliACmd, dentroLaRadice, formaEseguibile, mascheraUrl, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
 
 const SKILL_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 // Le regole con cui si MISURA viaggiano con la skill, non col progetto: il gate
@@ -340,7 +340,7 @@ function registraAudit(etichetta, doc) {
       .join("\n") || `nessun bloccante (${issue} issue, ${warn} warn)`;
 
   record(ID.audit, etichetta, block === 0 ? "pass" : "fail",
-    `rotte: ${misure.rotte} · azioni server: ${misure.azioni} riconosciute in ${misure.fileAzioni ?? "?"} file · scritture: ${misure.scritture} · ${doc.dbUrl}\n${residuo}`,
+    `rotte: ${misure.rotte} · azioni server: ${misure.azioni} riconosciute in ${misure.fileAzioni ?? "?"} file · scritture: ${misure.scritture} · ${mascheraUrl(doc.dbUrl)}\n${residuo}`,
   ).counts = { block, issue, warn };
 }
 

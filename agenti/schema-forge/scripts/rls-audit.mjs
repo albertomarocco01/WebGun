@@ -30,7 +30,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { auditAll, motivoAritaSbagliata, recordDiAritaSbagliata, righeDaPsql } from "./audit-lib.mjs";
-import { argomentiOstiliACmd, formaEseguibile, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
+import { argomentiOstiliACmd, formaEseguibile, mascheraUrl, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
 
 const SEP = "\x1f"; // unit separator: non compare mai nei nomi degli oggetti
 const REC = "\x1e"; // record separator: l'espressione di una policy va a capo
@@ -304,7 +304,9 @@ function main() {
   const blocking = count("block");
 
   if (args.json) {
-    console.log(JSON.stringify({ ok: blocking === 0, dbUrl: args.dbUrl,
+    // la URL esce MASCHERATA anche dal `--json`: e' il documento che finisce
+    // negli handoff committati (referto § M2).
+    console.log(JSON.stringify({ ok: blocking === 0, dbUrl: mascheraUrl(args.dbUrl),
       schemas: args.schemas, findings, summary: {
         block: blocking, issue: count("issue"), warn: count("warn") } }, null, 2));
     process.exit(blocking === 0 ? 0 : 1);
@@ -315,7 +317,7 @@ function main() {
   // qui mancava — ed e' proprio per questo che il comando `rls`, eseguito alla
   // lettera, ha auditato il database di un altro progetto rispondendo «nessun
   // bloccante».
-  console.log(`AUDIT RLS su ${args.dbUrl} · schemi: ${args.schemas.join(", ")}`);
+  console.log(`AUDIT RLS su ${mascheraUrl(args.dbUrl)} · schemi: ${args.schemas.join(", ")}`);
   if (findings.length === 0) {
     console.log("Nessun problema rilevato.");
     process.exit(0);

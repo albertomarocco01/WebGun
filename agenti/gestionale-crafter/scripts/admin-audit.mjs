@@ -18,7 +18,7 @@ import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { auditAdmin, catalogoDaRighe, conBarre } from "./audit-lib.mjs";
-import { argomentiOstiliACmd, formaEseguibile, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
+import { argomentiOstiliACmd, formaEseguibile, mascheraUrl, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
 import { urlDbProgetto, validaConfig } from "./progetto-lib.mjs";
 
 const SEP = "\x1f";
@@ -201,7 +201,10 @@ function main() {
 
   const documento = {
     contract: CONTRATTO_AUDIT,
-    dbUrl,
+    // MASCHERATA gia' qui, nel documento: `--json` finisce negli handoff
+    // committati, e nessun consumatore a valle usa questo campo per
+    // riconnettersi — lo stampa e basta (referto § M2).
+    dbUrl: mascheraUrl(dbUrl),
     catalogo: catalogo === null ? { letto: false, motivo } : { letto: true, ruolo: catalogo.ruolo },
     summary: esito.summary,
     misure: esito.misure,
