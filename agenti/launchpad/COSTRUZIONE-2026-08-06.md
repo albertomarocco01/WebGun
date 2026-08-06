@@ -359,6 +359,37 @@ Residuo dichiarato: **5 warning di complessità**. `findingsAmbiente` (20) e
 dividerli sparpaglierebbe le regole invece di semplificarle; `max-params` e
 `max-depth` restano nei due gusci di I/O.
 
+### 5.8 `verifica-pubblicato`, esercitato fino al passo prima
+
+È il comando che risponde, **dopo** il deploy, alla domanda che dà senso alla
+Legge n°4: *l'indirizzo pubblico sta servendo il commit che ho approvato?* Non
+poteva essere provato contro un dominio (non c'è deploy), ma il **meccanismo**
+sì — contro una build servita in locale, che è la stessa cosa vista da fuori.
+
+Provato nei due versi, perché un controllo che accetta e non rifiuta non è un
+controllo:
+
+```
+$ impronta.mjs --url http://127.0.0.1:3781 --commit f16501b7dfa6b4be…
+IMPRONTA: coerente
+  impronta attesa   f16501b7dfa6
+  .next/BUILD_ID    f16501b7dfa6
+  servito da http://127.0.0.1:3781   f16501b7dfa6
+  combacia          SI
+                                                        → uscita 0
+
+$ impronta.mjs --url http://127.0.0.1:3781 --commit 0000000000000000…
+  combacia          NO
+  [block] http://127.0.0.1:3781: non porta l'impronta attesa `000000000000`
+          (serve `f16501b7dfa6`)
+                                                        → uscita 1
+```
+
+**Cosa questo prova e cosa no.** Prova che il meccanismo riconosce l'artefatto
+giusto e rifiuta quello sbagliato, e che il codice d'uscita è utilizzabile in
+una procedura. **Non** prova che funzioni contro un dominio vero dietro una CDN,
+né che il provider costruisca lo stesso commit: quello è il punto 4 di §7.
+
 ---
 
 ## 7. Cosa questo pacchetto non ha potuto provare senza un umano
