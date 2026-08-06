@@ -137,13 +137,30 @@ function commitDi(dir) {
 
 const trovaConfig = (dir) => CONFIG.map((n) => join(dir, n)).find((p) => existsSync(p)) ?? null;
 
-/** Il frammento nella forma giusta per il modulo di destinazione. */
+/**
+ * Il frammento nella forma giusta per il modulo di destinazione.
+ *
+ * La riga di `import` diventa una `const` con `require`: **una sostituzione
+ * sola**, e non una per ogni chiamata. La prima stesura riscriveva la singola
+ * occorrenza `sha = execSync(`, e ha funzionato finche' le chiamate erano una.
+ * Misurato dal collaudo del 2026-08-06, con una build vera su un progetto
+ * CommonJS (`next.config.js` senza `"type": "module"`):
+ *
+ *     Build error occurred
+ *     Error: impronta: git non risponde (execSync is not defined).
+ *
+ * Appena il frammento ha guadagnato una seconda chiamata a `execSync`, quella
+ * seconda e' rimasta nuda. E' la terza volta che questa classe si presenta —
+ * *il rimedio che la skill prescrive rompe la build di chi lo applica* (IO-1) —
+ * e la prima in cui l'ha introdotta una correzione fatta per chiuderne un'altra.
+ */
 const frammentoPer = (esm) =>
   esm
     ? FRAMMENTO
-    : FRAMMENTO
-        .replace('import { execSync } from "node:child_process";\n', "")
-        .replace("sha = execSync(", 'sha = require("node:child_process").execSync(');
+    : FRAMMENTO.replace(
+        'import { execSync } from "node:child_process";',
+        'const { execSync } = require("node:child_process");',
+      );
 
 /** Le zone di commento, per non scrivere dentro un commento (rilievo IO-4). */
 const senzaCommenti = (t) => t.replace(/\/\*[\s\S]*?\*\//g, (m) => " ".repeat(m.length));

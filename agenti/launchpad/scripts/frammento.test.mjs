@@ -27,6 +27,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -145,15 +146,31 @@ test("il frammento non legge nessuna proprieta' del binding di `catch` senza res
 });
 
 /**
- * La forma CJS resta senza `import` — la meta' del rilievo IO-1 gia' chiusa,
- * qui bloccata da un test invece che da un ricordo.
+ * E LA FORMA CJS SI ESEGUE, non si guarda.
+ *
+ * Il primo test scritto qui controllava che nel testo comparisse
+ * `require("node:child_process").execSync(` — e **passava** mentre la build
+ * vera moriva con `execSync is not defined`, perche' la trasformazione
+ * riscriveva la PRIMA occorrenza e il frammento ne aveva due. Un test che
+ * guarda la forma prova la forma. Questo carica il modulo e lo chiama.
  */
-test("la forma CJS non porta `import` e risolve `execSync` con `require`", () => {
+test("la forma CJS si CARICA e restituisce il commit — eseguita, non ispezionata", () => {
   const BASE_CJS = "const nextConfig = {\n  reactStrictMode: true,\n};\n\nmodule.exports = nextConfig;\n";
   const esito = conFrammento(BASE_CJS, { esm: false });
   assert.equal(esito.cambiato, true);
   assert.ok(!/^import\s/m.test(esito.testo), "un `import` in un file CommonJS e' un errore di sintassi");
-  assert.match(esito.testo, /require\("node:child_process"\)\.execSync\(/);
+  const { dir, sha } = repoDiProva();
+  const modulo = join(dir, "next.config.cjs");
+  writeFileSync(modulo, `${esito.testo}\nmodule.exports.improntaDalCommit = improntaDalCommit;\n`, "utf8");
+  const cwd = process.cwd();
+  process.chdir(dir);
+  try {
+    const caricato = createRequire(pathToFileURL(join(dir, "x.cjs")).href)(modulo);
+    assert.equal(caricato.improntaDalCommit(), sha.toLowerCase().slice(0, 12));
+  } finally {
+    process.chdir(cwd);
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 /**
