@@ -18,7 +18,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { costruisciErd, righeDaPsql } from "./erd-lib.mjs";
-import { formaEseguibile, risolviEseguibile } from "./eseguibili.mjs";
+import { argomentiOstiliACmd, formaEseguibile, motivoOstile, risolviEseguibile } from "./eseguibili.mjs";
 
 const SEP = "\x1f";
 const REC = "\x1e"; // vedi rls-audit.mjs: un valore puo' contenere un a capo
@@ -59,7 +59,18 @@ function query(dbUrl, sql) {
     console.error("psql non disponibile nel PATH: diagramma NON generato.");
     process.exit(2);
   }
-  const res = spawnSync(psql.file, [...psql.prefisso, dbUrl, "-X", "-At", "-F", SEP, "-R", REC, "-c", sql], { encoding: "utf8" });
+  const argomenti = [dbUrl, "-X", "-At", "-F", SEP, "-R", REC, "-c", sql];
+  // Attraverso uno shim `.cmd` si passa da `cmd.exe /c`, che E' una shell: qui
+  // gli argomenti sono l'SQL intero e i separatori di campo, e ci arriverebbero
+  // diversi da come sono scritti (referto § H1/H2/L1).
+  if (psql.prefisso.length > 0) {
+    const ostili = argomentiOstiliACmd(argomenti);
+    if (ostili.length > 0) {
+      console.error(`${motivoOstile(ostili)}\nDiagramma NON generato: meglio nessun diagramma di uno che descrive un altro catalogo.`);
+      process.exit(2);
+    }
+  }
+  const res = spawnSync(psql.file, [...psql.prefisso, ...argomenti], { encoding: "utf8" });
   if (res.error) {
     console.error("psql non disponibile nel PATH: diagramma NON generato.");
     process.exit(2);

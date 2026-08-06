@@ -13,10 +13,12 @@
  */
 
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { describe, it, test } from "node:test";
 
 import {
   auditAll,
+  motivoAritaSbagliata,
+  recordDiAritaSbagliata,
   righeDaPsql,
   regolaChiaviEsterne,
   regolaColonnaDiPrivilegio,
@@ -976,4 +978,79 @@ test("regola 6: i metacaratteri di un nome non fanno matchare una colonna che no
   // prima della correzione: `\ba+b\b` matcha `aaab` → un warn su una colonna
   // che la policy non nomina affatto
   assert.deepEqual(regolaColonneDiPolicy(catalogo), []);
+});
+
+// ─── l'arita' dei record (referto § H5 e § M17, 2026-08-06) ──────────────────
+// I due separatori sono byte di controllo, scelti perche' «non compaiono mai nei
+// nomi degli oggetti»: vero per i NOMI, falso per il TESTO LIBERO. L'espressione
+// di una policy, il corpo di una funzione e la definizione di un vincolo
+// contengono qualunque byte. E' l'unico difetto che due concili del referto
+// hanno trovato per due strade opposte.
+//
+// Riprodotto il 2026-08-06 sulle funzioni pure, con il record vero di
+// `pg_policies` (7 campi: schema, tabella, nome, cmd, ruoli, qual, with_check):
+//   sano                      → 2 findings, fra cui il `block` «with check (true)»
+//   con un \x1f dentro `qual` → 1 finding e ZERO block: `with_check` slitta in
+//                               nona posizione e nessuno la legge piu'
+// e sul record di `pg_proc` (5 campi):
+//   \x1f in `prosrc` → 6 campi invece di 5, corpo troncato
+//   \x1e in `prosrc` → un record spezzato in due
+
+describe("arita' dei record del catalogo", () => {
+  const SEP = "\x1f";
+  const REC = "\x1e";
+  const record = (campi) => campi.join(SEP) + REC;
+
+  it("un record sano non produce nessun rilievo di arita'", () => {
+    const righe = righeDaPsql(record(["public", "ordini", "tutti", "ALL", "authenticated", "true", "true"]), SEP, REC);
+    assert.deepEqual(recordDiAritaSbagliata(righe, 7), []);
+  });
+
+  it("un separatore dentro `qual` sposta le colonne, e ora si vede", () => {
+    const ostile = record(["public", "ordini", "tutti", "ALL", "authenticated", `true${SEP}spostato`, "true"]);
+    const righe = righeDaPsql(ostile, SEP, REC);
+    assert.equal(righe[0].length, 8, "il record ha un campo in piu' del dovuto");
+    // e la prova di cosa costava: senza il controllo, il `block` sparisce
+    assert.equal(regolaPolicy(righe).filter((f) => f.severity === "block").length, 0,
+      "e' esattamente cio' che rendeva invisibile un `with check (true)`");
+    const rotti = recordDiAritaSbagliata(righe, 7);
+    assert.equal(rotti.length, 1);
+    assert.deepEqual(rotti[0], { indice: 0, quanti: 8 });
+  });
+
+  it("un separatore di RECORD dentro il corpo di una funzione spezza in due", () => {
+    const fn = record(["public", "puo_vedere", "search_path=public,pg_temp", "", `select true${REC}altra riga`]);
+    const righe = righeDaPsql(fn, SEP, REC);
+    assert.equal(righe.length, 2, "un record solo e' diventato due");
+    assert.equal(recordDiAritaSbagliata(righe, 5).length, 1, "e il secondo pezzo non ha 5 campi");
+  });
+
+  it("un separatore di CAMPO dentro il corpo di una funzione lo tronca", () => {
+    const fn = record(["public", "puo_vedere", "search_path=public,pg_temp", "", `select true${SEP}coda`]);
+    const righe = righeDaPsql(fn, SEP, REC);
+    assert.equal(righe[0].length, 6);
+    assert.equal(recordDiAritaSbagliata(righe, 5).length, 1);
+  });
+
+  it("un record con MENO campi e' rotto quanto uno con piu' campi", () => {
+    const righe = righeDaPsql(record(["public", "ordini", "true"]), SEP, REC);
+    assert.deepEqual(recordDiAritaSbagliata(righe, 5), [{ indice: 0, quanti: 3 }]);
+  });
+
+  it("nessun record: niente da rifiutare (una query puo' non trovare niente)", () => {
+    assert.deepEqual(recordDiAritaSbagliata([], 7), []);
+    assert.deepEqual(recordDiAritaSbagliata(righeDaPsql("", SEP, REC), 7), []);
+  });
+
+  it("il motivo dice quale query, quanti campi e cosa fare", () => {
+    const motivo = motivoAritaSbagliata("policy", 7, [{ indice: 0, quanti: 8 }]);
+    assert.match(motivo, /la query `policy`/);
+    assert.match(motivo, /record 1: 8 campi invece di 7/);
+    assert.match(motivo, /Verifica MANCANTE/);
+  });
+
+  it("con molti record rotti il motivo ne nomina tre e conta gli altri", () => {
+    const rotti = [0, 1, 2, 3, 4].map((indice) => ({ indice, quanti: 8 }));
+    assert.match(motivoAritaSbagliata("policy", 7, rotti), /e altri 2/);
+  });
 });

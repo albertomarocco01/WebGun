@@ -29,8 +29,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { auditAll, righeDaPsql } from "./audit-lib.mjs";
-import { formaEseguibile, risolviEseguibile } from "./eseguibili.mjs";
+import { auditAll, motivoAritaSbagliata, recordDiAritaSbagliata, righeDaPsql } from "./audit-lib.mjs";
+import { argomentiOstiliACmd, formaEseguibile, motivoOstile, risolviEseguibile } from "./eseguibili.mjs";
 
 const SEP = "\x1f"; // unit separator: non compare mai nei nomi degli oggetti
 const REC = "\x1e"; // record separator: l'espressione di una policy va a capo
@@ -71,12 +71,26 @@ const psql = (() => {
   return formaEseguibile("psql", () => percorso);
 })();
 
-function query(dbUrl, sql) {
+function query(dbUrl, sql, arita, nomeQuery) {
   if (psql.file === null) {
     console.error("psql non disponibile nel PATH: verifica RLS NON eseguita.");
     process.exit(2);
   }
-  const res = spawnSync(psql.file, [...psql.prefisso, dbUrl, "-X", "-At", "-F", SEP, "-R", REC, "-c", sql], {
+  const argomenti = [dbUrl, "-X", "-At", "-F", SEP, "-R", REC, "-c", sql];
+  // Se `psql` e' uno shim `.cmd` si passa da `cmd.exe /c`, che E' una shell: e
+  // qui gli argomenti sono l'SQL intero (pieno di spazi) e i due separatori, che
+  // sono caratteri di controllo. Attraverso una shell arriverebbero diversi da
+  // come sono stati scritti, e l'audit interrogherebbe un'altra cosa
+  // (referto § H1/H2/L1). Su questa macchina `psql` e' un `.exe` e il ramo non
+  // scatta mai — ma il gate non gira solo su questa macchina.
+  if (psql.prefisso.length > 0) {
+    const ostili = argomentiOstiliACmd(argomenti);
+    if (ostili.length > 0) {
+      console.error(`${motivoOstile(ostili)}\nQui gli argomenti sono l'SQL del catalogo e i separatori di campo: attraverso una shell l'audit interrogherebbe un'altra cosa. Verifica MANCANTE.`);
+      process.exit(2);
+    }
+  }
+  const res = spawnSync(psql.file, [...psql.prefisso, ...argomenti], {
     encoding: "utf8",
   });
   if (res.error) {
@@ -87,7 +101,17 @@ function query(dbUrl, sql) {
     console.error(`psql ha fallito: ${(res.stderr || "").trim()}`);
     process.exit(2);
   }
-  return righeDaPsql(res.stdout, SEP, REC);
+  const record = righeDaPsql(res.stdout, SEP, REC);
+  // OGNI query dichiara quanti campi ha, e un record che non li ha non si
+  // interpreta. Un separatore dentro un testo libero del catalogo sposta le
+  // colonne e fa sparire un `block` senza dire niente (referto § H5 / § M17):
+  // qui il guasto diventa uscita 2, cioe' verifica MANCANTE.
+  const rotti = recordDiAritaSbagliata(record, arita);
+  if (rotti.length > 0) {
+    console.error(motivoAritaSbagliata(nomeQuery, arita, rotti));
+    process.exit(2);
+  }
+  return record;
 }
 
 // --------------------------------------------------- lettura dei test pgTAP
@@ -106,12 +130,12 @@ function leggiTestPgtap(cartella) {
 // Undici query, nessun giudizio qui dentro: solo SELECT.
 function leggiCatalogo({ dbUrl, schemas, tests }) {
   const list = schemas.map((s) => `'${s}'`).join(",");
-  const q = (sql) => query(dbUrl, sql);
+  const q = (arita, nome, sql) => query(dbUrl, sql, arita, nome);
 
   return {
     testiPgtap: leggiTestPgtap(tests),
     // 1. tabelle: RLS attiva? quante policy? forzata anche per il proprietario?
-    tabelle: q(
+    tabelle: q(5, "tabelle",
       `select n.nspname, c.relname, c.relrowsecurity::text,
               (select count(*) from pg_policies p
                 where p.schemaname = n.nspname and p.tablename = c.relname)::text,
@@ -121,13 +145,13 @@ function leggiCatalogo({ dbUrl, schemas, tests }) {
         order by 1, 2`
     ),
     // 2. policy: permissivita' e performance
-    policy: q(
+    policy: q(7, "policy",
       `select schemaname, tablename, policyname, coalesce(cmd,''),
               array_to_string(roles, ','), coalesce(qual,''), coalesce(with_check,'')
          from pg_policies where schemaname in (${list}) order by 1, 2, 3`
     ),
     // 3. viste: una vista senza security_invoker scavalca la RLS sottostante
-    viste: q(
+    viste: q(4, "viste",
       `select n.nspname, c.relname, c.relkind::text,
               coalesce(array_to_string(c.reloptions, ','), '')
          from pg_class c join pg_namespace n on n.oid = c.relnamespace
@@ -141,14 +165,14 @@ function leggiCatalogo({ dbUrl, schemas, tests }) {
     //    Il quinto campo e' il CORPO: una policy che chiama `puo_vedere_x(...)`
     //    porta la decisione di privilegio li' dentro, non nel testo della
     //    policy. Sul banco veterinario `job_title` compare solo nel corpo.
-    funzioni: q(
+    funzioni: q(5, "funzioni",
       `select n.nspname, p.proname, coalesce(array_to_string(p.proconfig, ','), ''),
               coalesce(p.proacl::text, ''), coalesce(p.prosrc, '')
          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
         where n.nspname in (${list}) and p.prosecdef order by 1, 2`
     ),
     // 5. chiavi esterne senza indice (Postgres non lo crea da solo)
-    chiaviEsterne: q(
+    chiaviEsterne: q(3, "chiaviEsterne",
       `select n.nspname, con.conrelid::regclass::text, a.attname
          from pg_constraint con
          join pg_namespace n on n.oid = con.connamespace
@@ -161,7 +185,7 @@ function leggiCatalogo({ dbUrl, schemas, tests }) {
         order by 2, 3`
     ),
     // 6a. colonne gia' coperte da un indice (prima colonna dell'indice)
-    indicizzate: q(
+    indicizzate: q(1, "indicizzate",
       `select n.nspname || '.' || c.relname || '.' || a.attname
          from pg_index i
          join pg_class c on c.oid = i.indrelid
@@ -171,7 +195,7 @@ function leggiCatalogo({ dbUrl, schemas, tests }) {
     ),
     // 6b. tutte le colonne delle tabelle, per cercarle nelle espressioni delle
     //     policy. Il tipo serve a esentare i booleani dall'indice pieno.
-    colonne: q(
+    colonne: q(4, "colonne",
       `select n.nspname, c.relname, a.attname, format_type(a.atttypid, a.atttypmod)
          from pg_attribute a
          join pg_class c on c.oid = a.attrelid
@@ -202,7 +226,7 @@ function leggiCatalogo({ dbUrl, schemas, tests }) {
     //    esiste un `delete` per colonna, e chiederlo e' un errore di esecuzione
     //    («unrecognized privilege type: "DELETE"», misurato su 17.6) — cioe' un
     //    audit MANCANTE, non un audit severo.
-    privilegi: q(
+    privilegi: q(4, "privilegi",
       `select n.nspname, c.relname, r.rolname, p.priv
          from pg_class c
          join pg_namespace n on n.oid = c.relnamespace
@@ -222,7 +246,7 @@ function leggiCatalogo({ dbUrl, schemas, tests }) {
     //    tabella non compare qui, e l'update della colonna esclusa viene negato
     //    con «permission denied for table»). E' il segnale che distingue una
     //    scrittura su tutte le colonne da una scrittura ristretta.
-    grantsScrittura: q(
+    grantsScrittura: q(2, "grantsScrittura",
       `select distinct table_schema, table_name
          from information_schema.role_table_grants
         where table_schema in (${list}) and privilege_type = 'UPDATE'
@@ -231,7 +255,7 @@ function leggiCatalogo({ dbUrl, schemas, tests }) {
     // 9. trigger non interni, con il CORPO della funzione. `tgtype` e' una
     //    maschera di bit: 4 = insert, 16 = update (verificate sul catalogo).
     //    Serve a vedere le macchine a stati vincolate solo in `update`.
-    trigger: q(
+    trigger: q(6, "trigger",
       `select n.nspname, c.relname, t.tgname,
               ((t.tgtype & 4) > 0)::text, ((t.tgtype & 16) > 0)::text,
               coalesce(f.prosrc, '')
@@ -243,7 +267,7 @@ function leggiCatalogo({ dbUrl, schemas, tests }) {
     ),
     // 10. vincoli `check`: sono la difesa che pianta lo stato iniziale di una
     //     macchina a stati (e in generale l'unica che vale anche in `insert`).
-    vincoli: q(
+    vincoli: q(4, "vincoli",
       `select n.nspname, c.relname, con.conname, pg_get_constraintdef(con.oid)
          from pg_constraint con
          join pg_class c on c.oid = con.conrelid

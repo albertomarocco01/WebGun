@@ -18,7 +18,7 @@ import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { auditAdmin, catalogoDaRighe, conBarre } from "./audit-lib.mjs";
-import { formaEseguibile, risolviEseguibile } from "./eseguibili.mjs";
+import { argomentiOstiliACmd, formaEseguibile, motivoOstile, risolviEseguibile } from "./eseguibili.mjs";
 import { urlDbProgetto, validaConfig } from "./progetto-lib.mjs";
 
 const SEP = "\x1f";
@@ -85,9 +85,19 @@ function psqlDisponibile() {
 }
 
 function interroga(dbUrl, sql) {
+  const argomenti = [dbUrl, "-X", "-A", "-t", "-F", SEP, "-R", RS, "-c", sql];
+  // Attraverso uno shim `.cmd` si passa da `cmd.exe /c`, che E' una shell: qui
+  // gli argomenti sono l'SQL intero e i separatori di campo, e ci arriverebbero
+  // diversi da come sono scritti — il catalogo dei permessi risulterebbe un
+  // altro (referto § H1/H2/L1). Meglio nessun catalogo di un catalogo altrui:
+  // `leggiCatalogo` lo trasforma in «permessi non letti», cioe' MANCANTE.
+  if (psql.prefisso.length > 0) {
+    const ostili = argomentiOstiliACmd(argomenti);
+    if (ostili.length > 0) throw new Error(motivoOstile(ostili));
+  }
   const res = spawnSync(
     psql.file,
-    [...psql.prefisso, dbUrl, "-X", "-A", "-t", "-F", SEP, "-R", RS, "-c", sql],
+    [...psql.prefisso, ...argomenti],
     { encoding: "utf8" },
   );
   if (res.status !== 0) {

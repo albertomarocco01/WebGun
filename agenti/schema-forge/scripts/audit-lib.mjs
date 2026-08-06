@@ -60,6 +60,52 @@ export function righeDaPsql(stdout, sep = "\x1f", rs = "\x1e") {
     .map((r) => r.split(sep));
 }
 
+// ─── l'arita': un record non e' cio' che il separatore dice che sia ──────────
+// I due separatori sono byte di controllo, scelti perche' «non compaiono mai
+// nei nomi degli oggetti». E' vero per i NOMI, ed e' falso per il TESTO LIBERO:
+// l'espressione di una policy (`qual`, `with_check`), il corpo di una funzione
+// `security definer` (`prosrc`), la definizione di un vincolo. Li' dentro ci sta
+// qualunque byte, separatori compresi.
+//
+// MISURATO il 2026-08-06 (referto § H5 e § M17, l'unica conferma incrociata del
+// referto — due concili l'hanno trovato per due strade opposte):
+//
+//   record di `pg_policies` sano, 7 campi
+//     → 2 findings, fra cui il `block` «with check (true)»
+//   lo stesso record con un `\x1f` dentro `qual`, 8 campi
+//     → 1 finding, e ZERO block: `with_check` finisce in nona posizione,
+//       nessuno la legge piu', e la policy che lascia scrivere per conto di
+//       altri diventa invisibile
+//   un `\x1f` dentro `prosrc`  → 6 campi invece di 5, corpo troncato
+//   un `\x1e` dentro `prosrc`  → un record spezzato in due
+//
+// Nessun controllo di arita' da nessuna parte: `riga()` accettava 8 campi come
+// ne accetterebbe 3, e i campi mancanti diventavano `undefined` — cioe' un
+// verdetto costruito su un record che non e' quello che il database ha mandato.
+//
+// La correzione qui e' il controllo, non la neutralizzazione: un record che non
+// ha i campi che la query dichiara NON e' un record, e l'audit non lo
+// interpreta. Il guasto diventa rumoroso (uscita 2 = audit MANCANTE) invece che
+// silenzioso (un `block` in meno). La neutralizzazione dei separatori nella SQL
+// vorrebbe un Postgres vivo per essere provata, e questo pacchetto non ne ha
+// uno: e' scritta come proposta nello STATO, non applicata alla cieca.
+export function recordDiAritaSbagliata(record, arita) {
+  return (record ?? [])
+    .map((campi, indice) => ({ indice, quanti: campi.length }))
+    .filter((r) => r.quanti !== arita);
+}
+
+/** Il messaggio che accompagna il rifiuto: dice quale query, quale record e cosa. */
+export function motivoAritaSbagliata(nomeQuery, arita, rotti) {
+  const primi = rotti.slice(0, 3)
+    .map((r) => `record ${r.indice + 1}: ${r.quanti} campi invece di ${arita}`)
+    .join("; ");
+  const coda = rotti.length > 3 ? `, e altri ${rotti.length - 3}` : "";
+  return `la query \`${nomeQuery}\` ha restituito ${rotti.length} record con un numero di campi diverso da quello dichiarato (${primi}${coda}). ` +
+    "Quasi certamente un separatore di campo (\\x1f) o di record (\\x1e) dentro un testo libero del catalogo — l'espressione di una policy, il corpo di una funzione, la definizione di un vincolo. " +
+    "L'audit NON interpreta un record spostato: un campo che slitta fa sparire un `block` senza dirlo. Verifica MANCANTE, non un audit pulito.";
+}
+
 const trova = (severity, object, message, hint) => ({ severity, object, message, hint });
 
 // ─── regola 1, 1b e 1c — RLS attiva? con policy? forzata? ────────────────────
