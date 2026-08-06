@@ -77,6 +77,58 @@ const INTESTAZIONE_PAGINA =
   /^##\s+`([a-z0-9][a-z0-9-]*)`\s+[—-]\s+(\S+)\s*$/;
 
 /**
+ * Il percorso di una pagina e' un PERCORSO, non un indirizzo.
+ *
+ * `(\S+)` accettava qualunque cosa, e il gate poi la dava a `new URL(percorso,
+ * base)`, che di fronte a un URL assoluto BUTTA VIA la base. Misurato il
+ * 2026-08-06 (referto § H4), su un contratto firmato e senza nessun rilievo:
+ *
+ *   ## `home` — https://example.com/     baseUrl http://127.0.0.1:3200
+ *      → Lighthouse misura  https://example.com/
+ *   ## `catalogo` — //evil.example.com/  baseUrl http://127.0.0.1:3200
+ *      → Lighthouse misura  http://evil.example.com/
+ *
+ * e i punteggi finivano nel verbale accanto al nome della pagina del cliente.
+ * `stessaPagina`, l'unico controllo esistente, confronta il richiesto col
+ * finale: due volte lo stesso indirizzo sbagliato, quindi taceva.
+ *
+ * E' la stessa famiglia di § C1 — il progetto auditato che sceglie cosa il gate
+ * misura — arrivata da una riga di markdown invece che da un binario.
+ *
+ * La forma ammessa e' quella che il template scrive da sempre (`{{/percorso}}`,
+ * e i tre esempi sono `/`, `/catalogo`, `/catalogo/acero-palmato`): una barra
+ * iniziale, e non due. Non e' una restrizione nuova: e' quella dichiarata.
+ */
+export function erroreDiPercorso(id, percorso) {
+  const p = String(percorso ?? "");
+  if (/^[a-z][a-z0-9+.-]*:/i.test(p)) {
+    return `pagina \`${id}\`: \`${p}\` e' un URL assoluto, non un percorso. Il gate misurerebbe QUEL sito e stamperebbe i suoi punteggi accanto al nome di questa pagina. Scrivi il percorso, per esempio \`/catalogo\``;
+  }
+  if (p.startsWith("//")) {
+    return `pagina \`${id}\`: \`${p}\` comincia con due barre, che in un URL significa «un altro host» (\`//esempio.com/\` diventa \`http://esempio.com/\`). Una barra sola`;
+  }
+  if (!p.startsWith("/")) {
+    return `pagina \`${id}\`: \`${p}\` non comincia con \`/\`. Il percorso si scrive dalla radice del sito, come nel template (\`/\`, \`/catalogo\`, \`/catalogo/acero-palmato\`)`;
+  }
+  return null;
+}
+
+/**
+ * Due indirizzi sono sullo stesso sito? La seconda porta, indipendente dalla
+ * prima: anche se una forma di percorso sfuggisse alla regola del contratto, il
+ * passo `misura` non deve poter misurare un altro host. Un confronto di ORIGINE
+ * (schema + host + porta), non di prefisso: `http://x.it.evil.com/` comincia
+ * per niente di utile, e `new URL` scioglie i `..` prima del confronto.
+ */
+export function stessaOrigine(base, indirizzo) {
+  try {
+    return new URL(indirizzo).origin === new URL(base).origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * `| performance | 90 |` dentro la sezione della pagina.
  *
  * CORRETTO il 2026-07-30. Prima pretendeva la categoria nuda e il valore nudo,
@@ -180,6 +232,36 @@ function applicaRigaSoglia(corrente, linea) {
  * categoria sconosciuta sono difetti del contratto, e un contratto che il gate
  * legge a meta' e' peggio di un contratto assente.
  */
+/**
+ * L'intestazione di una pagina: o apre una sezione da misurare, o scrive un
+ * errore e non apre niente. Ritorna la pagina in corso (o `null`).
+ *
+ * ESTRATTA il 2026-08-06 con l'arrivo del controllo sul percorso (§ H4):
+ * `leggiContratto` era salita a `complexity 16` contro la soglia 15 della casa,
+ * ed e' la seconda volta che questa funzione supera la soglia crescendo di un
+ * ramo (la prima fu `applicaRigaSoglia`, il 2026-08-04). Un gate che viola le
+ * regole che impone non e' credibile.
+ */
+function apriPagina(intestazione, visti, pagine, errori) {
+  const [, id, percorso] = intestazione;
+  if (visti.has(id)) {
+    errori.push(`pagina \`${id}\`: id ripetuto — un id stabile identifica una pagina sola`);
+    return null;
+  }
+  visti.add(id);
+  const errato = erroreDiPercorso(id, percorso);
+  if (errato) {
+    // La pagina NON entra nell'elenco, come il flusso di tipo sconosciuto in
+    // Flow Sentinel: un `block` che la lasciasse nell'elenco la farebbe misurare
+    // lo stesso, e misurarla e' proprio la cosa da non fare (referto § H4).
+    errori.push(errato);
+    return null;
+  }
+  const pagina = { id, percorso, soglie: {} };
+  pagine.push(pagina);
+  return pagina;
+}
+
 export function leggiContratto(testo) {
   const pagine = [];
   const righeDeroghe = [];
@@ -193,16 +275,8 @@ export function leggiContratto(testo) {
   for (const linea of righe(proprio)) {
     const intestazione = INTESTAZIONE_PAGINA.exec(linea);
     if (intestazione) {
-      const [, id, percorso] = intestazione;
       inDeroghe = false;
-      if (visti.has(id)) {
-        errori.push(`pagina \`${id}\`: id ripetuto — un id stabile identifica una pagina sola`);
-        corrente = null;
-      } else {
-        visti.add(id);
-        corrente = { id, percorso, soglie: {} };
-        pagine.push(corrente);
-      }
+      corrente = apriPagina(intestazione, visti, pagine, errori);
       continue;
     }
 

@@ -22,7 +22,9 @@ import {
   dettaglioMisura,
   dispersione,
   eDevServer,
+  erroreDiPercorso,
   esitoPagina,
+  stessaOrigine,
   findingsBudget,
   findingsContratto,
   findingsSeo,
@@ -609,4 +611,70 @@ test("un handoff assente e' un block, non un silenzio", () => {
 
 test("le categorie che il gate misura sono le quattro di Lighthouse", () => {
   assert.deepEqual([...CATEGORIE], ["performance", "accessibility", "best-practices", "seo"]);
+});
+
+// ---- il percorso di una pagina e' un percorso (referto § H4, 2026-08-06)
+// `(\S+)` accettava qualunque cosa, e `new URL(percorso, base)` di fronte a un
+// URL assoluto BUTTA VIA la base. Riprodotto su un contratto firmato e senza
+// nessun rilievo:
+//   ## `home` — https://example.com/     → Lighthouse misura https://example.com/
+//   ## `catalogo` — //evil.example.com/  → Lighthouse misura http://evil.example.com/
+// e i punteggi finivano accanto al nome della pagina del cliente.
+
+const CONTRATTO_OSTILE = `# Performance — cliente
+
+Confermato da: UMANO (Alberto) (2026-08-06)
+
+## \`home\` — https://example.com/
+
+| categoria | soglia |
+|---|---|
+| performance | 90 |
+
+## \`catalogo\` — //evil.example.com/
+
+| categoria | soglia |
+|---|---|
+| performance | 90 |
+`;
+
+test("un URL assoluto nel contratto non diventa una pagina da misurare", () => {
+  const c = leggiContratto(CONTRATTO_OSTILE);
+  assert.deepEqual(c.pagine, [], "la pagina NON entra nell'elenco: restarci significherebbe misurarla");
+  assert.equal(c.errori.length, 2);
+  assert.match(c.errori[0], /e' un URL assoluto, non un percorso/);
+  assert.match(c.errori[1], /due barre/);
+  // e il contratto diventa rosso, con il rilievo «nessuna pagina» in piu'
+  assert.equal(contaGravita(findingsContratto(c)).block, 3);
+});
+
+test("le tre forme del template restano leciti percorsi", () => {
+  for (const p of ["/", "/catalogo", "/catalogo/acero-palmato", "/catalogo?ordina=prezzo"]) {
+    assert.equal(erroreDiPercorso("x", p), null, `rifiutato: ${p}`);
+  }
+});
+
+test("ogni forma che porta altrove e' un errore, e il messaggio dice quale", () => {
+  assert.match(erroreDiPercorso("home", "https://example.com/"), /URL assoluto/);
+  assert.match(erroreDiPercorso("home", "http://127.0.0.1:9/"), /URL assoluto/);
+  assert.match(erroreDiPercorso("home", "javascript:alert(1)"), /URL assoluto/);
+  assert.match(erroreDiPercorso("home", "//evil.example.com/"), /due barre/);
+  assert.match(erroreDiPercorso("home", "catalogo"), /non comincia con/);
+});
+
+// La seconda porta: indipendente dalla prima, e per questo esiste.
+test("stessa origine: schema, host e porta, non un prefisso di stringa", () => {
+  assert.equal(stessaOrigine("http://127.0.0.1:3200", "http://127.0.0.1:3200/catalogo"), true);
+  assert.equal(stessaOrigine("http://127.0.0.1:3200/", "http://127.0.0.1:3200/a/b?c=1#d"), true);
+  assert.equal(stessaOrigine("http://127.0.0.1:3200", "http://127.0.0.1:3201/"), false, "altra porta");
+  assert.equal(stessaOrigine("http://127.0.0.1:3200", "https://127.0.0.1:3200/"), false, "altro schema");
+  assert.equal(stessaOrigine("http://127.0.0.1:3200", "http://127.0.0.1.evil.com/"), false, "host che comincia uguale");
+  assert.equal(stessaOrigine("http://127.0.0.1:3200", "non-un-url"), false);
+  assert.equal(stessaOrigine("", "http://x/"), false);
+});
+
+test("`..` nel percorso non porta fuori dall'origine: `new URL` li scioglie prima", () => {
+  const url = new URL("/a/../../../altrove", "http://127.0.0.1:3200").toString();
+  assert.equal(url, "http://127.0.0.1:3200/altrove");
+  assert.equal(stessaOrigine("http://127.0.0.1:3200", url), true);
 });

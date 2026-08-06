@@ -39,6 +39,7 @@ import {
   DISPERSIONE_MASSIMA,
   eLaMiaBuild,
   esitoPagina,
+  stessaOrigine,
   findingsBudget,
   findingsContratto,
   findingsSeo,
@@ -312,8 +313,19 @@ const PASSI = [
       const dirotate = [];
       let nonMisurate = 0;
       for (const pagina of ctx.contratto.pagine) {
+        const indirizzo = unisci(ctx.baseUrl, pagina.percorso);
+        // SECONDA PORTA, indipendente dalla regola del contratto (referto § H4):
+        // un percorso che sfuggisse a `erroreDiPercorso` non deve comunque poter
+        // portare Lighthouse su un altro sito. `new URL(percorso, base)` butta
+        // via la base davanti a un URL assoluto, e i punteggi finirebbero nel
+        // verbale accanto al nome della pagina del cliente.
+        if (!stessaOrigine(ctx.baseUrl, indirizzo)) {
+          nonMisurate++;
+          dirotate.push(`${pagina.id}: \`${pagina.percorso}\` porta a ${indirizzo}, che non e' ${new URL(ctx.baseUrl).origin}. NON misurato: il gate misura questo sito, non un altro`);
+          continue;
+        }
         const { giri, dirottamento } = giriDiUnaPagina(
-          unisci(ctx.baseUrl, pagina.percorso), ctx.contratto.formFactor, args.giri);
+          indirizzo, ctx.contratto.formFactor, args.giri);
         const esito = esitoPagina({ pagina, giri, dirottamento, giriRichiesti: args.giri, sogliaDispersione });
         if (esito.misura) ctx.misure.set(pagina.id, esito.misura);
         else nonMisurate++;
