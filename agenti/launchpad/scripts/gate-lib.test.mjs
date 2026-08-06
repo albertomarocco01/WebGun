@@ -617,3 +617,47 @@ test("un file che git non guarda piu' blocca: disco e commit possono divergere i
   assert.match(f[0].message, /assume-unchanged|skip-worktree/);
   assert.match(f[0].message, /1 file/);
 });
+
+// ====== collaudo 2026-08-06: il verdetto letto dove non era dichiarato
+const HANDOFF_CON_FENCE_TILDE = `# Handoff 07 — Schema Forge
+
+La forma richiesta dalla §19 e' questa:
+
+~~~
+Gate: VERDE
+~~~
+
+Il verdetto di QUESTO progetto non e' ancora stato scritto.
+`;
+
+test("un verdetto dentro un fence a TILDE non e' una dichiarazione", () => {
+  assert.equal(verdettoHandoff(HANDOFF_CON_FENCE_TILDE), null,
+    "tre tilde bastavano a far leggere come certificato un esempio: e a far leggere VERDE un handoff che dichiarava ROSSO");
+});
+
+test("un handoff che dichiara ROSSO resta ROSSO anche con un VERDE citato sopra", () => {
+  const testo = `# Handoff 12\n\nEsempio:\n\n~~~\nGate: VERDE\n~~~\n\n**Gate: ROSSO** (1 fallito)\n`;
+  assert.equal(verdettoHandoff(testo), "ROSSO", "e' la Legge n°1: non si pubblica su gate rosso");
+});
+
+test("un verdetto in un blocco indentato di quattro spazi non e' una dichiarazione", () => {
+  assert.equal(verdettoHandoff("# Handoff\n\nEsempio:\n\n    Gate: VERDE\n\nfine.\n"), null);
+  assert.equal(verdettoHandoff("# Handoff\n\n  Gate: VERDE\n"), "VERDE", "due spazi sono rientro, non codice");
+});
+
+test("due verdetti diversi nello stesso certificato bloccano: non si indovina quale vale", () => {
+  const h = [{ percorso: "docs/handoff/08-vetrina-crafter.md", agente: "vetrina-crafter", data: "2026-08-06T10:00:00Z",
+    testo: "> Gate: VERDE (copiato da un altro progetto)\n\n**Gate: ROSSO** (1 fallito)\n" }];
+  const f = findingsCatena({ handoff: h, ultimoCommitCodice: "2026-08-05T10:00:00Z" });
+  assert.ok(f.some((x) => x.severity === "block" && /2 verdetti diversi/.test(x.message)));
+});
+
+test("un handoff datato nel FUTURO blocca: un certificato che non scade mai non e' un certificato", () => {
+  const h = [{ percorso: "docs/handoff/07-schema-forge.md", agente: "schema-forge", data: "2030-01-01T00:00:00Z",
+    testo: "**Gate: VERDE**\n" }];
+  const f = findingsCatena({ handoff: h, ultimoCommitCodice: "2026-08-05T10:00:00Z", adesso: "2026-08-06T12:00:00Z" });
+  assert.ok(f.some((x) => x.severity === "block" && /nel futuro/.test(x.message)),
+    "e' la stessa regola che il tribunale aveva gia' imposto alla firma del runbook (VER-5)");
+  assert.equal(findingsCatena({ handoff: h, ultimoCommitCodice: "2026-08-05T10:00:00Z" }).length, 0,
+    "senza `adesso` la libreria resta pura e non accusa nessuno");
+});

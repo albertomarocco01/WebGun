@@ -24,6 +24,16 @@ const righe = (testo) => senzaBom(testo ?? "").split(/\r?\n/);
 const senzaZoneCitate = (testo) =>
   senzaBom(testo ?? "")
     .replace(/^[ \t]*```[\s\S]*?^[ \t]*```/gm, "")
+    // Il fence a TILDE, che e' l'altra meta' della sintassi di CommonMark e
+    // che qui mancava. Trovato dal collaudo del 2026-08-06, ed era il buco
+    // piu' grave del passo `catena-gate`: un handoff che dichiarava
+    // `Gate: ROSSO` veniva letto **VERDE**, perche' un esempio recintato con
+    // `~~~` piu' in alto nel file combaciava per primo. La Legge n°1 — non si
+    // pubblica su gate rosso — si scavalcava con tre tilde.
+    // `segreti-lib.mjs` toglieva gia' entrambi i fence (rilievo SEG-5): le due
+    // librerie della stessa skill leggevano il markdown in due modi diversi, e
+    // a decidere il verdetto era quella che ne sapeva meno.
+    .replace(/^[ \t]*~~~[\s\S]*?^[ \t]*~~~/gm, "")
     .replace(/<!--[\s\S]*?-->/g, "");
 
 export const dettaglioFindings = (findings) =>
@@ -138,9 +148,22 @@ export function findingsRadice({ sporco = [], ramo = null, upstream = null, avan
 }
 
 // ========================================================== 2. catena-gate
-/** La riga di forma fissa che la §19 ha imposto a tutta la casa. */
-const RIGA_GATE = /^[ \t>*_-]*Gate[ \t*_]*:[ \t*_]*(VERDE|ROSSO)\b/im;
-export const verdettoHandoff = (testo) => senzaZoneCitate(testo ?? "").match(RIGA_GATE)?.[1] ?? null;
+/**
+ * La riga di forma fissa che la §19 ha imposto a tutta la casa.
+ *
+ * `(?! {4}|\t)` — quattro spazi o una tabulazione in testa fanno un **blocco di
+ * codice indentato** in CommonMark, cioe' un esempio, non una dichiarazione.
+ * Trovato dal collaudo del 2026-08-06: un handoff il cui unico verdetto stava
+ * dentro un blocco indentato chiudeva il passo `pass`.
+ */
+const RIGA_GATE = /^(?! {4}|\t)[ \t>*_-]*Gate[ \t*_]*:[ \t*_]*(VERDE|ROSSO)\b/gim;
+
+/** Tutti i verdetti leggibili, in ordine. Serve a scoprirne DUE diversi. */
+export function verdettiHandoff(testo) {
+  return [...senzaZoneCitate(testo ?? "").matchAll(RIGA_GATE)].map((m) => m[1]);
+}
+
+export const verdettoHandoff = (testo) => verdettiHandoff(testo)[0] ?? null;
 
 /**
  * Le prove di appartenenza alla catena, MISURATE e non dichiarate.
@@ -201,10 +224,45 @@ export function eSoloFrammentoImpronta(aggiunte, frammento) {
   return vere.every((r) => ammesse.has(r));
 }
 
-export function findingsCatena({ handoff = [], proveTrovate = [], ultimoCommitCodice = null } = {}) {
+export function findingsCatena({ handoff = [], proveTrovate = [], ultimoCommitCodice = null, adesso = null } = {}) {
   const findings = [];
   for (const h of handoff.filter((x) => !MIO.test(x.agente))) {
-    const verdetto = verdettoHandoff(h.testo);
+    const tutti = verdettiHandoff(h.testo);
+    const verdetto = tutti[0] ?? null;
+    /**
+     * DUE verdetti diversi nello stesso certificato non sono un certificato.
+     *
+     * La §19 accetta di proposito elenco, citazione e grassetto: sono tre modi
+     * di scrivere la stessa riga. Non aveva previsto **due righe che dicono
+     * cose opposte** — e allora quale vale lo decide l'ordine di lettura, cioe'
+     * un dettaglio di impaginazione. Qui si rifiuta di indovinare.
+     */
+    if (new Set(tutti).size > 1) {
+      findings.push({
+        severity: "block",
+        object: h.percorso,
+        message: `dichiara ${new Set(tutti).size} verdetti diversi (${[...new Set(tutti)].join(" e ")}): quale vale lo deciderebbe l'ordine delle righe`,
+        hint: "un certificato dice una cosa sola. Se una delle due e' la citazione di un altro documento, va messa in un blocco recintato — che questo passo non legge come una dichiarazione",
+      });
+    }
+    /**
+     * Un certificato datato nel FUTURO non scade mai.
+     *
+     * Il tribunale l'aveva chiuso sulla firma del runbook (rilievo VER-5) e
+     * lasciato aperto qui: misurato dal collaudo del 2026-08-06, un handoff
+     * committato con `GIT_COMMITTER_DATE=2030-01-01` resta «piu' giovane» di
+     * qualunque commit futuro, cioe' la misura di freschezza si spegne per
+     * sempre su quel file — e la freschezza e' l'unica meta' MISURATA di questo
+     * passo.
+     */
+    if (h.data && adesso && Date.parse(h.data) - Date.parse(adesso) > 24 * 60 * 60 * 1000) {
+      findings.push({
+        severity: "block",
+        object: h.percorso,
+        message: `datato ${h.data.slice(0, 10)}, cioe' nel futuro (oggi e' ${adesso.slice(0, 10)})`,
+        hint: "una data futura non e' mai «piu' vecchia» di niente: quel certificato non scadrebbe mai piu'. Si ricommitta con la data vera",
+      });
+    }
     if (verdetto === null) {
       findings.push({
         severity: "block",

@@ -324,7 +324,7 @@ const PASSI = [
           } catch { return false; }
         })
         .map(({ prova }) => prova);
-      const findings = findingsCatena({ handoff, proveTrovate, ultimoCommitCodice: ctx.ultimoCodice });
+      const findings = findingsCatena({ handoff, proveTrovate, ultimoCommitCodice: ctx.ultimoCodice, adesso: ctx.adesso });
       const testa = [
         `${handoff.length} handoff letti: ${handoff.map((h) => h.agente).join(" · ")}`,
         `contratti trovati sul disco (prova che l'agente doveva passare): ${proveTrovate.join(" · ") || "nessuno"}`,
