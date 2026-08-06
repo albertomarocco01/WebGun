@@ -1207,3 +1207,66 @@ messaggio d'errore, indistinguibile da un `check` di tabella — cioè una riga 
 Postgres servita a uno sconosciuto. Un test pgTAP non lo intercetta: pgTAP chiama
 la funzione **da dentro il database**, dove il cast è già avvenuto sul valore
 tipizzato. Serve una prova che passi dall'endpoint HTTP.
+
+## `evolve` sul pilota, 2026-08-06 (P.4f) — sei difetti della skill
+
+Primo `evolve` su un progetto vero, con quattro anelli costruiti sopra. Verbale
+con le misure: `PILOTA-EVOLVE-2026-08-06.md`. **Solo le righe, non le
+correzioni**: le decisioni sono del proprietario della skill.
+
+1. **Il gate non ha un posto per la concorrenza, ed è il buco più grande che
+   questo pacchetto ha trovato.** Un invariante su un **insieme** di righe —
+   «resta sempre almeno un titolare attivo» — non si rompe in una sessione, e
+   pgTAP gira in una sessione dentro una transazione. Sul pilota quell'invariante
+   era dichiarato per derivazione, era **falso** (due titolari concorrenti lo
+   riducono a zero: write skew a READ COMMITTED), e nove passi con 82 asserzioni
+   verdi non lo vedevano. Serve una cartella `supabase/tests/concorrenza/` che
+   `verify.mjs` esegua **fuori** da `supabase test db`. Finché non c'è, la prova
+   la lancia solo chi si ricorda (pilota: `scripts/prova-concorrenza.mjs`).
+2. **La regola «un'asserzione che non può fallire non è un'asserzione» ha bisogno
+   della sua sorella.** Applicata da sola mi ha fatto *non scrivere* una difesa
+   necessaria: da «nessun test di pgTAP può renderlo rosso» ho concluso «è
+   codice irraggiungibile». Va aggiunto: **un limite dello strumento non è una
+   proprietà del codice**, e un invariante su un insieme va provato a due
+   sessioni.
+3. **`evolve` non prescrive di rilanciare i test preesistenti *e di leggere
+   perché* cambiano.** Restringendo un privilegio, tre asserzioni su `personale`
+   hanno cambiato significato e **una interrompeva il file** invece di diventare
+   rossa, nascondendo 11 asserzioni su 29. La procedura dice «alla fine si
+   riallinea `seed.sql`»: i test sono l'altra metà che un `evolve` sposta, e non
+   sono citati.
+4. **Un `evolve` che restringe può spegnere una regola dell'audit senza che
+   nessuno lo veda.** Togliendo una policy di `insert`, l'issue su
+   `personale.is_attivo` è sparita perché la regola 9 guarda solo le tabelle
+   inseribili (`audit-lib.mjs:590`): il residuo è passato da 6 a 5 issue e
+   *sembra* un miglioramento. Il comando dovrebbe essere tenuto a **diffare il
+   residuo dell'audit** e a spiegare ogni riga sparita.
+5. **`references/migrazioni.md` non ha il caso «cambiare la firma di una
+   funzione»**, che su Supabase è il più probabile di tutti (le RPC sono il
+   contratto pubblico). Serve accanto a `alter column type`, con tre righe che
+   nella tabella delle operazioni pericolose non ci sono: `create or replace` non
+   cambia il tipo di un argomento · due funzioni con gli stessi nomi di parametro
+   sono un overload che PostgREST non sa risolvere · **i `grant execute` non
+   sopravvivono al `drop`**, e una funzione nuova nasce `execute` a PUBLIC, cioè
+   come endpoint per `anon`.
+6. **Due trappole da una riga ciascuna.** (a) Un `$$` dentro un **commento** del
+   corpo di una funzione chiude il corpo: la prima applicazione è morta con
+   `syntax error` su una riga di prosa che citava `` `$$` ``. (b) Un blocco
+   `exception` intorno a un cast **non deve enumerare le condizioni**: ne avevo
+   elencate tre perché tre le avevo misurate, e Postgres ne ha una quarta
+   (`22009`). La forma giusta è la classe (`sqlstate like '22%'`) con `raise` per
+   tutto il resto.
+
+E una per `references/sabotaggio.md`: **il collaudo per sabotaggio deve verificare
+il proprio rilevatore.** Il mio primo giro ha dichiarato sani dieci test tutti
+sabotabili, perché leggeva l'uscita di `psql` nel formato allineato (le righe TAP
+finiscono dentro una cella e cominciano con uno spazio, quindi
+`startswith("not ok")` non ne vede nessuna). Il primo sabotaggio di una batteria
+deve essere uno di cui si conosce già la risposta.
+
+**Conferma di una riga già in questo file**: la voce sul cast di `ritiro_at`
+(sopra) prescriveva «ogni argomento di una funzione esposta a PostgREST si
+dichiara `text`». È giusta, e su questo pilota l'ho violata **nella migrazione
+che chiudeva quel difetto**, creando `cambia_ruolo(persona uuid, …)` — misurato
+`22P02`, e prima di ogni controllo di autorizzazione. La regola va messa dove si
+legge scrivendo una funzione nuova, non solo dove si corregge una vecchia.
