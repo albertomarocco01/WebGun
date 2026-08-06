@@ -125,15 +125,27 @@ export function attributi(tag) {
   return mappa;
 }
 
+/**
+ * I metacaratteri di un frammento che finisce dentro una `RegExp`.
+ *
+ * Oggi `nome` ed `etichetta` sono sempre stringhe letterali scritte qui dentro
+ * (`"a"`, `"img"`, `"Confermato da"`), quindi il rilievo di semgrep
+ * `detect-non-literal-regexp` non e' sfruttabile. Ma sono funzioni **esportate**,
+ * e la distanza fra «oggi nessuno ci passa niente da fuori» e «qualcuno ci passa
+ * un pezzo di HTML servito» e' una riga di codice scritta fra sei mesi. Chiuderlo
+ * adesso costa una funzione di quattro caratteri; discuterne no.
+ */
+export const perRegexp = (frammento) => String(frammento).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 /** Tutti i tag di apertura di un nome, sul documento gia' ripulito. */
 export function tagDi(htmlPulito, nome) {
-  const re = new RegExp(`<${nome}\\b[^>]*>`, "gi");
+  const re = new RegExp(`<${perRegexp(nome)}\\b[^>]*>`, "gi");
   return htmlPulito.match(re) ?? [];
 }
 
 /** Elementi con il loro contenuto: `[{ tag, dentro }]`. Non per tag annidabili. */
 export function elementiDi(htmlPulito, nome) {
-  const re = new RegExp(`<(${nome})\\b([^>]*)>([\\s\\S]*?)<\\/\\1>`, "gi");
+  const re = new RegExp(`<(${perRegexp(nome)})\\b([^>]*)>([\\s\\S]*?)<\\/\\1>`, "gi");
   const trovati = [];
   let m;
   while ((m = re.exec(htmlPulito)) !== null) trovati.push({ tag: `<${m[1]}${m[2]}>`, dentro: m[3] });
@@ -601,7 +613,7 @@ export function findingsArchiviazione({ cookie, archiviazioni, terzi, dichiarate
   }
 
   for (const a of archiviazioni) {
-    const riga = perChiave.get(a.api) ?? perChiave.get(a.chiaveDichiarata ?? " ");
+    const riga = perChiave.get(a.api);
     if (!riga) {
       findings.push({
         severity: "block",

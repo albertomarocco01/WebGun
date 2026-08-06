@@ -9,6 +9,8 @@
  */
 
 
+import { perRegexp } from "./servito-lib.mjs";
+
 /**
  * L'ELENCO DELLE VOCI DI CONFORMITA', e perche' vive qui e non in un documento.
  *
@@ -116,7 +118,12 @@ export function tabellaSotto(testo, reIntestazione) {
  */
 const rigaEtichettata = (testo, etichetta) => {
   const s = "[^\\S\\n]*";
-  const re = new RegExp(`^${s}[-*>]*${s}\\**${etichetta}\\**${s}:${s}(.+)$`, "im");
+  // `perRegexp` sull'etichetta: vedi la nota accanto alla funzione in
+  // `servito-lib.mjs`. Semgrep continuera' a segnalare questa riga — la sua
+  // regola e' sintattica, guarda che l'argomento non sia un letterale e non puo'
+  // vedere che il valore e' gia' passato per l'escape. Il rilievo resta scritto
+  // nel verbale con questa spiegazione, invece di essere silenziato.
+  const re = new RegExp(`^${s}[-*>]*${s}\\**${perRegexp(etichetta)}\\**${s}:${s}(.+)$`, "im");
   const m = re.exec(String(testo ?? ""));
   const valore = m ? ripulisci(m[1]) : null;
   return valore === "" ? null : valore;
