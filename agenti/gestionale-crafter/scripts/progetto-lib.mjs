@@ -127,17 +127,104 @@ export function validaConfig(oggetto) {
 //
 // `strict` deve essere dichiarato ESPLICITAMENTE `true`: ereditato da un
 // `extends` questo controllo non lo vede, e «non lo so» non e' «va bene».
+/**
+ * Toglie i commenti da un JSONC SAPENDO DOV'E'.
+ *
+ * Fino al 2026-08-06 questo lavoro lo facevano due `replace` con una regexp —
+ * una per il commento a blocco, una per quello di riga, guardata solo dal
+ * `://` — e una regexp non sa se si trova dentro una stringa. La prova che
+ * questo file non puo' nemmeno citarle per intero vale quanto la misura: la
+ * chiusura di commento dentro un'altra regexp chiuderebbe QUESTO commento,
+ * che e' lo stesso guasto un piano piu' su.
+ *
+ * Misurato sul `tsconfig.json` del pilota — 655 byte
+ * di JSON valido, che `JSON.parse` legge senza un fiato:
+ *
+ *   primo `/*` a offset 466, dentro `"@/*": ["./src/*"]`
+ *   prima chiusura di commento a offset 536, dentro il `"**` + `/*.ts"` di `include`
+ *   → 72 caratteri di JSON valido divorati in un colpo, 102 in tutto
+ *   → «tsconfig.json non interpretabile (Expected ':' … at position 472)»
+ *
+ * `"@/*"` e' l'alias che `create-next-app` scrive in OGNI progetto Next: lo
+ * spogliatore rompeva il caso che capita sempre per tollerare quello che, come
+ * diceva il commento qui sopra, «`create-next-app` non mette».
+ *
+ * Lo scanner tiene due stati — dentro una stringa, dietro un `\` — che sono
+ * esattamente cio' che alla regexp mancava. Il `\n` di un `//` non si consuma:
+ * togliere una riga sposterebbe le righe di tutti gli errori successivi.
+ */
+export function senzaCommentiJson(testo) {
+  const sorgente = String(testo ?? "");
+  let fuori = "";
+  let inStringa = false;
+  let i = 0;
+
+  while (i < sorgente.length) {
+    const c = sorgente[i];
+
+    if (inStringa) {
+      if (c === "\\") {
+        fuori += c + (sorgente[i + 1] ?? "");
+        i += 2;
+        continue;
+      }
+      if (c === '"') inStringa = false;
+      fuori += c;
+      i += 1;
+      continue;
+    }
+
+    if (c === '"') {
+      inStringa = true;
+      fuori += c;
+      i += 1;
+      continue;
+    }
+    if (c === "/" && sorgente[i + 1] === "*") {
+      const fine = sorgente.indexOf("*/", i + 2);
+      fuori += " ";
+      i = fine === -1 ? sorgente.length : fine + 2;
+      continue;
+    }
+    if (c === "/" && sorgente[i + 1] === "/") {
+      const fine = sorgente.indexOf("\n", i + 2);
+      fuori += " ";
+      i = fine === -1 ? sorgente.length : fine;
+      continue;
+    }
+
+    fuori += c;
+    i += 1;
+  }
+
+  return fuori;
+}
+
 export function premessaTsc(testoTsconfig) {
+  const testo = String(testoTsconfig ?? "");
   let config;
   try {
-    // JSONC: i `tsconfig.json` ammettono commenti, e `create-next-app` non ne
-    // mette ma altri strumenti si'. Le virgole finali no: se il file non si
-    // legge, e' una premessa mancante come le altre.
-    config = JSON.parse(String(testoTsconfig ?? "")
-      .replace(/\/\*[\s\S]*?\*\//g, " ")
-      .replace(/(^|[^:])\/\/[^\n]*/g, "$1 "));
-  } catch (errore) {
-    return { strict: false, motivo: `tsconfig.json non interpretabile (${errore.message}): non si sa con quali controlli \`tsc\` abbia misurato` };
+    // PRIMA IL FILE COM'E'. Un `tsconfig.json` valido — la grandissima
+    // maggioranza — non ha bisogno di nessuno spogliatore, e farlo passare da
+    // uno e' l'unico modo di romperlo.
+    config = JSON.parse(testo);
+  } catch (erroreGrezzo) {
+    // SOLO ALLORA la tolleranza JSONC: i `tsconfig.json` ammettono commenti, e
+    // `create-next-app` non ne mette ma altri strumenti si'. Le virgole finali
+    // no: se il file non si legge nemmeno cosi', e' una premessa mancante come
+    // le altre.
+    const spogliato = senzaCommentiJson(testo);
+    try {
+      config = JSON.parse(spogliato);
+    } catch (erroreSpogliato) {
+      // Quale dei due errori si stampa non e' indifferente: la posizione deve
+      // riferirsi a un testo che chi legge puo' aprire. Se non c'erano commenti
+      // i due testi sono lo stesso e vale il grezzo; se c'erano, la posizione
+      // del grezzo indica il commento — che in JSONC e' lecito — e mentirebbe.
+      const errore = spogliato === testo ? erroreGrezzo : erroreSpogliato;
+      const dove = spogliato === testo ? "" : ", una volta tolti i commenti";
+      return { strict: false, motivo: `tsconfig.json non interpretabile (${errore.message}${dove}): non si sa con quali controlli \`tsc\` abbia misurato` };
+    }
   }
   const opzioni = config?.compilerOptions ?? {};
   if (opzioni.strict === true) return { strict: true, motivo: null };

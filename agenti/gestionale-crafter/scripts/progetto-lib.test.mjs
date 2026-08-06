@@ -10,6 +10,7 @@ import {
   normalizzaTipi,
   premessaTsc,
   regolaEntitaAncorate,
+  senzaCommentiJson,
   tabelleDaiTipi,
   urlDbProgetto,
   validaConfig,
@@ -301,6 +302,103 @@ describe("premessaTsc", () => {
     const { strict, motivo } = premessaTsc("{ questo non e' json }");
     assert.equal(strict, false);
     assert.match(motivo, /non interpretabile/);
+  });
+});
+
+// ── il delimitatore dentro la stringa (difetto n°50, 2026-08-06) ─────────────
+// La forma vera dell'ingresso, non una inventata: il `tsconfig.json` che
+// `create-next-app` scrive, copiato a mano dal pilota. Contiene `"@/*"`, e
+// prima della correzione lo spogliatore a regexp lo leggeva come apertura di
+// commento e correva fino al `*` + `/` dentro `"**` + `/*.ts"` di `include`:
+// 72 caratteri divorati in un colpo, 102 in tutto, ed «Expected ':' … at
+// position 472» su un file che `JSON.parse` legge cosi' com'e'.
+const TSCONFIG_PILOTA = `{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": ["node_modules"]
+}
+`;
+
+describe("premessaTsc: il delimitatore dentro la stringa (n°50)", () => {
+  it("il tsconfig.json che create-next-app scrive in ogni progetto Next si legge", () => {
+    assert.equal(JSON.parse(TSCONFIG_PILOTA).compilerOptions.strict, true, "premessa del test: il file E' JSON valido");
+    assert.deepEqual(premessaTsc(TSCONFIG_PILOTA), { strict: true, motivo: null });
+  });
+
+  it("un JSONC vero con un commento a blocco E un `/*` dentro una stringa: entrambi trattati bene", () => {
+    const misto = [
+      "{",
+      "  /* i tipi del progetto, generati */",
+      '  "compilerOptions": { "strict": true, "paths": { "@/*": ["./src/*"] } },',
+      '  "include": ["**/*.ts"]',
+      "}",
+    ].join("\n");
+    assert.equal(premessaTsc(misto).strict, true);
+    assert.deepEqual(JSON.parse(senzaCommentiJson(misto)).compilerOptions.paths, { "@/*": ["./src/*"] });
+  });
+
+  it("un `//` dentro un valore di stringa non e' un commento", () => {
+    // La seconda regexp era cieca allo stesso modo, con una sola guardia: `://`.
+    // Basta togliere i due punti e il valore veniva troncato.
+    const conNota = '{\n  "nota": "a // b",\n  "compilerOptions": { "strict": true }\n}';
+    assert.equal(premessaTsc(conNota).strict, true);
+    assert.equal(JSON.parse(senzaCommentiJson(conNota)).nota, "a // b");
+  });
+
+  it("una barra rovesciata prima delle virgolette non chiude la stringa", () => {
+    const conFuga = '{ "nota": "finisce con una barra \\\\", "compilerOptions": { "strict": true } }';
+    assert.equal(premessaTsc(conFuga).strict, true);
+  });
+
+  it("un file troncato resta una premessa MANCANTE, col messaggio di sempre", () => {
+    const { strict, motivo } = premessaTsc('{\n  "compilerOptions": { "strict": true');
+    assert.equal(strict, false);
+    assert.match(motivo, /non interpretabile/);
+  });
+
+  it("un JSONC rotto davvero: la posizione si riferisce al testo senza commenti, e lo dice", () => {
+    const { strict, motivo } = premessaTsc('{\n  // una nota\n  "compilerOptions": { "strict": true },\n}');
+    assert.equal(strict, false);
+    assert.match(motivo, /una volta tolti i commenti/);
+  });
+});
+
+describe("senzaCommentiJson", () => {
+  it("un commento a blocco non chiuso si mangia solo la coda", () => {
+    assert.equal(senzaCommentiJson('{"a":1} /* e poi piu' + "' niente").trim(), '{"a":1}');
+  });
+
+  it("le righe non si spostano: un `//` lascia il suo a capo dov'era", () => {
+    const testo = '{\n  // nota\n  "a": 1\n}';
+    assert.equal(senzaCommentiJson(testo).split("\n").length, testo.split("\n").length);
   });
 });
 
