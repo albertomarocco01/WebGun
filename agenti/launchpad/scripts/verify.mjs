@@ -273,21 +273,33 @@ const PASSI = [
       // Anche qui `ok` prima di `out`: un fallimento di `rev-list` valeva
       // `avanti = 0` e disarmava in silenzio il `block` sul commit non spinto.
       let avanti = 0;
+      let indietro = 0;
       if (ctx.upstream) {
-        const conteggio = git(["rev-list", "--count", "@{upstream}..HEAD"]);
+        // I DUE VERSI in un colpo solo (`--left-right`): avanti = il provider
+        // costruirebbe un commit piu' vecchio; indietro = ne costruirebbe uno
+        // che nessuno degli altri otto passi ha guardato.
+        const conteggio = git(["rev-list", "--left-right", "--count", "@{upstream}...HEAD"]);
         if (!conteggio.ok) {
           return record(this.id, this.nome, "skipped",
             `commit ${ctx.commit.slice(0, 12)} · ramo ${ctx.ramo ?? "(distaccato)"} · remoto ${ctx.upstream}\n` +
-            "non si e' potuto contare lo scarto col remoto: senza, non si sa se il provider costruirebbe un commit piu' vecchio di questo");
+            "non si e' potuto contare lo scarto col remoto: senza, non si sa se il provider costruirebbe un commit diverso da questo");
         }
-        avanti = Number(conteggio.out.trim() || 0);
+        const [soloRemoto, soloLocale] = conteggio.out.trim().split(/\s+/).map((n) => Number(n) || 0);
+        indietro = soloRemoto;
+        avanti = soloLocale;
       }
       const sporco = (gitRighe(["status", "--porcelain"]) ?? []).map((r) => r.slice(3));
-      const findings = findingsRadice({ sporco, ramo: ctx.ramo, upstream: ctx.upstream, avanti });
+      // `git status` puo' MENTIRE: `assume-unchanged` (lettera minuscola) e
+      // `skip-worktree` (`S`) tolgono un file dal suo sguardo, e l'albero
+      // sembra pulito mentre il disco e il commit divergono.
+      const bugiardi = (gitRighe(["ls-files", "-v"]) ?? [])
+        .filter((r) => /^[a-zS] /.test(r))
+        .map((r) => r.slice(2));
+      const findings = findingsRadice({ sporco, ramo: ctx.ramo, upstream: ctx.upstream, avanti, indietro, bugiardi });
       // Il commit si stampa SEMPRE, anche sul verde: un gate che ha guardato un
       // altro commit non deve poter assomigliare a un gate che ha guardato il
       // tuo (DECISIONI.md §11).
-      const testa = `commit ${ctx.commit.slice(0, 12)} · ramo ${ctx.ramo ?? "(distaccato)"} · remoto ${ctx.upstream ?? "(nessuno)"}${avanti > 0 ? ` · avanti di ${avanti}` : ""}`;
+      const testa = `commit ${ctx.commit.slice(0, 12)} · ramo ${ctx.ramo ?? "(distaccato)"} · remoto ${ctx.upstream ?? "(nessuno)"}${avanti > 0 ? ` · avanti di ${avanti}` : ""}${indietro > 0 ? ` · indietro di ${indietro}` : ""}${bugiardi.length > 0 ? ` · ${bugiardi.length} file che git non guarda piu'` : ""}`;
       return conFindings(this.id, this.nome, findings, testa);
     },
   },

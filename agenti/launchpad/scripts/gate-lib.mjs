@@ -56,8 +56,32 @@ export const piuVecchioDi = (aIso, bIso) => {
 };
 
 // ======================================================== 1. radice-pulita
-export function findingsRadice({ sporco = [], ramo = null, upstream = null, avanti = 0 } = {}) {
+export function findingsRadice({ sporco = [], ramo = null, upstream = null, avanti = 0, indietro = 0, bugiardi = [] } = {}) {
   const findings = [];
+  /**
+   * `git status` puo' MENTIRE, e si misura in un comando.
+   *
+   * Trovato dal collaudo del 2026-08-06. `--assume-unchanged` e
+   * `--skip-worktree` dicono a git di non guardare piu' quel file: l'albero
+   * risulta **pulito** mentre il disco e il commit sono due cose diverse. E la
+   * direzione pericolosa e' quella che nessun altro passo copre — si committa
+   * il file sbagliato, si rimette sul disco quello giusto, e **il gate legge il
+   * disco mentre il provider riceve il commit**.
+   *
+   * Misurato sull'arena: un sorgente committato che legge
+   * `process.env.CHIAVE_MAI_DICHIARATA`, con la versione pulita sul disco →
+   * `ambiente` **pass**, zero rilievi, e la pagina che la usa risponde 500 in
+   * produzione. Non e' un'ipotesi di laboratorio: `--skip-worktree` e' il modo
+   * documentato di tenere una configurazione locale sopra un file tracciato.
+   */
+  if (bugiardi.length > 0) {
+    findings.push({
+      severity: "block",
+      object: bugiardi.slice(0, 6).join(" · ") + (bugiardi.length > 6 ? " · …" : ""),
+      message: `${bugiardi.length} file marcati \`assume-unchanged\`/\`skip-worktree\`: git non li guarda piu' e l'albero SEMBRA pulito`,
+      hint: "il gate legge il disco, il provider riceve il commit: con questo marchio i due possono divergere senza che `git status` dica niente. Si toglie con `git update-index --no-assume-unchanged <file>` (o `--no-skip-worktree`) e si guarda cosa cambia",
+    });
+  }
   if (sporco.length > 0) {
     const mostrati = sporco.slice(0, 8).join(" · ");
     findings.push({
@@ -73,6 +97,25 @@ export function findingsRadice({ sporco = [], ramo = null, upstream = null, avan
       object: `${ramo ?? "HEAD"} → ${upstream}`,
       message: `HEAD e' avanti di ${avanti} commit rispetto al remoto`,
       hint: "un deploy connesso a git costruisce cio' che sta SUL REMOTO: pubblicherebbe un commit piu' vecchio di quello che questo gate ha appena misurato, e ogni altro passo resterebbe verde perche' ha guardato il disco",
+    });
+  }
+  /**
+   * E il verso opposto, che la specifica non aveva previsto: HEAD **INDIETRO**.
+   *
+   * La sosta di meta' pacchetto aveva trovato «avanti di tre commit» — il
+   * provider costruisce qualcosa di piu' VECCHIO. Il collaudo del 2026-08-06 ha
+   * misurato il gemello: con il remoto avanti di uno, il gate chiude
+   * `radice-pulita` **pass con zero rilievi**, e il provider costruisce un
+   * commit **piu' nuovo** di quello che tutti gli altri otto passi hanno
+   * misurato. E' peggio dell'altro caso, non meglio: li' si pubblicava roba
+   * gia' vista, qui roba mai vista da nessuno di questi passi.
+   */
+  if (upstream && indietro > 0) {
+    findings.push({
+      severity: "block",
+      object: `${ramo ?? "HEAD"} → ${upstream}`,
+      message: `il remoto e' avanti di ${indietro} commit rispetto a HEAD`,
+      hint: "un deploy connesso a git costruisce cio' che sta SUL REMOTO: pubblicherebbe un commit che nessuno degli altri otto passi ha guardato. Si allinea (`git pull`) e si rilancia il gate — non si pubblica sperando che quei commit siano innocui",
     });
   }
   if (!upstream) {

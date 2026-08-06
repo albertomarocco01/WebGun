@@ -589,3 +589,31 @@ test("una chiusura scritta in un'altra colonna non viene letta, e il gate lo DIC
   assert.equal(f.filter((x) => x.severity === "block").length, 0,
     "il registro e' corretto: nessun bloccante senza risposta");
 });
+
+test("HEAD INDIETRO rispetto al remoto blocca: il provider costruirebbe un commit mai misurato", () => {
+  const f = findingsRadice({ sporco: [], ramo: "main", upstream: "origin/main", indietro: 2 });
+  assert.equal(blocchi(f).length, 1);
+  assert.match(f[0].message, /remoto e' avanti di 2 commit/);
+});
+
+test("i due versi si distinguono, e nessuno dei due copre l'altro", () => {
+  const avanti = findingsRadice({ sporco: [], ramo: "main", upstream: "origin/main", avanti: 3 });
+  const indietro = findingsRadice({ sporco: [], ramo: "main", upstream: "origin/main", indietro: 3 });
+  assert.match(avanti[0].message, /HEAD e' avanti/);
+  assert.match(indietro[0].message, /remoto e' avanti/);
+  assert.equal(findingsRadice({ sporco: [], ramo: "main", upstream: "origin/main" }).length, 0,
+    "allineato e pulito: nessun rilievo, o il gate diventa rumore");
+});
+
+/**
+ * `git status` puo' mentire, e allora l'albero pulito non prova piu' niente.
+ * Misurato sull'arena del collaudo: sorgente committato che legge
+ * `process.env.CHIAVE_MAI_DICHIARATA`, versione pulita sul disco,
+ * `--assume-unchanged` sopra → `ambiente` pass, zero rilievi.
+ */
+test("un file che git non guarda piu' blocca: disco e commit possono divergere in silenzio", () => {
+  const f = findingsRadice({ sporco: [], ramo: "main", upstream: "origin/main", bugiardi: ["src/lib/seo.ts"] });
+  assert.equal(blocchi(f).length, 1);
+  assert.match(f[0].message, /assume-unchanged|skip-worktree/);
+  assert.match(f[0].message, /1 file/);
+});

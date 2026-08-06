@@ -95,10 +95,19 @@ che sta per succedere non si annulla.
 risponde, e `git rev-parse HEAD` dà un commit. Senza, MANCANTE — e non
 «pulito».
 
+**E la premessa che regge tutti gli altri passi.** Ogni passo di questo gate che
+apre un file apre **il file sul disco**, non il blob del commit: il registro del
+debito, il runbook, gli handoff, i sorgenti di `ambiente`, i segreti. L'unica
+cosa che rende quella lettura equivalente a ciò che il provider riceve è
+**questo passo**. Un `radice-pulita` verde non è un preliminare cortese: è la
+condizione senza la quale gli altri otto misurano un'altra cosa.
+
 | finding | gravità | perché |
 |---|---|---|
 | working tree sporco (file modificati o non tracciati che non sono ignorati) | `block` | ciò che il provider riceve è il **commit**, non il disco. Un file modificato e non committato è codice che hai misurato e che non partirà — o peggio, che partirà se il deploy è da CLI e non da git |
 | **HEAD è avanti rispetto al suo `upstream`** | `block` | trovato dalla domanda di metà pacchetto (§8, n°1). Un deploy connesso a git pubblica ciò che sta **sul remoto**: con tre commit non spinti, il provider costruisce un commit più vecchio di quello che il gate ha appena misurato — e ogni altro passo resta verde, perché ha guardato il disco |
+| **HEAD è INDIETRO rispetto al suo `upstream`** | `block` | il gemello mancante del caso sopra, trovato dal collaudo del 2026-08-06: misurato, con il remoto avanti di uno il passo chiudeva **`pass` con zero rilievi**. È il caso peggiore dei due — «avanti» pubblica roba già vista, «indietro» pubblica un commit che **nessuno degli altri otto passi ha guardato** |
+| **un file marcato `assume-unchanged` o `skip-worktree`** | `block` | trovato dal collaudo del 2026-08-06. Quei due marchi dicono a git di non guardare più un file: `git status` resta pulito mentre disco e commit divergono, e il verso pericoloso è quello che nessun altro passo copre — si committa il file sbagliato e si rimette sul disco quello giusto. Misurato: un sorgente committato che legge `process.env.CHIAVE_MAI_DICHIARATA`, con la versione pulita sul disco, faceva chiudere `ambiente` **pass con zero rilievi**. Si misura in un comando (`git ls-files -v`) e non costa niente |
 | nessun `upstream` configurato | `issue` | si può pubblicare da CLI; ma allora il runbook deve dichiararlo, perché il resto del gate ha misurato un commit che nessun remoto conosce |
 | HEAD è distaccato o non ha un ramo | `warn` | si può pubblicare da un commit staccato; ma il rollback per ramo non esisterà |
 
@@ -422,7 +431,16 @@ difetto scoperto è un incidente.
    modo di prima, solo con la colpa assegnata. *Difesa:* il runbook prescrive
    di fissare la versione **anche** nel pannello del provider, e il passo lo
    pretende scritto.
-8. **Tutto verde e il sito è inutilizzabile.** Nessun passo apre una finestra,
+8. **Il remoto che non c'è più, o che nessuno ha interrogato.** `origin/main` è
+   una **copia locale**: se il ramo remoto è stato cancellato, se il repository
+   è stato spostato, o se semplicemente nessuno ha fatto `git fetch` da ieri, lo
+   scarto calcolato dal gate è lo scarto con un ricordo. Misurato dal collaudo
+   del 2026-08-06: con l'URL del remoto puntato su un percorso inesistente il
+   passo chiude `pass` con zero rilievi. *Difesa:* nessuna misura locale può
+   chiuderlo, e un `git ls-remote` renderebbe il gate rosso quando la rete è
+   giù — cioè rosso per motivi suoi (§6). Resta **dichiarato**, e il runbook
+   prescrive un `git fetch` prima del gate.
+9. **Tutto verde e il sito è inutilizzabile.** Nessun passo apre una finestra,
    nessun passo guarda una pagina. Questo gate non sa se il sito è bello,
    veloce, accessibile o corretto: lo sanno i quattro gate a monte, e il loro
    verde lo **legge**. Vedi §6.
