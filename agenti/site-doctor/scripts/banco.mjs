@@ -30,7 +30,7 @@ import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const BUILD_ID = "BANCOsitedoctor001";
+const BUILD_ID = "BANCOsitedoctor001";
 const TERZO = "https://cdn.esempio-terzo.test";
 
 /** Le classi di sabotaggio: una riga ciascuna, e il passo che deve diventare rosso. */
@@ -130,7 +130,7 @@ const CORPO_PRIVACY = (sab) => {
 const HREFLANG_IT = `<link rel="alternate" hreflang="it" href="/"><link rel="alternate" hreflang="en" href="/en"><link rel="alternate" hreflang="x-default" href="/">`;
 const HREFLANG_EN_ROTTO = `<link rel="alternate" hreflang="en" href="/en">`;
 
-export function sito(sab) {
+function sito(sab) {
   const pagine = new Map();
   const multilingua = ha(sab, "V", "W");
   pagine.set("/", guscio({
@@ -270,7 +270,7 @@ function scrivi(dir, relativo, contenuto) {
   writeFileSync(pieno, contenuto, "utf8");
 }
 
-export function materializza(dir, sab, base, { handoffVerde = false } = {}) {
+function materializza(dir, sab, base, { handoffVerde = false } = {}) {
   // Classe Y: su disco c'e' un ALTRO progetto — build id diverso *e* asset
   // diverso. Le due cose insieme, perche' il solo build id diverso e' l'altro
   // caso (stesso sito, processo indietro) e il gate deve saperli distinguere.
@@ -283,7 +283,7 @@ export function materializza(dir, sab, base, { handoffVerde = false } = {}) {
 }
 
 // -------------------------------------------------------------------- server
-export function avvia({ porta, sab, dir }) {
+function avvia({ porta, sab, dir }) {
   const base = `http://127.0.0.1:${porta}`;
   const pagine = sito(sab);
   // Classe U a parte, l'handoff dichiara il verdetto che il gate produrra':

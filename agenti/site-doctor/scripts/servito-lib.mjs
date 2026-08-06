@@ -547,7 +547,7 @@ export function findingsDatiRaccolti({ pagineConModuli, basiDichiarate, informat
 }
 
 // ------------------------------------------------------- archiviazione e terzi
-export const API_ARCHIVIAZIONE = Object.freeze(["localStorage", "sessionStorage", "document.cookie", "indexedDB"]);
+const API_ARCHIVIAZIONE = Object.freeze(["localStorage", "sessionStorage", "document.cookie", "indexedDB"]);
 
 /** Quali API di archiviazione compaiono nel testo di un bundle servito. */
 export function apiArchiviazioneIn(testo) {
@@ -669,11 +669,8 @@ export function livelliTitoli(html) {
   return livelli;
 }
 
-export function findingsAccessibilitaPagina(percorso, html) {
-  const findings = [];
-  const pulito = senzaScript(html);
-  const dove = (m, severity = "block") => findings.push({ severity, object: percorso, message: m });
-
+/** Le regole del documento: titolo, lingua, punto di salto. */
+function regoleDocumento(html, pulito, dove) {
   const titolo = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
   if (!titolo || testoVisibile(titolo[1]).length === 0) dove("nessun <title>, o vuoto: e' la prima cosa che uno screen reader annuncia");
 
@@ -682,52 +679,74 @@ export function findingsAccessibilitaPagina(percorso, html) {
   if (!lang || !lang.trim()) dove("nessun attributo `lang` su <html>: la sintesi vocale non sa in che lingua leggere");
 
   if (tagDi(pulito, "main").length === 0) dove("nessun elemento <main>: chi naviga con la tastiera non ha un punto di salto al contenuto", "issue");
+}
 
-  const h1 = livelliTitoli(html).filter((l) => l === 1).length;
+/**
+ * Le regole della gerarchia dei titoli.
+ *
+ * Il salto di livello e' `block` e non `issue`, e il sabotaggio di classe M e' il
+ * motivo: con `issue` il passo restava VERDE su una pagina con la gerarchia
+ * rotta, cioe' era verde proprio sul difetto che dichiara di provare. La prova
+ * qui e' interamente nel documento — h1 seguito da h3 — senza una riga di
+ * euristica: e' il criterio della §17 di DECISIONI.md, e cade dalla parte del
+ * bloccante. Piu' di un `h1` resta `issue`: in HTML5 le sezioni lo ammettono.
+ */
+function regoleTitoli(html, dove) {
+  const livelli = livelliTitoli(html);
+  const h1 = livelli.filter((l) => l === 1).length;
   if (h1 === 0) dove("nessun <h1>: la pagina non dichiara di cosa parla");
   else if (h1 > 1) dove(`${h1} elementi <h1>: la gerarchia dei titoli non ha una cima sola`, "issue");
 
-  // `block` e non `issue`, e il sabotaggio di classe M e' il motivo: con `issue`
-  // il passo restava VERDE su una pagina con la gerarchia rotta, cioe' su
-  // esattamente il difetto che la riga del gate dichiara di provare. La prova
-  // qui e' interamente nel documento — h1 seguito da h3 — senza una riga di
-  // euristica: e' il criterio della §17 di DECISIONI.md, e cade dalla parte del
-  // bloccante.
-  const livelli = livelliTitoli(html);
   for (let i = 1; i < livelli.length; i++) {
     if (livelli[i] > livelli[i - 1] + 1) {
       dove(`gerarchia dei titoli saltata: h${livelli[i - 1]} seguito da h${livelli[i]}. Chi naviga per intestazioni si trova un livello che non esiste`);
       break;
     }
   }
-  if (livelli.length > 0 && livelli[0] !== 1) {
-    dove(`il primo titolo della pagina e' un h${livelli[0]}, non un h1`, "issue");
-  }
+  if (livelli.length > 0 && livelli[0] !== 1) dove(`il primo titolo della pagina e' un h${livelli[0]}, non un h1`, "issue");
+}
 
+/**
+ * Le regole degli elementi che devono avere un nome: immagini, collegamenti,
+ * bottoni, campi.
+ *
+ * `alt` assente e' un `block`; `alt=""` e' un `issue`, perche' su un'immagine
+ * davvero decorativa e' la forma corretta e bloccarla vorrebbe dire un rosso su
+ * pagine giuste. Che l'immagine sia decorativa lo dice una persona, non questo
+ * codice: e' il confine fra una regola e un giudizio.
+ */
+function regoleNomi(html, pulito, dove) {
   for (const tag of tagDi(pulito, "img")) {
     const a = attributi(tag);
     if (!("alt" in a)) dove(`<img src="${a.src ?? "?"}"> senza attributo alt`);
     else if (a.alt.trim() === "") dove(`<img src="${a.src ?? "?"}"> con alt vuoto: legittimo solo se l'immagine e' decorativa, e questo lo dice una persona`, "issue");
   }
-
   for (const { tag, dentro } of elementiDi(pulito, "a")) {
     if (!nomeAccessibile(tag, dentro)) dove(`collegamento senza nome accessibile: href="${attributi(tag).href ?? "?"}"`);
   }
   for (const { tag, dentro } of elementiDi(pulito, "button")) {
     if (!nomeAccessibile(tag, dentro)) dove("bottone senza nome accessibile");
   }
-
   const etichette = etichettePerId(html);
   for (const campo of campiDiPagina(html)) {
     const haEtichetta = (campo.id && etichette.has(campo.id)) || campo.ariaLabel.trim().length > 0;
     if (!haEtichetta) dove(`campo "${campo.nome || campo.id || campo.tipo}" senza etichetta e senza aria-label`);
   }
+}
+
+export function findingsAccessibilitaPagina(percorso, html) {
+  const findings = [];
+  const pulito = senzaScript(html);
+  const dove = (m, severity = "block") => findings.push({ severity, object: percorso, message: m });
+  regoleDocumento(html, pulito, dove);
+  regoleTitoli(html, dove);
+  regoleNomi(html, pulito, dove);
   return findings;
 }
 
 // ------------------------------------------------------------------- lingua
 /** Indizi di rotte per lingua nella superficie: `/en`, `/it/…`, `/fr-be/…`. */
-export const RE_ROTTA_LINGUA = /^\/([a-z]{2})(?:-[a-z]{2})?(?:\/|$)/i;
+const RE_ROTTA_LINGUA = /^\/([a-z]{2})(?:-[a-z]{2})?(?:\/|$)/i;
 
 export function lingueDaRotte(percorsi) {
   const lingue = new Set();
@@ -800,7 +819,11 @@ export function esitoLingua({ pagine, lingueDichiarate, percorsi }) {
       if (h.hreflang.toLowerCase() === "x-default") continue;
       const altra = perPagina.get(h.percorso);
       if (!altra) continue;
-      if (!altra.hreflang.some((r) => r.percorso === p.percorso)) {
+      // `x-default` NON conta come rimando reciproco: dichiara la versione di
+      // ripiego, non «questa pagina e' l'alternativa di quella». Contarlo
+      // avrebbe fatto passare per reciproca ogni coppia in cui la seconda
+      // pagina si limita a puntare alla home.
+      if (!altra.hreflang.some((r) => r.percorso === p.percorso && r.hreflang.toLowerCase() !== "x-default")) {
         findings.push({
           severity: "block",
           object: p.percorso,

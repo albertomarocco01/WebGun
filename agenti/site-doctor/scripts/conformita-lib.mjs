@@ -8,9 +8,6 @@
  * voce» — resta testabile senza costruire un progetto.
  */
 
-import { contaGravita, dettaglioFindings, statoDaFindings } from "./servito-lib.mjs";
-
-export { contaGravita, dettaglioFindings, statoDaFindings };
 
 /**
  * L'ELENCO DELLE VOCI DI CONFORMITA', e perche' vive qui e non in un documento.
@@ -44,7 +41,7 @@ export const VOCI = Object.freeze([
   { id: "antispam", nome: "antispam e limiti di frequenza sui moduli pubblici", mio: null, re: /antispam|spam|rate.?limit|limiti di frequenza|abusi/i },
 ]);
 
-export const RE_SEGNAPOSTO = /\{\{[^}]*\}\}|<da compilare>|lorem ipsum/i;
+const RE_SEGNAPOSTO = /\{\{[^}]*\}\}|<da compilare>|lorem ipsum/i;
 const SCOPERTO = /^(—|-{1,2}|scoperto|nessuno|—\s*\(scoperto\))$/i;
 
 const ripulisci = (s) =>
@@ -94,10 +91,23 @@ export function tabellaSotto(testo, reIntestazione) {
   return { sezionePresente: true, righe: dati };
 }
 
+/**
+ * Il valore di una riga `Etichetta: valore`, oppure `null`.
+ *
+ * Gli spazi attorno ai due punti sono `[^\S\n]` e NON `\s`, ed e' il modo in cui
+ * questa funzione ha sbagliato prima di avere un test: `\s` comprende il ritorno
+ * a capo, quindi su una riga con l'etichetta e il valore VUOTO la ricerca
+ * scavalcava la riga e prendeva la successiva. Misurato: un certificato con
+ * `Lingue dichiarate:` e niente accanto dichiarava come lingue le parole della
+ * riga sotto — cioe' il gate leggeva un valore che nessuno aveva scritto, e il
+ * rilievo «nessuna lingua dichiarata» non poteva piu' scattare.
+ */
 const rigaEtichettata = (testo, etichetta) => {
-  const re = new RegExp(`^\\s*[-*>\\s]*\\**${etichetta}\\**\\s*:\\s*(.+)$`, "im");
+  const s = "[^\\S\\n]*";
+  const re = new RegExp(`^${s}[-*>]*${s}\\**${etichetta}\\**${s}:${s}(.+)$`, "im");
   const m = re.exec(String(testo ?? ""));
-  return m ? ripulisci(m[1]) : null;
+  const valore = m ? ripulisci(m[1]) : null;
+  return valore === "" ? null : valore;
 };
 
 // -------------------------------------------------------------- il certificato
@@ -112,7 +122,10 @@ export function leggiCertificato(testo) {
     urlDichiarato: rigaEtichettata(testo, "URL verificato"),
     informativa: rigaEtichettata(testo, "Informativa privacy"),
     lingue: lingueGrezze ? lingueGrezze.split(/[,;\s]+/).map((l) => l.toLowerCase()).filter(Boolean) : [],
-    banner: banner !== null && /^(s[iì]|yes|presente)\b/i.test(banner),
+    // Niente `\b` dopo `s[iì]`: in JS senza il flag `u` la parola-confine e'
+    // definita su [A-Za-z0-9_], quindi dopo la `ì` di «sì» un confine NON c'e'
+    // — e `Banner di consenso: sì` si leggeva come «no».
+    banner: banner !== null && /^(s[iì]|yes|presente)/i.test(banner),
     superficie: superficie.righe.map((r) => r.percorso ?? r.pagina ?? "").filter(Boolean),
     archiviazioni: tabellaSotto(testo, /archiviazione dichiarata/i).righe,
     datiRaccolti: tabellaSotto(testo, /dati raccolti/i).righe,

@@ -1,0 +1,515 @@
+/**
+ * Test delle regole sull'APP SERVITA.
+ *
+ * I test che cominciano con «falso verde» sono i modi in cui questo passo
+ * potrebbe dire di sì senza aver guardato: nascono dallo STOP di metà pacchetto
+ * (SKILL.md §Gate) o dal sabotaggio, e ognuno cita quale dei due.
+ */
+
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+
+import {
+  apiArchiviazioneIn,
+  assetDaProvare,
+  attributi,
+  campiDiPagina,
+  candidatiInformativa,
+  classificaCampo,
+  collegamentiInterni,
+  contaGravita,
+  eLaMiaBuild,
+  elementiDi,
+  esitoIdentita,
+  esitoLingua,
+  etichettePerId,
+  findingsAccessibilitaPagina,
+  findingsArchiviazione,
+  findingsDatiRaccolti,
+  findingsInformativa,
+  findingsSuperficie,
+  hreflangDi,
+  langDi,
+  livelliTitoli,
+  lingueDaRotte,
+  moduliDiPagina,
+  nomeAccessibile,
+  percorsiDaSitemap,
+  percorsoInterno,
+  raggiungibiliDaCollegamenti,
+  senzaScript,
+  statoDaFindings,
+  statoNonApplicabile,
+  tagDi,
+  terziDi,
+  testoVisibile,
+  VOCI_INFORMATIVA,
+} from "./servito-lib.mjs";
+
+const BASE = "http://127.0.0.1:3821";
+const blocchi = (f) => f.filter((x) => x.severity === "block");
+
+// --------------------------------------------------------------- primitivi
+describe("pulizia del documento", () => {
+  it("toglie il CORPO degli script e tiene il tag di apertura", () => {
+    const pulito = senzaScript('<script src="/a.js">alert(1)</script><p>ciao</p>');
+    assert.match(pulito, /<script src="\/a\.js"><\/script>/);
+    assert.doesNotMatch(pulito, /alert/);
+  });
+
+  it("falso verde (STOP §6): il carico RSC non deve contare come DOM", () => {
+    // Su Next in App Router l'albero serializzato viaggia dentro uno `<script>`
+    // e contiene `["$","h1",...]`. Misurato sul pilota il 2026-08-06.
+    const html = '<h1>Vera</h1><script>self.__next_f.push([1,"[\\"$\\",\\"h1\\",null,{}]"])</script>';
+    assert.deepEqual(livelliTitoli(html), [1]);
+  });
+
+  it("falso verde: un <img> dentro il carico RSC non e' un <img> senza alt", () => {
+    const html = '<script>["$","img",null,{"src":"/a.png"}]</script><main><h1>x</h1></main>';
+    const findings = findingsAccessibilitaPagina("/x", `<html lang="it"><head><title>t</title></head><body>${html}</body></html>`);
+    assert.deepEqual(findings.filter((f) => /img/.test(f.message)), []);
+  });
+
+  it("toglie i commenti, ma non li fa sparire dal grezzo", () => {
+    assert.doesNotMatch(senzaScript("<!-- BUILD123 --><p>x</p>"), /BUILD123/);
+    assert.ok(eLaMiaBuild("<!-- BUILD123 --><p>x</p>", "BUILD123"));
+  });
+
+  it("il testo visibile scioglie le entita' che React produce", () => {
+    assert.equal(testoVisibile("<p>Forno d&#x27;Oro</p>"), "Forno d'Oro");
+  });
+});
+
+describe("attributi", () => {
+  it("il nome dell'attributo si legge in minuscolo", () => {
+    // React serializza `autoComplete` cosi' com'e': un confronto sensibile alle
+    // maiuscole avrebbe mancato il segnale piu' forte per riconoscere un dato
+    // personale, e `dati-raccolti` sarebbe uscito verde sul modulo del pilota.
+    assert.equal(attributi('<input autoComplete="tel" minLength="6">').autocomplete, "tel");
+  });
+
+  it("un attributo booleano esiste con valore vuoto", () => {
+    assert.equal("required" in attributi("<input required>"), true);
+  });
+
+  it("regge apici singoli, doppi e valori nudi", () => {
+    const a = attributi("<a href='/x' title=\"y\" rel=nofollow>");
+    assert.deepEqual([a.href, a.title, a.rel], ["/x", "y", "nofollow"]);
+  });
+
+  it("`tagDi` non confonde <a> con <abbr>", () => {
+    assert.equal(tagDi("<abbr>x</abbr><a href='/'>y</a>", "a").length, 1);
+  });
+
+  it("`elementiDi` porta il contenuto insieme al tag", () => {
+    assert.deepEqual(elementiDi("<a href='/x'>ciao</a>", "a"), [{ tag: "<a href='/x'>", dentro: "ciao" }]);
+  });
+});
+
+// -------------------------------------------------------------- superficie
+describe("percorsi e superficie", () => {
+  it("scarta le origini diverse, i frammenti e gli schemi non navigabili", () => {
+    assert.equal(percorsoInterno("https://altro.example/x", BASE), null);
+    assert.equal(percorsoInterno("#sezione", BASE), null);
+    assert.equal(percorsoInterno("mailto:a@b.c", BASE), null);
+    assert.equal(percorsoInterno("tel:+39015", BASE), null);
+  });
+
+  it("la barra finale non fa una pagina diversa", () => {
+    assert.equal(percorsoInterno("/menu/", BASE), "/menu");
+    assert.equal(percorsoInterno("/", BASE), "/");
+  });
+
+  it("la query non fa una pagina diversa ai fini della conformita'", () => {
+    assert.equal(percorsoInterno("/menu?p=2", BASE), "/menu");
+  });
+
+  it("legge i collegamenti interni di una pagina", () => {
+    const html = '<a href="/menu">M</a><a href="https://x.test/">X</a><a href="/menu">M</a>';
+    assert.deepEqual(collegamentiInterni(html, BASE), ["/menu"]);
+  });
+
+  it("legge i percorsi di una sitemap", () => {
+    const xml = `<urlset><url><loc>${BASE}/</loc></url><url><loc>${BASE}/menu</loc></url></urlset>`;
+    assert.deepEqual(percorsiDaSitemap(xml, BASE), ["/", "/menu"]);
+  });
+
+  it("falso verde (sabotaggio X): la raggiungibilita' si calcola dal grafo, partendo da /", () => {
+    // La sitemap fa da seme allo SCARICO, non alla scoperta: se alimentasse
+    // anche i «collegamenti», le due sorgenti sarebbero una sola.
+    const grafo = new Map([["/", []], ["/contatti", ["/", "/privacy"]], ["/privacy", ["/"]]]);
+    assert.deepEqual(raggiungibiliDaCollegamenti(grafo, "/"), ["/"]);
+  });
+
+  it("una home senza collegamenti e una sitemap ricca sono un bloccante", () => {
+    const f = findingsSuperficie({ daCollegamenti: ["/"], daSitemap: ["/", "/a", "/b"], dichiarate: [], sitemapLetta: true });
+    assert.equal(blocchi(f).length, 1);
+    assert.match(blocchi(f)[0].message, /la camminata non ha camminato/);
+  });
+
+  it("senza sitemap la sorgente e' una sola, e si dice", () => {
+    const f = findingsSuperficie({ daCollegamenti: ["/"], daSitemap: [], dichiarate: [], sitemapLetta: false });
+    assert.equal(f[0].severity, "issue");
+    assert.match(f[0].message, /una sola sorgente/);
+  });
+
+  it("una pagina dichiarata e non raggiungibile e' un bloccante", () => {
+    const f = findingsSuperficie({ daCollegamenti: ["/"], daSitemap: ["/"], dichiarate: ["/", "/sparita"], sitemapLetta: true });
+    assert.deepEqual(blocchi(f).map((x) => x.object), ["/sparita"]);
+  });
+
+  it("una pagina raggiungibile e non dichiarata e' un rilievo, non un bloccante", () => {
+    const f = findingsSuperficie({ daCollegamenti: ["/", "/nuova"], daSitemap: ["/"], dichiarate: ["/"], sitemapLetta: true });
+    assert.deepEqual(f.filter((x) => x.object === "/nuova").map((x) => x.severity), ["issue"]);
+  });
+});
+
+describe("identita' dell'app, per due vie", () => {
+  it("build id che combacia: si misura", () => {
+    const e = esitoIdentita({ buildIdCombacia: true, buildId: "B1", url: BASE });
+    assert.deepEqual([e.stato, e.misurabile], ["pass", true]);
+  });
+
+  it("build id diverso ma asset identico: e' questo sito, un processo indietro", () => {
+    // Misurato sul pilota il 2026-08-06 mentre un'altra chat ricostruiva.
+    const e = esitoIdentita({ buildIdCombacia: false, assetProvato: "/_next/static/a.css", assetIdentico: true, buildId: "B2", url: BASE });
+    assert.equal(e.stato, "fail");
+    assert.equal(e.misurabile, true, "il sito e' questo: le misure si fanno, il certificato no");
+    assert.match(e.diagnosi, /non un'altra applicazione/);
+  });
+
+  it("build id diverso e asset diverso: e' un'altra applicazione, e non si misura", () => {
+    const e = esitoIdentita({ buildIdCombacia: false, assetProvato: "/_next/static/a.css", assetIdentico: false, buildId: "B2", url: BASE });
+    assert.deepEqual([e.stato, e.misurabile], ["fail", false]);
+    assert.match(e.diagnosi, /un'altra applicazione/);
+  });
+
+  it("trova un asset da confrontare fra src e href", () => {
+    assert.equal(assetDaProvare('<link href="/_next/static/chunks/a.css?v=1">', BASE), "/_next/static/chunks/a.css");
+  });
+});
+
+// ------------------------------------------------------------- informativa
+describe("informativa privacy", () => {
+  const pagina = (extra = "") => `<a href="/menu">Menu</a>${extra}`;
+
+  it("i candidati si trovano dal TESTO del collegamento, non da un percorso indovinato", () => {
+    const c = candidatiInformativa(pagina('<a href="/note-legali/clienti">Informativa privacy</a>'), BASE);
+    assert.deepEqual(c.map((x) => x.percorso), ["/note-legali/clienti"]);
+  });
+
+  it("li trova anche dal percorso, quando il testo non aiuta", () => {
+    const c = candidatiInformativa(pagina('<a href="/privacy">Leggi</a>'), BASE);
+    assert.deepEqual(c.map((x) => x.percorso), ["/privacy"]);
+  });
+
+  it("nessun collegamento su nessuna pagina e' un bloccante", () => {
+    const f = findingsInformativa({ pagine: [{ percorso: "/", candidati: [] }], informativa: null, htmlInformativa: null, dichiarata: null });
+    assert.equal(blocchi(f).length, 1);
+  });
+
+  it("un collegamento che porta a un 404 e' un bloccante", () => {
+    const f = findingsInformativa({
+      pagine: [{ percorso: "/", candidati: [{ percorso: "/privacy" }] }],
+      informativa: { percorso: "/privacy", stato: 404 },
+      htmlInformativa: null, dichiarata: null,
+    });
+    assert.match(blocchi(f).at(-1).message, /il collegamento c'e' e l'informativa no/);
+  });
+
+  it("raggiungibile solo da alcune pagine NON e' raggiungibile", () => {
+    const f = findingsInformativa({
+      pagine: [{ percorso: "/", candidati: [{ percorso: "/privacy" }] }, { percorso: "/menu", candidati: [] }],
+      informativa: { percorso: "/privacy", stato: 200 },
+      htmlInformativa: `<p>${"x".repeat(500)}</p>`, dichiarata: null,
+    });
+    assert.ok(blocchi(f).some((x) => /manca su \/menu/.test(x.message)));
+  });
+
+  it("falso verde (STOP §2): un'informativa con un segnaposto dentro non passa", () => {
+    const testo = VOCI_INFORMATIVA.map((v) => v.nome).join(". base giuridica art. 6. ") + " reclamo al Garante. destinatari. " + "y".repeat(400);
+    const f = findingsInformativa({
+      pagine: [{ percorso: "/", candidati: [{ percorso: "/privacy" }] }],
+      informativa: { percorso: "/privacy", stato: 200 },
+      htmlInformativa: `<p>Titolare del trattamento: {{RAGIONE SOCIALE}}. ${testo}</p>`, dichiarata: null,
+    });
+    assert.ok(blocchi(f).some((x) => /segnaposto o un riempitivo/.test(x.message)));
+  });
+
+  it("un'informativa che non nomina le voci dell'art. 13 non passa, e dice quali mancano", () => {
+    const f = findingsInformativa({
+      pagine: [{ percorso: "/", candidati: [{ percorso: "/privacy" }] }],
+      informativa: { percorso: "/privacy", stato: 200 },
+      htmlInformativa: `<p>${"parole ordinarie ".repeat(40)}</p>`, dichiarata: null,
+    });
+    assert.ok(blocchi(f).some((x) => /voci obbligatorie dell'art\. 13/.test(x.message)));
+  });
+
+  it("un titolo non e' un'informativa", () => {
+    const f = findingsInformativa({
+      pagine: [{ percorso: "/", candidati: [{ percorso: "/privacy" }] }],
+      informativa: { percorso: "/privacy", stato: 200 },
+      htmlInformativa: "<h1>Privacy</h1>", dichiarata: null,
+    });
+    assert.ok(blocchi(f).some((x) => /e' un titolo/.test(x.message)));
+  });
+});
+
+// ------------------------------------------------------------ dati raccolti
+describe("moduli e dati personali", () => {
+  it("i campi di servizio delle Server Action non sono campi raccolti", () => {
+    // Su App Router ogni form ne porta quattro: contarli avrebbe prodotto
+    // quattro rilievi per modulo su ogni sito di questa casa.
+    const html = '<form><input type="hidden" name="$ACTION_REF_1"><input name="nome" autocomplete="name"></form>';
+    assert.deepEqual(campiDiPagina(html).map((c) => c.nome), ["nome"]);
+    assert.equal(moduliDiPagina(html), 1);
+  });
+
+  it("conta textarea e select insieme agli input", () => {
+    assert.equal(campiDiPagina("<textarea name='note'></textarea><select name='x'></select>").length, 2);
+  });
+
+  it("la prova FORTE e' `autocomplete`, e vale un bloccante (§17)", () => {
+    assert.deepEqual(classificaCampo({ tipo: "text", nome: "campo1", autocomplete: "tel" }), { personale: true, prova: "forte", motivo: 'autocomplete="tel"' });
+  });
+
+  it("la prova forte e' anche `type`", () => {
+    assert.equal(classificaCampo({ tipo: "email", nome: "x", autocomplete: "" }).prova, "forte");
+  });
+
+  it("il nome del campo e' prova DEBOLE: `nome` puo' essere il nome di una pizza", () => {
+    assert.equal(classificaCampo({ tipo: "text", nome: "nome", autocomplete: "" }).prova, "debole");
+  });
+
+  it("un campo qualsiasi non e' un dato personale", () => {
+    assert.equal(classificaCampo({ tipo: "text", nome: "codice_ritiro", autocomplete: "" }).personale, false);
+  });
+
+  it("prova forte non dichiarata = bloccante, prova debole = rilievo", () => {
+    const f = findingsDatiRaccolti({
+      pagineConModuli: [{ percorso: "/c", moduli: 1, campi: [
+        { tipo: "text", nome: "a", autocomplete: "tel", id: "" },
+        { tipo: "text", nome: "cognome", autocomplete: "", id: "" },
+      ] }],
+      basiDichiarate: [], informativaRaggiungibile: new Set(["/c"]),
+    });
+    assert.equal(f.filter((x) => x.severity === "block").length, 1);
+    assert.equal(f.filter((x) => x.severity === "issue").length, 1);
+  });
+
+  it("la base giuridica si legge dalla colonna «base giuridica» della tabella", () => {
+    const f = findingsDatiRaccolti({
+      pagineConModuli: [{ percorso: "/c", moduli: 1, campi: [{ tipo: "text", nome: "tel", autocomplete: "tel", id: "" }] }],
+      basiDichiarate: [{ modulo: "/c", campo: "tel", "base giuridica": "contratto (art. 6.1.b)" }],
+      informativaRaggiungibile: new Set(["/c"]),
+    });
+    assert.deepEqual(f, []);
+  });
+
+  it("una base giuridica vuota non e' una base giuridica", () => {
+    const f = findingsDatiRaccolti({
+      pagineConModuli: [{ percorso: "/c", moduli: 1, campi: [{ tipo: "text", nome: "tel", autocomplete: "tel", id: "" }] }],
+      basiDichiarate: [{ modulo: "/c", campo: "tel", "base giuridica": "" }],
+      informativaRaggiungibile: new Set(["/c"]),
+    });
+    assert.equal(blocchi(f).length, 1);
+  });
+
+  it("raccogliere senza rimandare all'informativa e' un bloccante a se'", () => {
+    const f = findingsDatiRaccolti({
+      pagineConModuli: [{ percorso: "/c", moduli: 1, campi: [{ tipo: "text", nome: "tel", autocomplete: "tel", id: "" }] }],
+      basiDichiarate: [{ modulo: "/c", campo: "tel", "base giuridica": "contratto" }],
+      informativaRaggiungibile: new Set(),
+    });
+    assert.ok(blocchi(f).some((x) => /AL MOMENTO della raccolta/.test(x.message)));
+  });
+});
+
+// ------------------------------------------------------- archiviazione client
+describe("archiviazione e terzi", () => {
+  it("riconosce le quattro API di archiviazione nel testo di un bundle", () => {
+    assert.deepEqual(apiArchiviazioneIn("x.localStorage.setItem(); document.cookie='a'"), ["localStorage", "document.cookie"]);
+  });
+
+  it("falso verde (sabotaggio H): i terzi si cercano coi tag di script INTATTI", () => {
+    // La prima versione ripuliva l'HTML cancellando i tag `<script>`, e questa
+    // funzione girava su un documento da cui i terzi li avevamo tolti noi.
+    const html = '<script src="https://cdn.terzo.test/a.js"></script><p>x</p>';
+    assert.deepEqual(terziDi(html, BASE), [{ origine: "https://cdn.terzo.test", elementi: ["script"] }]);
+  });
+
+  it("gli asset della stessa origine non sono terzi", () => {
+    assert.deepEqual(terziDi('<script src="/_next/a.js"></script><img src="/x.png">', BASE), []);
+  });
+
+  it("vede i terzi anche in iframe, link e img", () => {
+    const t = terziDi('<iframe src="https://mappe.test/m"></iframe><link href="https://font.test/f.css">', BASE);
+    assert.deepEqual(t.map((x) => x.origine).sort(), ["https://font.test", "https://mappe.test"]);
+  });
+
+  it("un cookie non dichiarato e' un bloccante", () => {
+    const f = findingsArchiviazione({ cookie: [{ nome: "sid", percorso: "/" }], archiviazioni: [], terzi: [], dichiarate: [], banner: false });
+    assert.equal(blocchi(f).length, 1);
+  });
+
+  it("un'archiviazione dichiarata ed essenziale non produce niente", () => {
+    const f = findingsArchiviazione({
+      cookie: [], archiviazioni: [{ api: "localStorage", percorso: "/c" }], terzi: [],
+      dichiarate: [{ chiave: "localStorage", essenziale: "sì" }], banner: false,
+    });
+    assert.deepEqual(f, []);
+  });
+
+  it("un terzo non dichiarato e' un BLOCCANTE, e il messaggio dice perche'", () => {
+    const f = findingsArchiviazione({ cookie: [], archiviazioni: [], terzi: [{ origine: "https://cdn.test", elementi: ["script"] }], dichiarate: [], banner: false });
+    assert.equal(blocchi(f).length, 1);
+    assert.match(blocchi(f)[0].message, /NON lo puo' misurare/);
+  });
+
+  it("non essenziale senza banner e' un bloccante", () => {
+    const f = findingsArchiviazione({
+      cookie: [{ nome: "_ga", percorso: "/" }], archiviazioni: [], terzi: [],
+      dichiarate: [{ chiave: "_ga", essenziale: "no" }], banner: false,
+    });
+    assert.ok(blocchi(f).some((x) => x.object === "consenso"));
+  });
+
+  it("un banner senza niente da proteggere e' un rilievo, non un verde muto", () => {
+    const f = findingsArchiviazione({ cookie: [], archiviazioni: [], terzi: [], dichiarate: [], banner: true });
+    assert.equal(f[0].severity, "issue");
+    assert.match(f[0].message, /insegna a cliccare/);
+  });
+});
+
+// ------------------------------------------------------------ accessibilita'
+describe("accessibilita' dell'HTML servito", () => {
+  const pagina = (dentro, attrHtml = ' lang="it"') =>
+    `<html${attrHtml}><head><title>Titolo</title></head><body><main>${dentro}</main></body></html>`;
+
+  it("una pagina ben formata non produce rilievi", () => {
+    assert.deepEqual(findingsAccessibilitaPagina("/", pagina("<h1>A</h1><h2>B</h2>")), []);
+  });
+
+  it("manca `lang`: bloccante", () => {
+    assert.ok(blocchi(findingsAccessibilitaPagina("/", pagina("<h1>A</h1>", ""))).some((x) => /lang/.test(x.message)));
+  });
+
+  it("manca `<title>`: bloccante", () => {
+    assert.ok(blocchi(findingsAccessibilitaPagina("/", '<html lang="it"><head></head><body><main><h1>A</h1></main></body></html>')).length > 0);
+  });
+
+  it("nessun h1: bloccante", () => {
+    assert.ok(blocchi(findingsAccessibilitaPagina("/", pagina("<h2>B</h2>"))).some((x) => /nessun <h1>/.test(x.message)));
+  });
+
+  it("sabotaggio M: gerarchia saltata h1 → h3 e' un BLOCCANTE, non un rilievo", () => {
+    // Con `issue` il passo restava verde su una gerarchia rotta, cioe' era
+    // verde proprio sul difetto che dichiara di provare.
+    const f = findingsAccessibilitaPagina("/", pagina("<h1>A</h1><h3>C</h3>"));
+    assert.ok(blocchi(f).some((x) => /gerarchia dei titoli saltata/.test(x.message)));
+  });
+
+  it("immagine senza alt: bloccante — con alt vuoto: rilievo, perche' decorativa lo dice una persona", () => {
+    const senza = findingsAccessibilitaPagina("/", pagina('<h1>A</h1><img src="/a.png">'));
+    const vuoto = findingsAccessibilitaPagina("/", pagina('<h1>A</h1><img src="/a.png" alt="">'));
+    assert.equal(blocchi(senza).length, 1);
+    assert.equal(blocchi(vuoto).length, 0);
+    assert.equal(vuoto.filter((x) => x.severity === "issue").length, 1);
+  });
+
+  it("collegamento e bottone senza nome accessibile: bloccanti", () => {
+    const f = findingsAccessibilitaPagina("/", pagina('<h1>A</h1><a href="/x"><span></span></a><button></button>'));
+    assert.equal(blocchi(f).length, 2);
+  });
+
+  it("`aria-label` e l'`alt` di un'immagine dentro contano come nome accessibile", () => {
+    assert.equal(nomeAccessibile('<a aria-label="Vai">', "<span></span>"), "Vai");
+    assert.equal(nomeAccessibile("<a>", '<img alt="Casa">'), "Casa");
+  });
+
+  it("campo senza etichetta e senza aria-label: bloccante", () => {
+    const f = findingsAccessibilitaPagina("/", pagina('<h1>A</h1><form><input name="x"></form>'));
+    assert.ok(blocchi(f).some((x) => /senza etichetta/.test(x.message)));
+  });
+
+  it("un `<label for>` che combacia basta", () => {
+    const f = findingsAccessibilitaPagina("/", pagina('<h1>A</h1><form><label for="x">X</label><input id="x" name="x"></form>'));
+    assert.deepEqual(f, []);
+    assert.equal(etichettePerId('<label for="x">X</label>').get("x"), "X");
+  });
+
+  it("manca <main>: rilievo, non bloccante", () => {
+    const f = findingsAccessibilitaPagina("/", '<html lang="it"><head><title>T</title></head><body><h1>A</h1></body></html>');
+    assert.deepEqual(f.map((x) => x.severity), ["issue"]);
+  });
+});
+
+// ------------------------------------------------------------------ lingua
+describe("lingua e hreflang", () => {
+  const p = (percorso, lang, hreflang = []) => ({ percorso, lang, hreflang });
+
+  it("legge lang e hreflang dall'HTML", () => {
+    assert.equal(langDi('<html lang="it-IT">'), "it-IT");
+    assert.deepEqual(hreflangDi('<link rel="alternate" hreflang="en" href="/en">', BASE), [{ hreflang: "en", percorso: "/en" }]);
+  });
+
+  it("riconosce le rotte per lingua e non si fa ingannare da /privacy", () => {
+    assert.deepEqual(lingueDaRotte(["/", "/en/menu", "/privacy", "/contatti"]), ["en"]);
+  });
+
+  it("monolingua: NON APPLICABILE, con la premessa stampata", () => {
+    const e = esitoLingua({ pagine: [p("/", "it"), p("/menu", "it")], lingueDichiarate: ["it"], percorsi: ["/", "/menu"] });
+    assert.equal(e.stato, "n/a");
+    assert.match(e.premessa, /lingue misurate .* it/);
+    assert.match(e.premessa, /rotte per lingua trovate nella superficie: nessuna/);
+  });
+
+  it("falso verde (STOP §7): la premessa di n/a NON puo' essere «zero hreflang»", () => {
+    // Un sito multilingua a cui MANCANO gli hreflang — cioe' la non conformita'
+    // da trovare — uscirebbe «non applicabile». La premessa e' un'altra misura:
+    // l'insieme dei `lang` sulle pagine servite, che non dipende dagli hreflang.
+    const e = esitoLingua({ pagine: [p("/", "it"), p("/en", "en")], lingueDichiarate: ["it", "en"], percorsi: ["/", "/en"] });
+    assert.equal(e.stato, "fail");
+    assert.equal(blocchi(e.findings).length, 2, "una per pagina: sito multilingua senza hreflang");
+  });
+
+  it("hreflang non reciproco: bloccante", () => {
+    const e = esitoLingua({
+      pagine: [
+        p("/", "it", [{ hreflang: "it", percorso: "/" }, { hreflang: "en", percorso: "/en" }, { hreflang: "x-default", percorso: "/" }]),
+        // `/en` rimanda solo a se' stessa e alla home come x-default: NON e'
+        // un rimando reciproco verso `/`.
+        p("/en", "en", [{ hreflang: "en", percorso: "/en" }, { hreflang: "x-default", percorso: "/" }]),
+      ],
+      lingueDichiarate: ["it", "en"], percorsi: ["/", "/en"],
+    });
+    assert.ok(blocchi(e.findings).some((x) => /non rimanda indietro/.test(x.message)));
+  });
+
+  it("una pagina che dichiara una lingua fuori dal certificato e' un bloccante", () => {
+    const e = esitoLingua({ pagine: [p("/", "it"), p("/x", "de")], lingueDichiarate: ["it"], percorsi: ["/", "/x"] });
+    assert.ok(blocchi(e.findings).some((x) => x.object === "/x"));
+  });
+
+  it("hreflang su un sito monolingua: rilievo, e resta non applicabile", () => {
+    const e = esitoLingua({ pagine: [p("/", "it", [{ hreflang: "it", percorso: "/" }])], lingueDichiarate: ["it"], percorsi: ["/"] });
+    assert.equal(e.stato, "n/a");
+    assert.equal(e.findings[0].severity, "issue");
+  });
+});
+
+// ------------------------------------------------------------- i quattro stati
+describe("i quattro stati", () => {
+  it("`n/a` costa una premessa: senza, si torna a MANCANTE", () => {
+    assert.equal(statoNonApplicabile("zero moduli su 5 pagine"), "n/a");
+    assert.equal(statoNonApplicabile(""), "skipped");
+    assert.equal(statoNonApplicabile(null), "skipped");
+    assert.equal(statoNonApplicabile("   "), "skipped");
+  });
+
+  it("un `block` fa fallire, un `issue` no", () => {
+    assert.equal(statoDaFindings([{ severity: "issue" }]), "pass");
+    assert.equal(statoDaFindings([{ severity: "issue" }, { severity: "block" }]), "fail");
+    assert.deepEqual(contaGravita([{ severity: "block" }, { severity: "warn" }]), { block: 1, issue: 0, warn: 1 });
+  });
+});

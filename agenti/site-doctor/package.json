@@ -1,0 +1,15 @@
+{
+  "name": "site-doctor-scripts",
+  "private": true,
+  "type": "module",
+  "description": "Solo per far girare i guardiani e la batteria sugli script della skill. Il repo di regia NON e' un progetto applicativo: qui non si pubblica nulla e non si costruisce nulla. Il gate di questa skill non ha dipendenze esterne — ne' `npx`, ne' browser — quindi non c'e' nessuna versione da bloccare qui dentro.",
+  "scripts": {
+    "test": "node --test scripts/servito-lib.test.mjs scripts/conformita-lib.test.mjs scripts/verify.test.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "eslint": "^9.39.0",
+    "jscpd": "^4.0.5",
+    "knip": "^5.66.0"
+  }
+}

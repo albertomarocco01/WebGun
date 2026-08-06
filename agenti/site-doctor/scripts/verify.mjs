@@ -32,7 +32,7 @@
  */
 
 import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -69,7 +69,6 @@ import {
   terziDi,
 } from "./servito-lib.mjs";
 
-const SKILL_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 const PROGETTO = process.cwd();
 const CERTIFICATO = "docs/conformita.md";
 const HANDOFF_DIR = "docs/handoff";
@@ -621,5 +620,3 @@ if (process.argv[1]) {
   try { invocatoReale = realpathSync(invocato); } catch { /* percorso sparito: vale il testuale */ }
   if (invocato === questoModulo || invocatoReale === questoModulo) await main();
 }
-
-export { SKILL_DIR };
