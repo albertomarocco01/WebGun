@@ -744,3 +744,25 @@ test("i percorsi di `git status --porcelain` si leggono interi, anche dopo il tr
 test("una rinomina si dichiara col nome NUOVO: e' quello che il commit porterebbe", () => {
   assert.deepEqual(percorsiSporchi(["R  src/lib/seo.ts -> src/lib/seo-nuovo.ts"]), ["src/lib/seo-nuovo.ts"]);
 });
+
+test("uno sha citato in un COMMENTO non e' un'impronta scritta a mano", () => {
+  const config = `// Misurato: BUILD_ID = \`9c2914484e28\`, il commit vero era \`2d1355e3d697\`.
+const improntaDalCommit = () => {
+  const sha = process.env.WEBGUN_COMMIT;
+  if (!sha) { throw new Error("impronta: commit non risolvibile"); }
+  return sha.slice(0, 12);
+};
+export default { generateBuildId: improntaDalCommit };
+`;
+  const f = findingsImpronta({ nextConfig: config, buildIdDisco: "abcdef1234567", commit: "abcdef1234567890" });
+  assert.equal(f.filter((x) => /letterale/.test(x.message)).length, 0,
+    "il commento che SPIEGA il difetto non deve far bocciare il rimedio: e' la classe SEG-5, sul codice");
+});
+
+test("ma uno sha usato come VALORE resta un `block`", () => {
+  const config = `const improntaDalCommit = () => process.env.WEBGUN_COMMIT ?? "2d1355e3d697";
+export default { generateBuildId: improntaDalCommit };
+`;
+  const f = findingsImpronta({ nextConfig: config, buildIdDisco: "2d1355e3d697", commit: "2d1355e3d697aa" });
+  assert.equal(f.filter((x) => x.severity === "block" && /letterale/.test(x.message)).length, 1);
+});

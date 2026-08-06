@@ -1197,7 +1197,15 @@ function findingsConfigImpronta(nextConfig) {
     // Il gate accusava di «non sollevare» un frammento che solleva.
     // Un `next.config` e' un file piccolo e dedicato: leggerlo tutto costa
     // niente, e un letterale esadecimale li' dentro non ha altre spiegazioni.
-    const corpo = nextConfig;
+    // I COMMENTI NON SONO UN'IMPRONTA. Trovato dal collaudo del 2026-08-06,
+    // e il falso positivo se l'e' prodotto da solo: il commento che il
+    // frammento porta per SPIEGARE il difetto dell'identita' presa da un altro
+    // repository cita i due sha misurati fra apici inversi, e la regola —
+    // `["'`][0-9a-f]{7,40}["'`]` — li leggeva come letterali. Il gate bocciava
+    // il rimedio che la sua stessa skill aveva appena scritto, sul banco
+    // rigenerato da `banco.mjs`. E' la classe del rilievo SEG-5 («il documento
+    // che spiega il meccanismo si accusa da solo»), qui sul codice.
+    const corpo = nextConfig.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
     if (SHA_LETTERALE.test(corpo)) {
       findings.push({
         severity: "block",
