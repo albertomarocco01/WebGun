@@ -39,23 +39,52 @@ export function statoNonApplicabile(premessa) {
 
 // ------------------------------------------------------ pulizia del documento
 /**
- * L'HTML senza `<script>`, `<style>` e commenti.
+ * L'HTML senza il CORPO di `<script>` e `<style>` e senza commenti — ma con i
+ * tag di apertura intatti.
  *
- * NON e' un dettaglio di igiene: su Next in App Router il carico RSC viaggia
- * dentro `<script>self.__next_f.push(...)` e contiene l'albero serializzato —
- * `["$","h1",null,{...}]`, `["$","img",null,{"alt":...}]`. Misurato sul pilota
- * il 2026-08-06: la pagina `not-found` mostra UN `h1` e nel carico ce n'e' un
- * secondo. Contare i tag senza ripulire vuol dire leggere due volte lo stesso
- * documento — una nel DOM e una nella sua fotocopia — e produrre rossi su
- * pagine corrette (o, peggio, verdi su pagine rotte, se la fotocopia e' piu'
- * completa del DOM).
+ * Togliere il corpo NON e' un dettaglio di igiene: su Next in App Router il
+ * carico RSC viaggia dentro `<script>self.__next_f.push(...)` e contiene
+ * l'albero serializzato — `["$","h1",null,{...}]`, `["$","img",null,{...}]`.
+ * Misurato sul pilota il 2026-08-06: la pagina `not-found` mostra UN `h1` e nel
+ * carico ce n'e' un secondo. Contare i tag senza ripulire vuol dire leggere due
+ * volte lo stesso documento — una nel DOM e una nella sua fotocopia.
+ *
+ * Tenere il tag di apertura invece e' la correzione di un difetto misurato col
+ * sabotaggio, classe H: la prima versione cancellava `<script …>` per intero, e
+ * `terziDi` — che cerca proprio gli `src` di terzi — girava su un documento in
+ * cui gli script non c'erano piu'. Il passo chiudeva «zero terzi» dopo aver
+ * guardato un documento da cui i terzi erano stati tolti da noi.
  */
 export function senzaScript(html) {
   if (typeof html !== "string") return "";
   return html
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script\b([^>]*)>[\s\S]*?<\/script>/gi, "<script$1></script>")
+    .replace(/<style\b([^>]*)>[\s\S]*?<\/style>/gi, "<style$1></style>")
     .replace(/<!--[\s\S]*?-->/g, " ");
+}
+
+/**
+ * Le pagine raggiungibili da `/` seguendo SOLO i collegamenti, sul grafo gia'
+ * scaricato. Non fa richieste: cammina quello che il gate ha gia' letto.
+ *
+ * Esiste perche' la prima versione confondeva due insiemi: la camminata partiva
+ * anche dalle pagine della sitemap, quindi i collegamenti TROVATI SU QUELLE
+ * pagine rientravano fra «i collegamenti». Con la sitemap come seme, la
+ * sorgente «collegamenti» non era piu' indipendente — e il sabotaggio di classe
+ * X (home senza collegamenti, sitemap intera) usciva verde sul passo che esiste
+ * apposta per vederlo. Le due sorgenti servono a controllarsi a vicenda: se una
+ * alimenta l'altra, ce n'e' una sola.
+ */
+export function raggiungibiliDaCollegamenti(grafo, partenza = "/") {
+  const viste = new Set();
+  const coda = [partenza];
+  while (coda.length > 0) {
+    const p = coda.shift();
+    if (viste.has(p) || !grafo.has(p)) continue;
+    viste.add(p);
+    for (const q of grafo.get(p)) if (!viste.has(q)) coda.push(q);
+  }
+  return [...viste].sort();
 }
 
 /** Solo il testo visibile: tag via, entita' principali sciolte, spazi compressi. */
@@ -497,7 +526,8 @@ export function findingsDatiRaccolti({ pagineConModuli, basiDichiarate, informat
         });
         continue;
       }
-      if (!String(riga.base ?? "").trim() || /\{\{|^-+$/.test(String(riga.base).trim())) {
+      const base = riga["base giuridica"] ?? riga.base ?? "";
+      if (!String(base).trim() || /\{\{|^-+$/.test(String(base).trim())) {
         findings.push({
           severity: "block",
           object: `${pagina.percorso} → campo "${campo.nome || campo.id}"`,
@@ -657,10 +687,16 @@ export function findingsAccessibilitaPagina(percorso, html) {
   if (h1 === 0) dove("nessun <h1>: la pagina non dichiara di cosa parla");
   else if (h1 > 1) dove(`${h1} elementi <h1>: la gerarchia dei titoli non ha una cima sola`, "issue");
 
+  // `block` e non `issue`, e il sabotaggio di classe M e' il motivo: con `issue`
+  // il passo restava VERDE su una pagina con la gerarchia rotta, cioe' su
+  // esattamente il difetto che la riga del gate dichiara di provare. La prova
+  // qui e' interamente nel documento — h1 seguito da h3 — senza una riga di
+  // euristica: e' il criterio della §17 di DECISIONI.md, e cade dalla parte del
+  // bloccante.
   const livelli = livelliTitoli(html);
   for (let i = 1; i < livelli.length; i++) {
     if (livelli[i] > livelli[i - 1] + 1) {
-      dove(`gerarchia dei titoli saltata: h${livelli[i - 1]} seguito da h${livelli[i]}`, "issue");
+      dove(`gerarchia dei titoli saltata: h${livelli[i - 1]} seguito da h${livelli[i]}. Chi naviga per intestazioni si trova un livello che non esiste`);
       break;
     }
   }

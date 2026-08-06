@@ -63,6 +63,7 @@ import {
   langDi,
   moduliDiPagina,
   percorsiDaSitemap,
+  raggiungibiliDaCollegamenti,
   statoDaFindings,
   statoNonApplicabile,
   terziDi,
@@ -87,6 +88,14 @@ export const ID = Object.freeze({
 
 export const CONTRATTO_JSON = 1;
 export const MAX_PAGINE = 60;
+/**
+ * Ogni richiesta ha un tempo massimo, e non e' pedanteria: un gate senza
+ * timeout, davanti a un server che accetta la connessione e non risponde, non
+ * e' ne' verde ne' rosso — e' appeso, e chi lo guarda non sa se sta lavorando.
+ * E' il punto aperto n°6 dello `STATO.md` di vetrina-crafter, chiuso qui alla
+ * nascita invece che dopo.
+ */
+export const ATTESA_MS = 15000;
 
 const steps = [];
 const record = (id, name, status, detail = "") => {
@@ -105,10 +114,10 @@ const leggiSeCe = (relativo) => {
  * Due tentativi, come nel gate di speed-demon e per lo stesso motivo misurato:
  * un intoppo di rete non deve trasformarsi in un rilievo sul sito.
  */
-async function preleva(url, { tentativi = 2, segui = false } = {}) {
+async function preleva(url, { tentativi = 2, segui = false, attesa = ATTESA_MS } = {}) {
   for (let i = 0; i < tentativi; i++) {
     try {
-      const r = await fetch(url, { redirect: segui ? "follow" : "manual" });
+      const r = await fetch(url, { redirect: segui ? "follow" : "manual", signal: AbortSignal.timeout(attesa) });
       const corpo = await r.text();
       const cookie = typeof r.headers.getSetCookie === "function"
         ? r.headers.getSetCookie()
@@ -187,7 +196,7 @@ const PASSI = [
       const daVedere = ["/", ...daSitemap];
       const viste = new Map();
       const rimandi = new Map();
-      const daCollegamenti = new Set();
+      const grafo = new Map();
       let troncata = false;
       while (daVedere.length > 0) {
         if (viste.size >= args.maxPagine) { troncata = true; break; }
@@ -198,12 +207,14 @@ const PASSI = [
         if (r.stato >= 300 && r.stato < 400) { rimandi.set(percorso, r.intestazioni.get("location")); continue; }
         if (r.stato >= 400) { rimandi.set(percorso, `HTTP ${r.stato}`); continue; }
         viste.set(percorso, r);
-        for (const p of collegamentiInterni(r.corpo, args.url)) {
-          daCollegamenti.add(p);
-          if (!viste.has(p) && !rimandi.has(p)) daVedere.push(p);
-        }
+        const uscenti = collegamentiInterni(r.corpo, args.url);
+        grafo.set(percorso, uscenti);
+        for (const p of uscenti) if (!viste.has(p) && !rimandi.has(p)) daVedere.push(p);
       }
-      daCollegamenti.add("/");
+      // La sorgente «collegamenti» si calcola SUL GRAFO, partendo da `/`: la
+      // sitemap ha fatto da seme allo scarico, non deve fare da seme alla
+      // scoperta. Vedi `raggiungibiliDaCollegamenti`.
+      const daCollegamenti = raggiungibiliDaCollegamenti(grafo, "/");
 
       ctx.baseUrl = args.url;
       ctx.pagine = [...viste].filter(([, r]) => r !== null).map(([percorso, r]) => ({ percorso, ...r }));
@@ -211,7 +222,7 @@ const PASSI = [
       ctx.rimandi = rimandi;
 
       const findings = findingsSuperficie({
-        daCollegamenti: [...daCollegamenti].filter((p) => viste.has(p)),
+        daCollegamenti: daCollegamenti.filter((p) => viste.has(p)),
         daSitemap,
         dichiarate: ctx.certificato?.superficie ?? [],
         sitemapLetta,
@@ -227,7 +238,7 @@ const PASSI = [
       }
       const dettaglio = [
         `identita': ${identita.stato === "pass" ? identita.diagnosi : "NON confermata dal build id (vedi sotto)"} · ${ctx.pagine.length} pagine lette · ${rimandi.size} rimandi o errori non seguiti`,
-        `sorgenti: collegamenti (${daCollegamenti.size}) · sitemap.xml ${sitemapLetta ? `(${daSitemap.length})` : "NON LETTA"}`,
+        `sorgenti: collegamenti da / (${daCollegamenti.length}) · sitemap.xml ${sitemapLetta ? `(${daSitemap.length})` : "NON LETTA"}`,
         `superficie: ${ctx.pagine.map((p) => p.percorso).join(" ")}`,
         rimandi.size > 0 ? `non entrate: ${[...rimandi].map(([p, d]) => `${p} → ${d}`).join(" · ")}` : "",
         dettaglioFindings(findings),
