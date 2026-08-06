@@ -42,6 +42,18 @@ export const VOCI = Object.freeze([
 ]);
 
 const RE_SEGNAPOSTO = /\{\{[^}]*\}\}|<da compilare>|lorem ipsum/i;
+
+/**
+ * Il testo senza i commenti HTML.
+ *
+ * I modelli di questa casa portano le istruzioni dentro `<!-- … -->`, e quelle
+ * istruzioni contengono ESEMPI coi segnaposto (`Confermato da: … {{NOME}}`).
+ * Cercare i segnaposto nel testo grezzo vuol dire segnalare ogni certificato
+ * compilato che abbia avuto la cura di tenersi le istruzioni: un rilievo che
+ * scatta sempre e' un rilievo che tutti imparano a ignorare, ed e' la §8 di
+ * DECISIONI.md. Il commento e' guida, non contenuto.
+ */
+const senzaCommenti = (testo) => String(testo ?? "").replace(/<!--[\s\S]*?-->/g, " ");
 const SCOPERTO = /^(—|-{1,2}|scoperto|nessuno|—\s*\(scoperto\))$/i;
 
 const ripulisci = (s) =>
@@ -130,7 +142,7 @@ export function leggiCertificato(testo) {
     archiviazioni: tabellaSotto(testo, /archiviazione dichiarata/i).righe,
     datiRaccolti: tabellaSotto(testo, /dati raccolti/i).righe,
     voci: tabellaSotto(testo, /voci di conformit/i),
-    haSegnaposto: RE_SEGNAPOSTO.test(String(testo ?? "")),
+    haSegnaposto: RE_SEGNAPOSTO.test(senzaCommenti(testo)),
   };
 }
 
@@ -287,7 +299,7 @@ export function contrattoUscita(percorso, testo, verdetto) {
     return [{ severity: "block", object: percorso, message: "handoff assente: chi viene dopo non ha niente da leggere, e launchpad non pubblica senza" }];
   }
   const findings = [];
-  if (RE_SEGNAPOSTO.test(testo)) findings.push({ severity: "block", object: percorso, message: "l'handoff contiene ancora segnaposto del modello" });
+  if (RE_SEGNAPOSTO.test(senzaCommenti(testo))) findings.push({ severity: "block", object: percorso, message: "l'handoff contiene ancora segnaposto del modello" });
   const m = RE_RIGA_GATE.exec(testo);
   if (!m) {
     findings.push({ severity: "block", object: percorso, message: "nessuna riga `Gate: VERDE` o `Gate: ROSSO`: e' la riga che un consumatore a valle legge per decidere se fidarsi" });

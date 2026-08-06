@@ -8,6 +8,7 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import {
@@ -217,6 +218,66 @@ describe("il perimetro — la Legge n°1, resa falsificabile", () => {
       VOCI.filter((v) => v.mio).map((v) => v.mio).sort(),
       ["accessibilita-servita", "archiviazione-client", "archiviazione-client", "dati-raccolti", "informativa-privacy", "lingua-e-hreflang"],
     );
+  });
+});
+
+/**
+ * Il gate deve saper leggere il contratto che il suo stesso modello insegna a
+ * scrivere.
+ *
+ * Non e' un'ipotesi: e' il difetto n°17 del collaudo avversario di speed-demon,
+ * dove quattro rifiuti indebiti su quattro venivano dallo stesso ceppo — il
+ * gate non sapeva leggere `docs/performance.md` scritto seguendo il template
+ * della skill, e rifiutava perfino una firma umana con nome e ruolo. Qui il
+ * modello viene letto dal disco, riempito come lo riempirebbe una persona, e
+ * dato in pasto al parser vero.
+ */
+describe("il modello del certificato e il parser sono la stessa cosa", () => {
+  const MODELLO = readFileSync(new URL("../resources/templates/conformita.md", import.meta.url), "utf8");
+
+  // Come lo riempie una persona: ogni `{{…}}` sostituito col suo contenuto.
+  const riempito = MODELLO
+    .replace("Confermato da: {{NOME COGNOME}} ({{RUOLO}}) il {{AAAA-MM-GG}}", "Confermato da: Alberto Marocco (committente) il 2026-08-06")
+    .replace(/\{\{([^}]*)\}\}/g, "$1");
+
+  it("il modello NON riempito e' rifiutato: e' un promemoria, non un certificato", () => {
+    const f = findingsCertificato(leggiCertificato(MODELLO));
+    assert.ok(blocchi(f).some((x) => /segnaposto del modello/.test(x.message)));
+  });
+
+  it("il modello riempito si legge per intero", () => {
+    const c = leggiCertificato(riempito);
+    assert.equal(c.dataConferma, "2026-08-06");
+    assert.equal(c.urlDichiarato, "http://127.0.0.1:3000");
+    assert.deepEqual(c.lingue, ["it"]);
+    assert.equal(c.informativa, "/privacy");
+    assert.equal(c.banner, false);
+    assert.deepEqual(c.superficie, ["/", "/contatti", "/privacy"]);
+    assert.equal(c.archiviazioni.length, 1);
+    assert.equal(c.archiviazioni[0].essenziale, "sì");
+    assert.equal(c.datiRaccolti.length, 2);
+    assert.equal(c.voci.righe.length, VOCI.length, "il modello elenca tutte le voci del codice");
+  });
+
+  it("il modello riempito non produce nessun rilievo sul certificato", () => {
+    assert.deepEqual(findingsCertificato(leggiCertificato(riempito)), []);
+  });
+
+  it("la tabella del modello passa il perimetro, con la sola voce scoperta", () => {
+    const stati = new Map(VOCI.filter((v) => v.mio).map((v) => [v.mio, v.mio === "lingua-e-hreflang" ? "n/a" : "pass"]));
+    const f = findingsPerimetro({
+      tabella: leggiCertificato(riempito).voci,
+      leggiFile: (p) => (p.startsWith("docs/handoff/") ? "canonical sitemap robots noindex Open Graph favicon dati strutturati contrasti accessibilità" : null),
+      statiPassi: stati,
+    });
+    assert.deepEqual(blocchi(f), [], "il modello della casa non deve produrre bloccanti sul gate della casa");
+    assert.deepEqual(f.map((x) => x.object), ["antispam"]);
+  });
+
+  it("il modello dell'handoff porta una riga `Gate:` che il gate riconosce", () => {
+    const handoff = readFileSync(new URL("../resources/templates/handoff-site-doctor.md", import.meta.url), "utf8");
+    // Il modello e' pieno di segnaposto: si verifica la sola riga del verdetto.
+    assert.deepEqual(contrattoUscita("x.md", handoff.replace("{{VERDE}}", "VERDE").replace(/\{\{[^}]*\}\}/g, "—"), "VERDE"), []);
   });
 });
 
