@@ -25,6 +25,7 @@ import { fileURLToPath } from "node:url";
 import {
   contrattoUscita,
   normalizzaTipi,
+  premessaTsc,
   regolaEntitaAncorate,
   tabelleDaiTipi,
   validaConfig,
@@ -34,6 +35,11 @@ import { conBarre } from "./audit-lib.mjs";
 import { argomentiOstiliACmd, formaEseguibile, motivoOstile, risolviEseguibile } from "./eseguibili.mjs";
 
 const SKILL_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
+// Le regole con cui si MISURA viaggiano con la skill, non col progetto: il gate
+// deve dare lo stesso esito ovunque giri, e soprattutto non deve chiedere il
+// permesso al progetto che sta giudicando (DECISIONI.md §8, referto § H8).
+const CONFIG_A11Y = join(SKILL_DIR, "resources", "config", "eslint-a11y.config.mjs");
+const ESLINT_BIN = join(SKILL_DIR, "node_modules", "eslint", "bin", "eslint.js");
 
 // La radice del progetto AUDITATO: e' li' che nessun eseguibile va cercato, e
 // `--progetto` puo' spostarla. Vale `process.cwd()` finche' `main()` non legge
@@ -336,9 +342,23 @@ function passoTsc(progetto) {
     return;
   }
 
+  // LA PREMESSA PRIMA DELL'ESITO: `tsc` legge il tsconfig del progetto — ed e'
+  // giusto, gli alias li conosce solo lui — ma con `strict: false` esce 0 su
+  // codice che un controllo vero boccia. Stessa forma dell'ESLint a zero regole
+  // del passo `a11y` (referto § H8).
+  const { strict, motivo } = premessaTsc(readFileSync(tsconfig, "utf8"));
+  if (!strict) {
+    record(ID.tsc, etichetta, "skipped",
+      `${motivo}\nI tipi NON sono stati controllati sul serio: verifica mancante, non un successo.`);
+    return;
+  }
+
   const res = esegui(progetto, "npx", ["--no-install", "tsc", "--noEmit"]);
+  // si stampa SEMPRE con cosa si e' misurato, anche sul verde
+  const premessa = `tsconfig.json del progetto · compilerOptions.strict: true`;
   record(ID.tsc, etichetta, res.status === 0 ? "pass" : "fail",
-    res.status === 0 ? "" : (res.stdout || res.stderr || "").trim().split("\n").slice(0, 20).join("\n"));
+    res.status === 0 ? premessa
+      : `${premessa}\n${(res.stdout || res.stderr || "").trim().split("\n").slice(0, 20).join("\n")}`);
 }
 
 // ------------------------------------------------------- 6. accessibilita'
@@ -347,14 +367,16 @@ function passoTsc(progetto) {
 // vede di piu'.
 function passoA11y(progetto, config) {
   const etichetta = "accessibilita' (eslint jsx-a11y)";
-  const configEslint = ["eslint.config.mjs", "eslint.config.js", "eslint.config.ts"]
-    .map((f) => dentroProgetto(progetto, f))
-    .find((f) => existsSync(f));
-  const plugin = dentroProgetto(progetto, "node_modules", "eslint-plugin-jsx-a11y", "package.json");
-
-  if (!configEslint || !existsSync(plugin)) {
+  // ESLint e la sua configurazione viaggiano con la SKILL, non col progetto.
+  // Fino al 2026-08-06 il passo lanciava `npx eslint` DENTRO il progetto, cioe'
+  // con le regole che il progetto auditato si e' scritto: una configurazione a
+  // zero regole attive fa uscire ESLint 0 su un `<img>` senz'`alt`, e il passo
+  // chiudeva `pass` (referto § H8, misurato). Le due skill sorelle facevano gia'
+  // il contrario — e' la forma di `flow-sentinel`, ripresa qui senza inventarne
+  // una nuova.
+  if (!existsSync(ESLINT_BIN)) {
     record(ID.a11y, etichetta, "skipped",
-      "eslint o eslint-plugin-jsx-a11y assenti nel progetto: l'accessibilita' delle viste NON e' stata verificata");
+      `ESLint non installato nella skill (${ESLINT_BIN}): lancia \`npm install\` in agenti/gestionale-crafter. L'accessibilita' delle viste NON e' stata verificata`);
     return;
   }
 
@@ -366,10 +388,19 @@ function passoA11y(progetto, config) {
     return;
   }
 
-  const res = esegui(progetto, "npx", ["--no-install", "eslint", ...bersagli]);
+  // `process.execPath`, non `npx`: l'interprete che sta girando (§ C1).
+  const res = spawnSync(process.execPath,
+    [ESLINT_BIN, "--no-config-lookup", "--config", CONFIG_A11Y, ...bersagli],
+    { encoding: "utf8", cwd: progetto, maxBuffer: 64 * 1024 * 1024 });
+  if (res.error) {
+    record(ID.a11y, etichetta, "skipped", `ESLint non eseguibile: ${res.error.message}`);
+    return;
+  }
+  // La configurazione si stampa SEMPRE, anche sul verde: un `pass` non deve
+  // poter nascondere CON QUALI regole e' stato ottenuto.
+  const premessa = `controllate: ${bersagli.map(conBarre).join(", ")} · regole: ${conBarre(CONFIG_A11Y)} (della skill, non del progetto)`;
   record(ID.a11y, etichetta, res.status === 0 ? "pass" : "fail",
-    `controllate: ${bersagli.map(conBarre).join(", ")}` +
-      (res.status === 0 ? "" : `\n${(res.stdout || res.stderr || "").trim().split("\n").slice(0, 20).join("\n")}`));
+    premessa + (res.status === 0 ? "" : `\n${(res.stdout || res.stderr || "").trim().split("\n").slice(0, 20).join("\n")}`));
 }
 
 // --------------------------------------------------------- 7. contratto d'uscita

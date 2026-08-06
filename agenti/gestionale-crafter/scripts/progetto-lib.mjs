@@ -113,6 +113,45 @@ export function validaConfig(oggetto) {
   return { errori };
 }
 
+// ─── la premessa del passo `tsc` ─────────────────────────────────────────────
+// `tsc --noEmit` legge il `tsconfig.json` del PROGETTO, ed e' giusto cosi': i
+// percorsi, gli alias e i tipi di quel progetto li conosce solo lui. Ma con
+// `strict: false` TypeScript non riporta la meta' degli errori che riporterebbe
+// altrimenti, ed esce 0 su codice che un controllo vero boccia — la stessa forma
+// dell'ESLint a zero regole del passo `a11y` (referto § H8).
+//
+// La correzione non e' imporre un `tsconfig` della skill (romperebbe gli alias
+// del progetto): e' CONTARE LA PREMESSA. Con quale configurazione si e'
+// misurato, e quel controllo era acceso? Se non lo era, il passo e' una verifica
+// mancante, non un successo.
+//
+// `strict` deve essere dichiarato ESPLICITAMENTE `true`: ereditato da un
+// `extends` questo controllo non lo vede, e «non lo so» non e' «va bene».
+export function premessaTsc(testoTsconfig) {
+  let config;
+  try {
+    // JSONC: i `tsconfig.json` ammettono commenti, e `create-next-app` non ne
+    // mette ma altri strumenti si'. Le virgole finali no: se il file non si
+    // legge, e' una premessa mancante come le altre.
+    config = JSON.parse(String(testoTsconfig ?? "")
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1 "));
+  } catch (errore) {
+    return { strict: false, motivo: `tsconfig.json non interpretabile (${errore.message}): non si sa con quali controlli \`tsc\` abbia misurato` };
+  }
+  const opzioni = config?.compilerOptions ?? {};
+  if (opzioni.strict === true) return { strict: true, motivo: null };
+  if (opzioni.strict === undefined) {
+    return {
+      strict: false,
+      motivo: config?.extends
+        ? "`compilerOptions.strict` non e' dichiarato in questo tsconfig.json (arriverebbe da `extends`): il gate non risale la catena, e «non lo so» non e' «va bene». Dichiaralo qui"
+        : "`compilerOptions.strict` non e' dichiarato: senza, TypeScript non riporta meta' degli errori e `tsc --noEmit` esce 0 su codice che un controllo vero boccia",
+    };
+  }
+  return { strict: false, motivo: "`compilerOptions.strict` e' `false`: `tsc --noEmit` esce 0 su codice che un controllo vero boccia, e un passo verde qui direbbe il contrario di cio' che e' successo" };
+}
+
 // ─── l'ancoraggio: nessuna tabella sparisce in silenzio ──────────────────────
 // La differenza fra le tabelle dello schema e le entita' gestite non si chiude
 // «perche' l'agente ha deciso cosi'»: o c'e' una vista, o c'e' una motivazione

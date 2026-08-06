@@ -7,6 +7,7 @@ import {
   chiaviDiPrimoLivello,
   contrattoUscita,
   normalizzaTipi,
+  premessaTsc,
   regolaEntitaAncorate,
   tabelleDaiTipi,
   urlDbProgetto,
@@ -261,5 +262,43 @@ describe("erroriAdminRoot", () => {
     const base = { adminRoot: "src/app/admin&calc", guardie: ["richiediStaff"], entita: [] };
     assert.equal(validaConfig(base).errori.length, 1);
     assert.deepEqual(validaConfig({ ...base, adminRoot: "src/app/admin" }).errori, []);
+  });
+});
+
+// ── la premessa del passo `tsc` (referto § H8, 2026-08-06)
+// Il gemello dell'ESLint a zero regole: `tsc --noEmit` legge il tsconfig del
+// progetto — ed e' giusto, gli alias li conosce solo lui — ma con
+// `strict: false` esce 0 su codice che un controllo vero boccia.
+describe("premessaTsc", () => {
+  it("strict dichiarato true: la misura vale", () => {
+    assert.deepEqual(premessaTsc('{"compilerOptions":{"strict":true}}'), { strict: true, motivo: null });
+  });
+
+  it("strict false: verifica mancante, e il motivo lo dice", () => {
+    const { strict, motivo } = premessaTsc('{"compilerOptions":{"strict":false}}');
+    assert.equal(strict, false);
+    assert.match(motivo, /esce 0 su codice che un controllo vero boccia/);
+  });
+
+  it("strict non dichiarato: «non lo so» non e' «va bene»", () => {
+    assert.equal(premessaTsc('{"compilerOptions":{"target":"ES2022"}}').strict, false);
+    assert.match(premessaTsc("{}").motivo, /non e' dichiarato/);
+  });
+
+  it("ereditato da `extends`: il gate non risale la catena, e lo dice", () => {
+    const { strict, motivo } = premessaTsc('{"extends":"./base.json","compilerOptions":{}}');
+    assert.equal(strict, false);
+    assert.match(motivo, /arriverebbe da `extends`/);
+  });
+
+  it("i commenti di un tsconfig JSONC non lo rendono illeggibile", () => {
+    const conCommenti = '{\n  // i tipi del progetto\n  "compilerOptions": { "strict": true } /* fine */\n}';
+    assert.equal(premessaTsc(conCommenti).strict, true);
+  });
+
+  it("un tsconfig illeggibile e' una premessa mancante, non un successo", () => {
+    const { strict, motivo } = premessaTsc("{ questo non e' json }");
+    assert.equal(strict, false);
+    assert.match(motivo, /non interpretabile/);
   });
 });

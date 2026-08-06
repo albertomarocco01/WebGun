@@ -6,11 +6,21 @@
 
   // I due script sono ENTRY POINT da riga di comando, non moduli importati:
   // `verify.mjs` invoca `admin-audit.mjs` come processo separato, e l'audit si
-  // lancia anche a mano. Senza questa riga knip li dichiara file morti.
-  "entry": ["scripts/verify.mjs", "scripts/admin-audit.mjs", "scripts/*.test.mjs"],
-  "project": ["scripts/**/*.mjs"],
+  // lancia anche a mano. La configurazione dell'accessibilita' la carica ESLint
+  // per PERCORSO (`--config`), non con un import: senza queste righe knip la
+  // dichiara file morto e i suoi due pacchetti dipendenze inutilizzate. Stessa
+  // forma di flow-sentinel, che aveva gia' lo stesso caso.
+  "entry": [
+    "scripts/verify.mjs",
+    "scripts/admin-audit.mjs",
+    "scripts/*.test.mjs",
+    "resources/config/eslint-a11y.config.mjs"
+  ],
+  "project": ["scripts/**/*.mjs", "resources/config/**/*.mjs"],
 
-  // eslint e jscpd non si importano: li ESEGUE `code-maniac scan` come binari.
-  // Toglierli dal package.json spegnerebbe due passi della batteria.
-  "ignoreDependencies": ["eslint", "jscpd"]
+  // jscpd non si importa: lo ESEGUE `code-maniac scan` come binario.
+  // `eslint` e' uscito da questo elenco il 2026-08-06: ora la skill lo usa
+  // davvero — carica la propria configurazione dell'accessibilita' — e knip lo
+  // riconosce da solo. Stessa forma di flow-sentinel.
+  "ignoreDependencies": ["jscpd"]
 }
