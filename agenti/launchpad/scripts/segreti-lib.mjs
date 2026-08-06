@@ -46,15 +46,46 @@ export const statoDaFindings = (findings) =>
 export function maschera(valore) {
   const s = String(valore ?? "");
   if (s.length === 0) return "(vuoto)";
-  if (s.length <= 4) return `${"*".repeat(s.length)} [${s.length} caratteri]`;
-  return `${s.slice(0, 4)}… [${s.length} caratteri]`;
+  // PROPORZIONALE, e non «i primi quattro sempre»: rilievo SEG-7 del tribunale
+  // del 2026-08-06. Le famiglie accettano segreti da UN carattere
+  // (`create role … password '…'`) e da tre (`crypt('…')`): su una password di
+  // sei caratteri, quattro piu' la lunghezza esatta la riducono a un tentativo.
+  // Sotto i dodici caratteri non si mostra niente.
+  const quanti = s.length < 8 ? 0 : Math.min(4, Math.floor(s.length / 3));
+  if (quanti === 0) return `${"*".repeat(Math.min(s.length, 8))} [${s.length} caratteri]`;
+  return `${s.slice(0, quanti)}… [${s.length} caratteri]`;
 }
 
-/** Un file binario non si legge come testo: il rumore produce falsi positivi. */
-export const eBinario = (buffer) => {
+/**
+ * Un file binario non si legge come testo: il rumore produce falsi positivi.
+ *
+ * MA un byte NUL non basta a dire «binario». Rilievo IO-6 **e** SEG-1 del
+ * tribunale del 2026-08-06 — due periti, mandati diversi, riproduzioni diverse,
+ * stessa causa: un file salvato in **UTF-16LE** (il default di `Out-File` e di
+ * «Salva con nome → Unicode» su Windows, che e' la piattaforma di questa casa)
+ * ha un NUL dopo ogni carattere ASCII. Veniva classificato binario, non
+ * decodificato e non guardato — e un `.env.production` in UTF-16 con dentro una
+ * chiave `service_role` faceva uscire il gate VERDE.
+ *
+ * Ora il BOM decide prima dei byte, e il testo si decodifica con la sua
+ * codifica invece di essere buttato.
+ */
+export function decodifica(buffer) {
+  if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe) {
+    return { testo: senzaBom(buffer.toString("utf16le")), codifica: "utf-16le" };
+  }
+  if (buffer.length >= 2 && buffer[0] === 0xfe && buffer[1] === 0xff) {
+    // UTF-16BE: si scambiano i byte a coppie, Node non lo decodifica da solo.
+    const scambiato = Buffer.from(buffer);
+    scambiato.swap16();
+    return { testo: senzaBom(scambiato.toString("utf16le")), codifica: "utf-16be" };
+  }
   const finestra = buffer.subarray(0, Math.min(buffer.length, 8000));
-  return finestra.includes(0);
-};
+  if (finestra.includes(0)) return { testo: null, codifica: "binario" };
+  return { testo: senzaBom(buffer.toString("utf8")), codifica: "utf-8" };
+}
+
+export const eBinario = (buffer) => decodifica(buffer).testo === null;
 
 const SEGNAPOSTO = [
   /^$/,
@@ -66,9 +97,14 @@ const SEGNAPOSTO = [
   // di continuazione della shell finiva dentro il valore e `^<.*>$` non
   // combaciava piu'. Un falso positivo sulla documentazione che insegna a fare
   // la cosa giusta e' il modo piu' rapido per far ignorare il rosso.
-  /^<[^>]*>/,
-  /^\{\{[^}]*\}\}/,
-  /^\$\{[^}]*\}/,
+  // ANCORATE a destra: rilievo SEG-8 del tribunale del 2026-08-06. Come
+  // prefissi, `<vedi 1Password>Tr0ub4dor3` assolveva una password vera. I due
+  // casi del pilota che avevano motivato il rilassamento restano coperti,
+  // perche' lo strip della barra di continuazione qui sotto gira PRIMA:
+  // misurato dal perito, `"<chiave> \\"` → `"<chiave>"` → ancorata = true.
+  /^<[^>]*>$/,
+  /^\{\{[^}]*\}\}$/,
+  /^\$\{[^}]*\}$/,
   /^x+$/i,
   /^\.{3,}$/,
   /^(changeme|change-me|todo|tbd|placeholder|segnaposto|da-riempire)$/i,
@@ -90,6 +126,19 @@ const NOME_SOSPETTO = /(SECRET|_KEY|^KEY|PASSWORD|PASSWD|CREDENTIAL|PRIVATE|TOKE
 export const nomeSospetto = (nome) => NOME_SOSPETTO.test(String(nome ?? ""));
 
 /**
+ * L'estensione di un file che PORTA una chiave, non di una variabile.
+ *
+ * Rilievo SEG-9: la reference prometteva `*.key` fra i binari sospetti e
+ * `nomeSospetto` non lo riconosceva (`_KEY` vuole il trattino basso). Il test
+ * che credeva di coprirlo usava `chiavi/private.key`, che passava per la parola
+ * `private`. Predicato separato di proposito: `nomeSospetto` giudica i NOMI DI
+ * VARIABILE, e mescolarli allargherebbe anche la famiglia a entropia.
+ * `.crt`/`.cer`/`.pub` NON sono in elenco: sono materiale pubblico.
+ */
+const ESTENSIONE_DI_CHIAVE = /\.(key|pem|p12|pfx|jks|keystore|ppk|asc|gpg)$/i;
+export const ePortatoreDiChiave = (percorso) => ESTENSIONE_DI_CHIAVE.test(String(percorso ?? ""));
+
+/**
  * `NEXT_PUBLIC_*` e' pubblica PER COSTRUZIONE: `next build` la inserisce nel
  * bundle del browser. Chiamare segreto cio' che Next pubblica per contratto
  * sarebbe il falso positivo peggiore — quello sul file che vetrina-crafter
@@ -100,6 +149,26 @@ export const nomeSospetto = (nome) => NOME_SOSPETTO.test(String(nome ?? ""));
  * VALORE. Il nome decide solo se una stringa opaca qualunque va segnalata.
  */
 export const ePubblicaPerCostruzione = (nome) => /^NEXT_PUBLIC_/.test(String(nome ?? ""));
+
+/**
+ * Un valore che e' pubblico PER CONTENUTO, non per prefisso.
+ *
+ * Rilievo SEG-3 del tribunale del 2026-08-06: l'esenzione `NEXT_PUBLIC_*`
+ * assolveva il valore, e quindi assolveva proprio il caso in cui l'esposizione
+ * e' MASSIMA — una chiave vera sotto quel nome finisce nel bundle di ogni
+ * browser. Misurato: `NEXT_PUBLIC_RESEND_API_KEY=re_8kQ2…` non produceva
+ * niente, mentre `RESEND_API_KEY=re_8kQ2…` produceva un `issue`.
+ *
+ * Il prefisso non assolve piu' da solo. Assolve il **contenuto**: un JWT (la
+ * chiave anonima di Supabase, che sta nel bundle per contratto) o un indirizzo.
+ * Cosi' `NEXT_PUBLIC_SUPABASE_ANON_KEY` resta muta — che era il falso positivo
+ * da non fare mai — e una chiave di un servizio qualunque no.
+ */
+const eValorePubblicabile = (valore) => {
+  const v = String(valore ?? "").trim();
+  if (payloadJwt(v) !== null) return true;
+  return /^https?:\/\//i.test(v);
+};
 
 // ------------------------------------------------------------------- JWT
 /**
@@ -218,7 +287,15 @@ const ECCEZIONE = /^[ \t]*(?:--|#|\/\/|\*|<!--)?[ \t]*launchpad-consentito[ \t]*
 
 export function eccezioniDichiarate(testo) {
   const trovate = new Map();
-  for (const m of String(testo ?? "").matchAll(ECCEZIONE)) {
+  // Le zone CITATE non dichiarano niente (rilievo SEG-5): un blocco recintato
+  // dentro una reference contiene un ESEMPIO della sintassi, non una firma.
+  // Misurato dal tribunale: `references/segreti.md` — il documento che spiega
+  // questo meccanismo — si accusava da solo, e un `docs/PRODUZIONE.md` che
+  // copiava la riga dentro un fence declassava i propri rilievi veri.
+  const pulito = String(testo ?? "")
+    .replace(/^[ \t]*```[\s\S]*?^[ \t]*```/gm, "")
+    .replace(/^[ \t]*~~~[\s\S]*?^[ \t]*~~~/gm, "");
+  for (const m of pulito.matchAll(ECCEZIONE)) {
     const motivo = m[2].trim();
     // Un'eccezione senza motivo non e' un'eccezione: e' un interruttore.
     if (motivo.length < 10) continue;
@@ -252,7 +329,11 @@ export const FAMIGLIE = Object.freeze([
     che: "variabile di servizio con un valore vero accanto",
     perche: "il nome dice che scavalca le policy; il valore dice che qualcuno ce l'ha messo",
     cerca(riga) {
-      const m = riga.match(/\b(SUPABASE_SERVICE_ROLE_KEY|SUPABASE_SECRET_KEY|SERVICE_ROLE_KEY)\b["']?\s*[:=]\s*(.+)$/);
+      // Il confine a sinistra NON e' `\b`: un prefisso che finisce in `_` e' un
+      // carattere di parola, quindi `NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY=…` e
+      // `PROD_SERVICE_ROLE_KEY=…` scavalcavano la famiglia (rilievo SEG-3).
+      // Nessun nome legittimo contiene `SERVICE_ROLE_KEY` come suffisso.
+      const m = riga.match(/(?:^|[^A-Za-z0-9])(?:[A-Z0-9]+_)*(SUPABASE_SERVICE_ROLE_KEY|SUPABASE_SECRET_KEY|SERVICE_ROLE_KEY)\b["']?\s*[:=]\s*(.+)$/);
       if (!m) return [];
       const valore = m[2].trim().replace(/^["'`]|["'`,;]+$/g, "");
       if (eSegnaposto(valore)) return [];
@@ -310,7 +391,12 @@ export const FAMIGLIE = Object.freeze([
         const [, , utente, password, host] = m;
         if (eLocaleDiSviluppo(utente, password, host)) continue;
         if (eSegnaposto(password)) continue;
-        trovati.push({ estratto: password, nota: `password nell'URL \`${m[1]}://${utente}:…@${host}\`` });
+        // L'host si riduce alle ultime due etichette: su Supabase l'host **e'**
+        // il riferimento del progetto, e stamparlo per intero insieme
+        // all'utente e' un pezzo di segreto in piu' di quelli dichiarati
+        // (rilievo SEG-7). `file:riga` basta gia' a trovarlo.
+        const coda = host.split(".").slice(-2).join(".");
+        trovati.push({ estratto: password, nota: `password nell'URL \`${m[1]}://…:…@…${coda === host ? host : `.${coda}`}\`` });
       }
       return trovati;
     },
@@ -329,13 +415,30 @@ export const FAMIGLIE = Object.freeze([
       // chiave e' quotata (`"API_SECRET": "…"`) e senza questo la famiglia non
       // vedeva niente in nessun `.json` — cioe' proprio nei file di
       // configurazione per cui esiste.
-      const m = riga.match(/\b([A-Za-z_][A-Za-z0-9_]*)["']?\s*[:=]\s*["']?([A-Za-z0-9+/=_-]{32,})["']?/);
-      if (!m) return [];
-      const [, nome, valore] = m;
-      if (!nomeSospetto(nome) || ePubblicaPerCostruzione(nome)) return [];
-      if (eSegnaposto(valore)) return [];
-      if (entropia(valore) < 4) return [];
-      return [{ estratto: valore, nota: `\`${nome}\` con ${entropia(valore).toFixed(1)} bit/carattere di entropia` }];
+      //
+      // `matchAll` e non `match` (rilievo SEG-6): senza `/g` si guardava la
+      // PRIMA coppia della riga e basta, quindi un valore lungo e benigno messo
+      // davanti accecava la famiglia catch-all per tutto il resto della riga —
+      // e un JSON compattato su una riga sola e' il posto in cui un segreto ci
+      // finisce da solo. Tetto a tre per riga, come per gli ignorati: quaranta
+      // righe che dicono la stessa cosa non sono piu' informazione.
+      const trovati = [];
+      // Il PUNTO fa parte del valore: senza, un JWT veniva catturato a meta'
+      // (i tre segmenti sono separati da `.`) e `eValorePubblicabile` non lo
+      // riconosceva piu' come JWT — quindi la chiave anonima di Supabase, che
+      // deve restare muta, produceva un rilievo.
+      for (const m of riga.matchAll(/([A-Za-z_][A-Za-z0-9_]*)["']?\s*[:=]\s*["']?([A-Za-z0-9+/=_.-]{32,})["']?/g)) {
+        if (trovati.length >= 3) break;
+        const [, nome, valore] = m;
+        if (!nomeSospetto(nome)) continue;
+        // Il prefisso `NEXT_PUBLIC_` non assolve piu' da solo: assolve il
+        // CONTENUTO (un JWT, un indirizzo). Vedi `eValorePubblicabile`.
+        if (ePubblicaPerCostruzione(nome) && eValorePubblicabile(valore)) continue;
+        if (eSegnaposto(valore)) continue;
+        if (entropia(valore) < 4) continue;
+        trovati.push({ estratto: valore, nota: `\`${nome}\` con ${entropia(valore).toFixed(1)} bit/carattere di entropia` });
+      }
+      return trovati;
     },
   },
 ]);
@@ -364,7 +467,11 @@ export function findingsEsempio(percorso, testo) {
     const [, nome, grezzo] = m;
     const valore = grezzo.trim().replace(/^["']|["']$/g, "");
     if (eSegnaposto(valore)) return;
-    if (ePubblicaPerCostruzione(nome)) return; // finisce nel bundle per contratto
+    // Il prefisso non assolve da solo (rilievo SEG-3): assolve il CONTENUTO.
+    // Un JWT o un indirizzo finiscono nel bundle per contratto; una chiave di
+    // un servizio qualunque sotto un nome `NEXT_PUBLIC_*` e' pubblicata per
+    // errore, ed e' il caso in cui l'esposizione e' massima.
+    if (ePubblicaPerCostruzione(nome) && eValorePubblicabile(valore)) return;
     if (!nomeSospetto(nome)) return;
     findings.push({
       severity: "block",
@@ -502,7 +609,10 @@ function findingsIgnorati(ignorati) {
   return findings;
 }
 
-export function esitoSegreti({ letti = [], daTracciare = [], ignorati = [], storia = [], binari = [] } = {}) {
+export function esitoSegreti({
+  letti = [], daTracciare = [], ignorati = [], storia = [], binari = [],
+  percorsi = [], nonLetti = [],
+} = {}) {
   const findings = [];
   // I file NUOVI e non ignorati si guardano con la stessa gravita' dei
   // tracciati, ed e' una correzione misurata: sul banco, il 2026-08-06, quattro
@@ -510,17 +620,29 @@ export function esitoSegreti({ letti = [], daTracciare = [], ignorati = [], stor
   // file NUOVO. `git ls-files` non li elenca, `--others --ignored` nemmeno, e
   // il passo dichiarava «140 file letti · nessun rilievo» sopra una chiave
   // `service_role` sul disco. Il gesto successivo di chiunque e' `git add -A`.
+  // Le regole sul NOME girano sull'elenco dei PERCORSI, prima e
+  // indipendentemente dalla lettura — rilievo SEG-1 del tribunale del
+  // 2026-08-06, il piu' grave del rapporto. Prima giravano sui soli file
+  // `letti`: un `.env.production` in UTF-16 finiva fra i binari, la regola
+  // «un `.env` tracciato e' un block a prescindere dal contenuto» non lo
+  // vedeva mai, e il gate usciva VERDE su una chiave `service_role`
+  // committata. Una regola sul nome non ha ragione di dipendere dall'esito
+  // di `readFileSync`.
+  const daNome = percorsi.length > 0
+    ? percorsi
+    : [...letti, ...daTracciare].map((f) => f.percorso);
+  for (const percorso of daNome) {
+    if (!eFileAmbienteTracciato(percorso)) continue;
+    findings.push({
+      severity: "block",
+      object: percorso,
+      message: "file di ambiente TRACCIATO da git: parte con il deploy qualunque cosa contenga",
+      hint: "va tolto dall'indice (`git rm --cached`), aggiunto al `.gitignore`, e ogni valore che conteneva va considerato compromesso",
+      famiglia: "file-ambiente-tracciato",
+      dove: "file",
+    });
+  }
   for (const { percorso, testo } of [...letti, ...daTracciare]) {
-    if (eFileAmbienteTracciato(percorso)) {
-      findings.push({
-        severity: "block",
-        object: percorso,
-        message: "file di ambiente TRACCIATO da git: parte con il deploy qualunque cosa contenga",
-        hint: "va tolto dall'indice (`git rm --cached`), aggiunto al `.gitignore`, e ogni valore che conteneva va considerato compromesso",
-        famiglia: "file-ambiente-tracciato",
-        dove: "file",
-      });
-    }
     if (eFileEsempio(percorso)) findings.push(...findingsEsempio(percorso, testo));
     findings.push(...findingsFile(percorso, testo, { dove: "file" }));
   }
@@ -540,14 +662,30 @@ export function esitoSegreti({ letti = [], daTracciare = [], ignorati = [], stor
     findings.push(...findingsFile(percorso, testo, { dove: "storia", etichetta: etichetta ?? percorso, righeVere: false }));
   }
 
-  const binariSospetti = binari.filter((p) => AMBIENTE.test(p) || nomeSospetto(p));
+  const binariSospetti = binari.filter((p) => AMBIENTE.test(p) || nomeSospetto(p) || ePortatoreDiChiave(p));
   for (const percorso of binariSospetti) {
     findings.push({
       severity: "issue",
       object: percorso,
-      message: "file binario tracciato con un nome che suggerisce un segreto: non e' stato letto",
+      message: "file binario con un nome che suggerisce un segreto: non e' stato letto",
       hint: "le famiglie lavorano su testo. Questo file va guardato a mano",
       famiglia: "binario-sospetto",
+      dove: "file",
+    });
+  }
+  // Un file saltato per DIMENSIONE spariva senza traccia: ne' fra i letti, ne'
+  // fra i binari (rilievo SEG-4 · IO-5). La riga «N ignorati guardati» contava
+  // i soli riusciti, quindi non mentiva e nemmeno dichiarava il divario — che
+  // e' la §18 misurata male nel punto in cui il codice dichiara di misurarla
+  // bene. Un dump di database ignorato e' esattamente il caso per cui gli
+  // ignorati si guardano.
+  for (const { percorso, motivo } of nonLetti) {
+    findings.push({
+      severity: "issue",
+      object: percorso,
+      message: `non letto: ${motivo}`,
+      hint: "un file non guardato si DICHIARA. Alzare la soglia, o guardarlo a mano",
+      famiglia: "non-letto",
       dove: "file",
     });
   }
@@ -560,6 +698,7 @@ export function esitoSegreti({ letti = [], daTracciare = [], ignorati = [], stor
       ignorati: ignorati.length,
       storia: storia.length,
       binari: binari.length,
+      nonLetti: nonLetti.length,
       famiglie: FAMIGLIE.length,
     },
   };

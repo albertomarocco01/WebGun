@@ -19,6 +19,7 @@ import {
   leggiRunbook,
   minimoNode,
   numeriCitati,
+  leggiRuntimeProvider,
   piuVecchioDi,
   VARIABILI_IMPRONTA,
   verdettoDa,
@@ -71,7 +72,7 @@ test("un `Gate: ROSSO` a monte blocca la pubblicazione — la Legge n°1", () =>
 });
 
 test("un handoff senza riga `Gate:` blocca: e' prosa, non un certificato", () => {
-  const f = findingsCatena({ handoff: [{ percorso: "docs/handoff/07-schema-forge.md", agente: "schema-forge", testo: "tutto a posto", data: null }] });
+  const f = findingsCatena({ handoff: [{ percorso: "docs/handoff/07-schema-forge.md", agente: "schema-forge", testo: "tutto a posto", data: "2026-08-06T10:00:00Z" }] });
   assert.equal(blocchi(f).length, 1);
   assert.match(f[0].message, /nessuna riga/);
 });
@@ -95,7 +96,7 @@ test("un handoff piu' RECENTE del codice non e' un rilievo", () => {
 
 test("contratto sul disco senza handoff: il silenzio non e' verde", () => {
   const f = findingsCatena({
-    handoff: [{ percorso: "docs/handoff/07-schema-forge.md", agente: "schema-forge", testo: "Gate: VERDE", data: null }],
+    handoff: [{ percorso: "docs/handoff/07-schema-forge.md", agente: "schema-forge", testo: "Gate: VERDE", data: "2026-08-06T10:00:00Z" }],
     proveTrovate: ["supabase/migrations/", "docs/flussi-critici.md"],
   });
   assert.equal(blocchi(f).length, 1);
@@ -150,7 +151,7 @@ test("nominare non e' rispondere: una risposta vuota o segnaposto resta `block`"
 });
 
 test("una voce gia' chiusa a monte non blocca piu' niente", () => {
-  const voci = leggiDebito(TABELLA.replace("| 27 | flow-sentinel | medio |", "| 27 | flow-sentinel | **CHIUSO 2026-08-07** |"));
+  const voci = leggiDebito(TABELLA.replace("| 27 | flow-sentinel | medio |", "| 27 | flow-sentinel | **CHIUSO 2026-08-07 (schema-forge)** |"));
   const f = findingsDebito({ voci, runbookEsiste: true, risposte: new Map([[4, "mitigato con un tetto su Kong"], [32, "Node 24 sul pannello"]]) });
   assert.deepEqual(blocchi(f), []);
 });
@@ -277,12 +278,12 @@ test("esitoFirma rifiuta il segnaposto, l'agente e la firma senza data", () => {
 });
 
 test("un runbook completo e firmato dopo l'ultimo commit non ha bloccanti", () => {
-  const f = findingsRunbook({ runbook: leggiRunbook(RUNBOOK), ultimoCommitCodice: "2026-08-06T09:00:00Z" });
+  const f = findingsRunbook({ runbook: leggiRunbook(RUNBOOK), ultimoCommitCodice: "2026-08-06T09:00:00Z", adesso: "2026-08-07T00:00:00Z" });
   assert.deepEqual(blocchi(f), []);
 });
 
 test("una firma piu' vecchia del codice blocca: ha firmato un altro contenuto", () => {
-  const f = findingsRunbook({ runbook: leggiRunbook(RUNBOOK), ultimoCommitCodice: "2026-08-08T09:00:00Z" });
+  const f = findingsRunbook({ runbook: leggiRunbook(RUNBOOK), ultimoCommitCodice: "2026-08-08T09:00:00Z", adesso: "2026-08-09T00:00:00Z" });
   assert.equal(blocchi(f).length, 1);
   assert.match(f[0].message, /firma del 2026-08-06/);
 });
@@ -445,4 +446,103 @@ test("piuVecchioDi non accusa nessuno quando una data manca", () => {
   assert.equal(piuVecchioDi("2026-08-06T00:00:00Z", null), false);
   assert.equal(piuVecchioDi("non-una-data", "2026-08-06T00:00:00Z"), false);
   assert.equal(piuVecchioDi("2026-08-05T00:00:00Z", "2026-08-06T00:00:00Z"), true);
+});
+
+// ============================================================================
+// Regressioni del tribunale del 2026-08-06 (`/code-inquisition`, council di 3).
+// Un difetto senza test di regressione torna: ognuno di questi riproduce il
+// caso che il perito ha misurato PRIMA della correzione.
+// ============================================================================
+
+test("VER-3 · il registro si legge nelle forme che la casa scrive, e conta cosa NON ha letto", () => {
+  const forme = [
+    "| 27 | flow-sentinel | medio | cosa | perche | **Blocca il deploy** |",
+    "| n°27 | flow-sentinel | medio | cosa | perche | **Blocca il deploy** |",
+    "| **27** | flow-sentinel | medio | cosa | perche | **Blocca il deploy** |",
+    "| 27. | flow-sentinel | medio | cosa | perche | **Blocca il deploy** |",
+  ];
+  for (const riga of forme) {
+    const voci = leggiDebito(riga);
+    assert.equal(voci.length, 1, riga);
+    assert.equal(voci[0].numero, 27, riga);
+    assert.equal(voci[0].bloccaDeploy, true, riga);
+  }
+  // Una riga di tabella che il parser NON sa leggere si conta e si dichiara:
+  // «nessun bloccante» e «non ho saputo leggere» non devono assomigliarsi.
+  const conRottura = leggiDebito("| # | Agente | Cosa |\n|---|---|---|\n| ventisette | x | y |");
+  assert.equal(conRottura.length, 0);
+  assert.equal(conRottura.nonLette, 1);
+  const f = findingsDebito({ voci: conRottura, runbookEsiste: true });
+  assert.equal(blocchi(f).length, 1);
+  assert.match(blocchi(f)[0].message, /non lette/);
+});
+
+test("VER-4 · «NON CHIUSA» non vale chiusa: il gettone ha forma fissa", () => {
+  const riga = (gravita) => `| 27 | flow-sentinel | ${gravita} | cosa | perche | **Blocca il deploy** |`;
+  assert.equal(leggiDebito(riga("medio")).at(0).chiusa, false);
+  assert.equal(leggiDebito(riga("NON CHIUSA")).at(0).chiusa, false, "misurato sul pilota: valeva chiusa");
+  assert.equal(leggiDebito(riga("alto - non ancora chiuso")).at(0).chiusa, false);
+  assert.equal(leggiDebito(riga("**basso** (era medio: meta' di database CHIUSA il 2026-08-06)")).at(0).chiusa, false,
+    "e' la voce n15 del pilota vero, che il gate classificava chiusa");
+  assert.equal(leggiDebito(riga("**CHIUSO 2026-08-06 (schema-forge, P.4g)**")).at(0).chiusa, true);
+});
+
+test("VER-5 · una firma post-datata non disattiva la freschezza per sempre", () => {
+  const r = leggiRunbook(RUNBOOK.replace("— 2026-08-06", "— 2030-01-01"));
+  const f = findingsRunbook({ runbook: r, ultimoCommitCodice: "2026-09-01T00:00:00Z", adesso: "2026-08-06T12:00:00Z" });
+  assert.ok(blocchi(f).some((x) => /nel futuro/.test(x.message)));
+});
+
+test("VER-5 · l'ULTIMA data della riga e' la firma, non la prima", () => {
+  assert.equal(esitoFirma("Alberto Marocco (committente, contratto 2030-01-01) — 2026-08-06").data, "2026-08-06");
+});
+
+test("VER-7 · l'impronta non si accontenta di una pagina che NOMINA il commit", () => {
+  const config = "const c = { generateBuildId: () => { throw new Error('x'); } };";
+  const log = "Deploy log del progetto\nCommit: dd7cf7bbdb93ee81864a7553579e6a2095a57060\nnessuna applicazione qui dietro.";
+  const f = findingsImpronta({ nextConfig: config, buildIdDisco: "dd7cf7bbdb93", commit: "dd7cf7bbdb93ee", html: log, url: "http://x" });
+  assert.ok(blocchi(f).some((x) => /non porta l'impronta attesa/.test(x.message)),
+    "un log di deploy non e' l'app: il passo deve trovare un BUILD ID, non una stringa");
+});
+
+test("VER-8 · il commit approvato dal runbook si CONFRONTA con HEAD", () => {
+  const config = "const c = { generateBuildId: () => { throw new Error('x'); } };";
+  const comune = { nextConfig: config, buildIdDisco: "dd7cf7bbdb93", commit: "dd7cf7bbdb93ee81" };
+  assert.deepEqual(blocchi(findingsImpronta({ ...comune, commitApprovato: "dd7cf7bbdb93ee81" })), []);
+  const diverso = findingsImpronta({ ...comune, commitApprovato: "0000000000000000" });
+  assert.ok(blocchi(diverso).some((x) => /il runbook approva/.test(x.message)));
+  const prosa = findingsImpronta({ ...comune, commitApprovato: "si rilegge a ogni pubblicazione" });
+  assert.ok(blocchi(prosa).some((x) => /non e' un identificativo di commit/.test(x.message)));
+});
+
+test("VER-9 · un handoff non tracciato da git non ha freschezza, e si dichiara", () => {
+  const f = findingsCatena({
+    handoff: [{ percorso: "docs/handoff/12-flow-sentinel.md", agente: "flow-sentinel", testo: "Gate: VERDE", data: null }],
+    ultimoCommitCodice: "2026-12-31T00:00:00Z",
+  });
+  assert.equal(blocchi(f).length, 1);
+  assert.match(blocchi(f)[0].message, /non tracciato da git/);
+});
+
+test("VER-12 · le forme in cui una persona scrive davvero la versione del provider", () => {
+  for (const [riga, atteso] of [
+    ["Node 24", 24], ["Node 24.9.0", 24], ["Node 24.x", 24], ["Node.js 24", 24],
+    ["Node 24 LTS", 24], ["22.x", 22], ["Node 24 (pannello Vercel)", 24],
+  ]) {
+    assert.equal(leggiRuntimeProvider(riga), atteso, riga);
+  }
+  // Rifiuta solo cio' che non si puo' leggere senza indovinare.
+  assert.equal(leggiRuntimeProvider("Node 24 minimo, consigliato 22"), null);
+  assert.equal(leggiRuntimeProvider("l'ultima disponibile"), null);
+  assert.equal(leggiRuntimeProvider(""), null);
+});
+
+test("VER-16 · l'handoff di launchpad non si autoaccusa nel passo della catena", () => {
+  const f = findingsCatena({
+    handoff: [
+      { percorso: "docs/handoff/12-flow-sentinel.md", agente: "flow-sentinel", testo: "Gate: VERDE", data: "2026-08-06T10:00:00Z" },
+      { percorso: "docs/handoff/14-launchpad.md", agente: "launchpad", testo: "**Gate: ROSSO** (4 falliti)", data: "2026-08-06T10:00:00Z" },
+    ],
+  });
+  assert.deepEqual(f, [], "a giudicarlo e' il passo 9, che conosce il verdetto misurato");
 });

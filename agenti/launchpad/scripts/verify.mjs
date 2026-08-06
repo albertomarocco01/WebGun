@@ -48,7 +48,7 @@ import {
   variabiliLette,
   verdettoDa,
 } from "./gate-lib.mjs";
-import { eBinario, esitoSegreti } from "./segreti-lib.mjs";
+import { decodifica, esitoSegreti } from "./segreti-lib.mjs";
 import { FUORI_DAL_PACCHETTO, git as gitIn, gitRighe as gitRigheIn, leggiStoria as leggiStoriaIn, trovaGit } from "./git-lib.mjs";
 
 const PROGETTO = process.cwd();
@@ -88,11 +88,23 @@ const conFindings = (id, nome, findings, testa = "") => {
   return record(id, nome, statoDaFindings(findings), dettaglio, g);
 };
 
+/**
+ * Legge un file, e distingue «non c'e'» da «non si e' potuto leggere».
+ *
+ * Rilievo IO-7 del tribunale: il `catch {}` vuoto rendeva un file BLOCCATO
+ * (antivirus, IDE, sincronizzazione cloud) indistinguibile da un file assente,
+ * e il gate stampava «`docs/DEBITO-TECNICO.md` assente» su un file che
+ * esisteva. Un'affermazione falsa sull'esistenza di un documento, non una
+ * verifica mancata. Misurato con un lock Windows vero (`EBUSY`).
+ */
+const illeggibili = [];
 const leggiSeCe = (relativo) => {
   const pieno = join(PROGETTO, relativo);
   try {
-    return existsSync(pieno) && statSync(pieno).isFile() ? readFileSync(pieno, "utf8") : null;
-  } catch {
+    if (!existsSync(pieno) || !statSync(pieno).isFile()) return null;
+    return readFileSync(pieno, "utf8");
+  } catch (e) {
+    if (e?.code !== "ENOENT") illeggibili.push(`${relativo} (${e?.code ?? "errore"})`);
     return null;
   }
 };
@@ -103,10 +115,18 @@ const git = (args, opzioni) => gitIn(PROGETTO, args, opzioni);
 const gitRighe = (args) => gitRigheIn(PROGETTO, args);
 const leggiStoria = (quanti) => leggiStoriaIn(PROGETTO, quanti);
 
-async function preleva(url, { tentativi = 2 } = {}) {
+/**
+ * Una GET che non esplode e **che finisce**.
+ *
+ * Rilievo IO-3: senza `signal`, un indirizzo che accetta la connessione e non
+ * risponde mai blocca l'intero gate in silenzio totale — misurato, ancora vivo
+ * dopo 33 secondi e zero righe stampate, perche' il verdetto si stampa solo
+ * alla fine. Chi guarda non sa nemmeno QUALE passo si e' impuntato.
+ */
+async function preleva(url, { tentativi = 2, attesaMs = 15_000 } = {}) {
   for (let i = 0; i < tentativi; i++) {
     try {
-      const r = await fetch(url, { redirect: "follow" });
+      const r = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(attesaMs) });
       return { stato: r.status, corpo: await r.text() };
     } catch {
       if (i === tentativi - 1) return null;
@@ -120,6 +140,23 @@ async function preleva(url, { tentativi = 2 } = {}) {
 function ultimoCommitCodice() {
   const { ok, out } = git(["log", "-1", "--format=%cI", "--", "src", "supabase", "package.json", "next.config.ts"]);
   return ok ? out.trim() || null : null;
+}
+
+/**
+ * Fra il commit approvato dal runbook e HEAD e' cambiato solo documentazione?
+ *
+ * `null` se non si e' potuto stabilire (sha sconosciuto, git muto): il gate
+ * non indovina, e la regola pura tratta `null` come «non lo so» → block.
+ */
+function soloDocumentiDaAllora(approvato, commit) {
+  if (!approvato || !commit || !/^[0-9a-f]{7,40}$/i.test(String(approvato).trim())) return null;
+  const sha = String(approvato).trim();
+  const antenato = git(["merge-base", "--is-ancestor", sha, commit]);
+  if (!antenato.ok) return false;
+  const diff = git(["diff", "--name-only", `${sha}..${commit}`]);
+  if (!diff.ok) return null;
+  const cambiati = diff.out.split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
+  return cambiati.every((p) => p.startsWith("docs/"));
 }
 
 function handoffTrovati() {
@@ -155,7 +192,24 @@ const PASSI = [
         return record(this.id, this.nome, "skipped",
           `${PROGETTO} non e' un repository git: un deploy connesso a git non ha niente da cui costruire`);
       }
-      ctx.commit = git(["rev-parse", "HEAD"]).out.trim() || null;
+      // La radice del repository DEVE essere il progetto: `git -C <dir>` risale
+      // all'albero che contiene la cartella, e su questa macchina la home
+      // dell'utente **e'** un repository. Rilievo VER-10, misurato: il gate
+      // stampava «commit HEAD» e accusava il progetto di 97 file sporchi che
+      // erano della home.
+      const cima = git(["rev-parse", "--show-toplevel"]);
+      const cimaReale = cima.ok ? realpathSync(cima.out.trim()) : null;
+      if (!cimaReale || cimaReale.toLowerCase() !== realpathSync(PROGETTO).toLowerCase()) {
+        return record(this.id, this.nome, "skipped",
+          `${PROGETTO} non ha un repository git proprio: la radice piu' vicina e' ${cimaReale ?? "(nessuna)"}.\n` +
+          "Il gate misurerebbe i commit e i file di un altro albero, e li stamperebbe come se fossero di questo progetto");
+      }
+      // `ok` PRIMA di `out`: su un HEAD non nato `git rev-parse HEAD` stampa la
+      // stringa `HEAD` su stdout, e la guardia sul valore vuoto non scattava.
+      const rispostaHead = git(["rev-parse", "HEAD"]);
+      ctx.commit = rispostaHead.ok && /^[0-9a-f]{40}$/i.test(rispostaHead.out.trim())
+        ? rispostaHead.out.trim()
+        : null;
       if (!ctx.commit) {
         return record(this.id, this.nome, "skipped", "nessun commit su HEAD: non c'e' niente da pubblicare");
       }
@@ -163,7 +217,18 @@ const PASSI = [
       ctx.ramo = ramo && ramo !== "HEAD" ? ramo : null;
       const upstream = git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]);
       ctx.upstream = upstream.ok ? upstream.out.trim() : null;
-      const avanti = ctx.upstream ? Number(git(["rev-list", "--count", "@{upstream}..HEAD"]).out.trim() || 0) : 0;
+      // Anche qui `ok` prima di `out`: un fallimento di `rev-list` valeva
+      // `avanti = 0` e disarmava in silenzio il `block` sul commit non spinto.
+      let avanti = 0;
+      if (ctx.upstream) {
+        const conteggio = git(["rev-list", "--count", "@{upstream}..HEAD"]);
+        if (!conteggio.ok) {
+          return record(this.id, this.nome, "skipped",
+            `commit ${ctx.commit.slice(0, 12)} · ramo ${ctx.ramo ?? "(distaccato)"} · remoto ${ctx.upstream}\n` +
+            "non si e' potuto contare lo scarto col remoto: senza, non si sa se il provider costruirebbe un commit piu' vecchio di questo");
+        }
+        avanti = Number(conteggio.out.trim() || 0);
+      }
       const sporco = (gitRighe(["status", "--porcelain"]) ?? []).map((r) => r.slice(3));
       const findings = findingsRadice({ sporco, ramo: ctx.ramo, upstream: ctx.upstream, avanti });
       // Il commit si stampa SEMPRE, anche sul verde: un gate che ha guardato un
@@ -219,8 +284,6 @@ const PASSI = [
         return record(this.id, this.nome, "skipped",
           `${DEBITO} non contiene nessuna riga di tabella leggibile (\`| n | agente | … |\`): il registro c'e' ma non e' stato letto, e uno strumento che non ha letto il suo input non produce un pass (DECISIONI.md §18)`);
       }
-      ctx.runbookTesto = leggiSeCe(RUNBOOK);
-      ctx.runbook = ctx.runbookTesto === null ? null : leggiRunbook(ctx.runbookTesto);
       const citati = numeriCitati((ctx.handoff ?? []).map((h) => h.testo));
       const findings = findingsDebito({
         voci,
@@ -249,38 +312,53 @@ const PASSI = [
       }
       const letti = [];
       const binari = [];
-      for (const percorso of tracciati) {
-        const pieno = join(PROGETTO, percorso);
-        try {
-          const buf = readFileSync(pieno);
-          if (eBinario(buf)) binari.push(percorso);
-          else letti.push({ percorso, testo: buf.toString("utf8") });
-        } catch { /* file sparito fra `ls-files` e la lettura: non si accusa nessuno */ }
-      }
+      const nonLetti = [];
+      // Un elenco, una funzione: la lettura dichiara sempre PERCHE' non ha
+      // letto (rilievi SEG-4 e IO-5). Prima un file oltre la soglia cadeva nel
+      // vuoto — ne' fra i letti ne' fra i binari — e i binari ignorati
+      // sparivano del tutto, perche' il loro array era un `[]` creato sul
+      // posto e mai guardato.
+      const leggiElenco = (elenco, dentro, { maxByte = Infinity, salta = false } = {}) => {
+        for (const percorso of elenco ?? []) {
+          if (salta && FUORI_DAL_PACCHETTO.test(percorso)) continue;
+          try {
+            const buf = readFileSync(join(PROGETTO, percorso));
+            if (buf.length > maxByte) {
+              nonLetti.push({ percorso, motivo: `${Math.round(buf.length / 1024)} KB, oltre la soglia di ${Math.round(maxByte / 1024)} KB` });
+              continue;
+            }
+            const { testo, codifica } = decodifica(buf);
+            if (testo === null) binari.push(percorso);
+            else dentro.push({ percorso, testo, codifica });
+          } catch (e) {
+            if (e?.code !== "ENOENT") nonLetti.push({ percorso, motivo: e?.code ?? "errore di lettura" });
+          }
+        }
+      };
+      leggiElenco(tracciati, letti);
       // I file NUOVI e non ignorati: `git ls-files` non li elenca e il gesto
       // successivo di chiunque e' `git add -A`. Vedi la nota in `esitoSegreti`.
       const daTracciare = [];
-      for (const percorso of gitRighe(["ls-files", "--others", "--exclude-standard"]) ?? []) {
-        if (FUORI_DAL_PACCHETTO.test(percorso)) continue;
-        try {
-          const buf = readFileSync(join(PROGETTO, percorso));
-          if (eBinario(buf)) binari.push(percorso);
-          else daTracciare.push({ percorso, testo: buf.toString("utf8") });
-        } catch { /* sparito fra l'elenco e la lettura */ }
-      }
+      leggiElenco(gitRighe(["ls-files", "--others", "--exclude-standard"]), daTracciare, { salta: true });
       const ignorati = [];
-      for (const percorso of gitRighe(["ls-files", "--others", "--ignored", "--exclude-standard"]) ?? []) {
-        if (FUORI_DAL_PACCHETTO.test(percorso)) continue;
-        try {
-          const buf = readFileSync(join(PROGETTO, percorso));
-          if (!eBinario(buf) && buf.length < 512 * 1024) ignorati.push({ percorso, testo: buf.toString("utf8") });
-        } catch { /* ignorato e illeggibile: non e' un rilievo */ }
+      leggiElenco(gitRighe(["ls-files", "--others", "--ignored", "--exclude-standard"]), ignorati, { salta: true, maxByte: 512 * 1024 });
+      // `--storia 0` non e' un pass: e' la storia non guardata (rilievo VER-2).
+      // Misurato: con una chiave Stripe committata e tolta, `--storia 200`
+      // usciva rosso e `--storia 0` usciva `ok=true`. Il passo lo DICHIARAVA in
+      // prosa dentro un `pass`, che e' esattamente la forma che la §18 vieta.
+      if (args.storia === 0) {
+        return record(this.id, this.nome, "skipped",
+          `${letti.length} file tracciati letti, ma \`--storia 0\`: la storia git non e' stata guardata.\n` +
+          "Un segreto tolto da HEAD e' ancora consegnato a chi ha clonato, e un deploy connesso a git da' al provider la STORIA");
       }
       const storia = leggiStoria(args.storia);
-      const { findings, riassunto } = esitoSegreti({ letti, daTracciare, ignorati, storia, binari });
+      const percorsi = [...tracciati, ...(gitRighe(["ls-files", "--others", "--exclude-standard"]) ?? []).filter((p) => !FUORI_DAL_PACCHETTO.test(p))];
+      const { findings, riassunto } = esitoSegreti({ letti, daTracciare, ignorati, storia, binari, percorsi, nonLetti });
       ctx.segretiRiassunto = riassunto;
       const testa = [
-        `${riassunto.letti} file tracciati letti · ${riassunto.daTracciare} nuovi non ancora tracciati · ${riassunto.binari} binari non letti · ${riassunto.ignorati} file ignorati guardati`,
+        `${riassunto.letti} file tracciati letti · ${riassunto.daTracciare} nuovi non ancora tracciati · ${riassunto.binari} binari · ${riassunto.ignorati} ignorati guardati · ${riassunto.nonLetti} NON letti`,
+        `regole sul nome applicate a ${percorsi.length} percorsi, prima e indipendentemente dalla lettura` +
+          (letti.some((f) => f.codifica !== "utf-8") ? ` · codifiche diverse da utf-8: ${[...new Set(letti.filter((f) => f.codifica !== "utf-8").map((f) => f.codifica))].join(" · ")}` : ""),
         `storia: ${storia.length} pezzi (file x commit) letti dagli ultimi ${args.storia} commit — un segreto tolto da HEAD e' ancora consegnato a chi ha clonato`,
         `${riassunto.famiglie} famiglie di segreto cercate · quello che si trova NON si stampa: solo famiglia, file, riga e i primi quattro caratteri`,
       ].join("\n");
@@ -307,6 +385,18 @@ const PASSI = [
       const spediti = tracciati.filter((p) =>
         /\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(p) &&
         radici.some((r) => p === r.replace(/\/$/, "") || p.startsWith(r.replace(/\/$/, "") + "/")));
+      // La radice sorgente vera del progetto DEVE essere fra quelle dichiarate
+      // (rilievo VER-6): restringendo `Radici spedite:` a `next.config.ts` il
+      // passo confrontava ZERO coppie e usciva `pass` — misurato, con due
+      // variabili di produzione non dichiarate, una chiamata
+      // `SEGRETO_WEBHOOK_URL`. Il runbook lo scrive chi vuole pubblicare.
+      const radiceVera = ["src", "app", "pages"].find((r) => existsSync(join(PROGETTO, r)));
+      if (radiceVera && !radici.some((r) => r.replace(/\/$/, "") === radiceVera)) {
+        return record(this.id, this.nome, "fail",
+          `il runbook dichiara \`Radici spedite: ${radici.join(", ")}\` e sul disco esiste \`${radiceVera}/\`, che non e' in elenco.\n` +
+          "Restringere le radici restringe cio' che il gate confronta: e' il modo piu' economico di far passare una variabile non dichiarata",
+          { block: 1, issue: 0, warn: 0 });
+      }
       if (spediti.length === 0) {
         return record(this.id, this.nome, "skipped",
           `nessun sorgente sotto le radici dichiarate (${radici.join(" · ")}): il runbook dichiara radici che non contengono codice, e un elenco vuoto di variabili non e' un elenco verificato`);
@@ -322,6 +412,14 @@ const PASSI = [
       }
       const findings = findingsAmbiente({ lette, destrutturano, runbook: ctx.runbook });
       const escluse = VARIABILI_IMPRONTA.filter((n) => lette.has(n));
+      // Zero coppie confrontate non e' «tutto a posto»: e' un confronto non
+      // fatto (rilievo VER-6, seconda meta').
+      if (lette.size - escluse.length === 0 && ctx.runbook.variabili.length === 0) {
+        return record(this.id, this.nome, "skipped",
+          `radici spedite: ${radici.join(" · ")} · ${spediti.length} sorgenti letti\n` +
+          "nessuna variabile letta dal codice e nessuna dichiarata nel runbook: non e' stato confrontato niente.\n" +
+          "Se il progetto davvero non ne legge, il runbook lo dichiari per iscritto: una dichiarazione e' meglio del silenzio");
+      }
       const testa = [
         `radici spedite: ${radici.join(" · ")} · ${spediti.length} sorgenti letti`,
         `${lette.size} variabili lette dal codice · ${ctx.runbook.variabili.length} dichiarate nel runbook`,
@@ -362,7 +460,7 @@ const PASSI = [
       });
       const max = richieste.reduce((a, r) => (r.minimo !== null && (a === null || r.minimo > a.minimo) ? r : a), null);
       const testa = [
-        `${richieste.length} dipendenze installate dichiarano un \`engines.node\` · il piu' esigente e' ${max ? `\`${max.nome}\` (${max.range})` : "nessuno"}`,
+        `${richieste.letti ?? "?"} package.json di dipendenze LETTI · ${richieste.length} dichiarano un \`engines.node\` · il piu' esigente e' ${max ? `\`${max.nome}\` (${max.range})` : "nessuno"}`,
         `il progetto dichiara: ${pkg.engines?.node ? `\`${pkg.engines.node}\`` : "NIENTE"} · packageManager: ${pkg.packageManager ?? "non dichiarato"}`,
         `lockfile: ${lockfile.map((l) => `${l.nome}${l.tracciato ? "" : " (NON tracciato)"}`).join(" · ") || "nessuno"}`,
         ctx.runbook ? `runtime dichiarato sul provider: ${ctx.runbook.runtimeProvider ?? "NON dichiarato"}` : "",
@@ -383,8 +481,11 @@ const PASSI = [
       let html = null;
       if (args.url) {
         const risposta = await preleva(args.url);
-        if (risposta === null || risposta.stato >= 500) {
-          const locali = findingsImpronta({ nextConfig, buildIdDisco, commit: ctx.commit });
+        // `>= 400` e non `>= 500` (rilievo VER-7): un 404 non e' una risposta
+        // utile, e accettarlo faceva dichiarare esercitato un meccanismo che
+        // aveva solo trovato una stringa in una pagina d'errore.
+        if (risposta === null || risposta.stato >= 400) {
+          const locali = findingsImpronta({ nextConfig, buildIdDisco, commit: ctx.commit, commitApprovato: ctx.runbook?.commitApprovato ?? null, soloDocumentiDaAllora: soloDocumentiDaAllora(ctx.runbook?.commitApprovato, ctx.commit) });
           return record(this.id, this.nome, "skipped",
             [`nessuna risposta utile da ${args.url}${risposta ? ` (HTTP ${risposta.stato})` : ""}: il meccanismo che verra' usato DOPO il deploy non e' stato esercitato`,
               locali.length ? dettaglioFindings(locali) : ""].filter(Boolean).join("\n"));
@@ -392,7 +493,7 @@ const PASSI = [
         html = risposta.corpo;
       }
 
-      const findings = findingsImpronta({ nextConfig, buildIdDisco, commit: ctx.commit, html, url: args.url });
+      const findings = findingsImpronta({ nextConfig, buildIdDisco, commit: ctx.commit, html, url: args.url, commitApprovato: ctx.runbook?.commitApprovato ?? null, soloDocumentiDaAllora: soloDocumentiDaAllora(ctx.runbook?.commitApprovato, ctx.commit) });
       const testa = [
         `impronta attesa dal commit di HEAD: \`${atteso}\` · \`.next/BUILD_ID\`: \`${buildIdDisco ?? "(assente)"}\``,
         args.url
@@ -416,13 +517,12 @@ const PASSI = [
     id: ID.runbook,
     nome: "runbook firmato da un umano, sul contenuto",
     async esegui(ctx) {
-      if (ctx.runbookTesto === undefined) ctx.runbookTesto = leggiSeCe(RUNBOOK);
       if (ctx.runbookTesto === null) {
         return record(this.id, this.nome, "skipped",
           `${RUNBOOK} non esiste: e' il documento che un umano firma prima di mandare online, e senza non c'e' niente da firmare. Lo scrive il comando \`piano\` dal template della skill`);
       }
       if (!ctx.runbook) ctx.runbook = leggiRunbook(ctx.runbookTesto);
-      const findings = findingsRunbook({ runbook: ctx.runbook, ultimoCommitCodice: ctx.ultimoCodice ?? ultimoCommitCodice() });
+      const findings = findingsRunbook({ runbook: ctx.runbook, ultimoCommitCodice: ctx.ultimoCodice ?? ultimoCommitCodice(), adesso: ctx.adesso });
       const testa = [
         `provider: ${ctx.runbook.provider ?? "NON dichiarato"} · dominio: ${ctx.runbook.dominio ?? "NON dichiarato"} · modo: ${ctx.runbook.modoDeploy ?? "NON dichiarato"}`,
         `firma: ${ctx.runbook.confermatoDa ?? "assente"}`,
@@ -452,9 +552,19 @@ function engineDelleDipendenze() {
   const radice = join(PROGETTO, "node_modules");
   if (!existsSync(radice)) return null;
   const pacchetti = [];
+  // Si conta quanti `package.json` sono stati APERTI, non quanti dichiarano
+  // `engines` — rilievo VER-1 del tribunale, il piu' grave sul gate.
+  // `engineDelleDipendenze` ritornava `null` solo con `node_modules/` del tutto
+  // vuota, ma npm ci lascia sempre `.bin/` e `.package-lock.json`: con l'albero
+  // svuotato la funzione ritornava `[]`, il passo proseguiva e stampava `pass`
+  // avendo letto ZERO `engines`. Misurato: gate `ok=true` 9/9 con il progetto a
+  // `>=18` e le dipendenze che pretendevano `>=22`. E' il debito n°32 del
+  // pilota, cioe' una delle due voci che questo gate dichiara di RIMISURARE.
+  let apertiConSuccesso = 0;
   const aggiungi = (nome, dir) => {
     try {
       const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+      apertiConSuccesso++;
       const range = pkg.engines?.node;
       if (range) pacchetti.push({ nome, range, minimo: minimoNode(range) });
     } catch { /* pacchetto senza package.json leggibile: non e' un rilievo */ }
@@ -474,6 +584,11 @@ function engineDelleDipendenze() {
       aggiungi(v.name, join(radice, v.name));
     }
   }
+  // Zero `package.json` LETTI = albero non installato: MANCANTE, non un elenco
+  // vuoto. Diverso da «N letti, nessuno dichiara `engines`», che e' un pass
+  // legittimo.
+  if (apertiConSuccesso === 0) return null;
+  pacchetti.letti = apertiConSuccesso;
   return pacchetti;
 }
 
@@ -524,8 +639,29 @@ async function main() {
     console.error("--storia vuole un intero >= 0 (0 = non guardare la storia, e il gate lo dichiara).");
     process.exit(2);
   }
-  const ctx = { commit: null, ramo: null, upstream: null, handoff: null, runbook: null, runbookTesto: undefined, ultimoCodice: null };
-  for (const passo of PASSI) await passo.esegui(ctx, args);
+  // Il runbook si legge UNA VOLTA SOLA, prima del ciclo — rilievo VER-11.
+  // Prima lo popolava il passo 3, che pero' esce presto quando il registro del
+  // debito manca: e allora il passo 6 riceveva `runbook: null` e **saltava in
+  // silenzio** l'intero controllo «Runtime del provider», stampando `pass`.
+  // Il verdetto di un passo peggiorava su un progetto peggiore.
+  const runbookTesto = leggiSeCe(RUNBOOK);
+  const ctx = {
+    commit: null, ramo: null, upstream: null, handoff: null, ultimoCodice: null,
+    runbookTesto,
+    runbook: runbookTesto === null ? null : leggiRunbook(runbookTesto),
+    adesso: new Date().toISOString(),
+  };
+  for (const passo of PASSI) {
+    try {
+      await passo.esegui(ctx, args);
+    } catch (e) {
+      // Un'eccezione non deve poter ammutolire il gate: diventa un passo
+      // MANCANTE col motivo (rilievo VER-15). Prima usciva una traccia di
+      // stack e nessuna riga `GATE LAUNCHPAD:`.
+      record(passo.id, passo.nome, "skipped",
+        `il passo ha sollevato: ${e?.message ?? e}\nnon e' un esito, e' una verifica interrotta`);
+    }
+  }
   process.exit(verdetto(args.json));
 }
 

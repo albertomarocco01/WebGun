@@ -54,22 +54,32 @@ export const FRAMMENTO = `// Impronta dell'artefatto (launchpad). Il BUILD_ID e'
 // sulla macchina del provider. E' la sola prova d'identita' che sopravvive al
 // fatto che non siamo noi a costruire. Se il commit non e' risolvibile la build
 // FALLISCE: un artefatto che non sa dire chi e' non deve nascere.
+//
+// \`execSync\` si importa in cima invece di chiamare \`require\` qui dentro: in un
+// \`next.config.mjs\` \`require\` NON ESISTE — e' ESM nativo qualunque cosa dica
+// \`type\` in package.json — e la build del cliente moriva con
+// «impronta: commit non risolvibile», mandando chi debugga a controllare git.
+// Misurato dal tribunale del 2026-08-06 su una build Next.js 16.3.0 vera.
+import { execSync } from "node:child_process";
+
 const improntaDalCommit = () => {
   const daAmbiente =
     process.env.WEBGUN_COMMIT ||
     process.env.VERCEL_GIT_COMMIT_SHA ||
     process.env.CF_PAGES_COMMIT_SHA;
-  const sha =
-    daAmbiente ||
-    (() => {
-      try {
-        return require("node:child_process")
-          .execSync("git rev-parse HEAD", { encoding: "utf8" })
-          .trim();
-      } catch {
-        return "";
-      }
-    })();
+  let sha = daAmbiente || "";
+  if (!sha) {
+    try {
+      sha = execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
+    } catch (e) {
+      // Il motivo vero non si inghiotte: chi legge deve sapere se e' git che
+      // manca o il repository che non c'e'.
+      throw new Error(
+        "impronta: \`git rev-parse HEAD\` non eseguibile (" + (e && e.message ? e.message : e) + "). " +
+          "Imposta WEBGUN_COMMIT, oppure costruisci da un repository git.",
+      );
+    }
+  }
   if (!sha) {
     throw new Error(
       "impronta: commit non risolvibile (WEBGUN_COMMIT, VERCEL_GIT_COMMIT_SHA, CF_PAGES_COMMIT_SHA, git). " +
@@ -87,17 +97,68 @@ function commitDi(dir) {
 
 const trovaConfig = (dir) => CONFIG.map((n) => join(dir, n)).find((p) => existsSync(p)) ?? null;
 
-/** Inserisce il frammento e la riga `generateBuildId` senza toccare il resto. */
-export function conFrammento(testo) {
-  if (/generateBuildId/.test(testo)) return { testo, cambiato: false, motivo: "`generateBuildId` c'e' gia'" };
-  const m = testo.match(/^(const|let)\s+(\w+)\s*(:[^=]+)?=\s*\{/m);
-  if (!m) return { testo, cambiato: false, motivo: "non riconosco la forma di questo next.config: il frammento va inserito a mano" };
-  const inizio = testo.indexOf(m[0]);
-  const dopoGraffa = inizio + m[0].length;
-  const nuovo =
-    `${testo.slice(0, inizio)}${FRAMMENTO}\n\n${testo.slice(inizio, dopoGraffa)}\n` +
-    `  generateBuildId: improntaDalCommit,\n${testo.slice(dopoGraffa)}`;
-  return { testo: nuovo, cambiato: true, motivo: "frammento inserito prima dell'oggetto di configurazione" };
+/** Il frammento nella forma giusta per il modulo di destinazione. */
+const frammentoPer = (esm) =>
+  esm
+    ? FRAMMENTO
+    : FRAMMENTO
+        .replace('import { execSync } from "node:child_process";\n', "")
+        .replace("sha = execSync(", 'sha = require("node:child_process").execSync(');
+
+/** Le zone di commento, per non scrivere dentro un commento (rilievo IO-4). */
+const senzaCommenti = (t) => t.replace(/\/\*[\s\S]*?\*\//g, (m) => " ".repeat(m.length));
+
+/**
+ * Inserisce `generateBuildId` NELL'OGGETTO CHE VIENE ESPORTATO.
+ *
+ * Rilievo IO-4 del tribunale del 2026-08-06: prima si cercava la **prima**
+ * dichiarazione `const … = {` del file, senza verificare che fosse quella
+ * esportata e senza escludere i commenti. Misurato su forme comuni: con un
+ * `const securityHeaders = {…}` prima del vero `nextConfig`, la proprieta'
+ * finiva dentro `securityHeaders`; con un commento a blocco che conteneva una
+ * dichiarazione simile, l'intero frammento finiva **dentro il commento**,
+ * inerte. In entrambi i casi il comando stampava «scritto» e il riepilogo
+ * diceva «generateBuildId dichiarato», perche' l'idempotenza si fidava dello
+ * stesso regex ingenuo. Un `npm run build` produceva un'impronta casuale, e a
+ * scoprirlo era solo un confronto dopo la build.
+ */
+export function conFrammento(testo, { esm = false } = {}) {
+  if (/generateBuildId/.test(senzaCommenti(testo))) {
+    return { testo, cambiato: false, motivo: "`generateBuildId` c'e' gia'" };
+  }
+  const pulito = senzaCommenti(testo);
+  const frammento = frammentoPer(esm);
+
+  // 1) `export default { … }` / `module.exports = { … }`: si scrive li' dentro.
+  const diretto = pulito.match(/(?:export\s+default|module\.exports\s*=)\s*\{/);
+  if (diretto) {
+    const dopoGraffa = diretto.index + diretto[0].length;
+    return {
+      testo: `${frammento}\n\n${testo.slice(0, dopoGraffa)}\n  generateBuildId: improntaDalCommit,\n${testo.slice(dopoGraffa)}`,
+      cambiato: true,
+      motivo: "inserito nell'oggetto esportato direttamente",
+    };
+  }
+
+  // 2) `export default nomeVar` / `module.exports = nomeVar`: si risale alla
+  //    dichiarazione DI QUELLA variabile, non alla prima del file.
+  const perNome = pulito.match(/(?:export\s+default|module\.exports\s*=)\s*([A-Za-z_$][\w$]*)\s*;?/);
+  if (!perNome) {
+    return { testo, cambiato: false, motivo: "non riconosco cosa esporta questo next.config: il frammento va inserito a mano" };
+  }
+  const nome = perNome[1];
+  const dichiarazione = new RegExp(`(?:^|\\n)\\s*(?:const|let|var)\\s+${nome}\\s*(?::[^=]+)?=\\s*\\{`);
+  const d = pulito.match(dichiarazione);
+  if (!d) {
+    return { testo, cambiato: false, motivo: `\`${nome}\` e' esportato ma non e' un oggetto letterale: il frammento va inserito a mano` };
+  }
+  const inizio = d.index + d[0].length - d[0].trimStart().length;
+  const dopoGraffa = d.index + d[0].length;
+  return {
+    testo: `${testo.slice(0, inizio)}${frammento}\n\n${testo.slice(inizio, dopoGraffa)}\n  generateBuildId: improntaDalCommit,\n${testo.slice(dopoGraffa)}`,
+    cambiato: true,
+    motivo: `inserito nell'oggetto \`${nome}\`, che e' quello esportato`,
+  };
 }
 
 async function preleva(url) {
@@ -135,7 +196,11 @@ function scriviFrammento(percorsoConfig, progetto) {
     process.exit(2);
   }
   const testo = readFileSync(percorsoConfig, "utf8");
-  const esito = conFrammento(testo);
+  // `.mjs` e' ESM sempre; `.ts` lo transpila Next; `.js` dipende da `type`.
+  let tipo = null;
+  try { tipo = JSON.parse(readFileSync(join(progetto, "package.json"), "utf8")).type ?? null; } catch { /* nessun package.json */ }
+  const esm = /\.(mts|mjs)$/.test(percorsoConfig) || /\.ts$/.test(percorsoConfig) || tipo === "module";
+  const esito = conFrammento(testo, { esm });
   if (esito.cambiato) {
     writeFileSync(percorsoConfig, esito.testo);
     console.log(`scritto in ${percorsoConfig}: ${esito.motivo}`);

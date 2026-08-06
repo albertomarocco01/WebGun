@@ -10,6 +10,7 @@
   "entry": ["scripts/verify.mjs", "scripts/segreti.mjs", "scripts/impronta.mjs", "scripts/*.test.mjs"],
   "project": ["scripts/**/*.mjs"],
 
+
   // eslint e jscpd non si importano: li ESEGUE `code-maniac scan` come binari.
   // Toglierli dal package.json spegnerebbe due passi della batteria.
   "ignoreDependencies": ["eslint", "jscpd"]

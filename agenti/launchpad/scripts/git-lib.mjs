@@ -45,13 +45,31 @@ export function trovaGit() {
   return (GIT = scelta || false);
 }
 
-/** Un comando git. Ritorna `{ ok, out }`: mai un'eccezione, mai un `pass` finto. */
+/**
+ * Un comando git. Ritorna `{ ok, out, troncato }`: mai un'eccezione, mai un
+ * `pass` finto.
+ *
+ * `-c core.quotepath=false` — rilievo IO-2 del tribunale del 2026-08-06.
+ * Con il default, `git ls-files` **quota e sfugge in ottale** i percorsi con
+ * byte non-ASCII: `docs/handoff/03-caffè.md` diventa
+ * `"docs/handoff/03-caff\303\250.md"`, virgolette comprese. Il percorso
+ * mangled non esiste, `readFileSync` dava `ENOENT`, e il `catch` lo
+ * attribuiva a «file sparito fra `ls-files` e la lettura» — che e' una
+ * condizione di gara, non quello che stava succedendo. Un segreto in un file
+ * con un accento nel nome non veniva mai visto, **in una casa che scrive in
+ * italiano**.
+ *
+ * `troncato` — rilievo IO-5. Superato `maxBuffer`, `spawnSync` mette `error` E
+ * ha gia' bufferizzato dati parziali: buttarli via senza dirlo rendeva «storia
+ * enorme» indistinguibile da «nessuna storia».
+ */
 export function git(dir, args, { maxBuffer = 64 * 1024 * 1024 } = {}) {
   const exe = trovaGit();
-  if (!exe) return { ok: false, out: "" };
-  const res = spawnSync(exe, ["-C", dir, ...args], { encoding: "utf8", maxBuffer });
-  if (res.error || res.status !== 0) return { ok: false, out: res.stdout ?? "" };
-  return { ok: true, out: res.stdout ?? "" };
+  if (!exe) return { ok: false, out: "", troncato: false };
+  const res = spawnSync(exe, ["-c", "core.quotepath=false", "-C", dir, ...args], { encoding: "utf8", maxBuffer });
+  const troncato = res.error?.code === "ENOBUFS";
+  if (res.error || res.status !== 0) return { ok: false, out: res.stdout ?? "", troncato };
+  return { ok: true, out: res.stdout ?? "", troncato: false };
 }
 
 export function gitRighe(dir, args) {
@@ -80,9 +98,14 @@ const MARCATORE = "\u0001";
  */
 export function leggiStoria(dir, quanti) {
   if (quanti <= 0) return [];
-  const { ok, out } = git(dir, [
+  const { ok, out, troncato } = git(dir, [
     "log", "--all", `-n${quanti}`, "-p", "--unified=0", "--no-color", "--format=%x01%H %cI", "--", ".",
   ]);
+  // Una storia TRONCATA non e' una storia vuota: chi legge deve poterlo sapere,
+  // o «0 pezzi letti» su un repo enorme somiglia a «0 pezzi letti» su un repo
+  // pulito (rilievo IO-5). Si segnala con un pezzo sentinella, che le famiglie
+  // ignorano e il chiamante riconosce.
+  if (troncato) return [{ percorso: "", etichetta: "", testo: "", troncata: true }];
   if (!ok || !out) return [];
   const pezzi = [];
   let sha = null;

@@ -115,9 +115,21 @@ export const CONTRATTI = Object.freeze([
   { agente: "speed-demon", prova: "docs/performance.md" },
 ]);
 
+/**
+ * L'handoff di launchpad NON si giudica qui.
+ *
+ * Rilievo VER-16: un handoff onesto che dichiara `Gate: ROSSO` — come la §19
+ * prescrive — faceva fallire il passo 2 **e** passare il passo 9, e il rosso
+ * veniva attribuito alla catena a monte quando apparteneva a launchpad. La
+ * riga di chiusura del gate («ogni motivo dice di chi e': quasi nessuno e' di
+ * launchpad») diventava falsa proprio quando serviva. A giudicarlo e' il passo
+ * 9, che e' l'unico che puo': conosce il verdetto misurato.
+ */
+const MIO = /(^|-)launchpad$/i;
+
 export function findingsCatena({ handoff = [], proveTrovate = [], ultimoCommitCodice = null } = {}) {
   const findings = [];
-  for (const h of handoff) {
+  for (const h of handoff.filter((x) => !MIO.test(x.agente))) {
     const verdetto = verdettoHandoff(h.testo);
     if (verdetto === null) {
       findings.push({
@@ -134,7 +146,19 @@ export function findingsCatena({ handoff = [], proveTrovate = [], ultimoCommitCo
         hint: "non si pubblica su gate rosso. La risposta e' una richiesta all'agente che possiede quel gate, non una correzione di launchpad",
       });
     }
-    if (piuVecchioDi(h.data, ultimoCommitCodice)) {
+    if (h.data === null) {
+      // Rilievo VER-9: senza data la misura di freschezza si spegne in
+      // silenzio, e `catena-gate` torna a essere una lettura pura. La data
+      // manca quando l'handoff NON e' tracciato da git — e un handoff ignorato
+      // non lascia l'albero sporco, quindi `radice-pulita` non se ne accorge:
+      // il gate certificherebbe una catena che non esiste per chi clona.
+      findings.push({
+        severity: "block",
+        object: h.percorso,
+        message: "non tracciato da git: nessuna data di commit, quindi nessuna misura di freschezza",
+        hint: "un certificato che non parte col repository non e' un certificato. Va committato",
+      });
+    } else if (piuVecchioDi(h.data, ultimoCommitCodice)) {
       findings.push({
         severity: "block",
         object: h.percorso,
@@ -170,7 +194,23 @@ const BLOCCA_DEPLOY = [
   /il\s+deploy\b[^\n]{0,40}non\s+pu[oò]\s+partire/i,
   /prerequisit\w*\s+(?:di|per|del)\s+(?:deploy|P\.5|pubblicazione)/i,
 ];
-const CHIUSA = /\bCHIUS[OA]\b/i;
+/**
+ * Il gettone di chiusura, di FORMA FISSA.
+ *
+ * Prima era `/\bCHIUS[OA]\b/i` cercata come sottostringa nella cella della
+ * gravita', cioe' in prosa libera — e il tribunale del 2026-08-06 (rilievo
+ * VER-4) ha misurato che «NON CHIUSA» e «alto - non ancora chiuso» valevano
+ * **chiusa**. Non era un'ipotesi: sul pilota vero la voce n°15 risultava chiusa
+ * per via della frase «meta' di database CHIUSA il 2026-08-06» scritta li'
+ * dentro. Chiudere un bloccante del deploy costava una parola scritta in
+ * negativo.
+ *
+ * Ora la cella deve COMINCIARE (dopo il markup) con `CHIUSO <data>`. Il resto
+ * della cella resta prosa libera. E' la stessa scelta della §19: una riga sola,
+ * in una forma sola, perche' un controllo su prosa libera e' un controllo che
+ * non c'e'.
+ */
+const CHIUSA = /^[\s*_`]*CHIUS[OA]\b[^|]*?\d{4}-\d{2}-\d{2}/i;
 
 /**
  * Il registro del debito, letto come tabella.
@@ -182,11 +222,36 @@ const CHIUSA = /\bCHIUS[OA]\b/i;
  * voci, cosi' che almeno due verita' escano una volta come promessa e una
  * volta come misura.
  */
+/** Una riga che SEMBRA una riga di tabella, escluse testata e separatore. */
+const RIGA_DI_TABELLA = /^\s*\|.*\|\s*$/;
+const SEPARATORE = /^\s*\|[-: |]+\|\s*$/;
+
+/**
+ * Il registro, letto come tabella — e con il conto di quello che NON ha letto.
+ *
+ * Rilievo VER-3 del tribunale: il numero si leggeva solo nudo (`| 27 |`), e
+ * `| n°27 |` — **la notazione che questa casa usa ovunque**, e che
+ * `leggiRunbook` accetta — era invisibile. Come il grassetto, il punto, e le
+ * pipe esterne assenti. La voce spariva **in silenzio** e il passo diceva
+ * «0 dichiarano di bloccare il deploy»: misurato un gate VERDE 9/9 con due
+ * bloccanti nel registro.
+ *
+ * Due correzioni insieme, e la seconda vale piu' della prima: si accettano le
+ * forme che la casa scrive davvero, **e** si contano le righe di tabella non
+ * lette, perche' «nessun bloccante» e «non ho saputo leggere» non devono poter
+ * assomigliarsi (`DECISIONI.md` §18).
+ */
 export function leggiDebito(testo) {
   const voci = [];
+  let nonLette = 0;
   for (const riga of righe(senzaZoneCitate(testo))) {
-    const m = riga.match(/^\s*\|\s*(\d+)\s*\|(.*)\|\s*$/);
-    if (!m) continue;
+    if (!RIGA_DI_TABELLA.test(riga) || SEPARATORE.test(riga)) continue;
+    const m = riga.match(/^\s*\|[\s*_`]*(?:n[°.º]\s*)?(\d{1,4})[\s*_`.]*\|(.*)\|\s*$/i);
+    if (!m) {
+      // La testata (`| # | Agente | … |`) non e' una voce mancata.
+      if (!/^\s*\|\s*#?\s*\|/.test(riga) && !/^\s*\|[^|]*\|\s*Agente\b/i.test(riga)) nonLette++;
+      continue;
+    }
     const celle = m[2].split("|").map((c) => c.trim());
     const gravita = celle[1] ?? "";
     voci.push({
@@ -198,6 +263,7 @@ export function leggiDebito(testo) {
       cosa: (celle[2] ?? "").replace(/\*\*/g, "").slice(0, 120),
     });
   }
+  voci.nonLette = nonLette;
   return voci;
 }
 
@@ -217,6 +283,14 @@ export function numeriCitati(testi) {
 
 export function findingsDebito({ voci = [], citati = new Set(), risposte = new Map(), runbookEsiste = false } = {}) {
   const findings = [];
+  if (voci.nonLette > 0) {
+    findings.push({
+      severity: "block",
+      object: "docs/DEBITO-TECNICO.md",
+      message: `${voci.nonLette} righe di tabella non lette: non si sa se contengono un bloccante`,
+      hint: "«nessun bloccante» e «non ho saputo leggere la riga» non devono potersi assomigliare (DECISIONI.md §18). Il numero va in prima cella, nudo oppure come `n°27`; le pipe esterne servono",
+    });
+  }
   const bloccanti = voci.filter((v) => v.bloccaDeploy && !v.chiusa);
   for (const v of bloccanti) {
     const risposta = risposte.get(v.numero);
@@ -317,12 +391,38 @@ export function esitoFirma(confermatoDa) {
   if (/\bUMANO\b.*\|.*\bORCHESTRATORE\b|\bORCHESTRATORE\b.*\|.*\bUMANO\b/i.test(f)) {
     return { valida: false, motivo: "nomina entrambe le possibilita': non ha scelto niente" };
   }
-  const data = f.match(/(\d{4}-\d{2}-\d{2})/)?.[1] ?? null;
+  // L'ULTIMA data della riga, non la prima (rilievo VER-5): con la prima,
+  // `Alberto Marocco (committente, contratto 2030-01-01) — 2026-08-06`
+  // veniva letta come firmata nel 2030.
+  const tutte = [...f.matchAll(/(\d{4}-\d{2}-\d{2})/g)].map((m) => m[1]);
+  const data = tutte.length > 0 ? tutte[tutte.length - 1] : null;
   if (!data) return { valida: false, motivo: "senza data: una firma non datata non si puo' confrontare con niente" };
   return { valida: true, data, chi: f };
 }
 
-export function findingsRunbook({ runbook, ultimoCommitCodice = null } = {}) {
+/**
+ * Una firma nel futuro non e' una firma: e' un permesso a tempo indeterminato.
+ *
+ * Rilievo VER-5, misurato: con `— 2030-01-01` il controllo di freschezza non
+ * scatta piu' per nessun commit futuro, perche' una data futura non e' mai
+ * «piu' vecchia» di niente. La §6 diventa una costante.
+ *
+ * L'oggi arriva da fuori (`adesso`): questa libreria resta pura, e chi la
+ * chiama dichiara che ora e'. Un giorno di franchigia per i fusi orari.
+ */
+function findingFirmaFutura(firma, adesso) {
+  if (!firma.valida || !adesso) return null;
+  const franchigia = Date.parse(`${firma.data}T00:00:00Z`) - Date.parse(adesso);
+  if (!Number.isFinite(franchigia) || franchigia <= 24 * 60 * 60 * 1000) return null;
+  return {
+    severity: "block",
+    object: "Confermato da",
+    message: `firma datata ${firma.data}, cioe' nel futuro (oggi e' ${adesso.slice(0, 10)})`,
+    hint: "una firma futura non scade mai: autorizzerebbe ogni commit successivo senza che nessuno la rinnovi. La §6 non e' una costante",
+  };
+}
+
+export function findingsRunbook({ runbook, ultimoCommitCodice = null, adesso = null } = {}) {
   const findings = [];
   const acapo = (chiave, che) => {
     if (!runbook.sezioni.has(chiave)) {
@@ -387,6 +487,8 @@ export function findingsRunbook({ runbook, ultimoCommitCodice = null } = {}) {
       hint: "ha firmato un altro contenuto. La firma si rinnova: e' l'unica riga del progetto che vale per un'azione che non si annulla",
     });
   }
+  const futura = findingFirmaFutura(firma, adesso);
+  if (futura) findings.push(futura);
   return findings;
 }
 
@@ -517,6 +619,25 @@ export function minimoNode(range) {
   return Math.min(...leggibili);
 }
 
+/**
+ * La versione maggiore dichiarata sul pannello del provider.
+ *
+ * Accetta tutto ciò che una persona scrive davvero: `Node 24`, `Node 24.x`,
+ * `Node.js 24`, `Node 24 LTS`, `22.x`. Rifiuta solo le righe che non portano
+ * **nessun** numero, e quelle che ne portano **piu' di uno** — perche' li' non
+ * si indovina quale sia (`Node 24 minimo, consigliato 22`).
+ */
+export function leggiRuntimeProvider(riga) {
+  const t = String(riga ?? "").replace(/^\s*node(?:\.?js)?\s*[:v]?\s*/i, "").trim();
+  if (!t) return null;
+  const numeri = [...t.matchAll(/\d+/g)].map((m) => Number(m[0]));
+  // `24.9.0` e `24.x` sono UNA versione, non tre numeri: si guardano i soli
+  // gruppi separati da spazio.
+  const gruppi = t.split(/\s+/).filter((g) => /\d/.test(g));
+  if (numeri.length === 0 || gruppi.length !== 1) return null;
+  return numeri[0];
+}
+
 export function findingsRuntime({ engines = null, richieste = [], lockfile = [], runbook = null } = {}) {
   const findings = [];
   const mio = minimoNode(engines);
@@ -577,7 +698,15 @@ export function findingsRuntime({ engines = null, richieste = [], lockfile = [],
   // `Runtime del provider: Node 24` — la parola si toglie prima di leggere il
   // numero. Il runbook lo legge un umano, e «24» da solo su quella riga non
   // dice a nessuno di cosa si stia parlando.
-  const dichiaratoProvider = minimoNode((runbook?.runtimeProvider ?? "").replace(/^\s*node(?:js)?\s*[:v]?\s*/i, ""));
+  //
+  // E si prende il PRIMO NUMERO della riga, non si pretende una forma esatta
+  // (rilievo VER-12): `Node 24.x`, `Node.js 24`, `Node 24 LTS` venivano
+  // rifiutati con «non dichiarato», cioe' il gate accusava l'umano di non aver
+  // dichiarato una cosa che aveva dichiarato — e `22.x` e' **la forma in cui il
+  // pannello di Vercel scrive le versioni**, quella che una persona copia. Un
+  // rifiuto indebito e' il difetto peggiore di un gate perche' insegna a
+  // scavalcarlo, e qui la regola era violata dal codice che la cita.
+  const dichiaratoProvider = leggiRuntimeProvider(runbook?.runtimeProvider);
   const minimoVero = massimoRichiesto ? Math.max(massimoRichiesto.minimo, mio ?? 0) : mio;
   if (runbook) {
     if (dichiaratoProvider === null) {
@@ -637,13 +766,62 @@ export function buildIdDaHtml(html) {
 
 const SHA_LETTERALE = /["'`][0-9a-f]{7,40}["'`]/i;
 
-export function findingsImpronta({ nextConfig = null, buildIdDisco = null, commit = null, html = null, url = null } = {}) {
+export function findingsImpronta({
+  nextConfig = null, buildIdDisco = null, commit = null, html = null, url = null,
+  commitApprovato = null, soloDocumentiDaAllora = null,
+} = {}) {
   const atteso = improntaAttesa(commit);
   return [
     ...findingsConfigImpronta(nextConfig),
     ...findingsArtefatto(buildIdDisco, atteso),
+    ...findingsCommitApprovato(commitApprovato, commit, soloDocumentiDaAllora),
     ...(html === null ? [] : findingsServito(html, atteso, url)),
   ];
+}
+
+/**
+ * Il commit che l'umano ha firmato e' quello che sta per partire?
+ *
+ * Rilievo VER-8: `Commit approvato` veniva letto dal runbook e **non
+ * confrontato con niente** — il campo esisteva nel template, nel parser e in un
+ * test, e nessuna regola lo riceveva. Misurato: runbook con
+ * `Commit approvato: 0000…`, HEAD diverso, gate VERDE 9/9. L'umano firma «X»,
+ * il gate misura «Y», e stampa verde. E' il caso §5.4 («il runbook giusto per
+ * il progetto sbagliato») applicato al commit invece che al dominio — con la
+ * differenza che qui la riga per chiuderlo c'era gia'.
+ */
+function findingsCommitApprovato(commitApprovato, commit, soloDocumentiDaAllora) {
+  if (commitApprovato === null) return [];
+  const dichiarato = String(commitApprovato).trim();
+  // Un runbook che scrive prosa al posto di uno sha non ha approvato un commit.
+  if (!/^[0-9a-f]{7,40}$/i.test(dichiarato)) {
+    return [{
+      severity: "block",
+      object: "Commit approvato",
+      message: `\`${dichiarato.slice(0, 60)}\` non e' un identificativo di commit`,
+      hint: "la firma vale per un contenuto solo: il runbook deve nominare lo sha che sta per andare online, e si riscrive a ogni pubblicazione",
+    }];
+  }
+  if (improntaCombacia(dichiarato, String(commit ?? ""))) return [];
+  // Il commit approvato puo' essere un ANTENATO di HEAD, ma solo se da allora
+  // e' cambiata **soltanto la documentazione**: e' il caso normale e inevitabile
+  // — il runbook si scrive dopo il commit che approva, e scriverlo produce un
+  // altro commit. Se invece dopo l'approvazione e' cambiato del CODICE, la
+  // firma e' su un altro contenuto e non vale piu'.
+  if (soloDocumentiDaAllora === true) {
+    return [{
+      severity: "warn",
+      object: "Commit approvato",
+      message: `il runbook approva \`${dichiarato.slice(0, 12)}\` e HEAD e' \`${String(commit ?? "").slice(0, 12)}\`: da allora sono cambiati solo documenti`,
+      hint: "va bene, ed e' il caso normale: il runbook si scrive dopo il commit che approva. Ma cio' che va online e' HEAD",
+    }];
+  }
+  return [{
+    severity: "block",
+    object: "Commit approvato",
+    message: `il runbook approva \`${dichiarato.slice(0, 12)}\`, HEAD e' \`${String(commit ?? "").slice(0, 12)}\`${soloDocumentiDaAllora === false ? " e da allora e' cambiato del CODICE" : ""}`,
+    hint: "chi ha firmato ha autorizzato un altro contenuto. O si pubblica quel commit, o si rinnova la firma su questo",
+  }];
 }
 
 /** Come nasce l'impronta: la parte che decide se sara' dimostrabile DOPO. */
@@ -717,7 +895,13 @@ function findingsArtefatto(buildIdDisco, atteso) {
 /** Cio' che risponde sull'indirizzo: e' l'artefatto che credo? */
 function findingsServito(html, atteso, url) {
   const serviti = buildIdDaHtml(html);
-  const combacia = serviti.some((s) => improntaCombacia(s, atteso)) || (atteso.length >= 7 && html.includes(atteso));
+  // NIENTE ripiego `html.includes(atteso)` — rilievo VER-7 del tribunale.
+  // L'avevo scritto per robustezza, ed era un buco: il passo passava contro
+  // QUALUNQUE pagina che si limitasse a NOMINARE il commit — un log di deploy,
+  // la pagina del commit su GitHub, il cruscotto del provider. Misurato:
+  // «Deploy log del progetto / Commit: 71541dae…» faceva chiudere il gate
+  // VERDE 9/9. Il passo deve trovare un BUILD ID, non una stringa in un testo.
+  const combacia = serviti.some((s) => improntaCombacia(s, atteso));
   if (combacia) return [];
   return [{
     severity: "block",

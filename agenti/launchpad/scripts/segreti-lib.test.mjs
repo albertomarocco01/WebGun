@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  decodifica,
   eBinario,
   eccezioniDichiarate,
   eFileAmbienteTracciato,
@@ -15,6 +16,7 @@ import {
   findingsEsempio,
   findingsFile,
   maschera,
+  ePortatoreDiChiave,
   nomeSospetto,
   payloadJwt,
   statoDaFindings,
@@ -44,6 +46,7 @@ test("maschera non consegna mai piu' di quattro caratteri del segreto", () => {
 
 test("maschera di un valore cortissimo non lo mostra affatto", () => {
   assert.equal(maschera("abc"), "*** [3 caratteri]");
+  assert.equal(maschera("admin1"), "****** [6 caratteri]", "sotto gli otto caratteri non si mostra niente");
   assert.equal(maschera(""), "(vuoto)");
 });
 
@@ -79,6 +82,7 @@ test("eSegnaposto tollera la barra di continuazione della shell — difetto misu
 test("eSegnaposto non assolve un valore vero", () => {
   assert.equal(eSegnaposto(SERVICE), false);
   assert.equal(eSegnaposto("Tr0ub4dor&3"), false);
+  assert.equal(eSegnaposto("<vedi 1Password>Tr0ub4dor3"), false, "SEG-8: le forme a parentesi sono ANCORATE, non prefissi");
 });
 
 // ---------------------------------------------------------- famiglia 1 e 2
@@ -106,7 +110,7 @@ test("credenziale SQL: solo nei `.sql`, e trova la forma del pilota", () => {
   const nelSql = findingsFile("supabase/seed.sql", riga);
   assert.equal(nelSql.length, 1);
   assert.equal(nelSql[0].famiglia, "credenziale-sql");
-  assert.ok(nelSql[0].message.includes("pass… [11 caratteri]"));
+  assert.ok(nelSql[0].message.includes("pas… [11 caratteri]"), nelSql[0].message);
 
   const altrove = findingsFile("docs/note.md", riga);
   assert.equal(altrove.length, 0, "`soloIn` deve restringere alla famiglia dei file giusti");
@@ -319,4 +323,81 @@ test("un'eccezione scaduta o con un refuso si segnala: sembra proteggere e non p
 test("nella STORIA un'eccezione non vale: e' scritta da chi aveva sbagliato", () => {
   const f = findingsFile("supabase/seed/90.sql", SEED_DEROGATO, { dove: "storia", etichetta: "supabase/seed/90.sql @ abc123", righeVere: false });
   assert.equal(f.filter((x) => x.severity === "block").length, 1);
+});
+
+// ============================================================================
+// Regressioni del tribunale del 2026-08-06.
+// ============================================================================
+
+test("SEG-1 · IO-6 · un file UTF-16 si DECODIFICA, non si butta fra i binari", () => {
+  // Due periti, mandati diversi, riproduzioni diverse, stessa causa. E' la
+  // conferma piu' forte che questo protocollo sappia produrre.
+  // UTF-16LE e' il default di `Out-File` e di «Salva con nome → Unicode» su
+  // Windows: un `.env.production` scritto cosi' aveva un NUL dopo ogni
+  // carattere, finiva fra i binari, e la regola «un `.env` tracciato e' un
+  // block a prescindere dal contenuto» non lo vedeva mai. Gate VERDE su una
+  // chiave `service_role` committata.
+  const conBom = (s, cod) => Buffer.concat([
+    Buffer.from(cod === "utf16le" ? [0xff, 0xfe] : [0xfe, 0xff]),
+    cod === "utf16le" ? Buffer.from(s, "utf16le") : (() => { const b = Buffer.from(s, "utf16le"); b.swap16(); return b; })(),
+  ]);
+  const testo = `SUPABASE_SERVICE_ROLE_KEY=${SERVICE}`;
+  for (const cod of ["utf16le", "utf16be"]) {
+    const d = decodifica(conBom(testo, cod));
+    assert.equal(d.testo, testo, cod);
+    assert.equal(eBinario(conBom(testo, cod)), false, cod);
+  }
+  // Un vero binario resta binario.
+  assert.equal(eBinario(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01])), true);
+});
+
+test("SEG-1 · le regole sul NOME girano sui PERCORSI, non sui file letti", () => {
+  const { findings } = esitoSegreti({ percorsi: [".env.production"], letti: [], binari: [".env.production"] });
+  assert.ok(findings.some((f) => f.famiglia === "file-ambiente-tracciato" && f.severity === "block"),
+    "una regola sul nome non ha ragione di dipendere dall'esito di readFileSync");
+});
+
+test("SEG-3 · `NEXT_PUBLIC_` assolve il CONTENUTO, non il prefisso", () => {
+  const opaca = "re_8kQ2vTx4aBcDeFgHiJkLmNoPqRsTuVwXyZ";
+  // La chiave anonima resta muta: e' il falso positivo da non fare mai.
+  assert.deepEqual(findingsFile(".env.example", `NEXT_PUBLIC_SUPABASE_ANON_KEY=${ANON}`), []);
+  assert.deepEqual(findingsFile(".env.example", "NEXT_PUBLIC_SITO_URL=https://fornodoro.it"), []);
+  // Una chiave di un servizio qualunque sotto quel nome no.
+  assert.equal(findingsFile("c.env", `NEXT_PUBLIC_RESEND_API_KEY=${opaca}`).length, 1);
+  assert.equal(findingsEsempio(".env.example", `NEXT_PUBLIC_RESEND_API_KEY=${opaca}`).length, 1);
+});
+
+test("SEG-3 · un prefisso non disarma la famiglia dei nomi di servizio", () => {
+  for (const nome of ["SUPABASE_SERVICE_ROLE_KEY", "NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY", "PROD_SERVICE_ROLE_KEY"]) {
+    assert.ok(findingsFile("c.env", `${nome}=Tr0ub4dor3Tr0ub4dor3`).some((f) => f.famiglia === "nome-di-servizio-valorizzato"), nome);
+  }
+});
+
+test("SEG-5 · un'eccezione CITATA dentro un fence non e' una firma", () => {
+  const doc = "Si scrive cosi':\n\n```sql\n-- launchpad-consentito: credenziale-sql — motivo lungo abbastanza\n```\n";
+  assert.equal(eccezioniDichiarate(doc).size, 0, "e' il falso positivo che references/segreti.md si faceva da solo");
+  assert.equal(eccezioniDichiarate("-- launchpad-consentito: credenziale-sql — motivo lungo abbastanza").size, 1);
+});
+
+test("SEG-6 · la famiglia a entropia guarda TUTTE le coppie della riga", () => {
+  const benigno = "a".repeat(56);
+  const segreto = "R3sZ8kQwPmXv2NtLb7YcJd4FgHa1UeIo9Sr";
+  assert.equal(findingsFile("c.json", `{"API_SECRET":"${segreto}"}`).length, 1);
+  assert.equal(findingsFile("c.json", `{"buildId":"${benigno}","API_SECRET":"${segreto}"}`).length, 1,
+    "un valore benigno anteposto accecava la famiglia per tutto il resto della riga");
+});
+
+test("SEG-4 · un file non letto si DICHIARA", () => {
+  const { findings, riassunto } = esitoSegreti({
+    letti: [{ percorso: "a.md", testo: "ciao" }],
+    nonLetti: [{ percorso: "dump.sql", motivo: "630 KB, oltre la soglia di 512 KB" }],
+  });
+  assert.equal(riassunto.nonLetti, 1);
+  assert.ok(findings.some((f) => f.famiglia === "non-letto"));
+});
+
+test("SEG-9 · `*.key` e `*.pem` sono portatori di chiave; `.crt` no", () => {
+  assert.equal(ePortatoreDiChiave("certs/server.key"), true);
+  assert.equal(ePortatoreDiChiave("app.pem"), true);
+  assert.equal(ePortatoreDiChiave("certs/server.crt"), false, "un certificato e' materiale pubblico");
 });
