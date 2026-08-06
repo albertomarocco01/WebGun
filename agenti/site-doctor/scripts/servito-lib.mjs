@@ -806,7 +806,52 @@ const AUTOCOMPLETE_PERSONALI = new Set([
   "bday", "bday-day", "bday-month", "bday-year", "sex", "organization", "organization-title",
   "cc-name", "cc-number", "cc-exp", "cc-csc",
 ]);
-const RE_NOME_PERSONALE = /^(nome|cognome|name|surname|email|e-?mail|mail|tel|telefono|phone|cellulare|indirizzo|address|via|citta|city|cap|codice.?fiscale|piva|p.?iva|data.?nascita|azienda|ragione.?sociale)$/i;
+/**
+ * La prova DEBOLE: il nome del campo. Un elenco, non una regexp ancorata.
+ *
+ * La prima stesura confrontava il nome INTERO con quindici parole italiane
+ * (`/^(nome|cognome|…)$/`). Il collaudo P2 ha misurato quanto lascia passare,
+ * con un modulo pubblico che chiedeva l'indirizzo di residenza, la data di
+ * nascita e **il caricamento di un documento d'identita'**: `0 bloccanti,
+ * 1 da guardare` — l'unico rilievo era su `tel`, e i tre campi veri passavano.
+ *
+ * Due cose non funzionavano, e nessuna delle due era l'idea:
+ *   - **l'ancoraggio**: `user_email`, `contact-phone`, `datiCliente.telefono`
+ *     e `billing[address]` sono le forme che i moduli veri usano, e nessuna e'
+ *     uguale alla parola sola. Ora il nome si spezza in **parole** (separatori
+ *     e camelCase) e basta che una sia dell'elenco;
+ *   - **il vocabolario era italiano**, su una skill che esiste anche per
+ *     misurare i siti multilingua. Il modulo inglese di un sito bilingue —
+ *     `name`, `phone`, `address` — non lo vedeva nessuno.
+ *
+ * Resta prova **debole**, cioe' `issue` e non `block` (`DECISIONI.md` §17): un
+ * campo che si chiama `nome` puo' essere il nome di una persona o il nome di
+ * una pizza, e l'ancoraggio piu' largo rende quel caso piu' probabile, non meno.
+ */
+const PAROLE_PERSONALI = new Set([
+  // italiano
+  "nome", "cognome", "nominativo", "telefono", "tel", "cellulare", "cell", "fax", "pec",
+  "indirizzo", "via", "citta", "comune", "provincia", "cap", "residenza", "domicilio",
+  "nascita", "sesso", "genere", "azienda", "societa", "sociale", "fiscale", "iva", "iban",
+  "documento", "passaporto", "patente", "identita", "recapito", "utente",
+  // inglese
+  "name", "surname", "lastname", "firstname", "fullname", "username", "email", "mail",
+  "phone", "mobile", "telephone", "address", "street", "city", "town", "zip", "zipcode",
+  "postcode", "postal", "country", "birth", "birthday", "dob", "gender", "sex",
+  "company", "organization", "vat", "ssn", "passport",
+]);
+
+const FRASI_PERSONALI = [/codice fiscale/, /partita iva/, /data (di )?nascita/, /luogo (di )?nascita/, /date of birth/, /ragione sociale/, /carta (d )?identita/];
+
+/** Le parole di un nome di campo: separatori e camelCase, senza accenti. */
+export function paroleDelNome(nome) {
+  return String(nome ?? "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .replace(/[àá]/g, "a").replace(/[èé]/g, "e").replace(/[ìí]/g, "i").replace(/[òó]/g, "o").replace(/[ùú]/g, "u")
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
 
 export function classificaCampo(campo) {
   if (AUTOCOMPLETE_PERSONALI.has(campo.autocomplete)) {
@@ -815,8 +860,18 @@ export function classificaCampo(campo) {
   if (campo.tipo === "email" || campo.tipo === "tel") {
     return { personale: true, prova: "forte", motivo: `type="${campo.tipo}"` };
   }
-  if (RE_NOME_PERSONALE.test(campo.nome)) {
+  const parole = paroleDelNome(campo.nome);
+  const frase = parole.join(" ");
+  const trovata = parole.find((p) => PAROLE_PERSONALI.has(p)) ?? FRASI_PERSONALI.find((f) => f.test(frase))?.source;
+  if (trovata) {
     return { personale: true, prova: "debole", motivo: `il nome del campo e' "${campo.nome}"` };
+  }
+  // Un caricamento su un modulo PUBBLICO porta quello che gli si da', e quello
+  // che la gente carica su un modulo di contatto e' una carta d'identita', un
+  // curriculum, una cartella clinica. Prova debole perche' il file potrebbe
+  // essere qualunque cosa: la sua natura non sta nel documento (§17).
+  if (campo.tipo === "file") {
+    return { personale: true, prova: "debole", motivo: 'e\' un caricamento di file (type="file") su un modulo pubblico' };
   }
   return { personale: false, prova: "nessuna", motivo: "" };
 }

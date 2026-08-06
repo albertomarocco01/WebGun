@@ -319,6 +319,34 @@ describe("moduli e dati personali", () => {
     assert.equal(classificaCampo({ tipo: "text", nome: "codice_ritiro", autocomplete: "" }).personale, false);
   });
 
+  // Collaudo P2: il confronto era col nome INTERO e con quindici parole
+  // italiane. Un modulo che chiedeva residenza, data di nascita e il
+  // caricamento di un documento d'identita' — nessuno con `autocomplete` —
+  // produceva UN solo rilievo su quattro campi.
+  it("il nome si spezza in parole: `user_email` e `datiCliente.telefono` sono le forme vere", () => {
+    for (const nome of ["user_email", "contact-phone", "datiCliente.telefono", "billing[address]", "customerFullName", "campo_codice_fiscale"]) {
+      assert.equal(classificaCampo({ tipo: "text", nome, autocomplete: "" }).personale, true, nome);
+    }
+  });
+
+  it("il vocabolario non e' solo italiano: un sito bilingue ha anche il modulo inglese", () => {
+    for (const nome of ["name", "surname", "phone", "address", "city", "zip", "birthday", "passport"]) {
+      assert.equal(classificaCampo({ tipo: "text", nome, autocomplete: "" }).prova, "debole", nome);
+    }
+  });
+
+  it("un caricamento su un modulo pubblico e' prova debole: la gente ci mette la carta d'identita'", () => {
+    const c = classificaCampo({ tipo: "file", nome: "allegato", autocomplete: "" });
+    assert.equal(c.personale, true);
+    assert.equal(c.prova, "debole", "cosa ci sia dentro il file non sta nel documento (§17)");
+  });
+
+  it("le parole vicine non bastano: `invia`, `previa`, `nominale` non contengono `via` ne' `nome`", () => {
+    for (const nome of ["invia", "previa", "nominale", "codice_ritiro", "quantita", "messaggio", "q"]) {
+      assert.equal(classificaCampo({ tipo: "text", nome, autocomplete: "" }).personale, false, nome);
+    }
+  });
+
   it("prova forte non dichiarata = bloccante, prova debole = rilievo", () => {
     const f = findingsDatiRaccolti({
       pagineConModuli: [{ percorso: "/c", moduli: 1, campi: [
