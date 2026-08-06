@@ -408,6 +408,7 @@ const PASSI = [
         pagineConModuli,
         basiDichiarate: ctx.certificato?.datiRaccolti ?? [],
         informativaRaggiungibile: ctx.informativaRaggiungibile,
+        superficie: new Set(ctx.pagine.map((p) => p.percorso)),
       });
       const g = contaGravita(findings);
       const dettaglio = [

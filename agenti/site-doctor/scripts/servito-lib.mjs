@@ -802,6 +802,7 @@ export function destinazioniModuli(html, base) {
       azione,
       origine: url.origin,
       altraOrigine: url.host !== mia.host,
+      destinazione: percorsoInterno(azione, base),
       inChiaro: url.protocol === "http:" && !locale,
       campi: campiDiPagina(dentro),
     });
@@ -934,7 +935,7 @@ export function classificaCampo(campo) {
   return { personale: false, prova: "nessuna", motivo: "" };
 }
 
-export function findingsDatiRaccolti({ pagineConModuli, basiDichiarate, informativaRaggiungibile }) {
+export function findingsDatiRaccolti({ pagineConModuli, basiDichiarate, informativaRaggiungibile, superficie = null }) {
   const findings = [];
   const dichiarati = new Map(
     (basiDichiarate ?? []).map((r) => [`${(r.modulo ?? "").trim()}|${(r.campo ?? "").trim().toLowerCase()}`, r]),
@@ -981,6 +982,18 @@ export function findingsDatiRaccolti({ pagineConModuli, basiDichiarate, informat
           severity: "block",
           object: `${pagina.percorso} → modulo verso ${m.origine}`,
           message: `raccoglie ${personali.length} dati personali e li invia IN CHIARO (${m.azione}): attraversano la rete leggibili da chiunque stia in mezzo`,
+        });
+      }
+      // La camminata segue gli `<a href>`. Una pagina raggiungibile SOLO dal
+      // bottone di un modulo resta fuori dalla superficie — ed e' un limite
+      // dichiarato, ma il gate lo applicava in silenzio: restringeva l'insieme
+      // che poi dichiarava conforme. Adesso lo dice. `issue` perche' la pagina
+      // di destinazione di un POST spesso non e' navigabile da sola.
+      if (!m.altraOrigine && superficie && !superficie.has(m.destinazione)) {
+        findings.push({
+          severity: "issue",
+          object: `${pagina.percorso} → ${m.destinazione}`,
+          message: "il modulo consegna dati personali a una pagina che la camminata NON ha raggiunto (i collegamenti si seguono, i bottoni no): quella pagina riceve dati e non e' stata certificata",
         });
       }
     }

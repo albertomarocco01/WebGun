@@ -451,6 +451,25 @@ describe("archiviazione e terzi", () => {
     assert.ok(blocchi(f).some((x) => /IN CHIARO/.test(x.message)));
   });
 
+  // Collaudo P2: la camminata segue gli `<a href>`, non i bottoni. Il limite e'
+  // dichiarato, ma il gate lo applicava in silenzio — restringeva l'insieme che
+  // poi dichiarava conforme, invece di dire cosa aveva lasciato fuori.
+  it("una pagina che riceve il modulo e che la camminata non ha raggiunto si dice", () => {
+    const destinazioni = destinazioniModuli('<form action="/richiamo" method="post"><input name="telefono" autocomplete="tel"></form>', BASE);
+    const f = findingsDatiRaccolti({
+      pagineConModuli: [{ percorso: "/", campi: [], destinazioni }],
+      basiDichiarate: [], informativaRaggiungibile: new Set(["/"]), superficie: new Set(["/", "/contatti"]),
+    });
+    assert.deepEqual(blocchi(f), []);
+    assert.match(f[0].message, /la camminata NON ha raggiunto/);
+    // E se la pagina di destinazione E' nella superficie, non si dice niente.
+    const dentro = findingsDatiRaccolti({
+      pagineConModuli: [{ percorso: "/", campi: [], destinazioni }],
+      basiDichiarate: [], informativaRaggiungibile: new Set(["/"]), superficie: new Set(["/", "/richiamo"]),
+    });
+    assert.deepEqual(dentro, []);
+  });
+
   it("un modulo della stessa origine, o senza campi personali, non produce niente", () => {
     const sueDestinazioni = destinazioniModuli('<form action="/contatti"><input name="nome" autocomplete="name"></form>', BASE);
     assert.equal(sueDestinazioni[0].altraOrigine, false);
