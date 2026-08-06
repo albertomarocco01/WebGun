@@ -19,6 +19,11 @@ import {
   shellDiSistema,
   contaGravita,
   contrattoUscita,
+  dettaglioContrasto,
+  esitoContrasto,
+  findingsContrasto,
+  letturaContrasto,
+  statoContrasto,
   dettaglioMisura,
   dispersione,
   eDevServer,
@@ -886,4 +891,95 @@ test("un handoff compilato passa come prima", () => {
     contrattoUscita("docs/handoff/12-speed-demon.md", "# Handoff\n\nGate: VERDE\n\ntutto scritto.\n", "VERDE"),
     [],
   );
+});
+
+// ═══ § D21 — il contrasto e' di questo agente, e nessuno lo guardava ════════
+// Al 2026-08-06 la parola `contrast` non compariva in nessun file di questa
+// skill: il gate leggeva `report.categories.accessibility.score` e non apriva
+// mai l'audit. La delega di CANTIERE.md § D21 esisteva e non la onorava nessuno.
+
+// La forma vera dell'audit di Lighthouse, non una inventata.
+const AUDIT_ROSSO = {
+  id: "color-contrast",
+  title: "Background and foreground colors do not have a sufficient contrast ratio.",
+  score: 0,
+  scoreDisplayMode: "binary",
+  details: {
+    type: "table",
+    items: [
+      { node: { selector: "footer.sito > p.note", snippet: "<p class=\"note\">" } },
+      { node: { selector: "header a.link-secondario" } },
+      { node: { snippet: "<span class=\"badge\">Novita'</span>" } },
+    ],
+  },
+};
+const AUDIT_VERDE = { id: "color-contrast", score: 1, scoreDisplayMode: "binary", details: { items: [] } };
+const AUDIT_NON_APPLICABILE = { id: "color-contrast", score: null, scoreDisplayMode: "notApplicable" };
+
+test("IL CASO CHE CONTA: categoria 98 sopra soglia 95, e color-contrast rosso", () => {
+  // Una fixture in cui falliscono ENTRAMBI non prova niente: e' il caso in cui
+  // anche il codice vecchio diceva rosso. Qui la categoria PASSA.
+  const punteggi = { performance: 100, accessibility: 98, "best-practices": 100, seo: 100 };
+  const pagine = [{ id: "home", percorso: "/", soglie: { accessibility: 95 }, baseline: {} }];
+  const misure = new Map([["home", { accessibility: { mediana: 98, dispersione: 0, stabile: true } }]]);
+
+  assert.deepEqual(findingsBudget(pagine, misure, []), [], "la soglia della categoria e' rispettata");
+  assert.equal(punteggi.accessibility >= 95, true);
+
+  const contrasti = new Map([["home", esitoContrasto([letturaContrasto(AUDIT_ROSSO)])]]);
+  const findings = findingsContrasto(pagine, contrasti);
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].severity, "block");
+  assert.match(findings[0].message, /3 elementi con contrasto insufficiente/);
+  assert.match(findings[0].message, /footer\.sito > p\.note/);
+  assert.equal(statoContrasto(findings), "fail");
+});
+
+test("un audit verde non produce niente, e il passo e' `pass`", () => {
+  const pagine = [{ id: "home", percorso: "/", soglie: {}, baseline: {} }];
+  const contrasti = new Map([["home", esitoContrasto([letturaContrasto(AUDIT_VERDE)])]]);
+  const findings = findingsContrasto(pagine, contrasti);
+  assert.deepEqual(findings, []);
+  assert.equal(statoContrasto(findings), "pass");
+});
+
+test("quattro stati e non due: `notApplicable` non e' un successo ne' un guasto", () => {
+  assert.deepEqual(letturaContrasto(AUDIT_NON_APPLICABILE), { stato: "non-applicabile", elementi: [] });
+  assert.deepEqual(letturaContrasto({ scoreDisplayMode: "error" }), { stato: "non-misurato", elementi: [] });
+  assert.deepEqual(letturaContrasto(undefined), { stato: "non-misurato", elementi: [] });
+});
+
+test("un audit che Lighthouse non ha prodotto rende il passo MANCANTE, non verde", () => {
+  const pagine = [{ id: "home", percorso: "/", soglie: {}, baseline: {} }];
+  const findings = findingsContrasto(pagine, new Map());
+  assert.equal(findings[0].severity, "issue");
+  assert.equal(statoContrasto(findings), "skipped");
+  assert.match(findings[0].message, /pesa questo audit insieme ad altri venti/);
+});
+
+test("un guasto trovato in UN giro su tre e' trovato", () => {
+  const esito = esitoContrasto([
+    letturaContrasto(AUDIT_VERDE),
+    letturaContrasto(AUDIT_ROSSO),
+    letturaContrasto(AUDIT_VERDE),
+  ]);
+  assert.equal(esito.stato, "fail");
+  assert.equal(esito.elementi.length, 3);
+});
+
+test("gli elementi ripetuti fra i giri si contano una volta sola", () => {
+  const esito = esitoContrasto([letturaContrasto(AUDIT_ROSSO), letturaContrasto(AUDIT_ROSSO)]);
+  assert.equal(esito.elementi.length, 3);
+});
+
+test("il dettaglio dice quante pagine sono state guardate, sempre", () => {
+  const pagine = [{ id: "home", percorso: "/", soglie: {}, baseline: {} }, { id: "chi", percorso: "/chi", soglie: {}, baseline: {} }];
+  const contrasti = new Map([
+    ["home", esitoContrasto([letturaContrasto(AUDIT_VERDE)])],
+    ["chi", esitoContrasto([letturaContrasto(AUDIT_NON_APPLICABILE)])],
+  ]);
+  const dettaglio = dettaglioContrasto(pagine, contrasti, findingsContrasto(pagine, contrasti));
+  assert.match(dettaglio, /2 pagine/);
+  assert.match(dettaglio, /1 col contrasto verificato/);
+  assert.match(dettaglio, /1 senza testo da confrontare/);
 });

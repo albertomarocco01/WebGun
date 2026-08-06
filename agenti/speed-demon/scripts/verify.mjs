@@ -31,6 +31,11 @@ import {
   CATEGORIE,
   contaGravita,
   contrattoUscita,
+  dettaglioContrasto,
+  esitoContrasto,
+  findingsContrasto,
+  letturaContrasto,
+  statoContrasto,
   dettaglioFindings,
   dettaglioMisura,
   DISPERSIONE_MASSIMA,
@@ -95,6 +100,7 @@ export const ID = Object.freeze({
   build: "build-produzione",
   misura: "misura",
   budget: "budget",
+  contrasto: "contrasto",
   seo: "seo-meta",
   uscita: "contratto-uscita",
 });
@@ -294,6 +300,7 @@ const PASSI = [
       if (motivo) return record(this.id, this.nome, "skipped", motivo);
 
       ctx.misure = new Map();
+      ctx.contrasti = new Map();
       // La soglia di dispersione la dichiara il CONTRATTO; il numero cablato e'
       // solo il ripiego quando non l'ha dichiarata (misurazione.md §78).
       const sogliaDispersione = ctx.contratto.dispersioneMassima ?? DISPERSIONE_MASSIMA;
@@ -312,9 +319,12 @@ const PASSI = [
           dirotate.push(`${pagina.id}: \`${pagina.percorso}\` porta a ${indirizzo}, che non e' ${new URL(ctx.baseUrl).origin}. NON misurato: il gate misura questo sito, non un altro`);
           continue;
         }
-        const { giri, dirottamento } = giriDiUnaPagina(
+        const { giri, contrasti, dirottamento } = giriDiUnaPagina(
           indirizzo, ctx.contratto.formFactor, args.giri);
         const esito = esitoPagina({ pagina, giri, dirottamento, giriRichiesti: args.giri, sogliaDispersione });
+        // Il contrasto si registra anche quando la misura non c'e': sono due
+        // domande diverse, e una pagina dirottata non ha ne' l'una ne' l'altra.
+        if (!dirottamento && contrasti.length > 0) ctx.contrasti.set(pagina.id, esitoContrasto(contrasti));
         if (esito.misura) ctx.misure.set(pagina.id, esito.misura);
         else nonMisurate++;
         if (esito.riga) righe.push(esito.riga);
@@ -358,6 +368,31 @@ const PASSI = [
         findings.length === 0
           ? `${soglieLette} soglie confrontate: ogni pagina dichiarata rispetta la sua`
           : `${g.block} bloccanti, ${g.warn} derogate\n${dettaglioFindings(findings)}`);
+    },
+  },
+
+  {
+    id: ID.contrasto,
+    nome: "contrasto del testo (audit color-contrast)",
+    async esegui(ctx) {
+      // CANTIERE.md § D21: delle nove voci che site-doctor delega, `contrasti`
+      // e' di questo agente perche' e' l'unico gate della casa che apre un
+      // browser. Fino al 2026-08-06 la parola `contrast` non compariva in
+      // nessun file di questa skill: la delega esisteva e non la onorava
+      // nessuno.
+      //
+      // NON e' il punteggio della categoria `accessibility`: quello pesa
+      // `color-contrast` insieme ad altri venti audit, e un sito con contrasto
+      // insufficiente perde qualche punto su cento e supera qualunque soglia.
+      if (!ctx.contrasti || ctx.contrasti.size === 0) {
+        return record(this.id, this.nome, "skipped",
+          "nessuna pagina misurata: senza un giro di Lighthouse non esiste l'audit `color-contrast`, e un verde qui direbbe che il contrasto e' stato guardato");
+      }
+      const findings = findingsContrasto(ctx.contratto.pagine, ctx.contrasti);
+      const passo = record(this.id, this.nome, statoContrasto(findings),
+        dettaglioContrasto(ctx.contratto.pagine, ctx.contrasti, findings));
+      passo.counts = contaGravita(findings);
+      return passo;
     },
   },
 
@@ -481,6 +516,11 @@ function giroLighthouse(url, formFactor) {
     //   performance 100 · seo 100      → scritti accanto a `riservata`
     return {
       punteggi,
+      // L'AUDIT, non la categoria (CANTIERE.md § D21). Il punteggio di
+      // `accessibility` pesa `color-contrast` insieme ad altri venti: un sito
+      // con contrasto insufficiente perde qualche punto su cento e supera
+      // qualunque soglia ragionevole. Qui si legge il verdetto dell'audit.
+      contrasto: letturaContrasto(report.audits?.["color-contrast"]),
       urlRichiesto: report.requestedUrl ?? null,
       urlFinale: report.finalDisplayedUrl ?? report.mainDocumentUrl ?? null,
     };
@@ -499,13 +539,15 @@ function giroLighthouse(url, formFactor) {
  */
 function giriDiUnaPagina(url, formFactor, quanti) {
   const giri = [];
+  const contrasti = [];
   for (let i = 0; i < quanti; i++) {
     const esito = giroLighthouse(url, formFactor);
     if (!esito) continue;
-    if (!stessaPagina(esito.urlRichiesto, esito.urlFinale)) return { giri, dirottamento: esito.urlFinale };
+    if (!stessaPagina(esito.urlRichiesto, esito.urlFinale)) return { giri, contrasti, dirottamento: esito.urlFinale };
     giri.push(esito.punteggi);
+    contrasti.push(esito.contrasto);
   }
-  return { giri, dirottamento: null };
+  return { giri, contrasti, dirottamento: null };
 }
 
 /** Due URL sono la stessa pagina se differiscono solo per la barra finale. */
@@ -584,7 +626,7 @@ async function main() {
     console.error("--giri deve essere un intero >= 3: sotto i tre giri non esiste una mediana, e un numero solo non e' una misura (Legge n°3).");
     process.exit(2);
   }
-  const ctx = { contratto: null, baseUrl: null, misure: null };
+  const ctx = { contratto: null, baseUrl: null, misure: null, contrasti: null };
   for (const passo of PASSI) await passo.esegui(ctx, args);
   process.exit(verdetto(args.json));
 }

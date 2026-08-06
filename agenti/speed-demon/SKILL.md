@@ -47,7 +47,7 @@ In pipeline lo Specchio non sparisce: l'elenco assunto viene **scritto** nell'ha
 | `measure` | Costruisce in produzione, avvia, misura le pagine dichiarate con N giri di Lighthouse, scrive la **baseline** in `docs/performance.md` | `references/misurazione.md` |
 | `plan` | Legge la baseline e propone le ottimizzazioni, **ognuna col guadagno atteso e il costo**; **STOP allo Specchio delle ottimizzazioni** | `references/ottimizzazioni.md` |
 | `tune` | Applica le ottimizzazioni confermate **una alla volta**, rimisurando e rilanciando la batteria E2E dopo ciascuna | `references/ottimizzazioni.md` · `references/seo.md` |
-| `verify` | **Il gate**: sette passi con id stabili e `--json`; misura le premesse prima degli esiti; riporta solo il residuo | `scripts/verify.mjs` |
+| `verify` | **Il gate**: otto passi con id stabili e `--json`; misura le premesse prima degli esiti; riporta solo il residuo | `scripts/verify.mjs` |
 | `handoff` | Scrive `docs/handoff/<n>-speed-demon.md` col contratto del `CLAUDE.md` e la riga `Gate: VERDE/ROSSO` | §Contratto d'uscita |
 
 ## Comando → procedura (cosa eseguo, in concreto)
@@ -55,7 +55,7 @@ In pipeline lo Specchio non sparisce: l'elenco assunto viene **scritto** nell'ha
 - **`measure`** → leggo gli handoff (tutti, in ordine) per sapere **quali pagine contano**: la vetrina non è il gestionale, e una pagina dietro autenticazione si misura con la sua sessione o non si misura. Poi `npm run build && npm run start` su una porta dedicata — **mai** `next dev`. Per ogni pagina dichiarata: **N giri** di Lighthouse (default 3), mediana dei punteggi e delle metriche, **dispersione** dichiarata. Scrivo `docs/performance.md`: pagine, soglie, baseline, metodo, `Confermato da:`.
 - **`plan`** → dalla baseline derivo le ottimizzazioni candidate, ognuna con: **cosa tocca**, **guadagno atteso** (su quale metrica, di quanto), **costo** (cosa peggiora o cambia), **rischio per i flussi** (quali spec di Flow Sentinel potrebbero diventare rosse). **STOP: conferma.** Chi conferma decide anche cosa **non** si fa.
 - **`tune`** → una ottimizzazione alla volta, e dopo ognuna: rimisuro la pagina toccata e **rilancio la batteria E2E**. Un giro che applica cinque ottimizzazioni insieme e poi misura non sa quale ha funzionato e quale ha rotto. Se una spec diventa rossa, l'ottimizzazione torna indietro e il fatto va nell'handoff: non si allenta il test.
-- **`verify`** → `node <skill>/scripts/verify.mjs --url <url-della-build> [--giri N] [--json]`: i sette passi della §Gate. `--url` non ha un default: senza, il gate ripiega sulla riga `URL misurato:` del contratto e altrimenti si rifiuta di indovinare. `--giri` è l'**N della terza legge** e non scende sotto 3 (`--giri 2` esce **2** con il motivo): è l'unico modo di cambiarlo, e finché non era scritto qui la legge stava senza il suo comando. All'utente riporto **solo il residuo** e le **verifiche mancanti**, mai i log grezzi di Lighthouse.
+- **`verify`** → `node <skill>/scripts/verify.mjs --url <url-della-build> [--giri N] [--json]`: gli otto passi della §Gate. `--url` non ha un default: senza, il gate ripiega sulla riga `URL misurato:` del contratto e altrimenti si rifiuta di indovinare. `--giri` è l'**N della terza legge** e non scende sotto 3 (`--giri 2` esce **2** con il motivo): è l'unico modo di cambiarlo, e finché non era scritto qui la legge stava senza il suo comando. All'utente riporto **solo il residuo** e le **verifiche mancanti**, mai i log grezzi di Lighthouse.
 - **`handoff`** → pagine misurate, delta prima/dopo per metrica, ottimizzazioni applicate **col costo dichiarato**, ottimizzazioni proposte e **rifiutate** (con chi le ha rifiutate), regressioni trovate e rientrate, residui del gate, riga `Gate:` coerente con l'ultimo `verify`.
 
 ## Flusso 1 — Dal sito testato al sito veloce
@@ -68,7 +68,7 @@ In pipeline lo Specchio non sparisce: l'elenco assunto viene **scritto** nell'ha
 6. **`handoff`** — prima del gate: `verify` controlla il contratto d'uscita, scriverlo dopo significherebbe chiudere con un rosso strutturale (precedente di Schema Forge, Flusso 1 passo 8).
 7. **`verify`** — **ultimo** passo. Il residuo si riporta nell'handoff e si rilancia finché non è verde.
 
-## Gate (`scripts/verify.mjs`) — sette passi, id stabili
+## Gate (`scripts/verify.mjs`) — otto passi, id stabili
 
 | id | Passo | Cosa misura | Quando è MANCANTE |
 |---|---|---|---|
@@ -76,7 +76,8 @@ In pipeline lo Specchio non sparisce: l'elenco assunto viene **scritto** nell'ha
 | `rete-verde` | la batteria E2E di Flow Sentinel | il gate di Flow Sentinel chiude verde **adesso** | il progetto non ha `docs/flussi-critici.md` o la skill non è raggiungibile |
 | `build-produzione` | cosa stiamo misurando | l'URL sotto misura **non** è una dev server, e risponde | l'app non risponde |
 | `misura` | Lighthouse sulle pagine dichiarate | N giri per pagina, **mediana** e **dispersione** contro la soglia dichiarata nel contratto; una pagina il cui `finalDisplayedUrl` non è quello richiesto viene **scartata**, non misurata | `lighthouse` o Chrome non installati |
-| `budget` | le soglie dichiarate | ogni pagina rispetta la sua soglia, o ha una **deroga scritta nel contratto** | il contratto non dichiara nessuna soglia leggibile, o manca la misura |
+| `budget` | le soglie dichiarate | ogni pagina rispetta la sua soglia, o ha una **deroga scritta e firmata** nel contratto. Su `accessibility` una deroga vale solo **sopra la baseline**: sotto non è una soglia mancata, è una regressione, e nessuna deroga la legittima | il contratto non dichiara nessuna soglia leggibile, o manca la misura |
+| `contrasto` | contrasto del testo | l'audit **`color-contrast`** di Lighthouse, letto per sé — **non** il punteggio della categoria `accessibility`, che lo pesa insieme ad altri venti e lascia passare un sito con contrasto insufficiente. È la voce `contrasti` che `site-doctor` delega qui (`CANTIERE.md` §D21), perché questo è l'unico gate della casa che apre un browser | nessuna pagina misurata, o Lighthouse non ha prodotto l'audit |
 | `seo-meta` | metatag nell'HTML **servito**, letto senza seguire i rimandi | `title` e `canonical` **unici** (si contano, non si cercano), `canonical` che non appartiene a un'altra pagina, `description`, nessun `noindex` né nel corpo né in `X-Robots-Tag` | l'app non risponde |
 | `contratto-uscita` | handoff | l'handoff esiste e la sua riga `Gate:` combacia col verdetto di **questa** esecuzione | l'handoff non c'è |
 
@@ -90,7 +91,8 @@ In pipeline lo Specchio non sparisce: l'elenco assunto viene **scritto** nell'ha
 - [ ] Ogni punteggio sotto la soglia **giustificato per iscritto nel contratto**
 - [ ] Ogni ottimizzazione applicata ha il suo **costo dichiarato** nell'handoff
 - [ ] Metatag e SEO di base presenti nell'**HTML servito** di ogni pagina pubblica
-- [ ] Nessuna regressione di accessibilità (punteggio a11y non sceso)
+- [ ] Nessuna regressione di accessibilità (punteggio a11y non sceso **sotto la baseline dichiarata nel contratto**)
+- [ ] Audit `color-contrast` verde su ogni pagina misurata, o il rilievo scritto
 - [ ] `docs/handoff/<n>-speed-demon.md` scritto, riga `Gate:` coerente
 - [ ] `code-maniac scan` pulito o residuo documentato
 

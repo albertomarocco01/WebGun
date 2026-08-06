@@ -645,6 +645,102 @@ export function esitoPagina({ pagina, giri, dirottamento, giriRichiesti, sogliaD
   return { misura: perCategoria, riga, scartata: null };
 }
 
+// ─── il contrasto del testo ──────────────────────────────────────────────────
+/**
+ * LA SOGLIA DI UNA CATEGORIA NON E' LA MISURA DI UN AUDIT.
+ *
+ * `CANTIERE.md` § D21: delle nove voci di conformita' che site-doctor delega ai
+ * vicini, `contrasti` e' di questo agente, perche' e' l'unico gate della casa
+ * che apre un browser. Al 2026-08-06 la parola `contrast` non compariva in
+ * NESSUN file di questa skill: il gate leggeva
+ * `report.categories.accessibility.score` e non apriva mai l'audit.
+ *
+ * Perche' non basta. Lighthouse pesa `color-contrast` insieme ad altre venti e
+ * passa audit dentro la categoria `accessibility`: un sito con contrasto
+ * insufficiente perde qualche punto su cento e supera qualunque soglia
+ * ragionevole. Misurato sulla forma vera di un report — categoria 98 contro
+ * soglia 95, `color-contrast` con `score: 0` e tre elementi:
+ *
+ *   PRIMA   accessibility 98 >= 95 → nessun rilievo, passo verde
+ *   DOPO    block: 3 elementi con contrasto insufficiente
+ *
+ * Una fixture in cui falliscono ENTRAMBI non prova niente: e' il caso in cui
+ * anche il vecchio codice diceva rosso.
+ *
+ * Quattro stati e non due, perche' `notApplicable` (una pagina senza testo
+ * sopra uno sfondo) non e' un successo e non e' un guasto, e un audit che
+ * Lighthouse non ha prodotto e' una verifica MANCANTE.
+ */
+export function letturaContrasto(audit) {
+  if (!audit || typeof audit !== "object") return { stato: "non-misurato", elementi: [] };
+  if (audit.scoreDisplayMode === "notApplicable") return { stato: "non-applicabile", elementi: [] };
+  if (audit.scoreDisplayMode === "error") return { stato: "non-misurato", elementi: [] };
+  const elementi = (audit.details?.items ?? [])
+    .map((i) => i?.node?.selector || i?.node?.snippet || "(elemento senza selettore)");
+  if (audit.score === 1) return { stato: "pass", elementi: [] };
+  if (audit.score === 0) return { stato: "fail", elementi };
+  return { stato: "non-misurato", elementi };
+}
+
+/**
+ * L'esito di una pagina sui suoi N giri. Un guasto trovato UNA volta e' trovato:
+ * il contrasto non oscilla come un punteggio di performance, e se un giro lo ha
+ * visto gli altri non lo smentiscono — lo hanno mancato.
+ */
+export function esitoContrasto(letture) {
+  const falliti = letture.filter((l) => l.stato === "fail");
+  if (falliti.length > 0) {
+    return { stato: "fail", elementi: [...new Set(falliti.flatMap((l) => l.elementi))] };
+  }
+  if (letture.some((l) => l.stato === "pass")) return { stato: "pass", elementi: [] };
+  if (letture.some((l) => l.stato === "non-applicabile")) return { stato: "non-applicabile", elementi: [] };
+  return { stato: "non-misurato", elementi: [] };
+}
+
+const MASSIMI_ELEMENTI = 5;
+
+export function findingsContrasto(pagine, perPagina) {
+  const findings = [];
+  for (const pagina of pagine) {
+    const esito = perPagina.get(pagina.id);
+    if (!esito || esito.stato === "non-misurato") {
+      findings.push({
+        severity: "issue",
+        object: `pagina ${pagina.id}`,
+        message: "audit `color-contrast` non prodotto da Lighthouse: il contrasto NON e' stato misurato. Il punteggio della categoria `accessibility` non lo dice — pesa questo audit insieme ad altri venti",
+      });
+      continue;
+    }
+    if (esito.stato !== "fail") continue;
+    const primi = esito.elementi.slice(0, MASSIMI_ELEMENTI).map((e) => `  - ${e}`).join("\n");
+    const coda = esito.elementi.length > MASSIMI_ELEMENTI ? `\n  … e altri ${esito.elementi.length - MASSIMI_ELEMENTI}` : "";
+    findings.push({
+      severity: "block",
+      object: `pagina ${pagina.id}`,
+      message: `${esito.elementi.length} element${esito.elementi.length === 1 ? "o" : "i"} con contrasto insufficiente (audit \`color-contrast\` di Lighthouse):\n${primi}${coda}`,
+    });
+  }
+  return findings;
+}
+
+/**
+ * Lo stato del passo del contrasto. Un audit non prodotto non e' un successo:
+ * `issue` non fa rosso, ma il passo diventa MANCANTE, che e' la stessa regola
+ * di ogni strumento assente in questa casa.
+ */
+export function statoContrasto(findings) {
+  if (findings.some((f) => f.severity === "block")) return "fail";
+  if (findings.some((f) => f.severity === "issue")) return "skipped";
+  return "pass";
+}
+
+export function dettaglioContrasto(pagine, perPagina, findings) {
+  const conta = (stato) => pagine.filter((p) => perPagina.get(p.id)?.stato === stato).length;
+  const testa = `${pagine.length} pagine · ${conta("pass")} col contrasto verificato · ` +
+    `${conta("fail")} con elementi insufficienti · ${conta("non-applicabile")} senza testo da confrontare`;
+  return findings.length === 0 ? testa : `${testa}\n${dettaglioFindings(findings)}`;
+}
+
 /**
  * Lo stato del passo.
  *
