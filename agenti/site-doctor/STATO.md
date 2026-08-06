@@ -68,30 +68,29 @@ dichiarato **con il nome del proprietario e il file che lo dice**.
 | P0 | progettazione: `SKILL.md`, perimetro, specifica del gate a nove passi scritta **prima** del flusso, i quattro stati | qui | **fatta il 2026-08-06**, dentro lo stesso pacchetto di P1 (D17) — **senza revisione del direttore in mezzo**: è il costo dichiarato dell'unione |
 | P1 | costruzione: references, `scripts/`, banco, guardiani, sabotaggio, gate rosso sul pilota per motivi veri | qui | **fatta il 2026-08-06**. Verbale `COSTRUZIONE-2026-08-06.md` |
 | P2 | collaudo avversario indipendente in **chat vergine**, dominio diverso: caccia ai falsi verdi dei nove passi | chat vergine (chi costruisce non collauda) | **fatta il 2026-08-06** su un banco **studio legale bilingue**. Verbale `COLLAUDO-2026-08-06.md`: 14 difetti, 12 commit, batteria 144 → 168 |
-| P3 | primo consumatore reale con un certificato firmato da un **committente**, non per delega | pacchetto di catena | da fare |
+| P.6-P3 | il **tribunale sul codice cambiato**, D21 (cinque voci tornate a casa) e `--scadenza` | qui | **fatta nella notte fra il 2026-08-06 e il 07**. Verbale `P6-P3-2026-08-06.md`: 48 rilievi su sei periti, gate 9 → 14 passi, batteria 168 → 264 |
+| P4 | primo consumatore reale con un certificato firmato da un **committente**, non per delega | pacchetto di catena | da fare |
 
 ## Cosa esiste, misurato
 
 | Cosa | Numero | Come è stato misurato |
 |---|---|---|
-| Test degli script | **168 verdi** | `node --test scripts/`, sul node di sistema (20.12.2) **e** su Node 24 |
-| Difetti trovati dal **collaudo avversario** (P2) | **14**, tutti chiusi con un test | `COLLAUDO-2026-08-06.md` |
-| Classi di sabotaggio del collaudo | **32**, di cui **25 rosse**; le 7 verdi sono limiti dichiarati che reggono | `banco-prova-collaudo-sd/`, gitignorato |
-| Deleghe misurate **vuote** | **7 su 9** — `grep` sui gate dei vicini | `SCOPERTE` in `conformita-lib.mjs` |
-| Passi del gate implementati | **9**, con `id` stabili e ordine bloccato da un test | `scripts/verify.mjs`, `ID` |
+| Test degli script | **264 verdi** | `npm test`, sul node di sistema (20.12.2) |
+| Passi del gate implementati | **14**, con `id` stabili e ordine bloccato da un test | `scripts/verify.mjs`, `ID` |
 | Stati del verdetto | **4** (`pass` · `fail` · `skipped` · `n/a`) | `riepilogo()`, con i test dei tre casi |
-| Classi di sabotaggio provate | **25 su 25 rosse**, ognuna sul passo che dichiara di sorvegliare | `scripts/banco.mjs`, uscite incollate nel verbale |
-| Difetti **del gate** trovati sabotando | **3**, tutti chiusi con un test | verbale §5 |
-| Difetti **del gate** trovati dalla batteria | **2** | verbale §5 |
-| Difetti **del gate** trovati al primo lancio sul pilota | **1** (la diagnosi d'identità) | verbale §5 |
-| Rilievi del **tribunale** | **33** — 26 chiusi con un test, 5 aperti, 1 accettato, 1 alla regia | verbale §6.6 |
-| Punti della progettazione cambiati dallo STOP di metà pacchetto | **8**, prima che diventassero codice | verbale §4 |
-| Voci di conformità nell'elenco | **16** — 6 mie, 9 delegate, 1 scoperta | `conformita-lib.mjs`, `VOCI` |
-| Comandi esercitati | **3 su 5** (`perimetro`, `scansiona`, `verify`) — `certifica` e `handoff` **non** esercitati su un progetto vero: il pilota è di sola lettura | verbale §7 |
+| Voci di conformità nell'elenco | **16** — **11 mie**, 3 delegate, 2 scoperte/parziali, 1 scoperta | `conformita-lib.mjs`, `VOCI` |
+| Deleghe misurate **vuote** | **1** (`contrasti`) + 1 parziale (`accessibilita-admin`) — era **7 su 9** prima di D21 | `SCOPERTE` in `conformita-lib.mjs`, col commit della regia accanto |
+| Rilievi del **tribunale** della costruzione | **33** — 26 chiusi con un test | `COSTRUZIONE-2026-08-06.md` §6.6 |
+| Difetti trovati dal **collaudo avversario** (P2) | **14**, tutti chiusi con un test | `COLLAUDO-2026-08-06.md` |
+| Rilievi del **tribunale di P.6-P3** (sei periti su `scripts/`) | **48**, con ESLint · knip · jscpd · batteria **tutti verdi** | `P6-P3-2026-08-06.md` §1-2 |
+| Classi di sabotaggio del collaudo | **42**, di cui **32 rosse**; le 10 verdi sono limiti dichiarati che reggono o assenze che per contratto valgono un `issue` | `banco-prova-collaudo-sd/`, gitignorato |
+| Classi di sabotaggio del costruttore | **25 su 25 rosse**, ognuna sul passo che dichiara di sorvegliare | `scripts/banco.mjs` |
+| Scadenza complessiva | **300 s**, estrapolati da una pendenza misurata (20,2 ms per ms di RTT, 19 richieste su 10 pagine) | `P6-P3-2026-08-06.md` §4.1 |
+| Comandi esercitati | **3 su 5** (`perimetro`, `scansiona`, `verify`) — `certifica` e `handoff` **non** esercitati su un progetto vero da questa skill: il pilota è di sola lettura | verbali |
 | Regole pure | 2 librerie | `servito-lib.mjs` · `conformita-lib.mjs` |
 | Gusci di I/O | 2 | `verify.mjs` · `banco.mjs` |
 | References | **5** | |
-| Guardiani | ESLint **0 errori** / 13 avvisi di complessità · knip **pulito** · jscpd **1 clone di 8 righe** (l'epilogo, duplicato apposta) · `gitleaks` **pulito** · `semgrep` 4 rilievi, chiusi nella sostanza | eseguiti |
+| Guardiani | ESLint **0 errori** / 20 avvisi di complessità · knip **pulito** · jscpd **0 cloni** · `gitleaks` **pulito** · `semgrep` 5 rilievi `detect-non-literal-regexp`, scritti e non silenziati | eseguiti a chiusura di P.6-P3 |
 
 ## Cosa un gate verde NON prova
 
@@ -106,70 +105,90 @@ più:
    collegamenti e dalla `sitemap.xml`. Una pagina che nessuno linka non entra —
    e sul pilota è il caso di `/ordine/<codice>`, che resta fuori **anche** da
    qui, non solo dalla misura di speed-demon.
-3. **Che il proprietario dichiarato abbia fatto il suo lavoro.** Il passo
-   `perimetro` prova che la voce è assegnata a **uno solo** e che il file citato
-   esiste e la **nomina**. Non legge se quel file dice «fatto» o «da fare»: è il
-   confine fra un controllo falsificabile e la comprensione di un testo, e sta di
-   proposito da questa parte.
+3. **Che il proprietario dichiarato abbia fatto il suo lavoro.** Il confine si è
+   spostato due volte. Il passo `perimetro` prova che la voce è assegnata a **uno
+   solo** e che il file citato esiste e la **nomina**; il collaudo P2 ha aggiunto
+   che *se il vicino abbia un passo del gate che la guarda* non è comprensione di
+   un testo — è codice, e si legge; **D21** ha tratto la conseguenza e ha
+   riportato a casa cinque deleghe. Quello che resta non provato è solo che chi
+   ha ancora una delega l'abbia poi **eseguita su questa build**: quello lo dice
+   la riga «i gate dei vicini sono verdi sulla stessa build», ed è lavoro
+   dell'agente.
+4. **Che il gate abbia finito.** Dal 2026-08-06 finisce sempre — `--scadenza`,
+   default 300 s — ma un giro scaduto ha `skipped` dove non ha guardato, e un
+   `skipped` **non è un pass**. Il `--json` porta `scaduta` apposta.
 
 ## Punti aperti — ordinati per gravità
 
-**Chiusi dal collaudo P2 del 2026-08-06**, e vale la pena dire quali: il n°1 (il
-collaudo stesso), il n°2 (`certifica` e `handoff` eseguiti come comandi su un
-progetto vero), il n°3 (l'informativa in bozza generata, con il modello che
-prima non esisteva), e il **n°12** — le premesse dei `NON APPLICABILE` fatte su
-un documento che poteva essere amputato: era la previsione più acuta del
-costruttore, si è avverata, ed è chiusa.
+**Chiusi da P.6-P3 (notte 2026-08-06 → 07)**, e vale la pena dire quali: il
+**n°1** (il tribunale, convocato per primo: 48 rilievi su sei periti), il **n°2**
+(cinque delle sette deleghe vuote sono tornate a casa con D21, e le scoperte sono
+tre), il **n°4** (`--scadenza`, con un default estrapolato da una pendenza
+misurata), il **n°5** (`MAX_CORPO` = 8 MB, e un corpo oltre il tetto è una pagina
+NON LETTA, non una pagina vuota), e il **n°7** (`--json` ha un secondo
+consumatore, e ne è uscito con due campi in più: `scadenza` e `scaduta`).
 
-1. **Il tribunale non è stato riconvocato sul codice cambiato.** Quattordici
-   correzioni sono entrate dopo l'ultimo `/code-inquisition`, fra cui il
-   ripulitore e due regole nuove. Su questa skill il tribunale ha trovato **33**
-   rilievi che tutti gli strumenti statici dichiaravano puliti: è **MANCANTE**,
-   non PASS, ed è la prima cosa da fare.
-2. **Sette voci di conformità sono delegate a gate che non le guardano**, e il
-   gate oggi lo dice con un `issue` a ogni esecuzione. Dichiararlo non è
-   coprirlo: finché la direzione non decide (proposta n°2 del collaudo), un
-   certificato può essere firmato con `favicon`, `open-graph`,
-   `dati-strutturati`, `sitemap`, `robots` e `contrasti` **scoperte**.
-3. **La firma resta il limite non automatizzabile.** Il gate legge una riga; che
-   chi l'ha scritta abbia letto il documento non lo sa nessuno strumento.
-4. **Nessuna scadenza complessiva.** Misurato al collaudo contro un server che
-   manda un byte al secondo e non chiude mai: il gate **non si appende** (il
-   timeout per richiesta funziona, 31 s e un `block` con la diagnosi giusta), ma
-   60 pagine ostili costano mezz'ora e in CI il lavoro viene ucciso prima di
-   produrre un verdetto. Serve `--scadenza` con un default e `skipped` sui passi
-   non completati — mai una fine senza verdetto. È un cambio di contratto:
-   proposta n°1 del collaudo.
-5. **Nessun tetto sul corpo scaricato né sul numero di bundle.** La forma temuta
-   — l'errore inghiottito e la diagnosi rovesciata che accusa la macchina di chi
-   misura — **non si è riprodotta**: contro un corpo da 900 MB il gate esce con
-   `1 pagine non scaricate`, che è vero. Resta il costo: 31 s per pagina e tutto
-   ciò che arriva in memoria.
-6. **Quattordici avvisi di complessità** di ESLint (era 13), zero errori. Il
-   nuovo è `regioniNascoste`, il parser a scansione singola: la sua alternativa
-   è la versione quadratica che il collaudo ha tolto.
-7. **`--json` non è stato consumato da un orchestratore.** I due runner del
-   collaudo lo leggono, ed è la prima volta che qualcosa lo fa fuori dal driver
-   del sabotaggio; un consumatore vero non c'è ancora.
+**Chiusi dal collaudo P2 del 2026-08-06**: il n°1 di allora (il collaudo stesso),
+il n°2 (`certifica` e `handoff` eseguiti come comandi su un progetto vero), il
+n°3 (l'informativa in bozza generata), e il **n°12** — le premesse dei `NON
+APPLICABILE` fatte su un documento amputabile.
+
+1. **Il tribunale non è stato convocato sul codice di P.6-P3.** Le ~900 righe
+   nuove — i cinque passi di D21, `--scadenza`, gli scanner riscritti — non le ha
+   guardate nessun perito. Su questa skill il tribunale ha trovato 33 e poi 48
+   rilievi con tutti gli strumenti statici verdi, e un perito ha già dimostrato
+   **misurando** che una correzione può peggiorare quello che tocca: è
+   **MANCANTE**, non PASS, ed è la prima cosa da fare. È la stessa frase che il
+   collaudo P2 aveva scritto per P.6-P3.
+2. **`code-maniac scan` non è stato eseguito** in questa tornata: la batteria
+   deterministica sì, pezzo per pezzo, ma non è la stessa cosa. **MANCANTE.**
+3. **Due voci di conformità restano su gate che non le guardano come questo le
+   guarderebbe**: `contrasti` (delega **vuota**: speed-demon legge il punteggio
+   di categoria e mai il singolo audit `color-contrast`) e `accessibilita-admin`
+   (misura vera ma **sui sorgenti**). Il gate le segnala `issue` a ogni giro, con
+   il **commit della regia** accanto alla misura (`d147f52`, D18 §3). Su
+   `contrasti` un'altra chat sta chiudendo in questa stessa ondata: la riga si
+   toglie **rilanciando il `grep`**, non leggendo un handoff.
+4. **La firma resta il limite non automatizzabile.** Il gate legge una riga; che
+   chi l'ha scritta abbia letto il documento non lo sa nessuno strumento. È però
+   più stretto di prima: una data senza nome, un trattino, o una delega con la
+   parentesi vuota non passano più (D14).
+5. **Venti avvisi di complessità** di ESLint (erano 14), zero errori. I sei
+   nuovi sono le regole di D21: sono elenchi di casi, e spezzarli in funzioni da
+   tre righe renderebbe più difficile leggere la regola.
+6. **Il banco del collaudo resta gitignorato**, quindi la correzione al suo buco
+   di riproducibilità (`genera` cancellava i due documenti che il gate legge) non
+   è in regia. Proposta alla direzione, non decisione della skill.
+7. **`terziDi` confronta l'host e non lo schema**: `http://stesso-host` su una
+   pagina `https` non risulta un terzo. È contenuto misto, un'altra voce e un
+   altro mestiere — rilevato dal tribunale e **non chiuso di proposito**.
 8. **Nessun sito multilingua costruito da vetrina-crafter è mai stato misurato.**
-   Il collaudo ha misurato un banco bilingue **statico**: gli hreflang, le due
-   informative e le rotte per lingua sono provati, ma le rotte per lingua di Next
-   potrebbero comportarsi diversamente. I domini misurati sono due (pizzeria,
-   studio legale), gli stack ancora uno e mezzo.
+   Il banco bilingue è **statico**: gli hreflang, le due informative e le rotte
+   per lingua sono provati, ma le rotte per lingua di Next potrebbero comportarsi
+   diversamente. Domini misurati: due. Stack: uno e mezzo.
 9. **Un `<script src>` della stessa origine che rimanda a un altro host** viene
    scaricato e il suo contenuto attribuito al sito, senza comparire fra i terzi.
-   Non attaccato dal collaudo: resta aperto. `preleva` restituisce già l'URL
-   finale, basta confrontarne l'host.
+   Non attaccato da nessuno dei due collaudi: resta aperto. `preleva` restituisce
+   già l'URL finale, basta confrontarne l'host.
 10. **Il doppio conteggio dentro un `<title>`.** Un `<img>` scritto dentro un
     `<title>` viene contato come elemento reale. Non corretto **di proposito**:
     il corpo di `<title>` serve a `nomeAccessibile` per le icone SVG, che è il
-    rimedio `SD-ROSSO-01` del tribunale.
+    rimedio `SD-ROSSO-01` del tribunale. (Il difetto **inverso** — un
+    `<svg><title>` letto come titolo del documento — è invece chiuso da P.6-P3:
+    il titolo si cerca nella testa del documento ripulito.)
 11. **L'essenzialità di un'archiviazione è dichiarata, non misurata.** Chi scrive
     il certificato può dichiarare essenziale il proprio contatore di visite e non
     avere bisogno di banner secondo il gate. È il limite di un controllo
-    falsificabile, ora scritto in `SKILL.md` §Cosa un gate verde NON prova.
-12. **L'offuscamento resta cieco**: `window["local"+"Storage"]` sfugge a una
-    ricerca di sottostringa. È un indizio, non una misura, e va letto così.
+    falsificabile, scritto in `SKILL.md` §Cosa un gate verde NON prova. **Non si
+    chiude**: inventare una misura per una cosa che nessuno può misurare sarebbe
+    il difetto ricorrente di questa casa.
+12. **L'offuscamento non è più cieco, ma non è una misura.**
+    `window["local"+"Storage"]` non nomina l'API, e da P.6-P3 il gate lo
+    riconosce come **indizio** e chiude `skipped` invece di `n/a`: «non lo so»
+    non è «no». Resta che questo gate legge nomi e non esegue codice.
+13. **Un `alt=""` su un'immagine di contenuto resta `issue`**, e un sito con
+    quello passa. È corretto — su un'immagine davvero decorativa `alt=""` è la
+    forma giusta, e distinguerle è un giudizio, non una regola.
 
 ## Proposte a monte/valle
 
@@ -179,28 +198,30 @@ toccato da qui.**
 **A speed-demon** — *le prime due nascono dal collaudo P2, e sono le più gravi
 che questa skill abbia da riportare a un vicino.*
 
-0a. **Sei voci che il certificato ti delega, il tuo gate non le guarda.**
-   Misurato il 2026-08-06 col `grep` sui tuoi script, non letto nel tuo handoff:
-   `sitemap` **0 occorrenze**, `og:` **0**, `favicon` **0**, `application/ld`
-   **0**; le occorrenze di `robots` sono tutte `<meta name="robots">`, cioè la
-   voce `noindex-private`, e `robots.txt` non lo richiede nessun passo. Reggono
-   `canonical` e `noindex-private`, e le misuri sull'HTML servito.
-   **La favicon è la voce da cui site-doctor è nata** — un `404` su ogni pagina
-   per tre anelli — e le delega a te. Finché non c'è un passo, il mio gate le
-   segnala `issue` a ogni esecuzione. Costo stimato: una richiesta HTTP per
-   voce, sull'app che il tuo gate già interroga. In alternativa passano a me,
-   che cammino già ogni pagina e scarico già la `sitemap.xml`: **la scelta è di
-   chi risponde della voce, non mia.**
+0a. **RITIRATA il 2026-08-06 con D21 — cinque voci su sei sono tornate a me.**
+   Il collaudo P2 aveva misurato col `grep` sui tuoi script che sei delle voci
+   che il certificato ti attribuiva il tuo gate non le guarda: `sitemap` **0
+   occorrenze**, `og:` **0**, `favicon` **0**, `application/ld` **0**, e le
+   occorrenze di `robots` tutte `<meta name="robots">`, cioè l'altra voce. La
+   direzione ha deciso che **la proprietà segue la misura, non l'argomento**:
+   favicon, Open Graph, JSON-LD, `sitemap.xml` e `robots.txt` sono passi di
+   questo gate dal 2026-08-06, e costano una richiesta HTTP a chi cammina già
+   ogni pagina. **Non hai più niente da fare su queste cinque.** Reggono
+   `canonical` e `noindex-private`, e le misuri sull'HTML servito: quelle
+   restano tue e la delega è **piena**.
 
-0b. **Leggi il punteggio della categoria, mai il singolo audit.** `audits` ha
-   **0 occorrenze** nei tuoi script: prendi `report.categories.<x>.score` e lo
-   confronti con una soglia scritta in `docs/performance.md` del progetto, che
-   non ha un pavimento e che una deroga declassa da `block` a `warn`. Per i
-   **contrasti** questo significa che un sito con `color-contrast` rosso perde
-   pochi punti su cento e passa qualunque soglia ragionevole. È la delega più
-   debole delle nove, ed è quella che io non posso riprendermi: i contrasti
+0b. **Leggi il punteggio della categoria, mai il singolo audit.** **Resta
+   aperta, ed è l'unica delega ancora vuota.** `audits` ha **0 occorrenze** nei
+   tuoi script (misurato sulla regia a `d147f52`): prendi
+   `report.categories.<x>.score` e lo confronti con una soglia scritta in
+   `docs/performance.md` del progetto, che non ha un pavimento e che una deroga
+   declassa da `block` a `warn`. Per i **contrasti** questo significa che un sito
+   con `color-contrast` rosso perde pochi punti su cento e passa qualunque
+   soglia ragionevole. È la delega che io non posso riprendermi: i contrasti
    vogliono un browser, e il browser ce l'hai tu. Proposta: leggere
    `report.audits["color-contrast"]` e produrre un esito su quello.
+   *So che un'altra chat la sta chiudendo in questa stessa ondata; finché non è
+   in regia il mio gate la segnala `issue`, e la toglierò rilanciando il `grep`.*
 
 1. **L'identità dell'app merita una seconda via.** Il suo passo
    `build-produzione` confronta il solo `BUILD_ID` e, quando non combacia, dice
@@ -213,10 +234,14 @@ che questa skill abbia da riportare a un vicino.*
    file sotto `.next/`. Se combacia, è questo progetto e il processo è indietro
    («riavvia `npm run start`»); se non combacia, allora sì, è un'altra
    applicazione. L'implementazione è in `servito-lib.mjs`, `esitoIdentita`.
-2. **`sitemap.xml` e `robots.txt` li scrive lui e non li guarda nessun suo
-   passo** (lo dichiara il suo `STATO.md`). Qui la `sitemap.xml` si legge come
-   **seconda sorgente della superficie** — cioè se ne usa il contenuto senza
-   verificarla. Se un giorno servisse verificarla, il proprietario è lui.
+2. **RITIRATA con D21: `sitemap.xml` e `robots.txt` li verifico io.** Restano
+   due domande distinte e conviene dirlo: nel passo `superficie-pubblica` la
+   `sitemap.xml` si **legge** come seconda sorgente (se ne usa il contenuto); nel
+   passo `sitemap-xml` si **verifica** (risponde, è XML, e i suoi indirizzi sono
+   serviti). E il passo `robots-txt` fa il confronto che nessun gate della casa
+   faceva: **un `robots.txt` che vieta quello che la `sitemap.xml` pubblicizza**
+   sono due file dello stesso sito che dicono il contrario. Continui a scriverli
+   tu; da oggi qualcuno li rilegge.
 
 **A vetrina-crafter**
 
