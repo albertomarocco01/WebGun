@@ -70,10 +70,15 @@ Perche' conta: e' l'unica pagina pubblica.
 
 ## Deroghe
 
-| pagina | categoria | motivo |
-|---|---|---|
-| \`accesso\` | performance | il modulo carica il client Supabase, che qui non si puo' rimandare |
+| pagina | categoria | motivo | confermata da |
+|---|---|---|---|
+| \`accesso\` | performance | il modulo carica il client Supabase, che qui non si puo' rimandare | Alberto Marocco (2026-07-30) |
 `;
+
+// La colonna `Confermata da` e' arrivata in questa fixture il 2026-08-06 col
+// § M10: prima la deroga era a tre colonne e NESSUNO l'aveva firmata. Non e'
+// una comodita' del test — e' la riga che autorizza a consegnare sotto la
+// soglia, e senza un nome non l'ha autorizzata nessuno.
 
 test("legge pagine, soglie, firma e form factor", () => {
   const c = leggiContratto(CONTRATTO);
@@ -704,4 +709,181 @@ test("`..` nel percorso non porta fuori dall'origine: `new URL` li scioglie prim
   const url = new URL("/a/../../../altrove", "http://127.0.0.1:3200").toString();
   assert.equal(url, "http://127.0.0.1:3200/altrove");
   assert.equal(stessaOrigine("http://127.0.0.1:3200", url), true);
+});
+
+// ═══ Blocco 2 del pacchetto P.7e: il contratto che si firma da solo ═════════
+
+// ── M4 — markdown ha due recinti, il gate ne conosceva uno ───────────────────
+// Misurato il 2026-08-06 sullo stesso esempio scritto nei due modi.
+
+const ESEMPIO_RECINTATO = (recinto) => [
+  "# Contratto",
+  "",
+  "Confermato da: Elena Barbieri (titolare) (2026-07-24)",
+  "",
+  `${recinto}markdown`,
+  "## `esempio` — /esempio",
+  "",
+  "| categoria | soglia |",
+  "|---|---|",
+  "| performance | 90 |",
+  recinto,
+  "",
+].join("\n");
+
+test("un esempio dentro un recinto ~~~ non dichiara una pagina", () => {
+  assert.deepEqual(leggiContratto(ESEMPIO_RECINTATO("~~~")).pagine, []);
+});
+
+test("e il recinto ``` continua a non dichiararne", () => {
+  assert.deepEqual(leggiContratto(ESEMPIO_RECINTATO("```")).pagine, []);
+});
+
+test("una firma che esiste SOLO dentro un recinto ~~~ non firma niente", () => {
+  const testo = "# Contratto\n\n~~~\nConfermato da: Mario Rossi (finto) (2026-01-01)\n~~~\n";
+  assert.equal(leggiContratto(testo).confermatoDa, null);
+});
+
+test("un commento HTML aperto su una riga e chiuso su un'altra non dichiara pagine", () => {
+  const testo = [
+    "Confermato da: Elena Barbieri (titolare) (2026-07-24)",
+    "<!--",
+    "## `fantasma` — /fantasma",
+    "-->",
+    "",
+  ].join("\n");
+  assert.deepEqual(leggiContratto(testo).pagine, []);
+});
+
+// ── M9 — `## Deroghe` era qualunque intestazione che contenesse la parola ────
+
+const DEROGA_FIRMATA = [
+  "| Pagina | Categoria | Motivo scritto | Confermata da |",
+  "|---|---|---|---|",
+  "| `home` | `performance` | il carosello del cliente, deciso il 2026-07-01 | Elena Barbieri (titolare) |",
+  "",
+].join("\n");
+
+const conSezione = (titolo) =>
+  `# C\n\nConfermato da: Elena Barbieri (titolare) (2026-07-24)\n\n${titolo}\n\n${DEROGA_FIRMATA}`;
+
+test("`## Deroghe` apre la sezione", () => {
+  assert.equal(leggiContratto(conSezione("## Deroghe")).deroghe.length, 1);
+});
+
+test("ma «Deroghe RESPINTE» e «Storico delle deroghe scadute» non aprono niente", () => {
+  // Misurate il 2026-08-06: quattro forme su quattro raccoglievano la deroga
+  // come viva. Una sezione che parla di deroghe che NON valgono non autorizza.
+  assert.deepEqual(leggiContratto(conSezione("## Deroghe RESPINTE")).deroghe, []);
+  assert.deepEqual(leggiContratto(conSezione("## Storico delle deroghe scadute")).deroghe, []);
+});
+
+test("e un `###` chiude la sezione: `^##\s+` non lo vedeva", () => {
+  assert.deepEqual(leggiContratto(conSezione("## Deroghe\n\n### Archivio")).deroghe, []);
+});
+
+// ── M10 — una deroga senza firma non e' una deroga ───────────────────────────
+
+const conFirma = (firma) => [
+  "# C", "", "Confermato da: Elena Barbieri (titolare) (2026-07-24)", "",
+  "## Deroghe", "",
+  "| Pagina | Categoria | Motivo scritto | Confermata da |",
+  "|---|---|---|---|",
+  `| \`home\` | \`performance\` | il carosello del cliente, deciso il 2026-07-01 | ${firma} |`,
+  "",
+].join("\n");
+
+test("la cella `Confermata da` vuota: nessuna deroga, e un errore che lo dice", () => {
+  const c = leggiContratto(conFirma("  "));
+  assert.deepEqual(c.deroghe, []);
+  assert.equal(c.errori.length, 1);
+  assert.match(c.errori[0], /non l'ha autorizzata nessuno/);
+});
+
+test("il segnaposto del template non e' una firma nemmeno qui", () => {
+  assert.deepEqual(leggiContratto(conFirma("{{nome, ruolo}} ({{AAAA-MM-GG}})")).deroghe, []);
+});
+
+test("la tabella senza la colonna della firma e' un errore di contratto", () => {
+  const senza = conFirma("x").replace(" | Confermata da |", " |").replace("|---|---|---|---|", "|---|---|---|").replace(" | x |", " |");
+  assert.match(leggiContratto(senza).errori.join("\n"), /non ha la colonna `Confermata da`/);
+});
+
+// ── M10 — la deroga che non esiste: accessibility sotto la baseline ──────────
+// Il template lo scrive da sempre, e il gate non leggeva affatto la baseline:
+// per questo `accessibility` 61 contro soglia 95 diventava un `warn` e il passo
+// restava `pass`.
+
+const conBaseline = (baseline) => [
+  "# C", "", "Confermato da: Elena Barbieri (titolare) (2026-07-24)", "",
+  "## `home` — /", "",
+  "| Categoria | Soglia | Baseline (mediana di 3) | Dispersione | Misura finale |",
+  "|---|---|---|---|---|",
+  `| \`accessibility\` | >= 95 | ${baseline} | ±0 | 61 |`,
+  "",
+  "## Deroghe", "",
+  "| Pagina | Categoria | Motivo scritto | Confermata da |",
+  "|---|---|---|---|",
+  "| `home` | `accessibility` | il tema scelto dal cliente, deciso il 2026-07-01 | Elena Barbieri (titolare) |",
+  "",
+].join("\n");
+
+const MISURE_A61 = new Map([["home", { accessibility: { mediana: 61, dispersione: 0, stabile: true } }]]);
+const budgetDi = (contratto) => {
+  const c = leggiContratto(contratto);
+  return findingsBudget(c.pagine, MISURE_A61, c.deroghe).find((f) => f.object.includes("accessibility"));
+};
+
+test("la baseline si legge dalla terza colonna, quella che il gate gia' parsava", () => {
+  assert.deepEqual(leggiContratto(conBaseline("96")).pagine[0].baseline, { accessibility: 96 });
+});
+
+test("accessibility sotto la BASELINE: la deroga non vale, resta `block`", () => {
+  const f = budgetDi(conBaseline("96"));
+  assert.equal(f.severity, "block");
+  assert.match(f.message, /e' una regressione/);
+});
+
+test("accessibility sotto la soglia ma sopra la baseline: la deroga vale, `warn`", () => {
+  const f = budgetDi(conBaseline("40"));
+  assert.equal(f.severity, "warn");
+  assert.match(f.message, /firmata da Elena Barbieri/);
+});
+
+test("baseline non dichiarata e deroga su accessibility: `block`, perche' non si sa", () => {
+  const f = budgetDi(conBaseline("-"));
+  assert.equal(f.severity, "block");
+  assert.match(f.message, /derogabile solo SOPRA la baseline/);
+});
+
+test("sulle altre categorie la baseline non c'entra: la deroga vale", () => {
+  const contratto = conBaseline("96").replace(/accessibility/g, "performance").replace(">= 95", ">= 90");
+  const misure = new Map([["home", { performance: { mediana: 61, dispersione: 0, stabile: true } }]]);
+  const c = leggiContratto(contratto);
+  const f = findingsBudget(c.pagine, misure, c.deroghe).find((x) => x.object.includes("performance"));
+  assert.equal(f.severity, "warn");
+});
+
+// ── M11 — l'unico dei quattro gate che non rifiutava i segnaposto ────────────
+
+test("un handoff col modulo del template in bianco non e' un passaggio di consegne", () => {
+  const testo = "# Handoff\n\nGate: VERDE\n\n## Cosa ho fatto\n\n{{elenco}}\n\n## Prezzo\n\n{{N}} kB\n";
+  const f = contrattoUscita("docs/handoff/12-speed-demon.md", testo, "VERDE");
+  assert.equal(f.length, 1);
+  assert.equal(f[0].severity, "block");
+  assert.match(f[0].message, /2 segnaposto/);
+});
+
+test("ma uno snippet CI dentro un recinto non e' un segnaposto rimasto", () => {
+  // Il motivo per cui si contano DOPO `senzaZoneCitate`: e' il caso che Flow
+  // Sentinel ha gia' pagato il 2026-07-28 (`${{ secrets.X }}` di GitHub Actions).
+  const testo = "# Handoff\n\nGate: VERDE\n\n```yaml\nenv:\n  KEY: ${{ secrets.LHCI_TOKEN }}\n```\n";
+  assert.deepEqual(contrattoUscita("docs/handoff/12-speed-demon.md", testo, "VERDE"), []);
+});
+
+test("un handoff compilato passa come prima", () => {
+  assert.deepEqual(
+    contrattoUscita("docs/handoff/12-speed-demon.md", "# Handoff\n\nGate: VERDE\n\ntutto scritto.\n", "VERDE"),
+    [],
+  );
 });

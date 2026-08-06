@@ -23,10 +23,48 @@ const righe = (testo) => senzaBom(testo).split(/\r?\n/);
  * dichiarato e firme che nessuno ha messo — difetto gia' pagato da Flow
  * Sentinel il 2026-07-28 sul suo contratto dei flussi.
  */
-const senzaZoneCitate = (testo) =>
-  senzaBom(testo)
-    .replace(/^[ \t]*```[\s\S]*?^[ \t]*```/gm, "")
-    .replace(/<!--[\s\S]*?-->/g, "");
+// CORRETTA il 2026-08-06 (referto § M4). La forma a due `replace` conosceva un
+// recinto solo — quello a spina di pesce — e markdown ne ha due. Misurato lo
+// stesso giorno, sullo stesso esempio scritto nei due modi:
+//
+//   recinto ``` :  pagine = []                            (l'esempio non conta)
+//   recinto ~~~ :  pagine = ["esempio"]                   (l'esempio DICHIARA)
+//
+// cioe' un esempio recintato entrava nel contratto, e con lui la sua firma
+// d'esempio. E' il difetto che Flow Sentinel ha misurato e chiuso il
+// 2026-07-28: qui arriva la SUA funzione, non una nuova — con lo stato di riga,
+// che regge anche il commento HTML aperto su una riga e chiuso su un'altra, e
+// che lascia il numero delle righe dov'era.
+function senzaZoneCitate(testo) {
+  let inRecinto = false;
+  let inCommento = false;
+  return righe(senzaBom(testo))
+    .map((linea) => {
+      if (!inCommento && /^\s{0,3}(```|~~~)/.test(linea)) {
+        inRecinto = !inRecinto;
+        return "";
+      }
+      if (inRecinto) return "";
+      let resto = linea;
+      if (inCommento) {
+        const fine = resto.indexOf("-->");
+        if (fine === -1) return "";
+        inCommento = false;
+        resto = resto.slice(fine + 3);
+      }
+      for (;;) {
+        const apre = resto.indexOf("<!--");
+        if (apre === -1) return resto;
+        const chiude = resto.indexOf("-->", apre + 4);
+        if (chiude === -1) {
+          inCommento = true;
+          return resto.slice(0, apre);
+        }
+        resto = resto.slice(0, apre) + resto.slice(chiude + 3);
+      }
+    })
+    .join("\n");
+}
 
 export const dettaglioFindings = (findings) =>
   findings.map((f) => `[${f.severity}] ${f.object}: ${f.message}`).join("\n");
@@ -159,6 +197,12 @@ const celle = (linea) =>
 
 const eSeparatore = (linea) => /^\|[\s:|-]+\|?\s*$/.test(linea.trim());
 
+// L'intestazione che apre la tabella delle deroghe, e nessun'altra. Si
+// tollerano la decorazione markdown e il due punti finale, non le parole in
+// piu': «Deroghe RESPINTE» e «Storico delle deroghe scadute» sono sezioni che
+// parlano di deroghe che NON valgono.
+const TITOLO_DEROGHE = /^#{1,6}[ 	*_]*Deroghe[ 	*_:]*$/i;
+
 /**
  * La tabella delle deroghe si legge DALLA SUA INTESTAZIONE, non da una forma
  * fissa.
@@ -176,8 +220,24 @@ const eSeparatore = (linea) => /^\|[\s:|-]+\|?\s*$/.test(linea.trim());
  * che conteneva tre colonne altrui. Leggere l'intestazione costa venti righe e
  * smette di legare il gate a un numero di colonne.
  */
+/**
+ * Una deroga senza firma non e' una deroga (referto § M10).
+ *
+ * Il template ha sei colonne e la sesta e' `Confermata da`, perche' una deroga
+ * e' l'unica cosa in questo contratto che AUTORIZZA a consegnare sotto la
+ * soglia: e' una decisione, e una decisione ha un nome. Fino al 2026-08-06 il
+ * gate leggeva la riga con quella cella VUOTA — misurato — e ne ricavava un
+ * `warn` al posto di un `block`. Cioe' bastava aggiungere una riga a una
+ * tabella per togliere una soglia.
+ *
+ * Il criterio e' lo stesso di `firmaVera` sulla riga `Confermato da:`: almeno
+ * un carattere alfanumerico, e nessun segnaposto `{{…}}` rimasto.
+ */
+const cellaFirmata = (valore) => /[\p{L}\p{N}]/u.test(valore) && !valore.includes("{{");
+
 function derogheDaTabella(righeTabella) {
   const deroghe = [];
+  const errori = [];
   let indici = null;
   for (const linea of righeTabella) {
     if (eSeparatore(linea)) continue;
@@ -191,7 +251,12 @@ function derogheDaTabella(righeTabella) {
       // tabella delle deroghe: si aspetta la prossima riga invece di indovinare
       // le posizioni, perche' indovinare qui significa attribuire una deroga a
       // una pagina che non l'ha chiesta.
-      if (pagina >= 0 && categoria >= 0 && motivo >= 0) indici = { pagina, categoria, motivo };
+      if (pagina >= 0 && categoria >= 0 && motivo >= 0) {
+        indici = { pagina, categoria, motivo, firma: dove("confermat") };
+        if (indici.firma < 0) {
+          errori.push("la tabella delle deroghe non ha la colonna `Confermata da`: una deroga autorizza a consegnare sotto la soglia, e senza un nome non e' una decisione di nessuno");
+        }
+      }
       continue;
     }
     const pagina = (c[indici.pagina] ?? "").replace(/`/g, "").trim();
@@ -199,9 +264,16 @@ function derogheDaTabella(righeTabella) {
     const motivo = (c[indici.motivo] ?? "").trim();
     // Una deroga senza motivo scritto e' una soglia tolta, non una deroga.
     if (!pagina || !CATEGORIE.includes(categoria) || motivo.replace(/[-—\s]/g, "").length === 0) continue;
-    deroghe.push({ pagina, categoria, motivo });
+    const firma = indici.firma >= 0 ? (c[indici.firma] ?? "").trim() : "";
+    if (!cellaFirmata(firma)) {
+      // NON si scarta in silenzio: una riga che sembra una deroga e non lo e'
+      // e' esattamente cio' che qualcuno rileggera' fra sei mesi come valida.
+      errori.push(`deroga \`${pagina}\` · \`${categoria}\`: la colonna \`Confermata da\` e' vuota o porta ancora un segnaposto. Una deroga autorizza a consegnare sotto la soglia: senza un nome non l'ha autorizzata nessuno, e non vale`);
+      continue;
+    }
+    deroghe.push({ pagina, categoria, motivo, firma });
   }
-  return deroghe;
+  return { deroghe, errori };
 }
 
 /**
@@ -221,6 +293,15 @@ function applicaRigaSoglia(corrente, linea) {
     return `pagina \`${corrente.id}\`, ${categoria}: soglia ${valore} — Lighthouse arriva a 100`;
   }
   corrente.soglie[categoria] = valore;
+  // LA BASELINE, che stava nella stessa riga e nessuno leggeva (referto § M10).
+  // Terza colonna della tabella del template: `| categoria | soglia | baseline
+  // | dispersione | misura finale |`. Serve a distinguere «non ci si arriva» —
+  // che una deroga puo' ammettere — da «si e' PEGGIORATO», che nessuna deroga
+  // puo' legittimare per l'accessibilita'. Il gate non la leggeva affatto,
+  // quindi i due casi erano lo stesso caso.
+  const terza = celle(linea)[2] ?? "";
+  const numero = /^\s*(\d{1,3})\s*$/.exec(terza.replace(/`/g, ""));
+  if (numero && Number(numero[1]) <= 100) corrente.baseline[categoria] = Number(numero[1]);
   return null;
 }
 
@@ -257,7 +338,7 @@ function apriPagina(intestazione, visti, pagine, errori) {
     errori.push(errato);
     return null;
   }
-  const pagina = { id, percorso, soglie: {} };
+  const pagina = { id, percorso, soglie: {}, baseline: {} };
   pagine.push(pagina);
   return pagina;
 }
@@ -280,12 +361,27 @@ export function leggiContratto(testo) {
       continue;
     }
 
-    // Un `## Deroghe` (o qualunque altra intestazione) chiude la pagina in
-    // corso: senza questo, le righe della tabella delle deroghe finirebbero
-    // come soglie dell'ultima pagina dichiarata.
-    if (/^##\s+/.test(linea)) {
+    // QUALUNQUE intestazione chiude la pagina in corso E la sezione delle
+    // deroghe: senza, le righe della tabella finirebbero come soglie
+    // dell'ultima pagina dichiarata.
+    //
+    // CORRETTA il 2026-08-06 (referto § M9), due difetti in una riga. Il primo:
+    // `^##\s+` non riconosce un `### Archivio`, quindi un sottotitolo NON
+    // chiudeva la sezione e la tabella sotto di esso valeva come deroghe vive.
+    // Il secondo: `/deroghe/i` e' qualunque intestazione che contenga la
+    // parola. Misurate quattro forme su quattro il 2026-08-06, tutte con una
+    // deroga letta come viva:
+    //
+    //   ## Deroghe                        1     (giusto)
+    //   ## Deroghe RESPINTE               1     (una deroga NEGATA)
+    //   ## Storico delle deroghe scadute  1     (una deroga MORTA)
+    //   ## Deroghe + ### Archivio         1     (un archivio)
+    //
+    // Ora il titolo deve essere `Deroghe` e non altro: una sezione che parla
+    // d'altro non autorizza niente.
+    if (/^#{1,6}\s+/.test(linea)) {
       corrente = null;
-      inDeroghe = /deroghe/i.test(linea);
+      inDeroghe = TITOLO_DEROGHE.test(linea);
       continue;
     }
 
@@ -298,6 +394,8 @@ export function leggiContratto(testo) {
     if (inDeroghe && /^\s*\|/.test(linea)) righeDeroghe.push(linea);
   }
 
+  const { deroghe, errori: erroriDeroghe } = derogheDaTabella(righeDeroghe);
+  errori.push(...erroriDeroghe);
   const conferma = RIGA_CONFERMA.exec(proprio);
   const firma = conferma ? conferma[1].trim() : null;
   const dispersione = RIGA_DISPERSIONE.exec(proprio);
@@ -311,7 +409,7 @@ export function leggiContratto(testo) {
     dispersioneMassima: dispersione && Number(dispersione[1]) > 0 ? Number(dispersione[1]) : null,
     urlDichiarato: url ? url[1] : null,
     pagine,
-    deroghe: derogheDaTabella(righeDeroghe),
+    deroghe,
     errori,
   };
 }
@@ -578,6 +676,40 @@ export function dettaglioMisura({ sogliaDispersione, dichiarataNelContratto, rig
  * sua deroga scritta: allora e' un `warn`, perche' resta una cosa da sapere ma
  * qualcuno se l'e' presa la responsabilita' per iscritto.
  */
+/**
+ * LA DEROGA CHE NON ESISTE: `accessibility` sotto la baseline.
+ *
+ * Il template lo scrive da sempre, e il gate non lo sapeva (referto § M10, con
+ * la motivazione corretta dal verificatore): «una deroga puo' ammettere che una
+ * soglia non e' stata RAGGIUNTA; non puo' legittimare una REGRESSIONE». La
+ * costituzione mette l'accessibilita' sopra la performance, e questo agente e'
+ * quello che rischia di introdurre la regressione piu' facilmente di chiunque
+ * altro — togliere un `alt`, spegnere un focus visibile o svuotare un
+ * `aria-label` fa salire il punteggio di performance mentre rompe la pagina per
+ * chi la usa senza vederla.
+ *
+ * Distinguere i due casi vuole la BASELINE, che il gate non leggeva affatto: e'
+ * per questo che una deroga su `accessibility` 61 contro soglia 95 diventava un
+ * `warn` e il passo restava `pass`.
+ *
+ * Baseline non dichiarata e deroga su `accessibility`: `block` lo stesso, e il
+ * motivo lo dice. Non e' severita': senza la baseline il gate non puo' sapere
+ * se sta autorizzando una soglia non raggiunta o una regressione, e «non lo so»
+ * non e' «va bene» — la stessa regola del `tsconfig` senza `strict` (§ H8).
+ */
+function motivoNonDerogabile(categoria, baseline, mediana) {
+  if (categoria !== "accessibility") return null;
+  if (baseline === undefined) {
+    return "l'accessibilita' e' derogabile solo SOPRA la baseline, e questa pagina non ne dichiara una. " +
+      "Scrivi la baseline nella colonna `Baseline (mediana di 3)`: senza, il gate non puo' distinguere una soglia non raggiunta da una regressione, e «non lo so» non e' «va bene»";
+  }
+  if (mediana < baseline) {
+    return `la misura (${mediana}) e' sotto la BASELINE (${baseline}): non e' una soglia non raggiunta, e' una regressione. ` +
+      "Una deroga puo' ammettere la prima, non puo' legittimare la seconda — si torna indietro sull'ottimizzazione che l'ha abbassata (la costituzione mette l'accessibilita' sopra la performance)";
+  }
+  return null;
+}
+
 export function findingsBudget(pagine, misure, deroghe) {
   const derogata = (pagina, categoria) =>
     deroghe.find((d) => d.pagina === pagina && d.categoria === categoria);
@@ -617,12 +749,15 @@ export function findingsBudget(pagine, misure, deroghe) {
       if (m.mediana < soglia) {
         const d = derogata(pagina.id, categoria);
         if (d) servite.add(d);
+        const irrevocabile = d && motivoNonDerogabile(categoria, pagina.baseline?.[categoria], m.mediana);
         findings.push({
-          severity: d ? "warn" : "block",
+          severity: d && !irrevocabile ? "warn" : "block",
           object: `pagina ${pagina.id} · ${categoria}`,
-          message: d
-            ? `${m.mediana} sotto la soglia ${soglia}, con deroga scritta: «${d.motivo}»`
-            : `${m.mediana} sotto la soglia ${soglia} e nessuna deroga scritta nel contratto: o si ottimizza, o si scrive perche' non si puo'`,
+          message: irrevocabile
+            ? `${m.mediana} sotto la soglia ${soglia}, e la deroga NON vale: ${irrevocabile}`
+            : d
+              ? `${m.mediana} sotto la soglia ${soglia}, con deroga scritta e firmata da ${d.firma}: «${d.motivo}»`
+              : `${m.mediana} sotto la soglia ${soglia} e nessuna deroga scritta nel contratto: o si ottimizza, o si scrive perche' non si puo'`,
         });
       }
     }
@@ -1167,7 +1302,28 @@ export function contrattoUscita(percorsoHandoff, testoHandoff, verdettoPrima) {
       },
     ];
   }
-  const dichiarato = RIGA_VERDETTO.exec(senzaZoneCitate(testoHandoff));
+  const proprio = senzaZoneCitate(testoHandoff);
+  // I SEGNAPOSTO NON COMPILATI (referto § M11). Era l'unico dei quattro gate
+  // della casa a non guardarli, e il suo template di handoff ne ha 53: si
+  // consegnava un modulo in bianco con una riga vera. La riga `Gate: VERDE`
+  // e' l'unica che serve compilare per passare, ed e' anche l'unica che
+  // qualcuno compila di sicuro.
+  //
+  // Si contano DOPO `senzaZoneCitate`, e per il motivo che Flow Sentinel ha
+  // gia' pagato: uno snippet CI legittimo (`${{ secrets.X }}` di GitHub
+  // Actions) dentro un recinto non e' un segnaposto rimasto.
+  const segnaposto = [...proprio.matchAll(/\{\{[^}\n]*\}\}/g)].map((m) => m[0]);
+  if (segnaposto.length > 0) {
+    const primi = [...new Set(segnaposto)].slice(0, 3).join(", ");
+    return [
+      {
+        severity: "block",
+        object: percorsoHandoff,
+        message: `contiene ${segnaposto.length} segnaposto \`{{…}}\` non compilati (${primi}${segnaposto.length > 3 ? ", …" : ""}): e' il modulo del template, non un passaggio di consegne`,
+      },
+    ];
+  }
+  const dichiarato = RIGA_VERDETTO.exec(proprio);
   if (!dichiarato) {
     return [
       {

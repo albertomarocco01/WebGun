@@ -80,9 +80,9 @@ const DAL_BANCO = [
   "",
   "## Deroghe",
   "",
-  "| pagina | categoria | motivo |",
-  "|---|---|---|",
-  "| `home` | seo | La pagina di accesso non deve vendere niente. |",
+  "| pagina | categoria | motivo | confermata da |",
+  "|---|---|---|---|",
+  "| `home` | seo | La pagina di accesso non deve vendere niente. | Alberto Marocco (2026-07-30) |",
   "",
 ].join("\n");
 
@@ -142,7 +142,12 @@ test("un contratto che non li dichiara li lascia nulli: chi chiama usa il ripieg
   assert.equal(c.urlDichiarato, null);
 });
 
-test("la forma a tre colonne del banco continua a leggersi", () => {
+// Rinominato il 2026-08-06 col § M10: la tabella si legge ancora
+// DALL'INTESTAZIONE e non da un numero fisso di colonne — quattro, cinque o sei
+// vanno bene tutte — ma la colonna `Confermata da` ora e' obbligatoria, e la
+// forma a tre colonne di questo banco non ce l'aveva. La deroga che stava qui
+// non l'aveva firmata nessuno.
+test("la tabella si legge dall'intestazione, non da un numero di colonne", () => {
   const c = leggiContratto(DAL_BANCO);
   assert.deepEqual(c.pagine[0].soglie, { performance: 95, seo: 100 });
   assert.equal(c.deroghe.length, 1);
