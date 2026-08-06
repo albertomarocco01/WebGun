@@ -65,6 +65,16 @@
   `site_url`, `schemas`). Nessuna correzione, nessun `nosemgrep`: quattro rilievi **dichiarati**.
   Nessuno script toccato, quindi **batteria non ripetuta** (nulla da misurare prima e dopo).
 
+- **2026-08-06 — `gitleaks` installato e puntato: il MANCANTE storico e' chiuso (P.7c punto 5).**
+  `gitleaks` 8.30.1 (scoop, bucket `main`). Su questi `scripts/`: **nessun rilievo**. Sul repo
+  intero: **storia** (`gitleaks git .`, 143 commit) **4 rilievi, 0 veri**; **disco**
+  (`gitleaks dir .`, 179,72 MB) **26 rilievi, 0 veri** — tre su file tracciati, tutti e tre
+  **fixture di rilevatori di segreti**, gli altri in artefatti non tracciati dei banchi
+  (`.next/`, `.env.local`) con la chiave demo locale di Supabase (`iss: supabase-demo`).
+  Nota per chi usera' lo strumento: `gitleaks git` trova il segreto **dove e' stato
+  introdotto**, non dove il file sta oggi (una rinomina senza modifiche non lascia diff da
+  leggere); `dir` guarda il disco. Le due modalita' non si sostituiscono a vicenda.
+
 ## Piano di costruzione (deciso in P0)
 
 | Fase | Cosa | Dove | Stato |
@@ -228,9 +238,11 @@ silenzio, tre crash su report malformati, e tre rossi sbagliati su codice commen
 7. **`code-inquisition` non e' mai stato lanciato sugli script di questa skill.** La Regola dei
    guardiani lo chiede sui punti critici; qui il punto critico e' la chiave amministrativa negli helper
    del progetto generato, e su quello il gate non ha nessun controllo automatico — solo la prosa di
-   `references/playwright.md`. `gitleaks` non e' installato: MANCANTE, non PASS. `semgrep` **e' stato
-   puntato su questi script il 2026-08-06** (1.172.0, `--config auto`): **4 rilievi, 0 veri**,
-   tutti dichiarati con la prova a fianco (§2026-08-06). Restano `code-inquisition` e `gitleaks`.
+   `references/playwright.md`. **`semgrep` e `gitleaks` sono stati puntati su questi script il
+   2026-08-06** (semgrep 1.172.0 `--config auto`: **4 rilievi, 0 veri**, tutti dichiarati con la
+   prova a fianco; gitleaks 8.30.1: **nessun rilievo** — §2026-08-06). Resta `code-inquisition`,
+   ed e' la parte che pesa: il punto critico e' la chiave amministrativa negli helper del progetto
+   generato, e li' nessuno strumento deterministico guarda.
 8. **Il gate non ha nessun passo che usi la chiave di servizio.** *(Numero in coda per non
    spostare le citazioni degli altri punti; per gravita' starebbe subito dopo il n°2.)*
    Il 2026-07-30, sul banco

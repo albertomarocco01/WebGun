@@ -11,6 +11,8 @@
 
 - **2026-08-06 — semgrep sugli script, la prima volta: 12 rilievi, uno vero (P.7c punto 3).** Configurazione dichiarata: `semgrep scan --config auto` (1.172.0, il profilo della casa — `references/motore-deterministico.md` di code-maniac: ruleset locale se c'è, altrimenti `auto`), **200 regole su 8 file, 100% di righe analizzate**. Esiti: **due `detect-child-process`** in `verify.mjs` (`run`/`has`, ERROR) → **falsi positivi provati**: nessuno dei due passa da `shell: true` — la scelta è scritta e motivata nel commento sopra `formaEseguibile` (CVE-2024-27980) — gli argomenti viaggiano come vettore e i nove nomi di comando sono letterali (`supabase`, `sqlfluff`, `squawk`, `node`). **Nove `detect-non-literal-regexp` + uno in `verify.mjs`**: otto sono falsi positivi con la prova a fianco — `NOMI_DI_PRIVILEGIO` è una lista ancorata `^(…)$` (regola 8: il nome non può contenere metacaratteri), `colonneDiTransizione` estrae i nomi con `([a-z_][a-z0-9_]*)` (regole 9), `valoreToml` riceve tre chiavi letterali, e `tentaScrittura` **già** passava da `perRegex`. **Uno era vero**, ed era l'unico punto in cui un nome arriva dal catalogo senza filtro: `regolaColonneDiPolicy` (regola 6) interpolava il nome della colonna grezzo. Un identificatore Postgres citato può contenere qualunque carattere, e i due danni misurati sul codice di ieri sono di specie diversa — `piano(a` → `SyntaxError: Invalid regular expression: /\bpiano(a\b/: Unterminated group` (e `rls-audit.mjs` non cattura: **l'audit RLS muore con lo stack trace**, cioè la verifica che «non può mancare» diventa un rosso che non parla dello schema), `a+b` → `\ba+b\b` **matcha `aaab`**, un `warn` su una colonna che la policy non nomina. Corretto con `perRegex`, che è stato spostato in cima al file perché vale per ogni nome del catalogo e non per l'ultima regola che ne aveva bisogno. Due test nuovi, entrambi **falsificati contro il codice pre-correzione** (uscite incollate nel verbale): batteria **154 → 156 verdi**. Il conteggio semgrep resta **12**: lo strumento non vede il sanitizzatore, quindi i rilievi restano *dichiarati*, non silenziati — nessun `nosemgrep` in questi file. **Il gate non è stato rilanciato**: richiede un Postgres vivo e D17 tiene acceso un solo stack, quello del pilota, di cui P.4g è proprietaria in scrittura; la modifica è nella libreria pura, che la batteria copre.
 
+- **2026-08-06 — `gitleaks` installato e puntato: il MANCANTE storico è chiuso (P.7c punto 5).** `gitleaks` 8.30.1 (scoop, bucket `main`, shim su PATH). Su questi `scripts/`: **nessun rilievo**. Sul repo intero, perché i segreti sono il suo mestiere e non si fermano al perimetro di una skill: **storia** (`gitleaks git .`, 143 commit, 6,93 MB) **4 rilievi, 0 veri**; **disco** (`gitleaks dir .`, 179,72 MB) **26 rilievi, 0 veri** — 3 su file tracciati, e sono tutti e tre **fixture di rilevatori di segreti** (le stringhe finte che bugbay e launchpad usano per provare che il proprio rilevatore scatta), 23 in artefatti **non tracciati** dei banchi (`.next/`, `.env.local`) con la chiave demo locale di Supabase (payload `iss: supabase-demo`, la stessa su ogni macchina). Una cosa misurata che vale per chi userà lo strumento: `gitleaks git` trova il segreto **dove è stato introdotto**, non dove il file sta oggi — la fixture di bugbay è stata spostata in `agenti/bugbay/` da `b6796a0` come rinomina senza modifiche, e nella storia risulta ancora al percorso vecchio. Le due modalità non sono intercambiabili: `git` per la storia, `dir` per il disco.
+
 ## Collaudo del 2026-07-24 (banco di prova Supabase locale)
 
 - [x] `scripts/verify.mjs` su un progetto Supabase vero, con Docker attivo — 5 passi su 7 verdi (`db reset`, `db lint`, audit RLS, pgTAP, tipi TypeScript), 0 verifiche mancanti
@@ -192,12 +194,14 @@ verdi**. Il gate verifica che la RLS *esista*, non che *funzioni*.
     su Postgres reale prima di diventare codice del gate, e provarla richiede un
     banco vivo con Docker: scriverla senza provarla sarebbe esattamente il modo
     in cui sono nate le tre premesse smentite di questo file. Costo: medio.
-12. **Segreti: MANCANTE. Regole: fatto il 2026-08-06.** `semgrep` (1.172.0,
-    `--config auto`) è stato puntato su questi script per la prima volta —
-    12 rilievi, 11 falsi positivi con la prova a fianco e **uno vero**, corretto
-    (§2026-08-06). `gitleaks` resta il residuo: la ricerca di segreti sugli
-    script vale `MANCANTE`, non `PASS`, ed è l'unica difesa automatica contro
-    una `service_role` finita nel client. P.7c punto 5.
+12. ~~**Sicurezza e segreti sugli script restano MANCANTI**~~ — **chiuso il
+    2026-08-06** (P.7c punti 3 e 5). `semgrep` (1.172.0, `--config auto`)
+    puntato su questi script per la prima volta: 12 rilievi, 11 falsi positivi
+    con la prova a fianco e **uno vero**, corretto. `gitleaks` (8.30.1)
+    installato e puntato: **nessun rilievo** su questi `scripts/`, 4 sulla
+    storia del repo e 26 sul disco, **nessuno vero** (§2026-08-06). Resta vero
+    il motivo per cui la riga esisteva: è l'unica difesa automatica contro una
+    `service_role` finita nel client, e ora c'è.
 13. ~~**Nessun consumatore reale a valle.**~~ — **chiuso il 2026-07-28**,
     riconfermato il 2026-07-30. Gestionale Crafter esiste e ha costruito un
     backoffice reale sopra uno schema di questa skill; l'analisi di impatto di
@@ -643,8 +647,8 @@ girava con regole che la skill non ha più. `../../DECISIONI.md` §20.
 - **Il banco a verde**: le tre migrazioni che lo porterebbero lì sono elencate
   nel suo handoff. Resta rosso apposta, ora però in modo riproducibile.
 - **`semgrep` e `gitleaks`** (punto 12): non installati, restano `MANCANTI`.
-  *(Fotografia del 2026-07-28. Al 2026-08-06 semgrep è installato ed è stato
-  puntato su questi script — §2026-08-06; `gitleaks` resta.)*
+  *(Fotografia del 2026-07-28. Al 2026-08-06 sono installati tutti e due ed
+  eseguiti su questi script — §2026-08-06: il punto 12 è chiuso.)*
 - **`docs/schema/ERD.md` nel contratto d'uscita**: `SKILL.md`:123 lo elenca e
   nessun passo lo verifica. Lasciato così **di proposito** e adesso dichiarato:
   aggiungerlo renderebbe rosso ogni progetto che non ha ancora rigenerato il
@@ -670,7 +674,7 @@ Gli script degli agenti passano sotto i guardiani **come qualsiasi altro codice*
 |---|---|
 | Lint (ESLint) · Complessità · Codice morto (knip) · Duplicati (jscpd) | **PASS** — ma la voce «Complessità» era **falsa il giorno in cui è stata scritta**: `verify.mjs`:`main()` era a 51 contro una soglia di 15, e lo scan non era stato rilanciato dopo l'ultima modifica. Vero dal 2026-07-27, quando `main()` è stata spezzata (§Residuo chiuso lo stesso giorno) |
 | Prettier · tsc · convenzioni · dependency-cruiser | MANCANTE — non pertinenti qui (niente TypeScript, niente grafo di moduli da validare) |
-| **semgrep · gitleaks** | **MANCANTE — non installati.** Regole di sicurezza e ricerca di segreti sugli script **non verificate**: vale `MANCANTE`, non `PASS` — *fotografia del 2026-07-25; semgrep è stato eseguito il 2026-08-06 (12 rilievi, 1 vero corretto), `gitleaks` no* |
+| **semgrep · gitleaks** | **MANCANTE — non installati.** Regole di sicurezza e ricerca di segreti sugli script **non verificate**: vale `MANCANTE`, non `PASS` — *fotografia del 2026-07-25; entrambi eseguiti il 2026-08-06: semgrep 12 rilievi (1 vero, corretto), gitleaks 0 su questi `scripts/`* |
 
 Corretto solo ciò che era oggettivo: quattro `export` inutilizzati (`pulisci`, `vero` in `audit-lib.mjs` e `erd-lib.mjs` — usati solo dentro il proprio file: superficie pubblica senza consumatori) e `@eslint/js` non dichiarato fra le dipendenze. **I 49 test restano verdi** dopo le correzioni.
 

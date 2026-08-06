@@ -27,7 +27,8 @@
   75 → **86**, rilanciata dal direttore il 2026-08-04 (86/86, 0 fail). `semgrep`
   **3 rilievi dichiarati, 0 veri** (2026-08-06, P.7c punto 3 — ma su
   `gate-lib.mjs` ha letto il 99,7% delle righe, non il 100%). Restano mai visti
-  `jscpd` e, fino a P.7c punto 4, code-inquisition: punto 5.
+  `jscpd` e, fino a P.7c punto 4, code-inquisition: punto 5. `gitleaks` **0
+  rilievi** (2026-08-06, P.7c punto 5).
 - **2026-08-03 — il gate non partiva sul Node di sistema, e usciva `0` muto.** *Il
   difetto:* l'epilogo era `if (import.meta.main) await main();`, e `import.meta.main`
   e' arrivato in **Node 24**; su Node 20.12.2 — l'unico Node di sistema di questa
@@ -68,6 +69,16 @@
   100%, e gli offset dello span (`0` e `40`) non sono quelli del file. È un
   limite dello strumento, non una proprietà del codice — e vale come
   **MANCANTE parziale**, non come `PASS`: quello 0,3% nessuno l'ha guardato.
+
+- **2026-08-06 — `gitleaks` installato e puntato: il MANCANTE storico e' chiuso
+  (P.7c punto 5).** `gitleaks` 8.30.1 (scoop, bucket `main`). Su questi
+  `scripts/`: **nessun rilievo**. Sul repo intero: **storia** (`gitleaks git .`,
+  143 commit) **4 rilievi, 0 veri**; **disco** (`gitleaks dir .`, 179,72 MB)
+  **26 rilievi, 0 veri** — tre su file tracciati, tutti e tre **fixture di
+  rilevatori di segreti**, gli altri in artefatti non tracciati dei banchi
+  (`.next/`, `.env.local`) con la chiave demo locale di Supabase
+  (`iss: supabase-demo`). Nota misurata: `gitleaks git` trova il segreto **dove
+  e' stato introdotto**, non dove il file sta oggi; `dir` guarda il disco.
 
 ## Cosa fa, in una riga
 
@@ -183,10 +194,11 @@ E la prima esecuzione vera di `plan` e `tune` su guadagni misurati: home
    guardia reindirizza prima.
 4. **Nessun passo su `sitemap.ts` e `robots.ts`.** Il gate controlla i metatag di
    pagina e ignora i due file che dicono a un motore di ricerca cosa esiste.
-5. **`gitleaks` non e' installato: MANCANTE, non PASS.** `semgrep` e'
-   stato puntato su questi file il **2026-08-06** (3 rilievi, 0 veri — §2026-08-06),
-   e su `gate-lib.mjs` si e' fermato al **99,7% delle righe**: quel residuo resta
-   MANCANTE. `code-inquisition`: P.7c punto 4.
+5. **`semgrep` e `gitleaks` sono passati di qui il 2026-08-06** (3 rilievi 0 veri
+   il primo, **nessun rilievo** il secondo — §2026-08-06). Resta MANCANTE una
+   striscia sottile e vera: su `gate-lib.mjs` semgrep si e' fermato al **99,7%
+   delle righe**, e quello 0,3% non l'ha guardato nessuno. `code-inquisition`:
+   P.7c punto 4.
    La riga precedente dichiarava mancante anche semgrep, ed era
    falsa gia' quando e' stata scritta — `schema-forge/STATO.md` l'aveva misurato
    presente due giorni prima. Il collaudo avversario ha fatto crescere
