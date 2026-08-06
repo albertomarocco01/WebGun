@@ -997,11 +997,100 @@ export const eLaMiaBuild = (html, buildId) =>
  * Il `<title>` dell'icona ce l'aveva messo l'accessibilita': e' la cosa giusta
  * da fare, ed era l'unica prova che il gate stesse guardando il posto sbagliato.
  */
-const senzaSvg = (html) => html.replace(/<svg\b[\s\S]*?<\/svg>/gi, "");
+//
+// ...E NON UN `<svg` QUALUNQUE (referto § M7). `replace(/<svg\b[\s\S]*?<\/svg>/gi, "")`
+// cancella dal PRIMO `<svg` che incontra, ovunque si trovi, fino al primo
+// `</svg>`. Misurato il 2026-08-06 su una pagina con un'icona SVG di sfondo
+// dichiarata in un data-URI dentro un `<style>` — cioe' una cosa che scrive
+// Tailwind da solo:
+//
+//   PRIMA   title = null · description = null · canonical = null · robots = null
+//   DOPO    i quattro valori veri
+//
+// Tre `block` che accusano l'imputato sbagliato, e — nell'ordine sfavorevole —
+// un `noindex` cancellato, che e' il verso peggiore: una pagina esclusa
+// dall'indice che risulta pubblica.
+//
+// La correzione e' la stessa dell'intera famiglia: sapere dove ci si trova. Un
+// `<` dentro il valore di un attributo non apre un tag; dentro `<style>` e
+// `<script>` non e' markup affatto; dentro un commento HTML nemmeno.
+//
+// `<style>`, `<script>` e i commenti si SVUOTANO invece di essere copiati: non
+// sono mai metadati serviti, e un `<title>` scritto dentro un commento non e'
+// il titolo della pagina.
 
-/** `href="x"`, `href='x'` o `href=x`: l'ordine e le virgolette sono liberi. */
+/** L'indice del `>` che chiude il tag aperto in `da`, saltando i valori quotati. */
+function fineTag(html, da) {
+  let virgolette = null;
+  for (let i = da + 1; i < html.length; i++) {
+    const c = html[i];
+    if (virgolette) {
+      if (c === virgolette) virgolette = null;
+      continue;
+    }
+    if (c === '"' || c === "'") { virgolette = c; continue; }
+    if (c === ">") return i;
+  }
+  return -1;
+}
+
+const NOME_TAG = /^<\/?\s*([a-zA-Z][\w:-]*)/;
+const TESTO_GREZZO = new Set(["script", "style"]);
+
+function senzaSvg(html) {
+  let fuori = "";
+  let profondita = 0;
+  let i = 0;
+
+  while (i < html.length) {
+    if (html[i] !== "<") {
+      if (profondita === 0) fuori += html[i];
+      i += 1;
+      continue;
+    }
+    if (html.startsWith("<!--", i)) {
+      const fine = html.indexOf("-->", i + 4);
+      i = fine === -1 ? html.length : fine + 3;
+      continue;
+    }
+    const fine = fineTag(html, i);
+    if (fine === -1) {
+      if (profondita === 0) fuori += html.slice(i);
+      break;
+    }
+    const tag = html.slice(i, fine + 1);
+    const nome = (NOME_TAG.exec(tag)?.[1] ?? "").toLowerCase();
+    const chiusura = tag.startsWith("</");
+
+    if (nome === "svg") {
+      if (chiusura) profondita = Math.max(0, profondita - 1);
+      else if (!/\/>$/.test(tag)) profondita += 1;
+      i = fine + 1;
+      continue;
+    }
+    if (profondita === 0) fuori += tag;
+    i = fine + 1;
+    if (TESTO_GREZZO.has(nome) && !chiusura && !/\/>$/.test(tag)) {
+      const chiude = new RegExp(`</\\s*${nome}\\b`, "i").exec(html.slice(i));
+      i = chiude ? i + chiude.index : html.length;
+    }
+  }
+
+  return fuori;
+}
+
+/**
+ * `href="x"`, `href='x'` o `href=x`: l'ordine e le virgolette sono liberi.
+ *
+ * CORRETTA il 2026-08-06 (referto § M6). Con `\bname=` il confine di parola
+ * cade anche fra il trattino e la `n` di `data-name`, quindi
+ * `<meta data-name="viewport" name="robots" content="noindex">` dava
+ * `robots: null` — una pagina esclusa dall'indice che risulta pubblica. Il
+ * carattere prima deve essere uno che in un nome di attributo non ci puo'
+ * stare: niente trattino, niente lettera, niente due punti o punto.
+ */
 const attributo = (tag, nome) => {
-  const m = new RegExp(`\\b${nome}=(?:"([^"]*)"|'([^']*)'|([^\\s">]+))`, "i").exec(tag);
+  const m = new RegExp(`(?<![-\\w:.])${nome}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s">]+))`, "i").exec(tag);
   return m ? (m[1] ?? m[2] ?? m[3] ?? "").trim() : null;
 };
 

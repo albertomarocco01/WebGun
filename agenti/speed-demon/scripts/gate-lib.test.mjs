@@ -983,3 +983,69 @@ test("il dettaglio dice quante pagine sono state guardate, sempre", () => {
   assert.match(dettaglio, /1 col contrasto verificato/);
   assert.match(dettaglio, /1 senza testo da confrontare/);
 });
+
+// ═══ Blocco 3: il rosso falso, che insegna a ignorare il rosso ══════════════
+
+// ── M7 — `senzaSvg` cancellava dal primo `<svg`, ovunque si trovasse ─────────
+// La pagina qui sotto ha un'icona SVG di sfondo in un data-URI dentro `<style>`:
+// cioe' una cosa che scrive Tailwind da solo. PRIMA: title, description,
+// canonical e robots tutti `null` — tre `block` sull'imputato sbagliato e, nel
+// verso peggiore, un `noindex` cancellato.
+
+const PAGINA_CON_SVG_NEL_CSS = `<!doctype html><html><head>
+<style>.eroe{background:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'><rect/>")}</style>
+<title>Forno d'Oro — Pizzeria</title>
+<meta name="description" content="La pizzeria di quartiere">
+<link rel="canonical" href="https://fornodoro.test/">
+<meta data-name="viewport" name="robots" content="noindex">
+</head><body><svg><title>icona</title></svg></body></html>`;
+
+test("un `<svg` dentro un data-URI CSS non cancella la testa della pagina", () => {
+  const t = metatagDaHtml(PAGINA_CON_SVG_NEL_CSS);
+  assert.equal(t.title, "Forno d'Oro — Pizzeria");
+  assert.equal(t.description, "La pizzeria di quartiere");
+  assert.equal(t.canonical, "https://fornodoro.test/");
+});
+
+test("ne' dentro un attributo `style`", () => {
+  const html = `<head><title>Vero</title></head><body><div style="background:url('data:image/svg+xml,<svg><rect/>')"></div></body>`;
+  assert.equal(metatagDaHtml(html).title, "Vero");
+});
+
+test("ma un `<svg>` vero continua a nascondere il suo `<title>`", () => {
+  // Il motivo per cui `senzaSvg` esiste: misurato il 2026-07-30 sul banco
+  // immobiliare, il `<title>` di un'icona accessibile passava per il titolo
+  // della pagina, e il passo chiudeva verde su una pagina senza titolo.
+  const html = "<head></head><body><svg><title>icona telefono</title></svg></body>";
+  assert.equal(metatagDaHtml(html).title, null);
+});
+
+test("un `<svg>` annidato non riapre la pagina a meta'", () => {
+  const html = "<head><title>Vero</title></head><body><svg><svg><title>a</title></svg><title>b</title></svg></body>";
+  assert.deepEqual(metatagDaHtml(html).titoli, ["Vero"]);
+});
+
+test("un `<svg/>` autochiuso non spegne cio' che segue", () => {
+  const html = "<head><title>Vero</title></head><body><svg/><p>x</p></body>";
+  assert.equal(metatagDaHtml(html).title, "Vero");
+});
+
+test("un `<title>` scritto dentro un commento HTML non e' il titolo della pagina", () => {
+  assert.deepEqual(metatagDaHtml("<head><!-- <title>Finto</title> --><title>Vero</title></head>").titoli, ["Vero"]);
+});
+
+// ── M6 — `attributo()` prendeva il primo `name=`, `data-name=` compreso ──────
+
+test("`data-name` prima di `name` non nasconde il `noindex`", () => {
+  const html = `<head><meta data-name="viewport" name="robots" content="noindex"></head>`;
+  assert.equal(metatagDaHtml(html).robots, "noindex");
+});
+
+test("e gli spazi attorno all'uguale non lo nascondono nemmeno loro", () => {
+  assert.equal(metatagDaHtml(`<head><meta name = "robots" content = "noindex"></head>`).robots, "noindex");
+});
+
+test("un `data-canonical` non passa per un canonical", () => {
+  const html = `<head><link data-rel="canonical" rel="stylesheet" href="/x.css"></head>`;
+  assert.deepEqual(metatagDaHtml(html).canonici, []);
+});
