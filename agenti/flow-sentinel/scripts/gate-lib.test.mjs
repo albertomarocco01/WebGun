@@ -25,6 +25,8 @@ import {
   estraiOggettoJson,
   findingsCopertura,
   findingsEffettoDb,
+  flussiPercorsi,
+  rigaFlussiPercorsi,
   comandoRicerca,
   dentroLaRadice,
   shellDiSistema,
@@ -554,6 +556,138 @@ test("una batteria che ha eseguito anche un solo test ha guardato", () => {
 test("una batteria tutta rossa ha eseguito: e' un difetto trovato, non una verifica mancante", () => {
   const rossa = { errors: [], suites: [{ title: "a.spec.ts", specs: [{ title: "x", tests: [{ status: "unexpected" }] }], suites: [] }] };
   assert.equal(batteriaHaEseguito(esitoPlaywright(rossa)), true);
+});
+
+// ------------------------- il flusso dichiarato che nessun test ha percorso
+// Referto del 2026-08-06, § C2. `batteriaHaEseguito` e' un OR GLOBALE: un test
+// verde qualunque soddisfaceva la premessa per TUTTI i flussi. Il collaudo P2
+// aveva chiuso il 100% saltato; il 92% passava invisibile.
+//
+// Le spec qui sotto hanno la forma vera del reporter JSON di Playwright — una
+// suite per file, `tests[].status`, `results[].status`, e l'annotazione `skip`
+// con la motivazione scritta — perche' un frammento inventato proverebbe la
+// fixture, non la regola (§4.3 del verbale di costruzione).
+
+const specSaltata = (id) => ({
+  title: `${id} — in attesa del seed @flusso:${id}`, ok: true, tags: [],
+  tests: [{
+    timeout: 30000, projectName: "chromium", expectedStatus: "skipped",
+    annotations: [{ type: "skip", description: "in attesa del seed dei corsi (P.3)" }],
+    results: [{ workerIndex: 0, status: "skipped", duration: 0, errors: [] }],
+    status: "skipped",
+  }],
+  file: `${id}.spec.ts`, line: 4, column: 3,
+});
+
+const specPassata = (titolo, file) => ({
+  title: titolo, ok: true, tags: [],
+  tests: [{
+    timeout: 30000, projectName: "chromium", expectedStatus: "passed", annotations: [],
+    results: [{ workerIndex: 0, status: "passed", duration: 412, errors: [] }],
+    status: "expected",
+  }],
+  file, line: 3, column: 3,
+});
+
+const reportDi = (specs) => ({
+  config: { rootDir: "C:/banco/e2e", workers: 1 },
+  suites: specs.map((s) => ({ title: s.file, file: s.file, column: 0, line: 0, specs: [s], suites: [] })),
+  errors: [],
+  stats: { startTime: "2026-08-06T12:00:00.000Z", duration: 1811 },
+});
+
+const FLUSSI_13 = [
+  "accesso-socio", "prenota-corso", "disdici-corso", "paga-quota", "rinnova-tessera",
+  "cambia-password", "aggiorna-profilo", "scarica-ricevuta", "iscrizione-gara",
+  "annulla-iscrizione", "accesso-altrui", "modifica-altrui", "cancella-altrui",
+].map((id) => ({ id, tipo: "positivo" }));
+
+test("13 flussi dichiarati, 13 spec saltate e un test banale verde: ZERO flussi percorsi", () => {
+  const report = reportDi([
+    ...FLUSSI_13.map((f) => specSaltata(f.id)),
+    specPassata("la home risponde", "fumo.spec.ts"),
+  ]);
+  const esito = esitoPlaywright(report);
+  // il tranello riprodotto: le due funzioni storiche dicono entrambe di si'
+  assert.equal(esitoBatteriaVerde(esito), true, "non e' fallito niente");
+  assert.equal(batteriaHaEseguito(esito), true, "un test e' girato: l'OR globale e' soddisfatto");
+  // e la misura per flusso dice la verita'
+  const { percorsi, nonPercorsi } = flussiPercorsi(FLUSSI_13, esito);
+  assert.deepEqual(percorsi, []);
+  assert.equal(nonPercorsi.length, 13);
+  assert.match(nonPercorsi[0].motivo, /sono state SALTATE/);
+});
+
+test("12 su 13: il 92% che passava invisibile e' un flusso non percorso come gli altri", () => {
+  const report = reportDi([
+    specPassata("il socio entra dalla UI vera @flusso:accesso-socio", "accesso-socio.spec.ts"),
+    ...FLUSSI_13.slice(1).map((f) => specSaltata(f.id)),
+  ]);
+  const { percorsi, nonPercorsi } = flussiPercorsi(FLUSSI_13, esitoPlaywright(report));
+  assert.deepEqual(percorsi, ["accesso-socio"]);
+  assert.equal(nonPercorsi.length, 12);
+});
+
+test("tutti percorsi: nessun rilievo, e il conteggio si stampa lo stesso", () => {
+  const report = reportDi(FLUSSI_13.map((f) => specPassata(`percorre ${f.id} @flusso:${f.id}`, `${f.id}.spec.ts`)));
+  const { percorsi, nonPercorsi } = flussiPercorsi(FLUSSI_13, esitoPlaywright(report));
+  assert.equal(percorsi.length, 13);
+  assert.deepEqual(nonPercorsi, []);
+  assert.match(rigaFlussiPercorsi(FLUSSI_13, percorsi), /^13 flussi critici su 13 percorsi davvero dal browser: /);
+});
+
+test("un flusso il cui unico test FALLISCE e' percorso: il browser lo ha giudicato", () => {
+  // La distinzione che conta: un rosso e' un difetto TROVATO, non una verifica
+  // mancante. Se contasse come non percorso, il passo direbbe MANCANTE su una
+  // batteria che ha lavorato, e il verdetto punterebbe all'imputato sbagliato.
+  const rosso = {
+    ...specPassata("compra @flusso:paga-quota", "paga-quota.spec.ts"),
+  };
+  rosso.tests[0].status = "unexpected";
+  rosso.tests[0].results = [{ workerIndex: 0, status: "failed", duration: 900, errors: [{ message: "expected 1 riga" }] }];
+  const esito = esitoPlaywright(reportDi([rosso]));
+  const { percorsi, nonPercorsi } = flussiPercorsi([{ id: "paga-quota", tipo: "positivo" }], esito);
+  assert.deepEqual(percorsi, ["paga-quota"]);
+  assert.deepEqual(nonPercorsi, []);
+  assert.equal(esitoBatteriaVerde(esito), false, "e resta rosso, che e' il punto");
+});
+
+test("un test che passa al SECONDO tentativo ha comunque percorso il flusso", () => {
+  const instabile = specPassata("compra @flusso:paga-quota", "paga-quota.spec.ts");
+  instabile.tests[0].status = "flaky";
+  const { percorsi } = flussiPercorsi([{ id: "paga-quota", tipo: "positivo" }], esitoPlaywright(reportDi([instabile])));
+  assert.deepEqual(percorsi, ["paga-quota"]);
+});
+
+test("l'etichetta sta nel titolo del test, non solo nel testo del file: i due motivi si distinguono", () => {
+  // Nessun test porta l'etichetta: si chiude scrivendola nel titolo, non
+  // togliendo uno `.skip` che non c'e'. Due gesti diversi, due messaggi diversi.
+  const report = reportDi([specPassata("prenota un corso qualsiasi", "prenota-corso.spec.ts")]);
+  const { nonPercorsi } = flussiPercorsi([{ id: "prenota-corso", tipo: "positivo" }], esitoPlaywright(report));
+  assert.equal(nonPercorsi.length, 1);
+  assert.match(nonPercorsi[0].motivo, /nessun test ESEGUITO porta `@flusso:prenota-corso` nel titolo/);
+});
+
+test("l'etichetta nel titolo di un `describe` vale: il nome pieno del test la contiene", () => {
+  const report = {
+    errors: [],
+    suites: [{
+      title: "acquisto.spec.ts", file: "acquisto.spec.ts", specs: [],
+      suites: [{
+        title: "carrello @flusso:acquisto", file: "acquisto.spec.ts",
+        specs: [specPassata("aggiunge e paga", "acquisto.spec.ts")], suites: [],
+      }],
+    }],
+  };
+  const { percorsi } = flussiPercorsi([{ id: "acquisto", tipo: "positivo" }], esitoPlaywright(report));
+  assert.deepEqual(percorsi, ["acquisto"]);
+});
+
+test("un'etichetta eseguita che il contratto non dichiara non inventa un flusso percorso", () => {
+  const report = reportDi([specPassata("gira @flusso:mai-dichiarato", "x.spec.ts")]);
+  const { percorsi, nonPercorsi } = flussiPercorsi([{ id: "acquisto", tipo: "positivo" }], esitoPlaywright(report));
+  assert.deepEqual(percorsi, []);
+  assert.equal(nonPercorsi.length, 1);
 });
 
 test("il JSON si estrae anche se lo strumento ci mette del rumore attorno", () => {

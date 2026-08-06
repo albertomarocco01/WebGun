@@ -36,7 +36,9 @@ import {
   estraiOggettoJson,
   findingsCopertura,
   findingsEffettoDb,
+  flussiPercorsi,
   formaEseguibile,
+  rigaFlussiPercorsi,
   leggiFlussi,
   primoEseguibile,
   regoleSpec,
@@ -403,7 +405,40 @@ function passoPlaywright(ctx) {
       `${dettaglio}\nnessun test eseguito: la batteria e' partita e non ha percorso nessun flusso (tutti saltati). Zero test passati non e' un verde: e' una verifica mancante`);
     return;
   }
-  record(ID.playwright, etichetta, esitoBatteriaVerde(esito) ? "pass" : "fail", dettaglio);
+  registraEsitoPerFlusso(ctx, esito, dettaglio);
+}
+
+/**
+ * L'esito si legge PER FLUSSO, non in blocco (referto § C2, 2026-08-06).
+ * Un test verde qualsiasi soddisfaceva la premessa «il browser e' il giudice»
+ * per tutti i flussi dichiarati: 12 spec saltate su 13 passavano invisibili, e
+ * speed-demon a valle legge solo `ok`.
+ * L'ordine dei tre esiti e' quello di `passoLint`: un difetto TROVATO pesa piu'
+ * di una verifica mancante, e una verifica mancante non e' mai un `pass`.
+ */
+function registraEsitoPerFlusso(ctx, esito, dettaglio) {
+  const etichetta = "batteria Playwright (il browser giudica)";
+  if (ctx.flussi === null) {
+    record(ID.playwright, etichetta, "skipped",
+      `${dettaglio}\ncontratto dei flussi non leggibile: non si sa quali flussi dovevano essere percorsi, quindi non si sa cosa questa batteria abbia provato`);
+    return;
+  }
+  const { percorsi, nonPercorsi } = flussiPercorsi(ctx.flussi, esito);
+  // il conteggio si stampa SEMPRE, anche sul verde: «14 file di spec» si legge
+  // come copertura avvenuta, «0 flussi critici su 13 percorsi» no
+  const righe = [dettaglio, rigaFlussiPercorsi(ctx.flussi, percorsi)];
+  if (nonPercorsi.length > 0) righe.push(...nonPercorsi.map((n) => `  - ${n.motivo}`));
+
+  if (!esitoBatteriaVerde(esito)) {
+    record(ID.playwright, etichetta, "fail", righe.join("\n"));
+    return;
+  }
+  if (nonPercorsi.length > 0) {
+    righe.push(`${nonPercorsi.length} flussi critici dichiarati non sono stati percorsi da nessun test eseguito: e' una verifica MANCANTE, non un verde. Il gate resta rosso`);
+    record(ID.playwright, etichetta, "skipped", righe.join("\n"));
+    return;
+  }
+  record(ID.playwright, etichetta, "pass", righe.join("\n"));
 }
 
 // 7. contratto d'uscita: cosa trova davvero chi viene dopo, e se l'handoff

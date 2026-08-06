@@ -424,7 +424,11 @@ export function estraiOggettoJson(testo) {
 }
 
 export function esitoPlaywright(report) {
-  const esito = { passati: 0, falliti: [], alSecondoTentativo: [], saltati: [], errori: [] };
+  // `eseguiti` sono i NOMI dei test che il browser ha davvero percorso — passati,
+  // instabili e falliti. I conteggi da soli non bastano piu': serve sapere QUALE
+  // flusso e' stato percorso, e il nome e' l'unico posto dove l'esecuzione e
+  // l'identita' del flusso stanno insieme (vedi `flussiPercorsi`).
+  const esito = { passati: 0, falliti: [], alSecondoTentativo: [], saltati: [], eseguiti: [], errori: [] };
   if (!report || !Array.isArray(report.suites)) {
     return { ...esito, errori: ["report senza `suites`: contratto del reporter JSON non rispettato"] };
   }
@@ -464,6 +468,9 @@ function registra(nome, stato, esito) {
   else if (stato === "flaky") { esito.passati += 1; esito.alSecondoTentativo.push(nome); }
   else if (stato === "skipped") esito.saltati.push(nome);
   else esito.falliti.push(nome);
+  // Anche un test FALLITO e' un test percorso: il browser lo ha giudicato, e il
+  // suo rosso e' un difetto trovato — non una verifica mancante.
+  if (stato !== "skipped") esito.eseguiti.push(nome);
 }
 
 /**
@@ -507,6 +514,73 @@ export const esitoBatteriaVerde = (esito) =>
  */
 export const batteriaHaEseguito = (esito) =>
   esito.passati > 0 || esito.falliti.length > 0;
+
+// -------------------------------------- QUALE flusso ha percorso il browser
+/**
+ * `batteriaHaEseguito` e' un OR GLOBALE, ed e' il buco che il collaudo P2 aveva
+ * chiuso solo al 100%. Misurato il 2026-08-06 (referto § C2, `executed-confirmed`)
+ * su un report JSON nella forma vera del reporter di Playwright: 13 flussi
+ * dichiarati, 13 spec con `test.skip` MOTIVATO — quindi `lint-spec` pulito,
+ * nessun `issue` — piu' un test banale che passa. Uscita:
+ *
+ *     14 file di spec · 1 passati, 0 falliti, 13 saltati
+ *     esitoBatteriaVerde: true · batteriaHaEseguito: true  →  passo `pass`
+ *     flussi critici davvero percorsi dal browser: 0 su 13
+ *
+ * Sette passi verdi, `ok: true`, e speed-demon a valle legge SOLO `esito.ok`:
+ * il falso verde si propagava muto. Un test verde qualsiasi soddisfaceva la
+ * premessa «il browser e' il giudice» per tutti e tredici i flussi.
+ *
+ * La domanda giusta non e' «quanti test sono girati» ma «QUALE flusso ha
+ * percorso il browser». La soglia non c'entra: dodici su tredici e' lo stesso
+ * difetto di tredici su tredici, un flusso critico piu' tardi.
+ *
+ * L'etichetta si legge dal TITOLO PIENO del test eseguito, e non dal testo del
+ * file: il testo del file dichiara la copertura (`spec-coverage`), il titolo di
+ * un test che gira dichiara l'esecuzione. Sono due misure diverse, ed e' proprio
+ * la loro confusione ad aver tenuto aperto il difetto. E' anche cio' che il
+ * rilievo di copertura chiede: «aggiungi una spec con `@flusso:<id>` NEL TITOLO».
+ */
+const TAG_NEL_TITOLO = /@flusso:([a-z0-9][a-z0-9-]*)/g;
+
+const tagDiTitolo = (nome) =>
+  [...String(nome ?? "").matchAll(TAG_NEL_TITOLO)].map((m) => m[1]);
+
+export function flussiPercorsi(flussi, esito) {
+  const dichiarati = new Set(flussi.map((f) => f.id));
+  const percorsi = new Set();
+  const saltatiPer = new Map();
+  for (const nome of esito.eseguiti ?? []) {
+    for (const tag of tagDiTitolo(nome)) if (dichiarati.has(tag)) percorsi.add(tag);
+  }
+  for (const nome of esito.saltati ?? []) {
+    for (const tag of tagDiTitolo(nome)) {
+      if (!dichiarati.has(tag)) continue;
+      if (!saltatiPer.has(tag)) saltatiPer.set(tag, []);
+      saltatiPer.get(tag).push(nome);
+    }
+  }
+  // I due motivi si distinguono, perche' portano a due gesti diversi: uno si
+  // chiude togliendo lo `.skip`, l'altro scrivendo l'etichetta nel titolo.
+  const nonPercorsi = flussi
+    .filter((f) => !percorsi.has(f.id))
+    .map((f) => ({
+      id: f.id,
+      motivo: saltatiPer.has(f.id)
+        ? `flusso ${f.id}: le sue spec ci sono e sono state SALTATE (${saltatiPer.get(f.id).join(", ")}). Uno skip motivato resta uno skip: su questo flusso il browser non ha giudicato niente`
+        : `flusso ${f.id}: nessun test ESEGUITO porta \`@flusso:${f.id}\` nel titolo. La copertura la dichiara il testo del file, l'esecuzione la dichiara il titolo di un test che gira`,
+    }));
+  return { percorsi: [...percorsi], nonPercorsi };
+}
+
+/**
+ * Il numero che distingue la copertura dal silenzio, e che si stampa SEMPRE —
+ * anche sul verde. «13 file di spec» si legge come copertura avvenuta; «0 flussi
+ * critici su 13 percorsi davvero dal browser» no.
+ */
+export const rigaFlussiPercorsi = (flussi, percorsi) =>
+  `${percorsi.length} flussi critici su ${flussi.length} percorsi davvero dal browser` +
+  (percorsi.length > 0 ? `: ${[...percorsi].sort().join(", ")}` : "");
 
 // ------------------------------------------ eseguibili risolti su Windows
 /**
