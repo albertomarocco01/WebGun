@@ -22,6 +22,7 @@ import {
   premesseDaCatalogo,
   recordDiAritaSbagliata,
   righeDaPsql,
+  senzaCommentiSql,
   regolaChiaviEsterne,
   regolaColonnaDiPrivilegio,
   regolaColonneDiPolicy,
@@ -1098,4 +1099,63 @@ test("le premesse contano gli oggetti, non i findings", () => {
     tabelle: 1, policy: 1, viste: 1, funzioniSecurityDefiner: 1,
     colonne: 1, chiaviEsterneSenzaIndice: 0, testiPgtap: 1,
   });
+});
+
+// ── il commento che spegneva un test pgTAP (referto § M3, 2026-08-06) ────────
+// Commentare un test era il modo piu' rapido di tenere verde il passo che la
+// skill chiama «l'unica cosa che dimostra che una policy funziona».
+
+const POLICY_SCRITTURA = [["public", "ordini", "p_ins", "INSERT", "authenticated", "", "true"]];
+const TEST_NEGATIVO = `begin;
+select plan(1);
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111111"}';
+insert into public.ordini (id) values (gen_random_uuid());
+select is((select count(*) from public.ordini), 0::bigint, 'rifiutato');
+select * from finish();
+rollback;`;
+
+const blockDi = (testo) =>
+  regolaTestNegativi({ policy: POLICY_SCRITTURA, testiPgtap: [{ nome: "t.sql", testo }] })
+    .filter((f) => f.severity === "block").length;
+
+test("un test vero attacca la policy: nessun block", () => {
+  assert.equal(blockDi(TEST_NEGATIVO), 0);
+});
+
+test("lo stesso test commentato riga per riga NON attacca piu' niente", () => {
+  assert.equal(blockDi(TEST_NEGATIVO.split("\n").map((r) => `-- ${r}`).join("\n")), 1);
+});
+
+test("ne' dentro un commento a blocco", () => {
+  assert.equal(blockDi(`/*\n${TEST_NEGATIVO}\n*/`), 1);
+});
+
+// I due che tengono la correzione dalla parte giusta: qui il rischio non e' il
+// verde falso, e' il ROSSO falso su un test scritto bene.
+test("una scrittura dentro `$$ … $$` resta una scrittura", () => {
+  assert.equal(blockDi(
+    `set local role authenticated;\nset local request.jwt.claims = '{"sub":"1"}';\n` +
+    "select throws_ok($$ insert into public.ordini (id) values (gen_random_uuid()) $$, '42501');",
+  ), 0);
+});
+
+test("un `--` DENTRO una stringa non spegne la riga", () => {
+  assert.equal(blockDi(
+    `set local role authenticated;\nset local request.jwt.claims = '{"sub":"a--b"}';\n` +
+    "insert into public.ordini (id) values (gen_random_uuid());",
+  ), 0);
+});
+
+test("senzaCommentiSql: annidamento, apici raddoppiati, dollaro", () => {
+  assert.equal(senzaCommentiSql("a /* x /* y */ z */ b"), "a   b");
+  assert.equal(senzaCommentiSql("select 'l''ordine -- non e un commento';"), "select 'l''ordine -- non e un commento';");
+  assert.equal(senzaCommentiSql("select $$ -- resta $$;"), "select $$ -- resta $$;");
+  assert.equal(senzaCommentiSql('select "col--onna" from t;'), 'select "col--onna" from t;');
+  assert.equal(senzaCommentiSql("select 1; -- coda\nselect 2;"), "select 1;  \nselect 2;");
+});
+
+test("gli a capo di un commento a blocco si tengono: le righe non si spostano", () => {
+  const testo = "select 1;\n/* uno\n   due */\nselect 2;";
+  assert.equal(senzaCommentiSql(testo).split("\n").length, testo.split("\n").length);
 });

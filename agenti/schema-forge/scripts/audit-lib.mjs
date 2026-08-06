@@ -683,11 +683,105 @@ const tentaScrittura = (testo, schema, tabella) => {
   ).test(testo);
 };
 
+/**
+ * I COMMENTI SQL SE NE VANNO PRIMA, E SOLO QUELLI.
+ *
+ * Referto § M3: un test pgTAP INTERAMENTE COMMENTATO valeva come un test vero.
+ * Misurato il 2026-08-06 sul test negativo del banco:
+ *
+ *   test vero                            block: 0
+ *   lo stesso test con `-- ` davanti a ogni riga    block: 0   ← identico
+ *   lo stesso test dentro un `/*` … `*` + `/`       block: 0   ← identico
+ *
+ * Cioe': commentare un test era il modo piu' rapido di tenere verde il passo
+ * che la skill chiama «l'unica cosa che dimostra che una policy funziona».
+ *
+ * SI TOLGONO SOLO I COMMENTI. Il contenuto delle stringhe resta byte per byte,
+ * e non e' un dettaglio: un test negativo corretto scrive il tentativo dentro
+ * un `lives_ok($$ insert into … $$)`, e uno spogliatore che svuotasse le
+ * stringhe non troverebbe piu' la scrittura — cioe' accuserebbe di «policy mai
+ * attaccata» proprio il test scritto bene. Il falso positivo peggiore.
+ *
+ * Postgres, e non un SQL generico: i commenti a blocco SI ANNIDANO (il conteggio
+ * della profondita' non e' un vezzo), le stringhe raddoppiano l'apice invece di
+ * fuggirlo, gli identificatori raddoppiano la virgoletta, e il dollaro quota
+ * fino al tag gemello.
+ *
+ * LIMITI DICHIARATI: le stringhe `E'…\''` con la fuga a barra rovesciata non
+ * sono gestite (con `standard_conforming_strings` acceso — il default da
+ * Postgres 9.1 — la barra non fugge niente, e trattarla come fuga romperebbe il
+ * caso normale); e un commento DENTRO un corpo quotato col dollaro resta dov'e',
+ * perche' li' dentro il testo e' opaco a questo scanner.
+ */
+export function senzaCommentiSql(testo) {
+  const sorgente = String(testo ?? "");
+  let fuori = "";
+  let i = 0;
+
+  while (i < sorgente.length) {
+    const c = sorgente[i];
+
+    if (c === "'" || c === '"') {
+      // fine alla prima occorrenza non raddoppiata del delimitatore
+      let j = i + 1;
+      while (j < sorgente.length) {
+        if (sorgente[j] === c) {
+          if (sorgente[j + 1] === c) { j += 2; continue; }
+          break;
+        }
+        j += 1;
+      }
+      fuori += sorgente.slice(i, Math.min(j + 1, sorgente.length));
+      i = j + 1;
+      continue;
+    }
+
+    const dollaro = /^\$([A-Za-z_][\w]*)?\$/.exec(sorgente.slice(i));
+    if (dollaro) {
+      const chiusura = sorgente.indexOf(dollaro[0], i + dollaro[0].length);
+      const fine = chiusura === -1 ? sorgente.length : chiusura + dollaro[0].length;
+      fuori += sorgente.slice(i, fine);
+      i = fine;
+      continue;
+    }
+
+    if (c === "-" && sorgente[i + 1] === "-") {
+      const fine = sorgente.indexOf("\n", i + 2);
+      fuori += " ";
+      i = fine === -1 ? sorgente.length : fine;
+      continue;
+    }
+
+    if (c === "/" && sorgente[i + 1] === "*") {
+      let profondita = 1;
+      let j = i + 2;
+      while (j < sorgente.length && profondita > 0) {
+        if (sorgente[j] === "/" && sorgente[j + 1] === "*") { profondita += 1; j += 2; continue; }
+        if (sorgente[j] === "*" && sorgente[j + 1] === "/") { profondita -= 1; j += 2; continue; }
+        j += 1;
+      }
+      // gli a capo del commento si tengono: un rilievo che cita una riga deve
+      // citare la riga giusta
+      fuori += ` ${sorgente.slice(i, j).replace(/[^\n]/g, "")}`;
+      i = j;
+      continue;
+    }
+
+    fuori += c;
+    i += 1;
+  }
+
+  return fuori;
+}
+
 export function regolaTestNegativi({ policy, testiPgtap }) {
   if (!testiPgtap) return []; // i test non sono stati letti: nessun verdetto
+  // Il codice commentato non e' codice: un test spento non attacca niente
+  // (referto § M3). La skill sorella lo fa da sempre sul TypeScript, e dichiara
+  // il perche'; qui il testo e' SQL, quindi lo spogliatore e' un altro.
   const conRuolo = testiPgtap
-    .filter((t) => /set\s+local\s+role|request\.jwt\.claims/i.test(t.testo))
-    .map((t) => t.testo);
+    .map((t) => senzaCommentiSql(t.testo))
+    .filter((testo) => /set\s+local\s+role|request\.jwt\.claims/i.test(testo));
   const findings = [];
   const viste = new Set();
   for (const r of policy) {
