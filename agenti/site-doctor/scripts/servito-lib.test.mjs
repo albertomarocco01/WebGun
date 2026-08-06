@@ -379,6 +379,41 @@ describe("archiviazione e terzi", () => {
     assert.match(blocchi(f)[0].message, /NON lo puo' misurare/);
   });
 
+  // Collaudo P2. Il modello del certificato prescrive UNA RIGA PER CHIAVE
+  // ARCHIVIATA, con l'API nella colonna `tipo`; il banco e questa batteria
+  // mettevano l'API in `chiave`. Un certificato scritto esattamente dal modello
+  // riceveva un `block` per ogni archiviazione su ogni pagina: rosso su un
+  // documento corretto, e nessun test lo vedeva perche' erano tutti scritti
+  // sulla forma dell'implementazione.
+  it("riconosce l'archiviazione dichiarata nella forma DEL MODELLO (API in `tipo`)", () => {
+    const f = findingsArchiviazione({
+      cookie: [], archiviazioni: [{ api: "localStorage", percorso: "/c" }], terzi: [],
+      dichiarate: [{ chiave: "studio:lingua", tipo: "localStorage", essenziale: "sì" }], banner: false,
+    });
+    assert.deepEqual(f, []);
+  });
+
+  it("la stessa API dichiarata due volte: basta una riga non essenziale a volere il banner", () => {
+    const comune = {
+      cookie: [], archiviazioni: [{ api: "localStorage", percorso: "/" }], terzi: [],
+      dichiarate: [
+        { chiave: "studio:lingua", tipo: "localStorage", essenziale: "sì" },
+        { chiave: "studio:analitica", tipo: "localStorage", essenziale: "no" },
+      ],
+    };
+    assert.ok(blocchi(findingsArchiviazione({ ...comune, banner: false })).some((x) => x.object === "consenso"));
+    assert.deepEqual(findingsArchiviazione({ ...comune, banner: true }), []);
+  });
+
+  it("una riga che non nomina l'API ne' in `chiave` ne' in `tipo` resta un bloccante", () => {
+    const f = findingsArchiviazione({
+      cookie: [], archiviazioni: [{ api: "indexedDB", percorso: "/" }], terzi: [],
+      dichiarate: [{ chiave: "studio:lingua", tipo: "localStorage", essenziale: "sì" }], banner: false,
+    });
+    assert.equal(blocchi(f).length, 1);
+    assert.match(blocchi(f)[0].message, /nessuna riga del certificato lo nomina/);
+  });
+
   it("non essenziale senza banner e' un bloccante", () => {
     const f = findingsArchiviazione({
       cookie: [{ nome: "_ga", percorso: "/" }], archiviazioni: [], terzi: [],

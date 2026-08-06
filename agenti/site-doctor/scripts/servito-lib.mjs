@@ -802,9 +802,55 @@ export function terziDi(html, base) {
 
 const RE_ESSENZIALE = /^(s[iì]|essenziale|tecnico|necessario)$/i;
 
+/**
+ * Come una riga dichiarata combacia con un'archiviazione misurata.
+ *
+ * **Cookie** e **terzi** hanno un nome misurato (`sl_sessione`,
+ * `https://www.google.com`): la riga li dichiara nella colonna `chiave`.
+ *
+ * Le **API di archiviazione** no: quello che si misura in un bundle e' il nome
+ * dell'API (`localStorage`), non la chiave che ci viene scritta. Il modello
+ * `resources/templates/conformita.md` prescrive una riga **per chiave
+ * archiviata** — `| studio:analitica | localStorage | no | … |` — cioe' mette
+ * l'API nella colonna `tipo`; il banco e la batteria invece la mettevano in
+ * `chiave` (`| localStorage | archiviazione locale | … |`).
+ *
+ * Misurato al collaudo P2: un certificato scritto **esattamente dal modello**
+ * riceveva un `block` per ogni archiviazione, su tutte le pagine — 32 bloccanti
+ * su un documento corretto. Il banco e i test non lo vedevano perche' erano
+ * stati scritti sulla forma dell'implementazione invece che su quella del
+ * modello: 25 classi di sabotaggio e 144 test verdi su una forma che nessuna
+ * esecuzione di `certifica` avrebbe mai prodotto.
+ *
+ * Quindi una riga nomina un'API se la scrive in `chiave` **o** in `tipo`. Non e'
+ * un allentamento: la riga deve comunque esserci e nominare quell'API. Ed e'
+ * piu' severo su una cosa, perche' adesso le righe che la nominano possono
+ * essere piu' d'una: **se anche una sola e' non essenziale, l'archiviazione e'
+ * non essenziale** — un `localStorage` usato per la lingua *e* per un contatore
+ * di visite vuole il banner, e la riga prudente e' quella che lo chiede.
+ */
+function indiceDichiarate(dichiarate) {
+  const righe = (dichiarate ?? []).map((r) => ({
+    chiave: String(r.chiave ?? "").trim(),
+    tipo: String(r.tipo ?? "").trim(),
+    essenziale: String(r.essenziale ?? "").trim(),
+  }));
+  const perNome = new Map();
+  const perApi = new Map();
+  for (const r of righe) {
+    if (r.chiave && !perNome.has(r.chiave)) perNome.set(r.chiave, r);
+    for (const nome of [r.chiave, r.tipo]) {
+      if (!nome) continue;
+      if (!perApi.has(nome)) perApi.set(nome, []);
+      perApi.get(nome).push(r);
+    }
+  }
+  return { perNome, perApi };
+}
+
 export function findingsArchiviazione({ cookie, archiviazioni, terzi, dichiarate, banner }) {
   const findings = [];
-  const perChiave = new Map((dichiarate ?? []).map((r) => [String(r.chiave ?? "").trim(), r]));
+  const { perNome: perChiave, perApi } = indiceDichiarate(dichiarate);
   const nonEssenzialiTrovate = [];
 
   for (const c of cookie) {
@@ -821,16 +867,18 @@ export function findingsArchiviazione({ cookie, archiviazioni, terzi, dichiarate
   }
 
   for (const a of archiviazioni) {
-    const riga = perChiave.get(a.api);
-    if (!riga) {
+    const righeSue = perApi.get(a.api) ?? [];
+    if (righeSue.length === 0) {
       findings.push({
         severity: "block",
         object: `${a.api} (${a.percorso})`,
-        message: `il codice servito da questa pagina archivia nel browser con ${a.api}, e il certificato non lo dichiara. L'archiviazione sul terminale di chi visita non e' solo il cookie: la regola guarda cosa si scrive, non come si chiama`,
+        message: `il codice servito da questa pagina archivia nel browser con ${a.api}, e nessuna riga del certificato lo nomina (ne' in \`chiave\` ne' in \`tipo\`). L'archiviazione sul terminale di chi visita non e' solo il cookie: la regola guarda cosa si scrive, non come si chiama`,
       });
       continue;
     }
-    if (!RE_ESSENZIALE.test(String(riga.essenziale ?? "").trim())) nonEssenzialiTrovate.push(`${a.api} (${a.percorso})`);
+    // Basta una riga non essenziale perche' l'archiviazione lo sia: la stessa
+    // API puo' servire a due cose, e il consenso lo decide la piu' invadente.
+    if (righeSue.some((r) => !RE_ESSENZIALE.test(r.essenziale))) nonEssenzialiTrovate.push(`${a.api} (${a.percorso})`);
   }
 
   for (const t of terzi) {

@@ -71,7 +71,20 @@ misurare**: è per quello che non dichiararlo è un bloccante e non un rilievo.
 <!-- `essenziale`: `sì` per ciò che serve a fornire il servizio che la persona ha
      chiesto (carrello, sessione, preferenza di lingua, protezione CSRF). Tutto
      il resto — analitica, mappe, incorporamenti, pubblicità — è `no`, e vuole
-     il consenso PRIMA di essere posto. -->
+     il consenso PRIMA di essere posto.
+
+     Cosa il gate confronta, colonna per colonna, perché seguire il modello e
+     passare il gate devono essere la stessa cosa:
+       - un COOKIE si dichiara col suo nome in `chiave` (`sl_sessione`), che è
+         quello che si misura nel `Set-Cookie`;
+       - un TERZO si dichiara con la sua origine in `chiave`
+         (`https://www.google.com`);
+       - un'API DI ARCHIVIAZIONE (`localStorage`, `sessionStorage`,
+         `indexedDB`, `document.cookie`) si nomina in `tipo`, e in `chiave` va
+         la chiave archiviata: nei bundle si misura il nome dell'API, non la
+         chiave. Una riga per chiave archiviata, quindi, e se due chiavi usano
+         la stessa API basta che UNA sia `essenziale: no` perché il banner
+         diventi obbligatorio. -->
 
 ## Dati raccolti dai moduli pubblici
 
