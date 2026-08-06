@@ -3,8 +3,9 @@
 - **Stato attuale: P0+P1 CONSEGNATE il 2026-08-06, in un solo pacchetto** (D17
   del cantiere). Il gate esiste, ha **nove passi** e **quattro stati**, chiude
   **VERDE 8/8 + 1 NON APPLICABILE** sul banco conforme e **ROSSO su 25 classi di
-  sabotaggio su 25**. Sul pilota `fornodoro` esce **ROSSO per cinque motivi veri
-  che nessuno dei cinque gate esistenti vede**. **144 test verdi.** Verbale:
+  sabotaggio su 25**. Sul pilota `fornodoro` esce **ROSSO (4 falliti, 3 verifiche
+  mancanti su 9, identità dell'app confermata) per cinque motivi veri che
+  nessuno dei cinque gate esistenti vede**. **144 test verdi.** Verbale:
   `COSTRUZIONE-2026-08-06.md`.
 - **Il tribunale ha trovato 33 rilievi**, e gli strumenti statici erano **tutti
   verdi** su tutti e 33. Il piu' grave apriva **tutti e nove i passi insieme**:

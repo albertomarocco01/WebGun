@@ -209,34 +209,33 @@ Se ne è accorto `grep`, dicendo «Binary file matches» su un file di testo.
 
 `fornodoro`, pizzeria «Forno d'Oro», sei pagine pubbliche, cinque gate verdi
 sopra, ~38 voci di debito dichiarate. Lanciato **col node di sistema** (20.12.2),
-dalla radice del progetto.
+dalla radice del progetto, con l'app viva e **il `BUILD_ID` allineato** a quello
+su disco.
 
 ```
 $ node <skill>/scripts/verify.mjs --url http://127.0.0.1:3621
 
-GATE CONFORMITA': ROSSO (5 falliti, 3 verifiche mancanti, 0 non applicabili su 9 passi)
+GATE CONFORMITA': ROSSO (4 falliti, 3 verifiche mancanti, 0 non applicabili su 9 passi)
 
 MANC  certificato di idoneita' firmato
         docs/conformita.md assente: nessun certificato di idoneita'. Launchpad non pubblica senza, e senza questo documento nessuno ha scritto chi guarda cosa (comando `certifica`).
         I passi che misurano il sito girano lo stesso: un gate rosso per il solo contratto mancante avrebbe imparato a tacere sul resto.
-FAIL  superficie pubblica camminata (collegamenti + sitemap)
-        identita': NON confermata dal build id (vedi sotto) · 5 pagine lette · 0 rimandi o errori non seguiti
+OK    superficie pubblica camminata (collegamenti + sitemap)
+        identita': build id vhj8fi1hxQrFTJFWHKPlb trovato nell'HTML servito · 5 pagine lette · 0 rimandi o errori non seguiti
+        radice: /
         sorgenti: collegamenti da / (5) · sitemap.xml (5)
         superficie: / /chi-siamo /menu /ordina /ordine
-          [block] identita' dell'app: il build id su disco (KAjShKT6tg73C5JGZ7M5k) NON compare nell'HTML servito, ma l'asset `/_next/static/chunks/2zknr-jetryid.css` scaricato da http://127.0.0.1:3621 e' identico byte per byte a quello sotto `.next/` di questo progetto.
-          Diagnosi: e' QUESTO sito, servito da un processo partito PRIMA dell'ultima build — non un'altra applicazione. Riavvia `npm run start`.
-          Le misure di conformita' si fanno lo stesso (il sito e' questo), ma il certificato NON e' emettibile: certificherebbe una build che non e' quella su disco.
 FAIL  informativa privacy raggiungibile
         nessun collegamento a un'informativa su 5 pagine
           [block] informativa privacy: nessun collegamento a un'informativa su 5 pagine pubbliche. Il sito raccoglie o puo' raccogliere dati, e chi visita non ha un posto dove leggere chi li tratta e perche'
 FAIL  dati raccolti dai moduli pubblici
-        2 pagine con moduli · 5 campi letti · 0 righe di base giuridica nel certificato
+        2 pagine con moduli · 7 campi letti · 0 righe di base giuridica nel certificato
         3 bloccanti, 0 da guardare
           [block] /ordina → campo "nome": raccoglie un dato personale (autocomplete="name") e nessuna riga del certificato ne dichiara la base giuridica
           [block] /ordina → campo "telefono": raccoglie un dato personale (autocomplete="tel") e nessuna riga del certificato ne dichiara la base giuridica
           [block] /ordina: raccoglie dati personali e non rimanda a nessuna informativa: l'art. 13 chiede l'informazione AL MOMENTO della raccolta, non da qualche altra parte del sito
 FAIL  cosa il sito archivia nel browser
-        0 cookie · 1 usi di API di archiviazione · 0 origini di terzi · 9 script letti per intero
+        0 cookie · 1 usi di API di archiviazione · 0 origini di terzi · 9 script esterni e 0 inline letti per intero
         archiviazione: localStorage in /ordina
         1 bloccanti, 0 da guardare
           [block] localStorage (/ordina): il codice servito da questa pagina archivia nel browser con localStorage, e il certificato non lo dichiara. L'archiviazione sul terminale di chi visita non e' solo il cookie: la regola guarda cosa si scrive, non come si chiama
@@ -253,6 +252,8 @@ FAIL  contratto d'uscita (handoff)
 
 Una verifica mancante non e' una verifica superata: il gate resta rosso.
 
+GATE CONFORMITA': ROSSO (4 falliti, 3 verifiche mancanti, 0 non applicabili su 9 passi)
+
 USCITA: 1
 ```
 
@@ -262,22 +263,28 @@ USCITA: 1
 |---|---|---|
 | 1 | **Nessun collegamento a un'informativa privacy** su 5 pagine pubbliche su 5 | nessuno. vetrina-crafter verifica che ogni pagina **dichiarata** risponda e che ogni pagina **servita** sia dichiarata: un'informativa che non esiste non è né dichiarata né servita, quindi non manca a nessuno |
 | 2 | **`/ordina` raccoglie `nome` e `telefono`** (prova forte: `autocomplete="name"` e `"tel"`) **senza nessuna base giuridica dichiarata** | nessuno. flow-sentinel prova che il flusso funziona; vetrina-crafter dichiara che il percorso di scrittura esiste; schema-forge controlla le policy. Il *perché legale* non lo guarda nessuno |
-| 3 | **`/ordina` raccoglie dati personali e non rimanda a nessuna informativa** — l'art. 13 chiede l'informazione al momento della raccolta | nessuno |
-| 4 | **`localStorage` posto dal codice servito da `/ordina` e dichiarato da nessuna parte** (9 script scaricati e letti per intero) | nessuno. Nessun gate della casa scarica i bundle serviti |
+| 3 | **`/ordina` raccoglie dati personali e non rimanda a nessuna informativa** — l'art. 13 chiede l'informazione **al momento della raccolta**, non da qualche altra parte del sito | nessuno |
+| 4 | **`localStorage` posto dal codice servito da `/ordina` e dichiarato da nessuna parte** (9 script esterni scaricati e letti per intero, 0 inline) | nessuno. Nessun gate della casa scarica i bundle serviti |
 | 5 | **Nessun certificato di idoneità**, quindi nessuna tabella di proprietà delle voci | nessuno — ed è il motivo per cui launchpad non ha un ingresso |
 
-Un sesto rilievo, non richiesto dal mandato e trovato per strada: **l'app viva
-sulla 3621 era una build indietro rispetto a `.next/` su disco**, e il gate lo ha
-detto con la diagnosi giusta.
+**Due note di onestà su questa misura.**
 
-**Nota di onestà sull'ultimo rilancio.** Alle 14:30 ho rilanciato il gate per
-riconfermare l'uscita dopo le correzioni dei guardiani, e l'app del pilota era
-**spenta** (un'altra chat la stava ricostruendo, D17). Il gate ha chiuso
-`ROSSO (1 falliti, 8 verifiche mancanti)` con `nessuna risposta da
-http://127.0.0.1:3621` — cioè ha detto **MANCANTE invece di fingere**, che è la
-cosa giusta. L'uscita incollata qui sopra è quella misurata alle 13:5x, con l'app
-viva; le correzioni successive non hanno toccato nessuna delle regole che la
-producono, e il sabotaggio è stato **rilanciato per intero dopo** di esse (§6.2).
+La prima: **`superficie-pubblica` qui è verde**, e nel primo giro del pomeriggio
+era rosso. Non è una correzione di comodo — è la stessa misura in due momenti
+diversi. Alle 13:5x l'app viva sulla 3621 era **una build indietro** rispetto a
+`.next/` su disco (un'altra chat, P.4g, aveva ricostruito senza riavviare) e il
+gate l'ha detto **con la diagnosi giusta**, che è il difetto n°5.1 di questo
+verbale. Alle 15:0x l'app era stata riavviata e i due build id combaciavano.
+Entrambe le uscite sono vere; questa è quella in cui l'identità dell'app è
+**confermata**, ed è per questo che la incollo qui.
+
+La seconda: fra i due giri il gate è cambiato per le correzioni del tribunale, e
+**due numeri si muovono**. I campi letti passano da 5 a **7**: i campi nascosti
+non si scartano più per tipo ma per nome, e su `/ordina` ce n'erano due che
+prima sparivano prima di essere classificati. E la riga dell'archiviazione
+adesso dichiara «**0 inline**»: prima quel numero non esisteva, e con esso non
+esisteva la garanzia che gli script scritti dentro la pagina fossero stati
+guardati.
 
 ### 6.2 — Il banco e le venticinque classi di sabotaggio
 
@@ -556,9 +563,9 @@ Le scriverei io per prime, e chi collauda non deve fidarsi di questo elenco:
 - **La classe di sabotaggio che manca.** Le 25 classi sono nate dalla mia idea di
   cosa può andare storto, e il tribunale ha trovato dieci cose che **nessuna**
   classe copriva. Si parta da lì: *quali classi non ho immaginato?*
-- **Il pilota con l'app viva e la build allineata.** La mia misura è stata presa
-  con l'app servita **una build indietro**: un giro con `identita: pass` sul
-  pilota non l'ho mai visto.
+- **Il pilota è un dominio solo, e monolingua.** Gli hreflang, il consenso, i
+  terzi e i cookie sul pilota sono provati **solo dal banco**: sul sito vero
+  quelle quattro classi hanno misurato «zero», che è un esito e non una prova.
 - **`certifica` e `handoff` non sono mai stati eseguiti** su un progetto vero
   (pilota in sola lettura, D17). Sul banco quei documenti li genera il banco:
   sono provati come **input** del gate, non come **prodotto** del comando.
@@ -578,7 +585,8 @@ scritto sa già di dover cercare.*
 
 ---
 
-`P.6 (P0+P1) consegnata. Il gate di site-doctor esce ROSSO sul pilota per 5
+`P.6 (P0+P1) consegnata. Il gate di site-doctor esce ROSSO sul pilota (4
+falliti, 3 verifiche mancanti su 9 passi, identita' dell'app confermata) per 5
 motivi veri che nessuno dei cinque gate esistenti vede: nessuna informativa
 privacy raggiungibile su 5 pagine pubbliche su 5; nome e telefono raccolti da
 /ordina senza nessuna base giuridica dichiarata (prova forte, autocomplete);
