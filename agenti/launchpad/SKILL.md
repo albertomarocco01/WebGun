@@ -180,7 +180,7 @@ essere verde senza aver guardato, i passi **scartati** col perché — sta in
 |---|---|---|---|
 | 1 | `radice-pulita` | si sta per pubblicare **un commit**, non un working tree | non è un repo git, o `git` non risponde |
 | 2 | `catena-gate` | nessun gate a monte ha detto di no, e nessun handoff è più vecchio del codice che certifica | nessun handoff trovato |
-| 3 | `debito-bloccante` | ogni residuo che **dichiara** di bloccare il deploy ha una risposta nel runbook | `docs/DEBITO-TECNICO.md` assente o illeggibile come tabella |
+| 3 | `debito-bloccante` | ogni residuo che **dichiara** `Blocca il deploy: sì` ha una risposta nel runbook | `docs/DEBITO-TECNICO.md` assente, illeggibile come tabella, **o con voci che non dichiarano se bloccano** |
 | 4 | `segreti` | nel pacchetto che parte non viaggia nessun segreto — **né nella storia** | `git ls-files` non elenca niente: zero file letti non è «nessun segreto» |
 | 5 | `ambiente` | ogni variabile che il codice spedito legge è dichiarata, e nessun valore vero è committato | il runbook non dichiara né radici spedite né variabili |
 | 6 | `runtime-riproducibile` | la build si rifà uguale altrove: `engines` ≥ di quanto le dipendenze pretendono, lockfile presente e tracciato | `node_modules/` assente: senza albero non si sa cosa pretendono |
@@ -191,6 +191,18 @@ essere verde senza aver guardato, i passi **scartati** col perché — sta in
 **Uno strumento assente vale `MANCANTE`, non `PASS`** (`DECISIONI.md` §18), e
 vale lo stesso per uno strumento presente che non ha letto il suo input. Un gate
 rosso per verifiche mancanti resta rosso.
+
+**Il registro del debito dichiara, non allude** (`CANTIERE.md` D23 §2). Ogni
+voce di `docs/DEBITO-TECNICO.md` porta, dentro la propria riga di tabella, la
+riga di forma fissa `Blocca il deploy: sì` oppure `Blocca il deploy: no` — una
+volta sola, in qualunque cella, con qualunque markup. **È lei a decidere.** Una
+voce che non ce l'ha e non è chiusa vale **MANCANTE per quella voce**: non si sa
+se blocca, e non saperlo non è un pass. Le vecchie forme in prosa restano come
+`warn` che nomina la voce da migrare, e non decidono più — *l'elenco delle forme
+che un gate riconosce è aperto per costruzione, e la persona successiva ne
+inventerà una nuova in buona fede.* Il template del registro è di
+**schema-forge**: qui c'è il lettore, e la forma completa sta in
+`references/verifica-deterministica.md` §3.3.
 
 **Una citazione non è un verdetto** (`CANTIERE.md` D23 §1), e vale per il solo
 passo `catena-gate`. La §19 tollera elenco, citazione e grassetto perché sono

@@ -25,6 +25,7 @@ import {
   VARIABILI_IMPRONTA,
   verdettoDa,
   verdettoHandoff,
+  vociSenzaRigaBlocco,
 } from "./gate-lib.mjs";
 
 const blocchi = (f) => f.filter((x) => x.severity === "block");
@@ -122,39 +123,86 @@ const TABELLA = [
   "| 33 | speed-demon | basso | una cosa qualunque | — | quando capita |",
 ].join("\n");
 
-test("leggiDebito riconosce numero, chiusura e dichiarazione di bloccare il deploy", () => {
-  const voci = leggiDebito(TABELLA);
+/** Lo stesso registro DOPO la migrazione della D23 §2: la riga di forma fissa. */
+const MIGRATA = TABELLA
+  .replace("| **Prescrizione, non rattoppo**: e il deploy (P.5) non può partire senza |", "| **Prescrizione, non rattoppo.** Blocca il deploy: sì |")
+  .replace("| 11 | vetrina-crafter | **CHIUSO 2026-08-06 (schema-forge)** | un cast | — | — |", "| 11 | vetrina-crafter | **CHIUSO 2026-08-06 (schema-forge)** | un cast | — | — |")
+  .replace("| **Blocca il deploy (P.5)**: il seed di produzione non porta account |", "| Blocca il deploy: sì — il seed di produzione non porta account |")
+  .replace("| **Blocca il deploy (P.5)** insieme a n°4 |", "| Blocca il deploy: sì, insieme a n°4 |")
+  .replace("| 33 | speed-demon | basso | una cosa qualunque | — | quando capita |", "| 33 | speed-demon | basso | una cosa qualunque | — | quando capita. Blocca il deploy: no |");
+
+test("leggiDebito riconosce numero, chiusura e la riga di forma fissa (D23 §2)", () => {
+  const voci = leggiDebito(MIGRATA);
   assert.equal(voci.length, 5);
-  assert.deepEqual(voci.filter((v) => v.bloccaDeploy && !v.chiusa).map((v) => v.numero), [4, 27, 32]);
+  assert.deepEqual(voci.filter((v) => v.bloccaDichiarato === "si" && !v.chiusa).map((v) => v.numero), [4, 27, 32]);
   assert.equal(voci.find((v) => v.numero === 11).chiusa, true);
-  assert.equal(voci.find((v) => v.numero === 33).bloccaDeploy, false);
+  assert.equal(voci.find((v) => v.numero === 33).bloccaDichiarato, "no");
 });
 
-test("il PUNTO dentro `P.5` non deve rompere il riconoscimento — difetto misurato sul pilota", () => {
+test("la prosa NON decide piu': lo stesso registro non migrato e' MANCANTE voce per voce", () => {
+  const voci = leggiDebito(TABELLA);
+  assert.deepEqual(voci.filter((v) => v.bloccaProsa).map((v) => v.numero), [4, 27, 32],
+    "l'euristica continua a vedere, e serve a dire QUALI voci parlano ancora in prosa");
+  assert.deepEqual(voci.filter((v) => v.bloccaDichiarato !== null).map((v) => v.numero), [],
+    "ma nessuna di quelle voci ha DICHIARATO niente");
+  assert.deepEqual(vociSenzaRigaBlocco(voci).map((v) => v.numero), [4, 27, 32, 33],
+    "tutte tranne la n°11, che e' chiusa: una voce chiusa non e' un residuo");
+});
+
+test("una voce non migrata che parla in prosa produce un `warn` che la nomina", () => {
+  const f = findingsDebito({ voci: leggiDebito(TABELLA), runbookEsiste: true, risposte: new Map() });
+  assert.deepEqual(blocchi(f), [], "il rosso non viene di qui: viene dal MANCANTE, che e' del passo");
+  const warn = f.filter((x) => x.severity === "warn");
+  assert.deepEqual(warn.map((x) => x.object.match(/n°(\d+)/)[1]), ["4", "27", "32"],
+    "un registro migrato a meta' deve poter dire quali voci restano");
+});
+
+test("il PUNTO dentro `P.5` non deve rompere il riconoscimento in prosa — difetto misurato sul pilota", () => {
   // La prima stesura usava `[^.]{0,40}` e leggeva TRE bloccanti su quattro:
   // taceva sul n°4, che e' esattamente cio' che il criterio di P.5 esiste per
-  // scoprire.
+  // scoprire. Oggi quell'euristica non decide, ma deve ancora vedere.
   const voci = leggiDebito("| 4 | x | alto | y | z | e il deploy (P.5) non può partire senza |");
-  assert.equal(voci[0].bloccaDeploy, true);
+  assert.equal(voci[0].bloccaProsa, true);
 });
 
-test("un bloccante che il runbook non nomina e' un `block`", () => {
-  const f = findingsDebito({ voci: leggiDebito(TABELLA), runbookEsiste: true, risposte: new Map() });
+test("la riga di forma fissa si legge in tutte le forme che una persona scrive", () => {
+  const forme = ["Blocca il deploy: sì", "blocca il deploy: si", "**Blocca il deploy:** sì", "**Blocca il deploy**: SÌ", "Blocca il deploy:  sì, finche' non arriva cyber-shield"];
+  for (const forma of forme) {
+    assert.equal(leggiDebito(`| 4 | x | alto | y | ${forma} |`)[0].bloccaDichiarato, "si", forma);
+  }
+  assert.equal(leggiDebito("| 4 | x | alto | y | Blocca il deploy: no |")[0].bloccaDichiarato, "no");
+  // Fail-closed: cio' che non e' la forma fissa non e' una dichiarazione.
+  assert.equal(leggiDebito("| 4 | x | alto | y | Blocca il deploy: non si sa |")[0].bloccaDichiarato, null);
+  assert.equal(leggiDebito("| 4 | x | alto | y | Blocca il deploy: forse |")[0].bloccaDichiarato, null);
+});
+
+test("due dichiarazioni opposte nella stessa voce bloccano: non si indovina quale vale", () => {
+  const voci = leggiDebito("| 4 | x | alto | Blocca il deploy: sì | ripensandoci, Blocca il deploy: no |");
+  assert.equal(voci[0].bloccaContraddittoria, true);
+  assert.equal(voci[0].bloccaDichiarato, null);
+  const f = findingsDebito({ voci, runbookEsiste: true });
+  assert.equal(blocchi(f).length, 1);
+  assert.match(blocchi(f)[0].message, /due volte, con risposte opposte/);
+});
+
+test("un bloccante dichiarato che il runbook non nomina e' un `block`", () => {
+  const f = findingsDebito({ voci: leggiDebito(MIGRATA), runbookEsiste: true, risposte: new Map() });
   assert.equal(blocchi(f).length, 3);
   assert.deepEqual(blocchi(f).map((x) => x.object.match(/n°(\d+)/)[1]), ["4", "27", "32"]);
 });
 
 test("nominare non e' rispondere: una risposta vuota o segnaposto resta `block`", () => {
   const risposte = new Map([[4, "{{RISPOSTA}}"], [27, "ok"], [32, "chiuso da P.4g il 2026-08-06, `engines` dichiarato"]]);
-  const f = findingsDebito({ voci: leggiDebito(TABELLA), runbookEsiste: true, risposte });
+  const f = findingsDebito({ voci: leggiDebito(MIGRATA), runbookEsiste: true, risposte });
   const numeri = blocchi(f).map((x) => x.object.match(/n°(\d+)/)[1]);
   assert.deepEqual(numeri.sort(), ["27", "4"]);
 });
 
-test("una voce gia' chiusa a monte non blocca piu' niente", () => {
-  const voci = leggiDebito(TABELLA.replace("| 27 | flow-sentinel | medio |", "| 27 | flow-sentinel | **CHIUSO 2026-08-07 (schema-forge)** |"));
+test("una voce gia' chiusa a monte non blocca piu' niente, e non deve la riga", () => {
+  const voci = leggiDebito(MIGRATA.replace("| 27 | flow-sentinel | medio |", "| 27 | flow-sentinel | **CHIUSO 2026-08-07 (schema-forge)** |"));
   const f = findingsDebito({ voci, runbookEsiste: true, risposte: new Map([[4, "mitigato con un tetto su Kong"], [32, "Node 24 sul pannello"]]) });
   assert.deepEqual(blocchi(f), []);
+  assert.deepEqual(vociSenzaRigaBlocco(voci), [], "e nessuna voce resta senza dichiarazione");
 });
 
 test("un riferimento orfano si segnala: e' l'unico segno di una riga cancellata", () => {
@@ -466,7 +514,7 @@ test("VER-3 · il registro si legge nelle forme che la casa scrive, e conta cosa
     const voci = leggiDebito(riga);
     assert.equal(voci.length, 1, riga);
     assert.equal(voci[0].numero, 27, riga);
-    assert.equal(voci[0].bloccaDeploy, true, riga);
+    assert.equal(voci[0].bloccaProsa, true, riga);
   }
   // Una riga di tabella che il parser NON sa leggere si conta e si dichiara:
   // «nessun bloccante» e «non ho saputo leggere» non devono assomigliarsi.
@@ -567,14 +615,14 @@ const REGISTRO_VERO = `# Debito tecnico
 
 test("«Non blocca il deploy» non e' una dichiarazione di bloccare il deploy", () => {
   const voci = leggiDebito(REGISTRO_VERO);
-  const bloccanti = voci.filter((v) => v.bloccaDeploy && !v.chiusa).map((v) => v.numero);
+  const bloccanti = voci.filter((v) => v.bloccaProsa && !v.chiusa).map((v) => v.numero);
   assert.deepEqual(bloccanti, [1],
     "la n°2 dichiara in lettere di NON bloccare: contarla costringe il runbook a rispondere a una voce che non chiede niente, e insegna a scavalcare il passo");
 });
 
 test("la negazione deve governare il verbo, non stare da qualche parte nella riga", () => {
   const registro = `| # | A | G | C |\n|---|---|---|---|\n| 7 | x | alto | la voce non e' chiusa **e** blocca il deploy |\n`;
-  assert.equal(leggiDebito(registro)[0].bloccaDeploy, true,
+  assert.equal(leggiDebito(registro)[0].bloccaProsa, true,
     "un `non` lontano dal verbo non deve disarmare la dichiarazione");
 });
 
@@ -707,14 +755,14 @@ test("una tabella numerica fuori da §Prescrizioni non risponde a nessun bloccan
   const r = leggiRunbook(conEstranea);
   assert.equal(r.risposte.has(27), false,
     "una riga di procedura che comincia per un numero non e' una risposta a un debito");
-  const voci = leggiDebito("| # | A | G | C |\n|---|---|---|---|\n| 27 | schema-forge | alto | password nel seed: **blocca il deploy** |\n");
+  const voci = leggiDebito("| # | A | G | C |\n|---|---|---|---|\n| 27 | schema-forge | alto | password nel seed. Blocca il deploy: sì |\n");
   const f = findingsDebito({ voci, runbookEsiste: true, risposte: r.risposte });
   assert.equal(f.filter((x) => x.severity === "block").length, 1);
 });
 
 test("«non si pubblica finche'» e' una dichiarazione di bloccare il deploy", () => {
   const voci = leggiDebito("| # | A | G | C |\n|---|---|---|---|\n| 1 | flow-sentinel | alto | nessun tetto ai tentativi, e **non si pubblica** finche' non e' mitigato |\n");
-  assert.equal(voci[0].bloccaDeploy, true);
+  assert.equal(voci[0].bloccaProsa, true);
 });
 
 test("la firma dell'orchestratore e' rifiutata: in pipeline la colonna «chi conferma» e' vuota", () => {

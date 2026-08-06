@@ -52,7 +52,7 @@ un'affermazione che qualcun altro ha scritto e può sbagliare o mentire.
 |---|---|---|---|
 | `radice-pulita` | albero git pulito, HEAD, scarto col remoto | — | che l'albero sia ancora pulito **al momento del deploy** — lo ricontrolla `pubblica`. E **l'età dell'artefatto non si misura**: era promessa qui e non implementata (rilievo VER-14 del tribunale), e l'`mtime` non sopravvive a una copia della cartella — produrrebbe falsi rossi. Chi costruisce con l'albero sporco e poi lo pulisce ha un `.next/` che nessun commit contiene, e questo gate non lo vede |
 | `catena-gate` | **freschezza**: ogni handoff è più giovane dell'ultimo commit che tocca il codice che certifica (§3.2 dice quali percorsi contano, e quale commit è **esente**) | il verdetto `Gate: VERDE` scritto in ogni handoff | che quel verde fosse vero. Il gate **non rilancia** i gate a monte: vedi §6 |
-| `debito-bloccante` | quali voci del registro dichiarano di bloccare il deploy, e quali di esse il runbook risponde per numero | il testo del registro | che le voci siano tutte quelle vere. Un bloccante che nessuno ha scritto non esiste per questo passo |
+| `debito-bloccante` | quali voci del registro **dichiarano** `Blocca il deploy: sì` nella riga di forma fissa (D23 §2), e quali di esse il runbook risponde per numero | il testo del registro | che le voci siano tutte quelle vere. Un bloccante che nessuno ha scritto non esiste per questo passo. E una voce **senza** quella riga è MANCANTE, non «non blocca» |
 | `segreti` | contenuto di **ogni file tracciato**, dei file nuovi, degli ignorati e della **storia git** (diff **e** messaggi di commit e di tag), per sei famiglie di contenuto più due regole sul nome | — | i segreti in forme che le famiglie non coprono (§5). E ogni passo legge il file **sul disco**, non il blob del commit: è `radice-pulita` a rendere le due cose la stessa |
 | `ambiente` | le variabili che il codice **spedito** legge davvero (`process.env.X` sotto le radici dichiarate), confrontate con quelle dichiarate; nessun valore locale come valore di produzione | quali radici finiscono nel pacchetto | che i valori dichiarati siano **giusti**. Il gate sa che `NEXT_PUBLIC_SITO_URL` non è `127.0.0.1`; non sa se è il dominio del cliente |
 | `runtime-riproducibile` | `engines.node` del progetto contro `engines.node` di **ogni dipendenza installata**; presenza e coerenza del lockfile | — | che la macchina di deploy rispetti `engines`. Nessun provider lo impone senza `engine-strict` |
@@ -199,11 +199,60 @@ vedi §6.
 ### 3.3 `debito-bloccante`
 
 `docs/DEBITO-TECNICO.md` è, in questa casa, l'unico posto in cui gli agenti a
-monte scrivono **per iscritto e numerato** cosa impedisce di pubblicare. Il
-passo lo legge come una tabella e cerca, nelle colonne libere di ogni riga, la
-dichiarazione di bloccare il deploy — nelle forme in cui la casa la scrive
-davvero: `blocca il deploy`, `blocca la pubblicazione`, `prescrizione di
-deploy`, `il deploy … non può partire`, con o senza il riferimento a `P.5`.
+monte scrivono **per iscritto e numerato** cosa impedisce di pubblicare.
+
+### La riga che decide — `Blocca il deploy: sì | no` (D23 §2)
+
+Ogni voce del registro porta, **dentro la propria riga di tabella**, una riga di
+forma fissa:
+
+```
+Blocca il deploy: sì
+Blocca il deploy: no
+```
+
+È **questa** a decidere. Cosa il passo accetta, per intero, perché nessuno debba
+indovinarlo:
+
+| aspetto | contratto |
+|---|---|
+| **dove** | in un punto qualunque della riga di tabella di quella voce — in qualunque cella. Non esiste un contratto di colonna, ed è deliberato: il gettone `CHIUSO` ha già pagato quel prezzo (una chiusura scritta nella colonna sbagliata spariva in silenzio) |
+| **quante volte** | **una sola**. Due dichiarazioni opposte nella stessa voce sono un `block`: quale valga lo deciderebbe l'ordine di lettura, cioè un dettaglio di impaginazione |
+| **maiuscole e markup** | indifferenti: `Blocca il deploy: sì`, `blocca il deploy: si`, `**Blocca il deploy:** sì`, `**Blocca il deploy**: SÌ` valgono tutte |
+| **il valore** | `sì` o `si`, `no`. Nient'altro: `Blocca il deploy: forse` e `Blocca il deploy: non si sa` **non sono dichiarazioni**, e la voce resta MANCANTE. Fail-closed |
+| **coda libera** | ammessa: `Blocca il deploy: sì, finché non arriva cyber-shield` si legge `sì` |
+| **chi è esente** | le voci **chiuse** (`CHIUSO <data>` che apre la terza colonna). Una voce chiusa non è un residuo. Il prezzo è dichiarato: chi volesse scavalcare la riga nuova può scrivere `CHIUSO`, che però è una dichiarazione falsa firmata da chi la scrive, non un buco del gate |
+
+**Una voce senza quella riga è `MANCANTE` per quella voce** — non un `pass` — e
+il passo intero diventa MANCANTE, cioè il gate resta rosso. La regola della casa
+è che *una premessa mai contata è una verifica mancante*, e un'euristica sulla
+prosa è esattamente una premessa mai contata.
+
+**Perché la prosa non basta più.** L'elenco delle forme che un gate riconosce è
+**aperto per costruzione**: il collaudo del 2026-08-06 ne ha scavalcate due
+(«non si pubblica finché…», «blocca la messa online») e ne ha aggiunte due, e la
+persona successiva ne inventerà una terza — in buona fede, scrivendo italiano.
+Una forma fissa chiude la classe invece di rincorrerla. È la stessa scelta della
+§19 di `DECISIONI.md`, applicata al registro invece che al verdetto.
+
+**Le euristiche restano, e non decidono.** Le forme in prosa — `blocca il
+deploy`, `blocca la pubblicazione`, `prescrizione di deploy`, `il deploy … non
+può partire`, `non si pubblica`, `blocca la messa online` — continuano a essere
+cercate, e producono un `warn` **che nomina la voce**: serve a un registro
+migrato a metà, perché dica *quali* voci parlano ancora in prosa invece di
+lasciare cercare a mano. Un `warn` non cambia il verdetto; a cambiarlo è il
+MANCANTE di quella stessa voce.
+
+**Il template non è di questa skill.** `docs/DEBITO-TECNICO.md` lo genera
+**schema-forge**, e la riga va nel suo template: qui si scrive il *lettore* e si
+dichiara la forma perché la skill vicina e il pilota possano produrla. È una
+proposta a monte, ed è scritta come tale in `STATO.md` §Proposte a monte.
+
+**E la migrazione dei registri esistenti è una finestra dichiarata**
+(`CANTIERE.md` D18 §3): finché il registro di un progetto non porta le righe,
+quel progetto vede un rosso che nessuno poteva soddisfare prima di questo
+commit. Si riporta il rosso nuovo e si cita il commit della regia accanto alla
+misura; non lo si nasconde e non si allenta la regola per farlo sparire.
 
 **La forma della tabella è un contratto, e va scritta perché nessuno la indovini:**
 
@@ -229,6 +278,9 @@ passo — e qui insegnava a riscrivere la voce in un altro modo, che è peggio.
 
 | finding | gravità | perché |
 |---|---|---|
+| **una voce non porta la riga `Blocca il deploy:`** e non è chiusa | MANCANTE | **D23 §2.** Non si sa se quella voce blocca: è una domanda mai posta, non una risposta negativa. Il passo dichiara quali voci e quante |
+| **una voce porta due `Blocca il deploy:` opposti** | `block` | quale valga lo deciderebbe l'ordine delle righe. Stessa regola dei due verdetti opposti in un handoff |
+| **una voce parla in prosa e non porta la riga** | `warn` | serve a dire *quali* voci restano da migrare. Non decide: il verdetto lo cambia già il MANCANTE della stessa voce |
 | una voce dichiara di bloccare il deploy e il runbook **non la nomina** | `block` | è la voce stessa a dire di essere un prerequisito. Ignorarla è pubblicare contro una prescrizione scritta |
 | il runbook nomina la voce ma non dichiara come è stata chiusa o mitigata | `block` | nominare non è rispondere. La forma richiesta è una riga per numero con l'esito |
 | **la risposta sta in una tabella del runbook che non è §Prescrizioni** | (non è una risposta) | trovato dal collaudo del 2026-08-06: il passo leggeva **ogni** riga di tabella del runbook che cominciasse per un numero. Misurato — tolta la risposta al bloccante n°1 e aggiunta in §Costi una riga di procedura `\| 1 \| apertura del progetto \| si fa una volta sola \|`, il passo tornava `pass`: un bloccante risultava risposto da una riga che parlava d'altro. Le risposte si leggono **solo** dentro §Prescrizioni, che è già una sezione obbligatoria |

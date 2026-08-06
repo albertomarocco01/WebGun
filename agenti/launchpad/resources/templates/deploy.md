@@ -88,8 +88,12 @@ Migrazioni in questa pubblicazione: {{sì, elenco | no}}
 ## Prescrizioni lasciate dagli altri agenti
 
 Il registro `docs/DEBITO-TECNICO.md` è l'unico posto in cui gli agenti a monte
-scrivono, **numerato**, cosa impedisce di pubblicare. Ogni voce che lo dichiara
-ha **due uscite oneste**, e non ce n'è una terza:
+scrivono, **numerato**, cosa impedisce di pubblicare. Ogni voce lo dichiara con
+una riga di forma fissa dentro la propria riga di tabella — `Blocca il deploy:
+sì` oppure `Blocca il deploy: no` (`CANTIERE.md` D23 §2) — e una voce che non ce
+l'ha, se non è chiusa, vale **MANCANTE**: il gate resta rosso finché qualcuno non
+risponde a quella domanda. Ogni voce che dichiara `sì` ha **due uscite oneste**,
+e non ce n'è una terza:
 
 - **chiusa a monte**, dall'agente che la possiede;
 - **mitigata qui**, con una mitigazione scritta e accettata da chi firma.

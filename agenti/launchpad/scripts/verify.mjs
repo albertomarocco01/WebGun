@@ -49,6 +49,7 @@ import {
   VARIABILI_IMPRONTA,
   variabiliLette,
   verdettoDa,
+  vociSenzaRigaBlocco,
 } from "./gate-lib.mjs";
 import { esitoSegreti } from "./segreti-lib.mjs";
 import { raccogli } from "./segreti.mjs";
@@ -357,12 +358,25 @@ const PASSI = [
         risposte: ctx.runbook?.risposte ?? new Map(),
         runbookEsiste: ctx.runbook !== null,
       });
-      const bloccanti = voci.filter((v) => v.bloccaDeploy && !v.chiusa);
+      const bloccanti = voci.filter((v) => v.bloccaDichiarato === "si" && !v.chiusa);
+      const senzaRiga = vociSenzaRigaBlocco(voci);
       const testa = [
-        `${voci.length} voci lette · ${bloccanti.length} dichiarano di bloccare il deploy: ${bloccanti.map((v) => `n°${v.numero}`).join(" · ") || "nessuna"}`,
+        `${voci.length} voci lette · ${bloccanti.length} dichiarano \`Blocca il deploy: si\`: ${bloccanti.map((v) => `n°${v.numero}`).join(" · ") || "nessuna"}`,
         `${voci.filter((v) => v.chiusa).length} voci gia' chiuse a monte · ${citati.size} numeri citati dagli handoff`,
         "questo passo LEGGE: l'elenco l'hanno scritto altri. `segreti` e `runtime-riproducibile` rimisurano da soli due di queste voci",
       ].join("\n");
+      // D23 §2: una voce che non dichiara se blocca non e' una voce che non
+      // blocca. E' una domanda mai posta, quindi una verifica MANCANTE — e una
+      // verifica mancante non e' una verifica superata.
+      if (senzaRiga.length > 0) {
+        return record(this.id, this.nome, "skipped", [
+          testa,
+          `${senzaRiga.length} voci su ${voci.length} non portano la riga \`Blocca il deploy: si|no\`: ${senzaRiga.slice(0, 12).map((v) => `n°${v.numero}`).join(" · ")}${senzaRiga.length > 12 ? " · …" : ""}`,
+          "La riga va in un punto qualunque della riga di tabella di quella voce, una volta sola. Le voci gia' chiuse (`CHIUSO <data>` in terza colonna) sono esenti.",
+          "Finche' manca, di quelle voci non si sa se bloccano: l'euristica sulla prosa non decide piu' (CANTIERE.md D23 §2), e il template del registro e' di schema-forge.",
+          findings.length ? dettaglioFindings(findings) : "",
+        ].filter(Boolean).join("\n"));
+      }
       return conFindings(this.id, this.nome, findings, testa);
     },
   },

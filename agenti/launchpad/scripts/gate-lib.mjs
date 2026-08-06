@@ -415,6 +415,34 @@ const BLOCCA_DEPLOY = [
 ];
 
 /**
+ * LA RIGA DI FORMA FISSA — decisione D23 §2 del `CANTIERE.md`.
+ *
+ * `Blocca il deploy: sì` oppure `Blocca il deploy: no`, in un punto qualunque
+ * della riga di quella voce. E' lei a decidere; l'elenco `BLOCCA_DEPLOY` qui
+ * sopra resta soltanto come `warn` che nomina le voci ancora scritte in prosa.
+ *
+ * PERCHE'. Il collaudo del 2026-08-06 ha scavalcato due forme di «blocca il
+ * deploy» e ne ha aggiunte due, e ha scritto la frase che decide: *l'elenco
+ * delle forme che il gate riconosce e' aperto per costruzione* — la prossima
+ * persona ne inventera' una terza, e la inventera' in buona fede. Una forma
+ * fissa chiude la classe invece di rincorrerla, ed e' la stessa scelta della
+ * §19.
+ *
+ * NON si pretende una colonna, e non e' una scorciatoia: il gettone `CHIUSO` ha
+ * gia' pagato il prezzo del contratto di posizione (una chiusura scritta nella
+ * colonna sbagliata spariva in silenzio). Qui la riga vale ovunque dentro la
+ * sua voce, e cio' che si pretende e' che ce ne sia **una sola**: due
+ * dichiarazioni opposte nella stessa voce sono un `block`, per lo stesso motivo
+ * per cui lo sono due verdetti opposti nello stesso handoff.
+ *
+ * `(?![a-z])` e non `\b`: dopo la `ì` di «sì» — che non e' un carattere di
+ * parola per JavaScript — un `\b` non scatta mai, e il gettone corretto
+ * sarebbe risultato illeggibile. E' la classe del parser scritto a mano, presa
+ * prima che facesse danno.
+ */
+const RIGA_BLOCCA = /blocca\s+il\s+deploy[\s*_`]*:[\s*_`]*(s[iì]|no)(?![a-z])/gi;
+
+/**
  * «**Non** blocca il deploy» non e' una dichiarazione di bloccare il deploy.
  *
  * Trovato dal collaudo del 2026-08-06 su un registro corretto: la voce
@@ -506,6 +534,11 @@ export function leggiDebito(testo) {
     }
     const celle = m[2].split("|").map((c) => c.trim());
     const gravita = celle[1] ?? "";
+    // La riga di forma fissa si legge PRIMA, e si toglie dal testo su cui gira
+    // l'euristica: altrimenti `Blocca il deploy: no` combacerebbe con
+    // l'elenco delle forme in prosa e ogni voce migrata sembrerebbe bloccante.
+    const dichiarazioni = new Set([...riga.matchAll(RIGA_BLOCCA)].map((d) => (/^s/i.test(d[1]) ? "si" : "no")));
+    const inProsa = riga.replace(RIGA_BLOCCA, " ");
     voci.push({
       numero: Number(m[1]),
       agente: celle[0] ?? "",
@@ -520,7 +553,11 @@ export function leggiDebito(testo) {
       // progetto in regola. Ora la colonna e' scritta nella reference E lo
       // scarto si dichiara invece di sparire.
       chiusaAltrove: !CHIUSA.test(gravita) && celle.some((c, i) => i !== 1 && CHIUSA.test(c)),
-      bloccaDeploy: dichiaraDiBloccare(riga),
+      // Cio' che DECIDE (D23 §2): `si`, `no`, oppure `null` = non dichiarato.
+      bloccaDichiarato: dichiarazioni.size === 1 ? [...dichiarazioni][0] : null,
+      bloccaContraddittoria: dichiarazioni.size > 1,
+      // Cio' che si limita a segnalare: la prosa, che da oggi non decide piu'.
+      bloccaProsa: dichiaraDiBloccare(inProsa),
       cosa: (celle[2] ?? "").replace(/\*\*/g, "").slice(0, 120),
     });
   }
@@ -542,6 +579,24 @@ export function numeriCitati(testi) {
   return numeri;
 }
 
+/**
+ * Le voci che non dichiarano se bloccano il deploy — `MANCANTE`, non `pass`.
+ *
+ * La regola di questa casa: **una premessa mai contata e' una verifica
+ * mancante**, e un'euristica sulla prosa e' esattamente una premessa mai
+ * contata. Il passo che le riceve non le trasforma in `block` ma in
+ * `skipped`, perche' cio' che manca non e' una risposta sbagliata: e' la
+ * domanda mai posta a quella voce.
+ *
+ * Una voce **chiusa** e' esente, e va detto perche' si veda: una voce chiusa
+ * non e' un residuo, e il gettone `CHIUSO <data>` e' gia' il posto in cui
+ * questo passo si fida di una dichiarazione altrui. Il prezzo dichiarato: chi
+ * volesse scavalcare la riga nuova puo' scrivere `CHIUSO`, che pero' e' una
+ * dichiarazione falsa firmata da chi la scrive — non un buco del gate.
+ */
+export const vociSenzaRigaBlocco = (voci) =>
+  (voci ?? []).filter((v) => v.bloccaDichiarato === null && !v.chiusa);
+
 export function findingsDebito({ voci = [], citati = new Set(), risposte = new Map(), runbookEsiste = false } = {}) {
   const findings = [];
   if (voci.nonLette > 0) {
@@ -560,7 +615,29 @@ export function findingsDebito({ voci = [], citati = new Set(), risposte = new M
       hint: "il gettone di chiusura si legge nella TERZA colonna (`| n | agente | gravita'/stato | cosa | … |`), come nel registro del pilota. Altrove non viene visto, e se la voce dichiarasse anche di bloccare il deploy il gate chiederebbe una risposta a una voce gia' chiusa",
     });
   }
-  const bloccanti = voci.filter((v) => v.bloccaDeploy && !v.chiusa);
+  for (const v of voci.filter((x) => x.bloccaContraddittoria)) {
+    findings.push({
+      severity: "block",
+      object: `debito n°${v.numero}`,
+      message: "dichiara `Blocca il deploy:` due volte, con risposte opposte",
+      hint: "quale delle due valga lo deciderebbe l'ordine di lettura, cioe' un dettaglio di impaginazione. Una voce dice una cosa sola: si toglie quella sbagliata",
+    });
+  }
+  /**
+   * La prosa non decide piu', ma non tace: un registro migrato a meta' deve
+   * poter dire QUALI voci parlano ancora in prosa, o la migrazione si fa a
+   * tentoni. E' un `warn` — non cambia il verdetto — e il verdetto lo cambia
+   * gia' il MANCANTE che quella stessa voce produce.
+   */
+  for (const v of vociSenzaRigaBlocco(voci).filter((x) => x.bloccaProsa)) {
+    findings.push({
+      severity: "warn",
+      object: `debito n°${v.numero} (${v.agente})`,
+      message: "dichiara di bloccare il deploy in PROSA e non con la riga `Blocca il deploy: sì`",
+      hint: "l'elenco delle forme in prosa che questo gate riconosce e' aperto per costruzione, quindi non decide piu' (CANTIERE.md D23 §2). Questa voce va migrata: finche' non lo e', per il gate e' MANCANTE",
+    });
+  }
+  const bloccanti = voci.filter((v) => v.bloccaDichiarato === "si" && !v.chiusa);
   for (const v of bloccanti) {
     const risposta = risposte.get(v.numero);
     if (!runbookEsiste || risposta === undefined) {
