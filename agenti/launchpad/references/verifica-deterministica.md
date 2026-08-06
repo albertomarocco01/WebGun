@@ -169,11 +169,34 @@ dichiarazione di bloccare il deploy — nelle forme in cui la casa la scrive
 davvero: `blocca il deploy`, `blocca la pubblicazione`, `prescrizione di
 deploy`, `il deploy … non può partire`, con o senza il riferimento a `P.5`.
 
+**La forma della tabella è un contratto, e va scritta perché nessuno la indovini:**
+
+```
+| # | agente | gravità/stato | cosa | … |
+```
+
+Il **numero** sta in prima colonna (nudo, `n°27`, `27.`, in grassetto: sono tutte
+accettate); il **gettone di chiusura** `CHIUSO <AAAA-MM-GG>` deve **aprire la
+terza colonna**, come nel registro del pilota. È la stessa scelta della §19 —
+una forma sola, perché un controllo su prosa libera è un controllo che non c'è —
+e la sua conseguenza va detta: una chiusura scritta altrove **non viene letta**,
+e il passo la segnala come `issue` invece di tacerne.
+
+**E la negazione conta.** «**Non** blocca il deploy» non è una dichiarazione di
+bloccare il deploy: la negazione deve *governare il verbo* (si guarda la sola
+coda del testo che precede, con al più un pronome in mezzo), così che *«la voce
+non è chiusa **e** blocca il deploy»* resti un bloccante. Il tribunale del
+2026-08-06 aveva chiuso questa stessa classe sul gettone di **chiusura**
+(VER-4: «NON CHIUSA» valeva chiusa) e l'aveva lasciata aperta su quello di
+**blocco**: metà del problema. Un rifiuto indebito insegna a scavalcare il
+passo — e qui insegnava a riscrivere la voce in un altro modo, che è peggio.
+
 | finding | gravità | perché |
 |---|---|---|
 | una voce dichiara di bloccare il deploy e il runbook **non la nomina** | `block` | è la voce stessa a dire di essere un prerequisito. Ignorarla è pubblicare contro una prescrizione scritta |
 | il runbook nomina la voce ma non dichiara come è stata chiusa o mitigata | `block` | nominare non è rispondere. La forma richiesta è una riga per numero con l'esito |
 | una voce è dichiarata chiusa nel registro **e** risposta nel runbook | — | nessun finding: è il caso normale a lavoro fatto |
+| **una voce dichiara `CHIUSO <data>` in una colonna diversa dalla terza** | `issue` | trovato dal collaudo del 2026-08-06. La chiusura si legge **solo** nella terza colonna, ed era un contratto che nessun documento dichiarava: su un registro nella forma `\| # \| Voce \| Chi \| Stato \|` — legittima e leggibile da un umano — il gate stampava «0 voci già chiuse» sopra due voci chiuse. Se una di quelle avesse dichiarato di bloccare, sarebbe stato un **rifiuto indebito su un progetto in regola**. Ora lo scarto si dichiara invece di sparire |
 | **un handoff cita un numero di debito che il registro non contiene** | `issue` | trovato dalla domanda di metà pacchetto (§8, n°3). Il registro lo scrivono le stesse mani che potrebbero volerlo alleggerire: una riga cancellata non lascia traccia in sé, ma **lascia il riferimento orfano** nell'handoff che la citava. È l'unico controllo possibile sulla completezza di un elenco che nessuno può verificare da fuori |
 
 **Questo è il passo che rende il gate del pilota rosso per i motivi giusti**, e

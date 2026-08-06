@@ -225,6 +225,38 @@ const BLOCCA_DEPLOY = [
   /il\s+deploy\b[^\n]{0,40}non\s+pu[oò]\s+partire/i,
   /prerequisit\w*\s+(?:di|per|del)\s+(?:deploy|P\.5|pubblicazione)/i,
 ];
+
+/**
+ * «**Non** blocca il deploy» non e' una dichiarazione di bloccare il deploy.
+ *
+ * Trovato dal collaudo del 2026-08-06 su un registro corretto: la voce
+ * *«Le immagini sono segnaposto. Non blocca il deploy, e' un contenuto»*
+ * veniva contata fra i bloccanti, e il runbook doveva risponderle. E' lo
+ * stesso difetto che il tribunale aveva chiuso su `CHIUSA` (rilievo VER-4,
+ * dove «NON CHIUSA» valeva chiusa): la negazione era stata gestita sul gettone
+ * di chiusura e non su quello di blocco, cioe' su una delle due meta'.
+ *
+ * Un rifiuto indebito e' il difetto peggiore di un gate perche' insegna a
+ * scavalcarlo — e qui insegnava a scriverlo in un modo diverso, che e' peggio:
+ * il giorno che una voce blocca davvero, chi legge ha gia' imparato a passare
+ * oltre.
+ *
+ * La negazione deve GOVERNARE il verbo, non stare da qualche parte nella riga:
+ * si guarda solo la coda del testo che precede il combaciamento, e si ammette
+ * al massimo un pronome in mezzo (`non lo blocca`). Cosi' «questa voce non e'
+ * chiusa **e** blocca il deploy» resta un bloccante.
+ */
+const NEGAZIONE_PRIMA = /\bnon\b(?:\s+(?:lo|la|ne|ci|piu'|più))?[\s*_`~]*$/i;
+
+function dichiaraDiBloccare(riga) {
+  const t = String(riga ?? "");
+  for (const r of BLOCCA_DEPLOY) {
+    for (const m of t.matchAll(new RegExp(r.source, r.flags.includes("g") ? r.flags : `${r.flags}g`))) {
+      if (!NEGAZIONE_PRIMA.test(t.slice(0, m.index))) return true;
+    }
+  }
+  return false;
+}
 /**
  * Il gettone di chiusura, di FORMA FISSA.
  *
@@ -290,7 +322,16 @@ export function leggiDebito(testo) {
       agente: celle[0] ?? "",
       gravita,
       chiusa: CHIUSA.test(gravita),
-      bloccaDeploy: BLOCCA_DEPLOY.some((r) => r.test(riga)),
+      // La chiusura si legge nella TERZA colonna e in nessun'altra, ed e' un
+      // contratto che nessun documento dichiarava: il collaudo del 2026-08-06
+      // ha costruito un registro con la forma `| # | Voce | Chi | Stato |` —
+      // legittima e leggibile da un umano — e il gate ha stampato «0 voci gia'
+      // chiuse» sopra due voci che si dichiaravano chiuse. Se una voce fosse
+      // stata anche bloccante, sarebbe stato un rifiuto indebito su un
+      // progetto in regola. Ora la colonna e' scritta nella reference E lo
+      // scarto si dichiara invece di sparire.
+      chiusaAltrove: !CHIUSA.test(gravita) && celle.some((c, i) => i !== 1 && CHIUSA.test(c)),
+      bloccaDeploy: dichiaraDiBloccare(riga),
       cosa: (celle[2] ?? "").replace(/\*\*/g, "").slice(0, 120),
     });
   }
@@ -320,6 +361,14 @@ export function findingsDebito({ voci = [], citati = new Set(), risposte = new M
       object: "docs/DEBITO-TECNICO.md",
       message: `${voci.nonLette} righe di tabella non lette: non si sa se contengono un bloccante`,
       hint: "«nessun bloccante» e «non ho saputo leggere la riga» non devono potersi assomigliare (DECISIONI.md §18). Il numero va in prima cella, nudo oppure come `n°27`; le pipe esterne servono",
+    });
+  }
+  for (const v of voci.filter((x) => x.chiusaAltrove)) {
+    findings.push({
+      severity: "issue",
+      object: `debito n°${v.numero}`,
+      message: "dichiara `CHIUSO <data>` in una colonna che questo passo non legge: per il gate resta APERTA",
+      hint: "il gettone di chiusura si legge nella TERZA colonna (`| n | agente | gravita'/stato | cosa | … |`), come nel registro del pilota. Altrove non viene visto, e se la voce dichiarasse anche di bloccare il deploy il gate chiederebbe una risposta a una voce gia' chiusa",
     });
   }
   const bloccanti = voci.filter((v) => v.bloccaDeploy && !v.chiusa);

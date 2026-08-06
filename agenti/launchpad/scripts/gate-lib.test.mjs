@@ -546,3 +546,46 @@ test("VER-16 · l'handoff di launchpad non si autoaccusa nel passo della catena"
   });
   assert.deepEqual(f, [], "a giudicarlo e' il passo 9, che conosce il verdetto misurato");
 });
+
+// =============== collaudo 2026-08-06: il registro letto per intero
+/**
+ * Un registro nella forma che questa casa scrive davvero: la testata del
+ * pilota (`| # | Agente | Gravità | Cosa | Perché resta | Rientro previsto |`),
+ * una voce che blocca, una che dichiara di NON bloccare, una chiusa nella
+ * colonna giusta e una chiusa nella colonna sbagliata.
+ */
+const REGISTRO_VERO = `# Debito tecnico
+
+| # | Agente | Gravità | Cosa | Perché resta | Rientro previsto |
+|---|---|---|---|---|---|
+| 1 | flow-sentinel | **alto** | Nessun tetto ai tentativi su \`/prenota\`: **blocca il deploy** finche' non e' mitigata | la difesa sta nel gateway del provider | cyber-shield |
+| 2 | vetrina-crafter | basso | Le immagini sono segnaposto. **Non blocca il deploy**, e' un contenuto | mancano le foto vere | quando arrivano |
+| 3 | schema-forge | CHIUSO 2026-08-06 | \`engines.node\` non dichiarato | — | — |
+| 4 | schema-forge | basso | Il seed non porta account | — | CHIUSO 2026-08-06 dal proprietario |
+`;
+
+test("«Non blocca il deploy» non e' una dichiarazione di bloccare il deploy", () => {
+  const voci = leggiDebito(REGISTRO_VERO);
+  const bloccanti = voci.filter((v) => v.bloccaDeploy && !v.chiusa).map((v) => v.numero);
+  assert.deepEqual(bloccanti, [1],
+    "la n°2 dichiara in lettere di NON bloccare: contarla costringe il runbook a rispondere a una voce che non chiede niente, e insegna a scavalcare il passo");
+});
+
+test("la negazione deve governare il verbo, non stare da qualche parte nella riga", () => {
+  const registro = `| # | A | G | C |\n|---|---|---|---|\n| 7 | x | alto | la voce non e' chiusa **e** blocca il deploy |\n`;
+  assert.equal(leggiDebito(registro)[0].bloccaDeploy, true,
+    "un `non` lontano dal verbo non deve disarmare la dichiarazione");
+});
+
+test("una chiusura scritta in un'altra colonna non viene letta, e il gate lo DICHIARA", () => {
+  const voci = leggiDebito(REGISTRO_VERO);
+  assert.equal(voci.find((v) => v.numero === 3).chiusa, true, "terza colonna: e' li' che si legge");
+  assert.equal(voci.find((v) => v.numero === 4).chiusa, false);
+  assert.equal(voci.find((v) => v.numero === 4).chiusaAltrove, true);
+  const f = findingsDebito({ voci, runbookEsiste: true, risposte: new Map([[1, "mitigata: tetto per IP sul gateway"]]) });
+  const issue = f.filter((x) => x.severity === "issue");
+  assert.equal(issue.length, 1);
+  assert.match(issue[0].message, /colonna che questo passo non legge/);
+  assert.equal(f.filter((x) => x.severity === "block").length, 0,
+    "il registro e' corretto: nessun bloccante senza risposta");
+});
