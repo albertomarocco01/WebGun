@@ -167,11 +167,32 @@ describe("il perimetro — la Legge n°1, resa falsificabile", () => {
   const perimetro = (righe, stati = STATI_VERDI) =>
     findingsPerimetro({ tabella: leggiCertificato(CERT(righe)).voci, leggiFile: leggiFinto, statiPassi: stati });
 
-  it("una tabella completa e coerente produce solo la voce scoperta", () => {
+  // Collaudo P2: le voci scoperte NON sono una. Sette deleghe su nove sono
+  // state misurate vuote leggendo il gate del vicino invece della sua prosa —
+  // fra queste la favicon, che e' la voce da cui questa skill e' nata.
+  const SCOPERTE_ATTESE = ["contrasti", "sitemap", "robots", "open-graph", "favicon", "dati-strutturati", "accessibilita-admin", "antispam"];
+
+  it("una tabella completa e coerente produce SOLO le voci scoperte, e sono otto", () => {
     const f = perimetro(RIGHE_BUONE);
     assert.deepEqual(blocchi(f), []);
-    assert.deepEqual(f.map((x) => x.object), ["antispam"]);
-    assert.match(f[0].message, /SCOPERTA/);
+    assert.deepEqual(f.map((x) => x.object).sort(), [...SCOPERTE_ATTESE].sort());
+    assert.match(f.find((x) => x.object === "antispam").message, /SCOPERTA/);
+  });
+
+  it("una delega che il gate del vicino non guarda e' un rilievo, e nomina la misura", () => {
+    const f = perimetro(RIGHE_BUONE);
+    const fav = f.find((x) => x.object === "favicon");
+    assert.equal(fav.severity, "issue");
+    assert.match(fav.message, /il suo GATE non la guarda/);
+    assert.match(fav.message, /0 occorrenze di `favicon`/);
+    assert.match(fav.message, /nominare non e' misurare/);
+  });
+
+  it("le due deleghe che REGGONO non producono nessun rilievo", () => {
+    const f = perimetro(RIGHE_BUONE);
+    for (const id of ["canonical", "noindex-private"]) {
+      assert.equal(f.find((x) => x.object === id), undefined, `${id} e' misurata davvero dal gate di speed-demon: non deve comparire`);
+    }
   });
 
   it("IL DIFETTO: una voce con due proprietari e' una voce di nessuno", () => {
@@ -320,7 +341,11 @@ describe("il modello del certificato e il parser sono la stessa cosa", () => {
       statiPassi: stati,
     });
     assert.deepEqual(blocchi(f), [], "il modello della casa non deve produrre bloccanti sul gate della casa");
-    assert.deepEqual(f.map((x) => x.object), ["antispam"]);
+    assert.deepEqual(
+      f.map((x) => x.object).sort(),
+      VOCI.filter((v) => v.id === "antispam" || v.scoperta).map((v) => v.id).sort(),
+      "il modello deve produrre esattamente le voci che una misura ha dichiarato scoperte, e nient'altro",
+    );
   });
 
   it("il modello dell'handoff porta una riga `Gate:` che il gate riconosce", () => {

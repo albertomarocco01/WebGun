@@ -51,7 +51,7 @@ un'affermazione che qualcun altro ha scritto e può sbagliare o mentire.
 | passo | misura | legge | cosa resta indimostrato |
 |---|---|---|---|
 | `radice-pulita` | albero git pulito, HEAD, scarto col remoto | — | che l'albero sia ancora pulito **al momento del deploy** — lo ricontrolla `pubblica`. E **l'età dell'artefatto non si misura**: era promessa qui e non implementata (rilievo VER-14 del tribunale), e l'`mtime` non sopravvive a una copia della cartella — produrrebbe falsi rossi. Chi costruisce con l'albero sporco e poi lo pulisce ha un `.next/` che nessun commit contiene, e questo gate non lo vede |
-| `catena-gate` | **freschezza**: ogni handoff è più giovane dell'ultimo commit che tocca il codice che certifica | il verdetto `Gate: VERDE` scritto in ogni handoff | che quel verde fosse vero. Il gate **non rilancia** i gate a monte: vedi §6 |
+| `catena-gate` | **freschezza**: ogni handoff è più giovane dell'ultimo commit che tocca il codice che certifica (§3.2 dice quali percorsi contano, e quale commit è **esente**) | il verdetto `Gate: VERDE` scritto in ogni handoff | che quel verde fosse vero. Il gate **non rilancia** i gate a monte: vedi §6 |
 | `debito-bloccante` | quali voci del registro dichiarano di bloccare il deploy, e quali di esse il runbook risponde per numero | il testo del registro | che le voci siano tutte quelle vere. Un bloccante che nessuno ha scritto non esiste per questo passo |
 | `segreti` | contenuto di **ogni file tracciato** e della **storia git**, per otto famiglie di segreto | — | i segreti in forme che le otto famiglie non coprono (§5) |
 | `ambiente` | le variabili che il codice **spedito** legge davvero (`process.env.X` sotto le radici dichiarate), confrontate con quelle dichiarate; nessun valore locale come valore di produzione | quali radici finiscono nel pacchetto | che i valori dichiarati siano **giusti**. Il gate sa che `NEXT_PUBLIC_SITO_URL` non è `127.0.0.1`; non sa se è il dominio del cliente |
@@ -133,6 +133,29 @@ faceva parte di questo progetto.
 Il contrario **non** vale e non si controlla: un handoff senza contratto è un
 agente che ha lavorato senza far firmare niente, ed è un difetto suo, non un
 bloccante del deploy.
+
+**Quali percorsi contano come «codice», e l'unico commit esente.** La scadenza
+di un certificato si misura sull'ultimo commit che tocca
+
+```
+src/ · supabase/ · package.json · next.config.ts · next.config.mjs · next.config.js
+```
+
+e **non** su `public/`, `middleware.ts` fuori da `src/`, `tsconfig.json` o le
+configurazioni di Tailwind e PostCSS: è un elenco, non un principio, e chi
+cambia solo quelli non fa scadere niente. Dichiarato qui perché si veda.
+
+Un solo commit è **esente**, e l'esenzione è misurata riga per riga sul diff,
+non dedotta da chi ha committato: quello che porta **soltanto** il frammento
+`generateBuildId` che questa skill scrive in `next.config.*`. Senza l'esenzione
+il gate ha un **rosso strutturale contro sé stesso** — misurato dal collaudo del
+2026-08-06 su un banco corretto in tutto il resto: il Flusso prescrive
+`impronta` (passo 5) *dopo* che gli agenti a monte hanno depositato i loro
+handoff, quindi il commit di launchpad diventa il più recente che tocca il
+codice e fa scadere **tutti e quattro** i certificati, che nessuno dei quattro
+agenti può rinnovare — dovrebbero ridatare un certificato su una modifica che
+non hanno mai visto. Una riga in più in quel commit e la freschezza torna a
+scattare. Il passo **stampa** quanti commit ha saltato e quali.
 
 **Il gate non rilancia i gate a monte, ed è una scelta, non una dimenticanza:**
 vedi §6.

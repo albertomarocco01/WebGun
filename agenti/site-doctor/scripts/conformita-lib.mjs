@@ -24,6 +24,46 @@ import { perRegexp } from "./servito-lib.mjs";
  * di qualcun altro (o di nessuno), e allora il certificato deve dire chi, e
  * dove l'ha scritto. `re` = come si riconosce la voce nel documento citato.
  */
+/**
+ * Le deleghe che una misura ha dimostrato **vuote**, e la misura accanto.
+ *
+ * La Legge n°2 dice «dove un vicino MISURA, non rimisuro: verifico dichiarato».
+ * Il passo `perimetro` sa provare che il file citato **esiste** e **nomina** la
+ * voce — e questo era tutto, perche' «il vicino la guarda davvero?» sembrava
+ * comprensione di un testo. Non lo e': si legge il **suo gate**, che e' codice.
+ *
+ * Collaudo P2, 2026-08-06, `grep` sui gate dei vicini incollato nel verbale.
+ * Sette deleghe su nove non reggono, e una di esse **e' la voce del difetto da
+ * cui questa skill e' nata**: la favicon del pilota e' stata un `404` per tre
+ * anelli perche' due documenti dicevano che se ne occupava qualcun altro, e
+ * site-doctor la delegava a un gate in cui la parola «favicon» non compare.
+ *
+ * Il rilievo e' `issue` e non `block` per la §8: un `block` qui sarebbe rosso
+ * su OGNI progetto della casa per una cosa che non e' del progetto ma della
+ * catena, e un rosso strutturale e' un rosso che si impara a scavalcare. Resta
+ * **visibile a ogni esecuzione**, che e' lo stesso trattamento di `scoperto` —
+ * perche' e' quello che e': una voce scoperta che si crede coperta.
+ *
+ * Si toglie una riga da qui il giorno in cui il vicino aggiunge il passo, e la
+ * si toglie **rilanciando il `grep`**, non fidandosi di un handoff.
+ */
+const SCOPERTE = Object.freeze({
+  contrasti:
+    "misurato il 2026-08-06: la parola «contrast» non compare in NESSUN file di `agenti/speed-demon/` (grep, 0 file). Il suo gate esegue Lighthouse con la categoria `accessibility`, che contiene l'audit `color-contrast`, ma legge solo il PUNTEGGIO della categoria (0 occorrenze di `audits` nei suoi script): il singolo audit non lo apre mai, la soglia sta in `docs/performance.md` del progetto e non ha un pavimento, e una deroga porta il rilievo da `block` a `warn`",
+  sitemap:
+    "misurato il 2026-08-06: 0 occorrenze di `sitemap` in `agenti/speed-demon/scripts/verify.mjs` e `gate-lib.mjs`. La scrive e non la rilegge nessun passo — lo dichiara il suo stesso `STATO.md`",
+  robots:
+    "misurato il 2026-08-06: le occorrenze di `robots` nel gate di speed-demon sono tutte `<meta name=\"robots\">`, cioe' la voce `noindex-private`. Il file `robots.txt` non viene richiesto da nessun passo",
+  "open-graph":
+    "misurato il 2026-08-06: 0 occorrenze di `og:` nel gate di speed-demon. Nessun passo guarda l'Open Graph, ed e' meta' della voce che il 2026-08-06 risultava assegnata a DUE agenti insieme",
+  favicon:
+    "misurato il 2026-08-06: 0 occorrenze di `favicon` nel gate di speed-demon. E' LA VOCE DEL DIFETTO: la favicon del pilota e' stata un `404` su ogni pagina per tre anelli, e questa skill nasce da li'",
+  "dati-strutturati":
+    "misurato il 2026-08-06: 0 occorrenze di `application/ld` nel gate di speed-demon. Nessun passo guarda i dati strutturati",
+  "accessibilita-admin":
+    "misurato il 2026-08-06: il passo `a11y` di gestionale-crafter lancia `eslint-plugin-jsx-a11y` sui SORGENTI (`verify.mjs:326-347`), non sull'HTML servito delle rotte protette. In questa casa e' gia' misurato che il sorgente mente, ed e' il motivo per cui l'accessibilita' del sito pubblico e' mia: qui la stessa ragione vale e la delega resta",
+});
+
 export const VOCI = Object.freeze([
   { id: "informativa-privacy", nome: "informativa privacy", mio: "informativa-privacy", re: /informativ|privacy/i },
   { id: "basi-giuridiche", nome: "basi giuridiche dei dati raccolti dai moduli pubblici", mio: "dati-raccolti", re: /base giuridica|basi giuridiche|dati raccolti|art\.?\s*6/i },
@@ -31,15 +71,15 @@ export const VOCI = Object.freeze([
   { id: "consenso", nome: "banner di consenso", mio: "archiviazione-client", re: /consenso|banner/i },
   { id: "accessibilita-pubblico", nome: "accessibilita del sito pubblico", mio: "accessibilita-servita", re: /accessibilit|a11y/i },
   { id: "lingua-hreflang", nome: "lingua dichiarata e hreflang", mio: "lingua-e-hreflang", re: /hreflang|lingua|multilingua/i },
-  { id: "contrasti", nome: "contrasti di colore", mio: null, re: /contrast/i },
+  { id: "contrasti", nome: "contrasti di colore", mio: null, re: /contrast/i, scoperta: SCOPERTE.contrasti },
   { id: "canonical", nome: "canonical", mio: null, re: /canonical/i },
-  { id: "sitemap", nome: "sitemap.xml", mio: null, re: /sitemap/i },
-  { id: "robots", nome: "robots.txt", mio: null, re: /robots/i },
+  { id: "sitemap", nome: "sitemap.xml", mio: null, re: /sitemap/i, scoperta: SCOPERTE.sitemap },
+  { id: "robots", nome: "robots.txt", mio: null, re: /robots/i, scoperta: SCOPERTE.robots },
   { id: "noindex-private", nome: "noindex sulle pagine private", mio: null, re: /noindex/i },
-  { id: "open-graph", nome: "Open Graph", mio: null, re: /open ?graph|og:(title|image|url)|anteprim/i },
-  { id: "favicon", nome: "favicon", mio: null, re: /favicon|icona del sito|rel="icon"|icon\.svg/i },
-  { id: "dati-strutturati", nome: "dati strutturati", mio: null, re: /dati strutturati|json-?ld|schema\.org/i },
-  { id: "accessibilita-admin", nome: "accessibilita dell'area amministrativa", mio: null, re: /accessibilit|a11y/i },
+  { id: "open-graph", nome: "Open Graph", mio: null, re: /open ?graph|og:(title|image|url)|anteprim/i, scoperta: SCOPERTE["open-graph"] },
+  { id: "favicon", nome: "favicon", mio: null, re: /favicon|icona del sito|rel="icon"|icon\.svg/i, scoperta: SCOPERTE.favicon },
+  { id: "dati-strutturati", nome: "dati strutturati", mio: null, re: /dati strutturati|json-?ld|schema\.org/i, scoperta: SCOPERTE["dati-strutturati"] },
+  { id: "accessibilita-admin", nome: "accessibilita dell'area amministrativa", mio: null, re: /accessibilit|a11y/i, scoperta: SCOPERTE["accessibilita-admin"] },
   { id: "antispam", nome: "antispam e limiti di frequenza sui moduli pubblici", mio: null, re: /antispam|spam|rate.?limit|limiti di frequenza|abusi/i },
 ]);
 
@@ -329,6 +369,17 @@ export function findingsPerimetro({ tabella, leggiFile, statiPassi }) {
         severity: "block",
         object: voce.id,
         message: `delegata a ${proprietario} citando \`${riga.dove}\`, che esiste e non nomina mai questa voce`,
+      });
+      continue;
+    }
+    // Il file citato esiste e la nomina: fin qui la delega e' in regola. Ma
+    // «nominata in un documento» e «guardata da un gate» sono due cose, e la
+    // seconda si legge nel codice del vicino invece che nella sua prosa.
+    if (voce.scoperta) {
+      findings.push({
+        severity: "issue",
+        object: voce.id,
+        message: `delegata a ${proprietario}, e il suo GATE non la guarda: ${voce.scoperta}. Il documento citato la nomina — nominare non e' misurare, ed e' la forma esatta del difetto della favicon. Finche' resta cosi' questa voce e' SCOPERTA e va letta come tale`,
       });
     }
   }

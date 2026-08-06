@@ -127,6 +127,37 @@ export const CONTRATTI = Object.freeze([
  */
 const MIO = /(^|-)launchpad$/i;
 
+/**
+ * Le righe aggiunte da un commit sono SOLO il rimedio che questa skill scrive?
+ *
+ * Trovato dal collaudo del 2026-08-06, ed e' un ROSSO STRUTTURALE — la cosa che
+ * la §19 vieta. Il flusso di questa skill prescrive `impronta` (passo 5) PRIMA
+ * di `handoff` (passo 7) e di `verify` (passo 8): quindi launchpad scrive
+ * `generateBuildId` in `next.config.ts`, quel commit e' il piu' recente che
+ * tocca il codice spedito, e da quel momento **tutti** gli handoff a monte
+ * risultano «piu' vecchi del codice che certificano». Misurato su un banco
+ * corretto in tutto il resto: quattro `block` su quattro handoff, e nessuno dei
+ * quattro agenti poteva farci niente — l'unico rimedio sarebbe stato ridatare
+ * un certificato su una modifica che quell'agente non ha mai visto.
+ *
+ * L'esenzione e' STRETTA e misurata riga per riga, non dedotta dall'autore del
+ * commit: il commit deve toccare **soltanto** un `next.config.*`, deve
+ * introdurre `generateBuildId`, e **ogni** riga aggiunta deve appartenere al
+ * frammento che questa skill genera. Una virgola in piu' in quel file, e la
+ * freschezza torna a scattare.
+ */
+export function eSoloFrammentoImpronta(aggiunte, frammento) {
+  const ammesse = new Set([
+    ...String(frammento ?? "").split("\n").map((r) => r.trim()),
+    "generateBuildId: improntaDalCommit,",
+  ]);
+  ammesse.delete("");
+  const vere = (aggiunte ?? []).map((r) => r.trim()).filter(Boolean);
+  if (vere.length === 0) return false;
+  if (!vere.some((r) => /generateBuildId/.test(r))) return false;
+  return vere.every((r) => ammesse.has(r));
+}
+
 export function findingsCatena({ handoff = [], proveTrovate = [], ultimoCommitCodice = null } = {}) {
   const findings = [];
   for (const h of handoff.filter((x) => !MIO.test(x.agente))) {

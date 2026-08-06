@@ -53,8 +53,46 @@ rifarla **peggio**.
 | Esito | Quando | Cosa scrive il certificato | Cosa fa il gate |
 |---|---|---|---|
 | **mia** | nessun vicino la misura, e io ho un passo che la copre | `site-doctor` nella colonna proprietario | confronta l'esito dichiarato con lo stato del **passo di questa esecuzione**: se divergono, `block` |
-| **delegata** | un vicino la misura già | il nome del vicino **e il file** dove l'ha dichiarato | verifica che il file esista e **nomini** la voce; altrimenti `block` |
+| **delegata** | un vicino la misura già | il nome del vicino **e il file** dove l'ha dichiarato | verifica che il file esista e **nomini** la voce; altrimenti `block`. E se la delega è fra quelle che una misura ha trovato **vuote** (`SCOPERTE`), `issue` |
 | **scoperta** | nessuno la guarda | `—` in entrambe le colonne | `issue` a ogni esecuzione: resta visibile |
+
+## La delega vuota: nominare non è misurare
+
+**Trovata dal collaudo P2, il 2026-08-06, e vale il collaudo.** Il passo
+`perimetro` provava che il file citato **esiste** e **nomina** la voce, e
+`SKILL.md` dichiarava che verificare se il vicino avesse fatto il suo lavoro
+sarebbe stata «comprensione di un testo». **Non lo è**: la domanda non è cosa
+dice l'handoff del vicino, è cosa fa il suo **gate**, e un gate è codice.
+
+Misurate le nove deleghe con un `grep` sui gate dei vicini, **sette non
+reggevano**:
+
+| voce | delegata a | il suo gate la misura? |
+|---|---|---|
+| `canonical` | speed-demon | **sì** — passo `seo-meta`, sull'HTML servito |
+| `noindex-private` | speed-demon | **sì** — stesso passo |
+| `contrasti` | speed-demon | **no**: «contrast» non compare in nessun file della sua skill. Legge il **punteggio** della categoria `accessibility`, mai il singolo audit |
+| `sitemap` | speed-demon | **no**: 0 occorrenze nel suo gate |
+| `robots` | speed-demon | **no**: le occorrenze sono `<meta name="robots">`, cioè `noindex-private` |
+| `open-graph` | speed-demon | **no**: 0 occorrenze di `og:` |
+| `favicon` | speed-demon | **no**: 0 occorrenze — ed **è la voce del difetto** |
+| `dati-strutturati` | speed-demon | **no**: 0 occorrenze di `application/ld` |
+| `accessibilita-admin` | gestionale-crafter | **parziale**: `jsx-a11y` sui **sorgenti**, non sull'HTML servito |
+
+La favicon del pilota è stata un `404` su ogni pagina per tre anelli perché due
+documenti dicevano che se ne occupava qualcun altro. Questa skill nasce da lì —
+e delegava la favicon a un gate in cui la parola «favicon» non compare. **Il
+difetto non era stato corretto: era stato spostato di un livello.**
+
+Le sette stanno in `SCOPERTE` (`scripts/conformita-lib.mjs`) **con accanto la
+misura che le ha trovate**, e il passo le segnala `issue` a ogni esecuzione. Il
+rilievo è `issue` e non `block` per la `DECISIONI.md` §8: un `block` sarebbe
+rosso su ogni progetto della casa per una cosa che non è del progetto ma della
+catena, e un rosso strutturale è un rosso che si impara a scavalcare.
+
+**Una riga si toglie da `SCOPERTE` rilanciando il `grep`**, non leggendo un
+handoff. È la stessa regola per cui il gate legge l'HTML servito e non il
+sorgente.
 
 **Non esiste «da valutare».** Una voce che non si sa dove mettere è una voce
 scoperta finché qualcuno non decide, e va scritta scoperta.
