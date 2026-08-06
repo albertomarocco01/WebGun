@@ -51,7 +51,8 @@ La tabella completa — cosa resta indimostrato passo per passo — è in
 | **P0b** — la sosta di metà pacchetto | rilettura della progettazione con una domanda sola: *quale passo potrebbe essere verde su un deploy che non si deve fare?* | **fatta** — sei risposte, tutte diventate regole (§8 della reference). Una era un difetto che sarebbe stato spedito |
 | **P1** — costruzione | `verify.mjs` + tre librerie pure + due gusci; 105 test; 4 reference; 2 template | **fatta** — 2026-08-06 |
 | **P1b** — sabotaggio | un difetto per classe, e il rosso misurato | **fatta** — gemello pulito VERDE 9/9, **36 classi, 36 rosse, 0 non prese** |
-| **P2** — collaudo avversario, in chat vergine | il gate è il contratto sotto esame; il verbale di costruzione è un'affermazione da verificare | **da fare** |
+| **P1c** — tribunale (`/code-inquisition`, council di 3) | tre periti in isolamento, modelli diversi, posture avversarie distinte | **fatto** — **32 rilievi, 32 chiusi**, ognuno col suo test di regressione. Il più grave: il rimedio che questa skill prescrive **rompeva la build del cliente** su un `next.config.mjs` |
+| **P2** — collaudo avversario, in chat vergine | il gate è il contratto sotto esame; il verbale di costruzione è un'affermazione da verificare | **da fare** — e un tribunale non lo sostituisce: quello ha guardato il codice, un collaudo avversario guarda **le affermazioni** |
 | **P3** — il primo deploy vero | **lo autorizza Alberto di persona.** È l'unica cosa che questa skill non ha potuto provare, ed è il suo mestiere | **da fare** |
 
 ## Cosa un gate verde NON prova
