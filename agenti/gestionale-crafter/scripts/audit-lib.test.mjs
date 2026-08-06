@@ -5,6 +5,8 @@ import {
   auditAdmin,
   catalogoDaRighe,
   chiamaUnaDi,
+  stringheOscurate,
+  dentroGraffe,
   chiaviOggetto,
   conBarre,
   esportazioniNonLette,
@@ -792,6 +794,69 @@ describe("puoScrivere con nomi che vengono dal cliente", () => {
   it("`constructor`, `__proto__` e `toString` non sono tabelle", () => {
     for (const nome of ["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"]) {
       assert.equal(puoScrivere(catalogo, nome, "x", "update"), null, nome);
+    }
+  });
+});
+
+// ── il delimitatore dentro la stringa, ultima presa (difetto n°52) ───────────
+// Quattro scanner della stessa skill contavano graffe e cercavano `.from(`
+// dentro le stringhe del progetto auditato. Trovati con una batteria di sonde
+// ostili sull'intero inventario degli scanner scritti a mano, il 2026-08-06.
+
+describe("n°52: graffe e chiamate dentro le stringhe", () => {
+  it("dentroGraffe non si ferma a una `{` scritta in una stringa", () => {
+    assert.equal(dentroGraffe('x = { a: "{" }; y', 4), '{ a: "{" }');
+  });
+
+  it("il corpo di una funzione non si taglia a una `}` scritta in una stringa", () => {
+    const testo = 'export async function salva(){ const s = "}"; await scrivi(); }\nexport function altra(){ boom(); }';
+    assert.ok(corpoFunzione(testo, "salva").includes("scrivi()"));
+    assert.ok(!corpoFunzione(testo, "salva").includes("boom()"));
+  });
+
+  it("e non SCONFINA nella funzione seguente per una `{` in una stringa", () => {
+    // Il verso peggiore: il corpo prendeva in prestito la guardia della
+    // funzione dopo, e l'azione scoperta risultava protetta.
+    const testo = `"use server";
+export async function salvaOrdine(dati){ const nota = "apri con {"; await scrivi(dati); }
+export async function altra(){ await richiediStaff(); }`;
+    const { findings } = regolaAzioniServer(
+      [f("src/modules/ordini/azioni.ts", testo)],
+      { ...CONFIG, guardie: ["richiediStaff"] },
+    );
+    assert.equal(findings.length, 1, "prima erano zero: la guardia era di un'altra funzione");
+    assert.match(findings[0].object, /salvaOrdine$/);
+  });
+
+  it("una colonna dopo una `}` in una stringa non sparisce dal payload", () => {
+    assert.deepEqual(chiaviOggetto('{ nome: "x", nota: "}", ruolo: "admin" }'), ["nome", "nota", "ruolo"]);
+  });
+
+  it("e la colonna che il database non concede resta un block", () => {
+    const catalogo = catalogoDaRighe(
+      [["profili", "authenticated=arwd/postgres"]],
+      [["profili", "nome", "authenticated=w/postgres"]],
+    );
+    const modulo = 'await supabase.from("profili").update({ nome: "x", nota: "}", ruolo: "admin" });';
+    const { findings } = regolaScritture([f("src/modules/x.ts", modulo)], catalogo);
+    assert.ok(findings.some((x) => x.object.includes("ruolo")), "prima `ruolo` non veniva nemmeno letta");
+  });
+
+  it("un `.insert(` NOMINATO dentro una stringa non e' una scrittura", () => {
+    assert.deepEqual(scrittureNelCodice('const msg = "usa .insert( per scrivere";'), []);
+  });
+
+  it("un `.from(\"finta\")` dentro una stringa non attribuisce la scrittura", () => {
+    assert.equal(tabellaPrimaDi('const s = "supabase.from(\'finta\')"; poi();', 45), null);
+  });
+
+  it("una chiave virgolettata resta una chiave", () => {
+    assert.deepEqual(chiaviOggetto('{ "nome": 1, \'cognome\': 2 }'), ["nome", "cognome"]);
+  });
+
+  it("stringheOscurate conserva la lunghezza, sempre", () => {
+    for (const testo of ['a "bc" d', "a 'b\\' c", "`t${x}`", 'rotta "non chiusa', "a \\\\"]) {
+      assert.equal(stringheOscurate(testo).length, testo.length, JSON.stringify(testo));
     }
   });
 });

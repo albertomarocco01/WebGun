@@ -349,21 +349,24 @@ export function esportazioniNonLette(testo, nomiLetti) {
  *  non ha graffe: `=> await scrivi()` finisce col punto e virgola. */
 export function corpoFunzione(testo, nome) {
   const codice = senzaCommenti(testo);
+  // Ogni ricerca di POSIZIONE si fa sul testo mascherato: una graffa, un `=` o
+  // un `;` dentro una stringa non sono struttura (difetto n°52).
+  const struttura = stringheOscurate(codice);
   const dichiarata = new RegExp(
     `export\\s+(?:async\\s+)?function\\s+${perRegExp(nome)}\\b`,
-  ).exec(codice);
+  ).exec(struttura);
   if (dichiarata) {
-    const apertura = codice.indexOf("{", dichiarata.index);
+    const apertura = struttura.indexOf("{", dichiarata.index);
     return apertura === -1 ? "" : dentroGraffe(codice, apertura);
   }
   const costante = new RegExp(
     `export\\s+(?:const|let|var)\\s+${perRegExp(nome)}\\b`,
-  ).exec(codice);
+  ).exec(struttura);
   if (!costante) return "";
-  const uguale = codice.indexOf("=", costante.index);
+  const uguale = struttura.indexOf("=", costante.index);
   if (uguale === -1) return "";
-  const graffa = codice.indexOf("{", uguale);
-  const puntoEVirgola = codice.indexOf(";", uguale);
+  const graffa = struttura.indexOf("{", uguale);
+  const puntoEVirgola = struttura.indexOf(";", uguale);
   // corpo a graffe se la graffa arriva PRIMA della fine dell'istruzione;
   // altrimenti e' una freccia concisa, e il corpo e' cio' che resta fino al `;`
   if (graffa !== -1 && (puntoEVirgola === -1 || graffa < puntoEVirgola)) {
@@ -372,12 +375,64 @@ export function corpoFunzione(testo, nome) {
   return codice.slice(uguale, puntoEVirgola === -1 ? codice.length : puntoEVirgola);
 }
 
-/** Dal `{` alla sua graffa di chiusura, contando i livelli. */
+/**
+ * LE STRINGHE, OSCURATE MA DELLA STESSA LUNGHEZZA.
+ *
+ * `senzaStringhe` svuota e ACCORCIA: serve a chiedere «c'e' una chiamata?», non
+ * a dire dove si trova qualcosa. Questa conserva ogni posizione, cosi' un indice
+ * trovato sul testo mascherato vale sul testo vero. E' la differenza fra
+ * spegnere le stringhe e sapere dove sono.
+ *
+ * Nasce dal difetto n°52 (2026-08-06), l'ultima presa dell'audit degli scanner
+ * scritti a mano di questo pacchetto: `dentroGraffe`, `corpoFunzione`,
+ * `chiaviOggetto` e `tabellaPrimaDi` contavano graffe e cercavano `.from(`
+ * dentro le stringhe del progetto auditato.
+ */
+export function stringheOscurate(codice) {
+  const sorgente = String(codice ?? "");
+  let fuori = "";
+  let delimitatore = null;
+  let i = 0;
+
+  while (i < sorgente.length) {
+    const c = sorgente[i];
+    if (delimitatore !== null) {
+      // due caratteri consumati, due emessi: la lunghezza non cambia mai
+      if (c === "\\" && i + 1 < sorgente.length) { fuori += "\0\0"; i += 2; continue; }
+      if (c === delimitatore) { delimitatore = null; fuori += c; i += 1; continue; }
+      if (c === "\n" && delimitatore !== "`") { delimitatore = null; fuori += c; i += 1; continue; }
+      fuori += "\0";
+      i += 1;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") { delimitatore = c; fuori += c; i += 1; continue; }
+    fuori += c;
+    i += 1;
+  }
+
+  return fuori;
+}
+
+/**
+ * Dal `{` alla sua graffa di chiusura, contando i livelli — E SOLO LE GRAFFE
+ * VERE (difetto n°52, misurato il 2026-08-06).
+ *
+ *   export async function salva(){ const s = "}"; await scrivi(); }
+ *   export function altra(){ boom(); }
+ *
+ *   PRIMA  il corpo di `salva` si fermava alla graffa DENTRO la stringa e non
+ *          conteneva piu' `scrivi()`. Con un `"{"` al posto del `"}"` succedeva
+ *          il contrario: il corpo SCONFINAVA nella funzione seguente e prendeva
+ *          in prestito la sua guardia — cioe' un verde falso sulla regola delle
+ *          azioni server, quella che pretende `richiediStaff()`.
+ *   DOPO   il corpo e' quello, in tutti e due i casi.
+ */
 export function dentroGraffe(testo, indiceApertura) {
+  const struttura = stringheOscurate(testo);
   let livello = 0;
-  for (let i = indiceApertura; i < testo.length; i++) {
-    if (testo[i] === "{") livello += 1;
-    else if (testo[i] === "}") {
+  for (let i = indiceApertura; i < struttura.length; i++) {
+    if (struttura[i] === "{") livello += 1;
+    else if (struttura[i] === "}") {
       livello -= 1;
       if (livello === 0) return testo.slice(indiceApertura, i + 1);
     }
@@ -559,14 +614,17 @@ const SCRITTURE = /\.(insert|update|upsert)\s*\(/g;
 
 export function scrittureNelCodice(testo) {
   const codice = senzaCommenti(testo);
+  // La scrittura si cerca sulla STRUTTURA: un `.insert(` scritto dentro il
+  // messaggio di un errore non e' una scrittura (difetto n°52).
+  const struttura = stringheOscurate(codice);
   const trovate = [];
 
   SCRITTURE.lastIndex = 0;
   let m;
-  while ((m = SCRITTURE.exec(codice)) !== null) {
+  while ((m = SCRITTURE.exec(struttura)) !== null) {
     const tabella = tabellaPrimaDi(codice, m.index);
     if (!tabella) continue;
-    const graffa = codice.indexOf("{", m.index);
+    const graffa = struttura.indexOf("{", m.index);
     if (graffa === -1) continue;
     trovate.push({
       tabella,
@@ -581,22 +639,56 @@ export function scrittureNelCodice(testo) {
 /** L'ultima `.from("x")` che precede la scrittura: nella forma generata la
  *  catena e' una sola espressione, quindi la piu' vicina e' la sua. */
 export function tabellaPrimaDi(codice, indice) {
-  const prima = codice.slice(0, indice);
-  const trovate = [...prima.matchAll(/\.from\s*\(\s*["'`]([A-Za-z0-9_]+)["'`]\s*\)/g)];
-  return trovate.length === 0 ? null : trovate[trovate.length - 1][1];
+  // Il `.from(` si cerca sulla STRUTTURA — dentro una stringa non e' una
+  // chiamata — ma il NOME della tabella sta dentro una stringa, quindi si legge
+  // dal testo vero, alla stessa posizione. E' esattamente per questo che la
+  // maschera conserva la lunghezza (difetto n°52).
+  const struttura = stringheOscurate(codice).slice(0, indice);
+  const trovate = [...struttura.matchAll(/\.from\s*\(\s*(["'`])/g)];
+  if (trovate.length === 0) return null;
+  const ultima = trovate[trovate.length - 1];
+  const nome = /^([A-Za-z0-9_]+)["'`]\s*\)/.exec(codice.slice(ultima.index + ultima[0].length));
+  return nome ? nome[1] : null;
 }
 
-/** Le chiavi di primo livello di un oggetto letterale. */
+/**
+ * Le chiavi di primo livello di un oggetto letterale.
+ *
+ * Una chiave si legge dove una chiave puo' stare — subito dopo la graffa che
+ * apre o dopo una virgola — e mai dentro una stringa. Prima era una regexp sola
+ * che contava graffe ovunque: `{ a: 1, nota: "}", b: 2 }` perdeva `b`, cioe' una
+ * colonna scritta dal modulo spariva dal confronto coi permessi del database.
+ * Un verde falso sulla regola delle scritture (difetto n°52).
+ */
+const CHIAVE_DI_OGGETTO = /^(?:"([A-Za-z_$][\w$]*)"|'([A-Za-z_$][\w$]*)'|([A-Za-z_$][\w$]*))\s*:/;
+
 export function chiaviOggetto(testo) {
+  const sorgente = String(testo ?? "");
+  const struttura = stringheOscurate(sorgente);
   const chiavi = [];
   let livello = 0;
-  const re = /[{}]|(^|[,{\s])["']?([A-Za-z_$][\w$]*)["']?\s*:/g;
-  let m;
-  while ((m = re.exec(testo)) !== null) {
-    if (m[0] === "{") livello += 1;
-    else if (m[0] === "}") livello -= 1;
-    else if (livello === 1 && m[2]) chiavi.push(m[2]);
+  let attesa = false; // si e' appena aperta una graffa, o si e' passata una virgola
+  let i = 0;
+
+  while (i < sorgente.length) {
+    const c = struttura[i];
+    if (c === "{") { livello += 1; attesa = true; i += 1; continue; }
+    if (c === "}") { livello -= 1; attesa = false; i += 1; continue; }
+    if (c === ",") { attesa = true; i += 1; continue; }
+    if (/\s/.test(c)) { i += 1; continue; }
+    if (livello === 1 && attesa) {
+      const chiave = CHIAVE_DI_OGGETTO.exec(sorgente.slice(i));
+      if (chiave) {
+        chiavi.push(chiave[1] ?? chiave[2] ?? chiave[3]);
+        i += chiave[0].length;
+        attesa = false;
+        continue;
+      }
+    }
+    attesa = false;
+    i += 1;
   }
+
   return [...new Set(chiavi)];
 }
 
