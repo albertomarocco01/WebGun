@@ -768,3 +768,30 @@ describe("auditAdmin", () => {
     assert.equal(esito.summary.block, 2);
   });
 });
+
+// ── L4: il catalogo dei permessi non e' un oggetto nudo ──────────────────────
+// Le chiavi sono i nomi delle TABELLE DEL CLIENTE, e su un oggetto nudo
+// `tabelle["constructor"]` risponde con una funzione ereditata da
+// `Object.prototype`: la tabella «esiste», nessun permesso, `block`. Un rosso
+// falso su una tabella che nessuno ha guardato.
+
+describe("puoScrivere con nomi che vengono dal cliente", () => {
+  const catalogo = catalogoDaRighe(
+    [["prodotti", "authenticated=arwd/postgres"]],
+    [["prodotti", "prezzo", "authenticated=w/postgres"]],
+  );
+
+  it("una tabella vera risponde come prima", () => {
+    assert.equal(puoScrivere(catalogo, "prodotti", "prezzo", "update"), true);
+  });
+
+  it("una tabella che il catalogo non conosce resta `null`, non `false`", () => {
+    assert.equal(puoScrivere(catalogo, "ordini", "totale", "update"), null);
+  });
+
+  it("`constructor`, `__proto__` e `toString` non sono tabelle", () => {
+    for (const nome of ["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"]) {
+      assert.equal(puoScrivere(catalogo, nome, "x", "update"), null, nome);
+    }
+  });
+});

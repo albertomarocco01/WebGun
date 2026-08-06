@@ -41,6 +41,7 @@ import {
   findingsCopertura,
   findingsEffettoDb,
   flussiPercorsi,
+  credenzialiPsql,
   formaEseguibile,
   mascheraUrl,
   rigaFlussiPercorsi,
@@ -400,7 +401,10 @@ function misuraDatabase(ctx) {
 function interrogaDb(dbUrl, sql) {
   // `-X`: un `~/.psqlrc` cambia la forma dell'uscita, e un'uscita vuota qui si
   // legge come «zero tabelle» invece che come «non ho letto» (referto § M1).
-  const res = run("psql", [dbUrl, "-X", "-At", "-c", sql]);
+  // La password esce dalla riga di comando e passa da `PGPASSWORD` (§ L2): la
+  // tabella dei processi la legge chiunque sia sulla macchina.
+  const credenziali = credenzialiPsql(dbUrl);
+  const res = run("psql", [credenziali.url, "-X", "-At", "-c", sql], { env: { ...process.env, ...credenziali.env, PGCONNECT_TIMEOUT: String(Math.round(LIMITI.connessione / 1000)) } });
   if (scaduto(res)) return { errore: motivoScaduto("psql", LIMITI.strumento) };
   if (res.error) return { errore: res.error.message };
   if (res.status !== 0) return { errore: (res.stderr || res.stdout || "").trim().split("\n").slice(0, 5).join(" ") };

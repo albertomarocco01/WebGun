@@ -1049,3 +1049,37 @@ test("un `data-canonical` non passa per un canonical", () => {
   const html = `<head><link data-rel="canonical" rel="stylesheet" href="/x.css"></head>`;
   assert.deepEqual(metatagDaHtml(html).canonici, []);
 });
+
+// ── L13: il confine di `misuraStabile` non lo esercitava nessuno ─────────────
+// Mutando `spread > soglia` in `>=`, 87 test su 87 passavano: i casi avevano
+// spread 38 e 2, e il confine (5) non lo toccava nessuno.
+
+test("dispersione ESATTAMENTE alla soglia: la misura e' buona", () => {
+  const m = misuraStabile([90, 93, 95], 5);
+  assert.equal(m.dispersione, 5);
+  assert.equal(m.stabile, true, "il confine e' incluso: `>` e non `>=`");
+});
+
+test("un punto oltre la soglia: la misura non e' buona", () => {
+  const m = misuraStabile([90, 93, 96], 5);
+  assert.equal(m.dispersione, 6);
+  assert.equal(m.stabile, false);
+});
+
+test("e il confine vale anche a soglia zero: tre giri identici bastano", () => {
+  assert.equal(misuraStabile([100, 100, 100], 0).stabile, true);
+  assert.equal(misuraStabile([100, 100, 99], 0).stabile, false);
+});
+
+// ── L5: `Gate: verde` minuscolo era un rosso strutturale nel solo speed-demon
+
+test("`Gate: verde` minuscolo vale `VERDE`, come nelle tre skill sorelle", () => {
+  assert.deepEqual(contrattoUscita("docs/handoff/12-speed-demon.md", "# H\n\nGate: verde\n", "VERDE"), []);
+  assert.deepEqual(contrattoUscita("docs/handoff/12-speed-demon.md", "# H\n\n**Gate:** RoSsO\n", "ROSSO"), []);
+});
+
+test("ma un verdetto davvero diverso resta un block", () => {
+  const f = contrattoUscita("docs/handoff/12-speed-demon.md", "# H\n\nGate: verde\n", "ROSSO");
+  assert.equal(f[0].severity, "block");
+  assert.match(f[0].message, /dichiara `Gate: VERDE` ma il gate chiude ROSSO/);
+});

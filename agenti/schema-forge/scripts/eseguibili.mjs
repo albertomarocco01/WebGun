@@ -278,3 +278,33 @@ export function mascheraUrl(url) {
     return testo.includes("@") ? nascosta : testo;
   }
 }
+
+/**
+ * LA PASSWORD FUORI DALLA RIGA DI COMANDO.
+ *
+ * Referto § L2: il `--db-url` viaggia come argomento di processo, e la tabella
+ * dei processi la legge chiunque sia sulla macchina. E' lo stesso segreto di
+ * § M2 — transitorio in `argv` invece che permanente in un file committato —
+ * ed e' declassato per questo, non perche' sia un altro segreto.
+ *
+ * `libpq` legge `PGPASSWORD` dall'ambiente: la URL passa a `psql` SENZA la
+ * password, e la password passa da una variabile che non compare in nessuna
+ * riga di comando. Non e' un mascheramento — e' un altro canale.
+ *
+ * Se la URL non porta password (autenticazione `trust`, `.pgpass`, socket) non
+ * cambia niente: nessuna variabile e la URL com'era.
+ */
+export function credenzialiPsql(dbUrl) {
+  const testo = String(dbUrl ?? "");
+  try {
+    const analizzata = new URL(testo);
+    if (analizzata.password === "") return { url: testo, env: {} };
+    // `decodeURIComponent`: nella URL la password e' percent-encoded, in
+    // `PGPASSWORD` deve arrivare letterale.
+    const password = decodeURIComponent(analizzata.password);
+    analizzata.password = "";
+    return { url: analizzata.href, env: { PGPASSWORD: password } };
+  } catch {
+    return { url: testo, env: {} };
+  }
+}

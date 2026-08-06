@@ -21,6 +21,7 @@ import {
   motivoOstile,
   clausoleHelperDb,
   contrattoUscita,
+  credenzialiPsql,
   copertura,
   dettaglioPlaywright,
   eSpec,
@@ -1180,4 +1181,62 @@ test("clausoleHelperDb non risale oltre la fine dell'istruzione precedente", () 
 
 test("un `from \"…helpers/db\"` senza import davanti non produce niente", () => {
   assert.deepEqual(clausoleHelperDb('const s = 1;\nexport * from "./helpers/db";'), []);
+});
+
+// ── L11: `motivato()` leggeva `//` dentro una stringa ────────────────────────
+
+test("un `//` dentro il titolo di uno skip non e' una motivazione", () => {
+  const f = regoleSpec("e2e/x.spec.ts", 'test.skip("apre https://esempio.test//home", async () => {});');
+  assert.equal(f.length, 1);
+  assert.equal(f[0].severity, "issue");
+});
+
+test("ma un commento vero, in coda o sopra, lo e' ancora", () => {
+  assert.deepEqual(regoleSpec("e2e/x.spec.ts", 'test.skip("x", async () => {}); // rientra col carrello, ROADMAP §3'), []);
+  assert.deepEqual(regoleSpec("e2e/x.spec.ts", '// rientra col carrello, ROADMAP §3\ntest.skip("x", async () => {});'), []);
+});
+
+test("un `.only` NOMINATO dentro una stringa non e' un `.only` committato", () => {
+  const spec = 'test("nota", async () => { await expect(page.getByText("test.only(")).toBeVisible(); });';
+  assert.deepEqual(regoleSpec("e2e/x.spec.ts", spec), []);
+});
+
+test("e un `.only` vero resta un block", () => {
+  const f = regoleSpec("e2e/x.spec.ts", 'test.only("x", async () => {});');
+  assert.equal(f[0].severity, "block");
+});
+
+// ── L3: la ricorsione sull'albero del report Playwright ─────────────────────
+// Profondita' 20 000 -> `RangeError: Maximum call stack size exceeded`, il
+// processo moriva senza JSON. Il report lo scrive Playwright, ma il gate legge
+// un file che sta nel progetto AUDITATO: la profondita' non e' un dato di cui
+// possa fidarsi.
+
+test("un albero profondo 20 000 non fa morire il gate", () => {
+  let radice = { title: "in fondo", specs: [{ title: "spec", tests: [{ status: "expected" }] }], suites: [] };
+  for (let i = 0; i < 20_000; i++) radice = { title: `s${i}`, specs: [], suites: [radice] };
+  const esito = esitoPlaywright({ suites: [radice] });
+  assert.equal(esito.passati, 1);
+});
+
+// ── L2: la password fuori dalla riga di comando ─────────────────────────────
+
+test("la password lascia la URL e passa da PGPASSWORD", () => {
+  const c = credenzialiPsql("postgresql://postgres:segreta@127.0.0.1:7622/postgres");
+  assert.equal(c.url, "postgresql://postgres@127.0.0.1:7622/postgres");
+  assert.deepEqual(c.env, { PGPASSWORD: "segreta" });
+});
+
+test("una password percent-encoded arriva letterale nell'ambiente", () => {
+  assert.deepEqual(credenzialiPsql("postgresql://u:p%40ss%3Aword@h:5432/d").env, { PGPASSWORD: "p@ss:word" });
+});
+
+test("senza password non cambia niente: nessuna variabile, URL com'era", () => {
+  const c = credenzialiPsql("postgresql://postgres@127.0.0.1:7622/postgres");
+  assert.equal(c.url, "postgresql://postgres@127.0.0.1:7622/postgres");
+  assert.deepEqual(c.env, {});
+});
+
+test("cio' che non e' una URL si passa com'e': non e' compito di questa funzione", () => {
+  assert.deepEqual(credenzialiPsql("dbname=postgres host=127.0.0.1"), { url: "dbname=postgres host=127.0.0.1", env: {} });
 });

@@ -612,7 +612,13 @@ export const eColonnaDiPrivilegio = (nome) => COLONNA_DI_PRIVILEGIO.test(String(
 /** Il catalogo dice, per tabella: il ruolo ha il permesso sull'intera tabella,
  *  e quali colonne ha per grant di colonna. `null` = catalogo non letto. */
 export function puoScrivere(catalogo, tabella, colonna, operazione) {
-  const t = catalogo?.tabelle?.[tabella];
+  // `Map` e non oggetto nudo (referto § L4): le chiavi qui sono i nomi delle
+  // TABELLE DEL CLIENTE, e su un oggetto nudo `catalogo.tabelle["constructor"]`
+  // risponde con una funzione ereditata da `Object.prototype`. Il guasto va
+  // verso il rosso falso — la tabella «esiste», nessun permesso, `block` — ma
+  // un rosso su una tabella che nessuno ha guardato e' un rosso che insegna a
+  // ignorare il rosso. Una `Map` non ha un prototipo da interrogare.
+  const t = catalogo?.tabelle?.get?.(tabella);
   if (!t) return null;
   const intera = operazione === "update" ? t.updateTabella : t.insertTabella;
   if (intera) return true;
@@ -702,23 +708,24 @@ export function privilegiDaAcl(aclTesto, ruolo) {
 /** Il catalogo nella forma che le regole si aspettano. `righeTabelle` e
  *  `righeColonne` arrivano gia' divise dal guscio: qui non si legge niente. */
 export function catalogoDaRighe(righeTabelle, righeColonne, ruolo = "authenticated") {
-  const tabelle = {};
+  const tabelle = new Map();
 
   for (const [nome, acl] of righeTabelle) {
     const p = privilegiDaAcl(acl, ruolo);
-    tabelle[nome] = {
+    tabelle.set(nome, {
       updateTabella: p.has("w"),
       insertTabella: p.has("a"),
       updateColonne: [],
       insertColonne: [],
-    };
+    });
   }
 
   for (const [nome, colonna, acl] of righeColonne) {
-    if (!tabelle[nome]) continue;
+    const t = tabelle.get(nome);
+    if (!t) continue;
     const p = privilegiDaAcl(acl, ruolo);
-    if (p.has("w")) tabelle[nome].updateColonne.push(colonna);
-    if (p.has("a")) tabelle[nome].insertColonne.push(colonna);
+    if (p.has("w")) t.updateColonne.push(colonna);
+    if (p.has("a")) t.insertColonne.push(colonna);
   }
 
   return { ruolo, tabelle };

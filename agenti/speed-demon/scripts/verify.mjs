@@ -458,7 +458,15 @@ const PASSI = [
 function trovaHandoff() {
   const dir = join(PROGETTO, HANDOFF_GLOB);
   if (!existsSync(dir)) return null;
-  const trovato = readdirSync(dir).filter((n) => /-speed-demon\.md$/.test(n)).sort().pop();
+  // Il numero si confronta come NUMERO (referto § L15). Il `sort()` lessicografico
+  // ordina giusto finche' la convenzione del CLAUDE.md e' rispettata
+  // (`<numero>-<nome>.md` a due cifre) e sbaglia al primo `9-speed-demon.md`:
+  // `["9-…","13-…"].sort().pop()` da' il 9. Latente, non aperto — e chiuderlo
+  // costa una riga. A parita' di numero vince l'ordine alfabetico, che e'
+  // stabile.
+  const candidati = readdirSync(dir).filter((n) => /-speed-demon\.md$/.test(n));
+  const numero = (nome) => Number(/^(\d+)/.exec(nome)?.[1] ?? -1);
+  const trovato = candidati.sort((a, b) => numero(a) - numero(b) || a.localeCompare(b)).pop();
   return trovato ? `${HANDOFF_GLOB}/${trovato}` : null;
 }
 

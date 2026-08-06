@@ -18,7 +18,7 @@ import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { auditAdmin, catalogoDaRighe, conBarre } from "./audit-lib.mjs";
-import { argomentiOstiliACmd, formaEseguibile, mascheraUrl, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
+import { argomentiOstiliACmd, credenzialiPsql, formaEseguibile, mascheraUrl, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
 import { urlDbProgetto, validaConfig } from "./progetto-lib.mjs";
 
 const SEP = "\x1f";
@@ -85,13 +85,19 @@ function risolviPsql(radiceAuditata) {
 function psqlDisponibile() {
   if (psql.file === null) return false;
   const p = spawnSync(psql.file, [...psql.prefisso, "--version"], {
-    encoding: "utf8", timeout: 15_000, killSignal: "SIGKILL",
+    // Il tetto sull'uscita si DICHIARA anche qui (referto § L9). Il default di
+    // Node e' 1 MB e una sonda `--version` non lo sfiora: ma un tetto implicito
+    // e' un tetto che nessuno ha scelto, e le due skill sorelle dichiarano 64 MB
+    // su ogni chiamata.
+    encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 15_000, killSignal: "SIGKILL",
   });
   return !p.error && p.status === 0;
 }
 
 function interroga(dbUrl, sql) {
-  const argomenti = [dbUrl, "-X", "-A", "-t", "-F", SEP, "-R", RS, "-c", sql];
+  // La password esce dalla riga di comando e passa da `PGPASSWORD` (§ L2).
+  const credenziali = credenzialiPsql(dbUrl);
+  const argomenti = [credenziali.url, "-X", "-A", "-t", "-F", SEP, "-R", RS, "-c", sql];
   // Attraverso uno shim `.cmd` si passa da `cmd.exe /c`, che E' una shell: qui
   // gli argomenti sono l'SQL intero e i separatori di campo, e ci arriverebbero
   // diversi da come sono scritti — il catalogo dei permessi risulterebbe un
@@ -111,7 +117,7 @@ function interroga(dbUrl, sql) {
       // uccide. `PGCONNECT_TIMEOUT` taglia prima il caso piu' comune (il
       // database che non c'e'); il `timeout` copre anche la query che non torna.
       timeout: LIMITE_PSQL, killSignal: "SIGKILL",
-      env: { ...process.env, PGCONNECT_TIMEOUT: String(Math.round(LIMITE_CONNESSIONE / 1000)) },
+      env: { ...process.env, ...credenziali.env, PGCONNECT_TIMEOUT: String(Math.round(LIMITE_CONNESSIONE / 1000)) },
     },
   );
   if (scaduto(res)) throw new Error(motivoScaduto("psql (catalogo dei permessi)", LIMITE_PSQL));

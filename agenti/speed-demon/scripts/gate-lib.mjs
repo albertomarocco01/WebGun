@@ -1508,7 +1508,11 @@ export function contrattoUscita(percorsoHandoff, testoHandoff, verdettoPrima) {
       },
     ];
   }
-  const dichiarato = RIGA_VERDETTO.exec(proprio);
+  // `.toUpperCase()`, come nelle tre skill sorelle (referto § L5). La regexp
+  // e' `i`, il confronto no: `Gate: verde` su un gate VERDE veniva letto e poi
+  // dichiarato diverso da «VERDE», e il gate chiudeva rosso su un handoff
+  // giusto. Un rosso strutturale insegna a ignorare il rosso.
+  const dichiarato = RIGA_VERDETTO.exec(proprio)?.[1]?.toUpperCase() ?? null;
   if (!dichiarato) {
     return [
       {
@@ -1518,12 +1522,12 @@ export function contrattoUscita(percorsoHandoff, testoHandoff, verdettoPrima) {
       },
     ];
   }
-  if (dichiarato[1] !== verdettoPrima) {
+  if (dichiarato !== verdettoPrima) {
     return [
       {
         severity: "block",
         object: percorsoHandoff,
-        message: `dichiara \`Gate: ${dichiarato[1]}\` ma il gate chiude ${verdettoPrima}: l'handoff parla di un'altra esecuzione. Riscrivilo con i residui di QUESTA`,
+        message: `dichiara \`Gate: ${dichiarato}\` ma il gate chiude ${verdettoPrima}: l'handoff parla di un'altra esecuzione. Riscrivilo con i residui di QUESTA`,
       },
     ];
   }

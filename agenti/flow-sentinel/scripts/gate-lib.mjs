@@ -269,35 +269,69 @@ const COMMENTO = /^\s*(\/\/|\*|\/\*)/;
  * Le stringhe restano: un `.only` scritto dentro un titolo di test continua a
  * produrre un rilievo, ed e' un limite dichiarato.
  */
+//
+// E SA SE E' DENTRO UNA STRINGA (referto § L11). La forma a `indexOf` non lo
+// sapeva, e `motivato()` chiedeva soltanto `linea.includes("//")`: un
+// `test.skip("apre https://esempio.test//home", …)` risultava MOTIVATO, con
+// zero rilievi su uno skip che non spiega niente. Misurato il 2026-08-06.
+//
+// Ritorna per ogni riga `{ codice, commento }`:
+//   `codice`   = la riga senza i commenti e col CONTENUTO delle stringhe
+//                svuotato — cosi' nemmeno un `.only` NOMINATO dentro una
+//                stringa vale come un `.only` chiamato;
+//   `commento` = `true` se su quella riga c'era un commento VERO.
 function codiceSenzaCommenti(linee) {
   let inBlocco = false;
   return linee.map((linea) => {
-    let fuori = "";
+    let codice = "";
+    let commento = false;
+    let delimitatore = null;
     let i = 0;
+
     while (i < linea.length) {
+      const c = linea[i];
+
       if (inBlocco) {
         const fine = linea.indexOf("*/", i);
+        commento = true;
         if (fine === -1) break;
         inBlocco = false;
         i = fine + 2;
         continue;
       }
-      const blocco = linea.indexOf("/*", i);
-      const riga = linea.indexOf("//", i);
-      if (riga !== -1 && (blocco === -1 || riga < blocco)) {
-        fuori += linea.slice(i, riga);
-        break;
-      }
-      if (blocco !== -1) {
-        fuori += linea.slice(i, blocco);
-        inBlocco = true;
-        i = blocco + 2;
+
+      if (delimitatore !== null) {
+        if (c === "\\") { i += 2; continue; }
+        if (c === delimitatore) {
+          delimitatore = null;
+          codice += c;
+        }
+        i += 1;
         continue;
       }
-      fuori += linea.slice(i);
-      break;
+
+      if (c === '"' || c === "'" || c === "`") {
+        delimitatore = c;
+        codice += c;
+        i += 1;
+        continue;
+      }
+      if (c === "/" && linea[i + 1] === "/") {
+        commento = true;
+        break;
+      }
+      if (c === "/" && linea[i + 1] === "*") {
+        commento = true;
+        inBlocco = true;
+        i += 2;
+        continue;
+      }
+
+      codice += c;
+      i += 1;
     }
-    return fuori;
+
+    return { codice, commento };
   });
 }
 
@@ -305,10 +339,10 @@ export function regoleSpec(file, testo) {
   const linee = righe(testo);
   // il codice, per cercare `.only` e gli skip; le righe intere, per capire se
   // uno skip ha la motivazione scritta accanto (che e' un commento, appunto)
-  const codice = codiceSenzaCommenti(linee);
+  const analizzate = codiceSenzaCommenti(linee);
   const findings = [];
-  for (let i = 0; i < codice.length; i++) {
-    const linea = codice[i];
+  for (let i = 0; i < analizzate.length; i++) {
+    const linea = analizzate[i].codice;
     if (SOLO.test(linea)) {
       findings.push({
         severity: "block",
@@ -317,7 +351,7 @@ export function regoleSpec(file, testo) {
       });
     }
     const salta = SALTA.exec(linea);
-    if (salta && !motivato(linee, i)) {
+    if (salta && !motivato(analizzate, i)) {
       findings.push({
         severity: "issue",
         object: `${file}:${i + 1}`,
@@ -330,12 +364,20 @@ export function regoleSpec(file, testo) {
 
 // La motivazione sta sulla stessa riga (commento in coda) o sulla riga sopra:
 // sono i due posti dove un umano la scrive davvero.
-function motivato(linee, indice) {
-  if (linee[indice].includes("//")) return true;
+//
+// CORRETTA il 2026-08-06 (referto § L11). Chiedeva `linea.includes("//")`, e un
+// `//` dentro una stringa non e' un commento: un
+// `test.skip("apre https://esempio.test//home", …)` risultava motivato e non
+// produceva nessun rilievo. Ora la domanda la risponde lo scanner, che sa dove
+// si trova.
+function motivato(analizzate, indice) {
+  if (analizzate[indice].commento) return true;
   for (let i = indice - 1; i >= 0; i--) {
-    const precedente = linee[i].trim();
-    if (precedente === "") continue;
-    return COMMENTO.test(precedente);
+    if (analizzate[i].codice.trim() === "" && !analizzate[i].commento) continue;
+    // Una riga fatta SOLO di commento e' la motivazione scritta sopra; una riga
+    // di codice con un commento in coda e' un'altra istruzione, non una
+    // motivazione per questo skip.
+    return analizzate[i].commento && analizzate[i].codice.trim() === "";
   }
   return false;
 }
@@ -490,14 +532,25 @@ function visita(suites, antenati, esito) {
   // gestito: nessun JSON in uscita, e chi automatizza non distingue un gate
   // rosso da un gate che non ha risposto. Un report malformato deve portare a
   // MANCANTE, mai a un'eccezione.
-  for (const suite of suites ?? []) {
-    if (!suite || typeof suite !== "object") continue;
-    const percorso = [...antenati, suite.title].filter(Boolean);
-    for (const spec of suite.specs ?? []) {
-      if (!spec || typeof spec !== "object") continue;
-      for (const t of spec.tests ?? []) registra([...percorso, spec.title].join(" › "), t?.status, esito);
+  //
+  // ITERATIVA dal 2026-08-06 (referto § L3). Era ricorsiva, e un albero
+  // profondo 20 000 la faceva morire di `RangeError: Maximum call stack size
+  // exceeded` — di nuovo un processo che muore senza JSON, cioe' lo stesso
+  // guasto della voce nulla da un'altra porta. Il report lo scrive Playwright,
+  // ma il gate legge un file che sta nel progetto AUDITATO: la profondita' non
+  // e' un dato di cui questo gate possa fidarsi.
+  const pila = [[suites, antenati]];
+  while (pila.length > 0) {
+    const [correnti, percorsoPadre] = pila.pop();
+    for (const suite of correnti ?? []) {
+      if (!suite || typeof suite !== "object") continue;
+      const percorso = [...percorsoPadre, suite.title].filter(Boolean);
+      for (const spec of suite.specs ?? []) {
+        if (!spec || typeof spec !== "object") continue;
+        for (const t of spec.tests ?? []) registra([...percorso, spec.title].join(" › "), t?.status, esito);
+      }
+      pila.push([suite.suites, percorso]);
     }
-    visita(suite.suites, percorso, esito);
   }
 }
 
@@ -1065,5 +1118,35 @@ export function mascheraUrl(url) {
     return testo;
   } catch {
     return testo.includes("@") ? nascosta : testo;
+  }
+}
+
+/**
+ * LA PASSWORD FUORI DALLA RIGA DI COMANDO.
+ *
+ * Referto § L2: il `--db-url` viaggia come argomento di processo, e la tabella
+ * dei processi la legge chiunque sia sulla macchina. E' lo stesso segreto di
+ * § M2 — transitorio in `argv` invece che permanente in un file committato —
+ * ed e' declassato per questo, non perche' sia un altro segreto.
+ *
+ * `libpq` legge `PGPASSWORD` dall'ambiente: la URL passa a `psql` SENZA la
+ * password, e la password passa da una variabile che non compare in nessuna
+ * riga di comando. Non e' un mascheramento — e' un altro canale.
+ *
+ * Se la URL non porta password (autenticazione `trust`, `.pgpass`, socket) non
+ * cambia niente: nessuna variabile e la URL com'era.
+ */
+export function credenzialiPsql(dbUrl) {
+  const testo = String(dbUrl ?? "");
+  try {
+    const analizzata = new URL(testo);
+    if (analizzata.password === "") return { url: testo, env: {} };
+    // `decodeURIComponent`: nella URL la password e' percent-encoded, in
+    // `PGPASSWORD` deve arrivare letterale.
+    const password = decodeURIComponent(analizzata.password);
+    analizzata.password = "";
+    return { url: analizzata.href, env: { PGPASSWORD: password } };
+  } catch {
+    return { url: testo, env: {} };
   }
 }

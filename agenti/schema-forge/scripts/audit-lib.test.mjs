@@ -1159,3 +1159,54 @@ test("gli a capo di un commento a blocco si tengono: le righe non si spostano", 
   const testo = "select 1;\n/* uno\n   due */\nselect 2;";
   assert.equal(senzaCommentiSql(testo).split("\n").length, testo.split("\n").length);
 });
+
+// ── L12: la riga della regexp di `triggerCheNomina` non aveva rete ───────────
+// Mutata a `return true`, 156 test su 156 passavano: nessuno chiedeva che il
+// corpo del trigger NOMINASSE davvero la colonna. Questi due la chiedono.
+
+const CASO_COLONNA_DI_PRIVILEGIO = {
+  policy: [["public", "profili", "p", "UPDATE", "authenticated", "true", "true"]],
+  colonne: [["public", "profili", "ruolo", "text"]],
+  grantsScrittura: [["public", "profili"]],
+  funzioni: [],
+};
+
+const conTrigger = (corpo) => ({
+  ...CASO_COLONNA_DI_PRIVILEGIO,
+  trigger: corpo === null ? [] : [["public", "profili", "t_blocca", "false", "true", corpo]],
+});
+
+test("un trigger su update che NOMINA la colonna toglie il rilievo", () => {
+  assert.deepEqual(regolaColonnaDiPrivilegio(conTrigger("if new.ruolo is distinct from old.ruolo then raise;")), []);
+});
+
+test("ma un trigger che parla d'altro NON lo toglie", () => {
+  const findings = regolaColonnaDiPrivilegio(conTrigger("if new.aggiornato_il is null then raise;"));
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].object, "public.profili.ruolo");
+});
+
+test("e un trigger che nomina la colonna solo su INSERT non copre l'UPDATE", () => {
+  const caso = { ...CASO_COLONNA_DI_PRIVILEGIO, trigger: [["public", "profili", "t", "true", "false", "new.ruolo"]] };
+  assert.equal(regolaColonnaDiPrivilegio(caso).length, 1);
+});
+
+// PROVATO IMMUNE, e vale la pena scriverlo. Le due regexp costruite col nome
+// della colonna (`triggerCheNomina` e `dimostrata`) sono le ultime due
+// interpolazioni della skill che non passavano da `perRegex`. Sono
+// irraggiungibili per costruzione: prima di arrivarci, il nome deve superare
+// `NOMI_DI_PRIVILEGIO`, che e' un'alternanza LETTERALE ancorata `^…$` — nessun
+// nome con un metacarattere puo' passare di li'. `perRegex` e' arrivato lo
+// stesso, perche' difende il prossimo nome che qualcuno aggiungera' alla lista,
+// ma un test che fallisca senza di lui non si puo' scrivere: questo test scrive
+// perche'.
+test("una colonna il cui nome non e' di privilegio non arriva alle regexp", () => {
+  const caso = {
+    policy: [["public", "t", "p", "UPDATE", "authenticated", "true", "true"]],
+    colonne: [["public", "t", "role.", "text"], ["public", "t", "descrizione", "text"]],
+    grantsScrittura: [["public", "t"]],
+    funzioni: [],
+    trigger: [],
+  };
+  assert.deepEqual(regolaColonnaDiPrivilegio(caso), []);
+});

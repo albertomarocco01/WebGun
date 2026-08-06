@@ -30,7 +30,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { auditAll, motivoAritaSbagliata, motivoPremessaVuota, premesseDaCatalogo, recordDiAritaSbagliata, righeDaPsql, rigaPremesse } from "./audit-lib.mjs";
-import { argomentiOstiliACmd, formaEseguibile, mascheraUrl, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
+import { argomentiOstiliACmd, credenzialiPsql, formaEseguibile, mascheraUrl, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
 
 const SEP = "\x1f"; // unit separator: non compare mai nei nomi degli oggetti
 const REC = "\x1e"; // record separator: l'espressione di una policy va a capo
@@ -81,7 +81,10 @@ function query(dbUrl, sql, arita, nomeQuery) {
     console.error("psql non disponibile nel PATH: verifica RLS NON eseguita.");
     process.exit(2);
   }
-  const argomenti = [dbUrl, "-X", "-At", "-F", SEP, "-R", REC, "-c", sql];
+  // La password esce dalla riga di comando e passa da `PGPASSWORD` (§ L2): la
+  // tabella dei processi la legge chiunque sia sulla macchina.
+  const credenziali = credenzialiPsql(dbUrl);
+  const argomenti = [credenziali.url, "-X", "-At", "-F", SEP, "-R", REC, "-c", sql];
   // Se `psql` e' uno shim `.cmd` si passa da `cmd.exe /c`, che E' una shell: e
   // qui gli argomenti sono l'SQL intero (pieno di spazi) e i due separatori, che
   // sono caratteri di controllo. Attraverso una shell arriverebbero diversi da
@@ -106,7 +109,7 @@ function query(dbUrl, sql, arita, nomeQuery) {
     // `connect_timeout` non vede.
     timeout: LIMITE_PSQL,
     killSignal: "SIGKILL",
-    env: { ...process.env, PGCONNECT_TIMEOUT: String(Math.round(LIMITE_CONNESSIONE / 1000)) },
+    env: { ...process.env, ...credenziali.env, PGCONNECT_TIMEOUT: String(Math.round(LIMITE_CONNESSIONE / 1000)) },
   });
   if (scaduto(res)) {
     console.error(motivoScaduto(`psql (${nomeQuery})`, LIMITE_PSQL));

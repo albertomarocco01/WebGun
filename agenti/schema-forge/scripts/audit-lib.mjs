@@ -545,7 +545,10 @@ const triggerCheNomina = (trigger, chiave, colonna, suQuale) =>
     const [schema, tabella, , suInsert, suUpdate, corpo] = riga(r);
     if (`${schema}.${tabella}` !== chiave) return false;
     if (!vero(suQuale === "insert" ? suInsert : suUpdate)) return false;
-    return new RegExp(`\\b${colonna}\\b`).test(corpo);
+    // `perRegex` anche qui: il nome arriva dal catalogo del PROGETTO, e la
+    // regola scritta in cima a questo file vale per ogni nome che arriva da li'.
+    // Due punti soli la saltavano, ed erano gli ultimi.
+    return new RegExp(`\\b${perRegex(colonna)}\\b`).test(corpo);
   });
 
 export function regolaColonnaDiPrivilegio({ policy, colonne, grantsScrittura, trigger, funzioni }) {
@@ -562,7 +565,7 @@ export function regolaColonnaDiPrivilegio({ policy, colonne, grantsScrittura, tr
     if (!NOMI_DI_PRIVILEGIO.test(nome)) continue;
     if (!scrivibili.has(chiave) || !grantPieno.has(chiave)) continue;
     if (triggerCheNomina(trigger, chiave, nome, "update")) continue;
-    const dimostrata = new RegExp(`\\b${nome}\\b`).test(decisionale);
+    const dimostrata = new RegExp(`\\b${perRegex(nome)}\\b`).test(decisionale);
     const rimedio =
       `revoke update on ${chiave} from anon, authenticated; ` +
       `grant update (<solo le colonne che l'utente puo' davvero cambiare>) on ${chiave} to authenticated; ` +
