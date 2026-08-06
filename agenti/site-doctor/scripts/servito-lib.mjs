@@ -186,13 +186,42 @@ export function ripulisciDocumento(html) {
     // serve a `nomeAccessibile` per le icone SVG (`<svg><title>…</title>`, il
     // rimedio SD-ROSSO-01 del tribunale). Il doppio conteggio di un `<img>`
     // dentro un `<title>` resta, ed e' scritto fra i residui.
-    if ((nome === "script" || nome === "style" || nome === "textarea") && !/\/>$/.test(tag.testo)) {
-      const chiusura = new RegExp(`</\\s*${nome}\\s*>`, "i");
+    // `<template>` sta qui per la ragione di `<textarea>` portata all'estremo:
+    // il suo contenuto finisce in un frammento separato e **non e' reso mai**,
+    // in nessuna condizione. Il tribunale l'ha misurato: un `<template>` nel
+    // layout — markup ordinario in un Next con isole client — faceva chiudere
+    // `informativa-privacy` «collegata da N pagine su N» mentre il collegamento
+    // non era cliccabile da nessuno. E' la stessa classe del contenitore
+    // `display:none` chiuso al collaudo P2, ma con un elemento che
+    // `regioniNascoste` non puo' vedere per costruzione: non c'e' nessun
+    // attributo da leggere.
+    //
+    // `<noscript>` NON entra in questo elenco, ed e' una decisione con la sua
+    // ragione: il suo contenuto **viene reso** a chi non esegue JavaScript, che
+    // e' esattamente il visitatore che questo gate simula — legge l'HTML
+    // servito e non esegue niente. Toglierlo renderebbe invisibile al gate un
+    // collegamento che per quel visitatore esiste davvero.
+    const senzaCorpo = nome === "script" || nome === "style" || nome === "textarea" || nome === "template";
+    // La barra prima del `>` NON autochiude un elemento non-void in HTML: e' un
+    // errore di sintassi che il parser IGNORA. `<script src="/a.js"/>` resta
+    // APERTO, e tutto cio' che segue e' testo di script fino al `</script>`.
+    // Prima qui c'era `!/\/>$/`, e bastava una barra per far rientrare nel
+    // documento ripulito un pezzo che il browser non rende.
+    if (senzaCorpo) {
+      // Un tag di CHIUSURA con attributi (`</script foo="bar">`) e' un parse
+      // error nello standard, ma **viene emesso lo stesso come chiusura**: nel
+      // browser quello script finisce li'. La regexp di prima ammetteva solo
+      // spazi fra il nome e il `>`, quindi il corpo continuava fino alla
+      // chiusura successiva o alla fine del documento — cioe' l'amputazione del
+      // difetto n°12 del collaudo P2, rifatta con un tag di chiusura invece che
+      // con uno orfano. Tolto anche lo `\s*` iniziale: `</ script>` per il
+      // browser NON e' un tag, e non deve esserlo nemmeno qui.
+      const chiusura = new RegExp(`</${nome}(?=[\\s/>])${DENTRO_TAG}>`, "i");
       const resto = html.slice(i);
       const m = chiusura.exec(resto);
       const corpo = m ? resto.slice(0, m.index) : resto;
       if (nome === "script") { if (corpo.trim()) inline.push({ tag: tag.testo, corpo }); }
-      else if (corpo.trim()) stili.push({ tag: tag.testo, corpo });
+      else if (nome === "style" && corpo.trim()) stili.push({ tag: tag.testo, corpo });
       fuori.push(m ? m[0] : `</${nome}>`);
       i = m ? i + m.index + m[0].length : n;
     }
@@ -243,10 +272,49 @@ export function raggiungibiliDaCollegamenti(grafo, partenza = "/") {
   return [...viste].sort();
 }
 
-/** Solo il testo visibile: tag via, entita' principali sciolte, spazi compressi. */
-export function testoVisibile(html) {
-  return senzaScript(html)
-    .replace(/<[^>]*>/g, " ")
+/** Intervalli fusi e ordinati: `regioniNascoste` puo' restituirne di sovrapposti. */
+function fondiIntervalli(intervalli) {
+  const ordinati = [...intervalli].sort((a, b) => a[0] - b[0]);
+  const fusi = [];
+  for (const [a, b] of ordinati) {
+    const ultimo = fusi[fusi.length - 1];
+    if (ultimo && a <= ultimo[1]) ultimo[1] = Math.max(ultimo[1], b);
+    else fusi.push([a, b]);
+  }
+  return fusi;
+}
+
+/**
+ * Solo il testo visibile: tag via, entita' principali sciolte, spazi compressi.
+ *
+ * `soloVisibile` toglie prima le **regioni che l'HTML dichiara nascoste**, e non
+ * e' un'opzione di comodo: senza, «visibile» significava soltanto «non e' un
+ * tag». Il tribunale l'ha misurato sull'informativa — una pagina il cui unico
+ * contenuto sta dentro un `<div style="display:none">` presenta al gate 516
+ * caratteri e le sette voci dell'art. 13, e a chi la apre una pagina bianca.
+ * E' la stessa asimmetria che questa skill combatte sul COLLEGAMENTO
+ * all'informativa, lasciata aperta sul suo CONTENUTO.
+ *
+ * Resta spento dove il nascosto conta lo stesso (il testo di un accordion in una
+ * pagina qualunque): l'informativa e il nome accessibile lo accendono.
+ */
+export function testoVisibile(html, { soloVisibile = false } = {}) {
+  let base = senzaScript(html);
+  if (soloVisibile) {
+    const regioni = fondiIntervalli(regioniNascoste(base));
+    if (regioni.length > 0) {
+      const pezzi = [];
+      let cursore = 0;
+      for (const [a, b] of regioni) {
+        pezzi.push(base.slice(cursore, a));
+        cursore = b;
+      }
+      pezzi.push(base.slice(cursore));
+      base = pezzi.join(" ");
+    }
+  }
+  return base
+    .replace(new RegExp(`<${DENTRO_TAG}>`, "g"), " ")
     .replace(/&#x27;|&apos;/g, "'")
     .replace(/&quot;/g, '"')
     .replace(/&amp;/g, "&")
@@ -293,15 +361,41 @@ export function attributi(tag) {
  */
 export const perRegexp = (frammento) => String(frammento).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/**
+ * Cosa puo' stare DENTRO un tag di apertura, fra il nome e il `>`.
+ *
+ * `[^>]*` era la forma usata in undici punti di questo file, e il tribunale del
+ * 2026-08-06 l'ha aperta con **un carattere**: un `>` dentro un valore di
+ * attributo quotato. Non e' un artificio — in HTML il `>` in un valore non va
+ * scritto con un'entita', e i moduli veri lo scrivono per sbaglio
+ * (`alt="prima > dopo"`, `data-cfg='{"a":"b>c"}'`). Il ripulitore lo capiva gia'
+ * (`leggiTag` tiene lo stato degli apici); **nessuno l'aveva detto ai lettori a
+ * valle**, e ognuno di loro si fermava al primo `>`.
+ *
+ * Costo misurato di un solo `>` messo bene: `terziDi` non censiva piu' il terzo,
+ * `campiDiPagina` leggeva un `type="email"` come `text` senza nome,
+ * `destinazioniModuli` non vedeva l'`action` verso un'altra origine,
+ * `regioniNascoste` non vedeva il contenitore nascosto, `collegamentiInterni`
+ * perdeva una pagina dalla camminata. Quattro passi con un carattere: e' la
+ * chiave universale piu' economica trovata finora in questa casa, ed e' la
+ * QUARTA istanza in tre giorni della stessa lezione — uno scanner scritto a mano
+ * che non guarda dove si trova.
+ *
+ * Le tre alternative sono **disgiunte sul primo carattere** (`[^>"']` esclude
+ * gli apici), quindi la regexp non puo' backtrackare in modo esponenziale: e'
+ * una scelta, non un caso, e ha il suo test di tempo.
+ */
+export const DENTRO_TAG = `(?:[^>"']|"[^"]*"|'[^']*')*`;
+
 /** Tutti i tag di apertura di un nome, sul documento gia' ripulito. */
 export function tagDi(htmlPulito, nome) {
-  const re = new RegExp(`<${perRegexp(nome)}\\b[^>]*>`, "gi");
+  const re = new RegExp(`<${perRegexp(nome)}\\b${DENTRO_TAG}>`, "gi");
   return htmlPulito.match(re) ?? [];
 }
 
 /** Elementi con il loro contenuto: `[{ tag, dentro }]`. Non per tag annidabili. */
 export function elementiDi(htmlPulito, nome) {
-  const re = new RegExp(`<(${perRegexp(nome)})\\b([^>]*)>([\\s\\S]*?)<\\/\\1>`, "gi");
+  const re = new RegExp(`<(${perRegexp(nome)})\\b(${DENTRO_TAG})>([\\s\\S]*?)<\\/\\1>`, "gi");
   const trovati = [];
   let m;
   while ((m = re.exec(htmlPulito)) !== null) trovati.push({ tag: `<${m[1]}${m[2]}>`, dentro: m[3] });
@@ -530,6 +624,18 @@ const RE_INFORMATIVA_PERCORSO = /(^|\/)(privacy|privacy-policy|cookie|cookie-pol
  */
 const VUOTI = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"]);
 
+/** Chi chiude chi, senza che nessuno scriva il tag di chiusura. */
+const IMPLICITE = Object.freeze({
+  li: new Set(["li"]),
+  p: new Set(["p"]),
+  dt: new Set(["dt", "dd"]),
+  dd: new Set(["dt", "dd"]),
+  td: new Set(["td", "th"]),
+  th: new Set(["td", "th"]),
+  tr: new Set(["tr"]),
+  option: new Set(["option"]),
+});
+
 /** L'HTML dichiara nascosto questo tag di apertura? */
 function tagNascosto(tag) {
   const attr = attributi(tag);
@@ -566,7 +672,7 @@ export function regioniNascoste(htmlPulito) {
   const pila = [];
   let profondita = 0;
   let inizio = null;
-  const re = /<(\/?)([a-zA-Z][\w:-]*)\b([^>]*)>/g;
+  const re = new RegExp(`<(/?)([a-zA-Z][\\w:-]*)\\b(${DENTRO_TAG})>`, "g");
   let m;
   while ((m = re.exec(htmlPulito)) !== null) {
     const nome = m[2].toLowerCase();
@@ -583,9 +689,32 @@ export function regioniNascoste(htmlPulito) {
       continue;
     }
     const nascosto = tagNascosto(m[0]);
-    if (m[0].endsWith("/>") || VUOTI.has(nome)) {
+    // La barra NON autochiude: `<div hidden/>` **sembra** una chiusura e invece
+    // resta aperto, cioe' nasconde tutto il resto della pagina. Prima bastava
+    // scriverla per far contare come visibile un pie' di pagina che nessuno
+    // vede. Autochiudono solo gli elementi che l'HTML dichiara vuoti.
+    if (VUOTI.has(nome)) {
       if (nascosto) regioni.push([m.index, re.lastIndex]);
       continue;
+    }
+    // Chiusura IMPLICITA. Un `<li>` chiude il `<li>` precedente, e il browser fa
+    // cosi' senza discutere. La pila non lo sapeva, quindi un `<li
+    // style="display:none">` senza `</li>` nascondeva anche il fratello
+    // successivo: il passo `informativa-privacy` chiudeva «nessun collegamento
+    // a un'informativa» su un pie' di pagina scritto in una forma legale e
+    // diffusa. E' un ROSSO SU UN SITO CONFORME, cioe' la via piu' rapida
+    // perche' un gate venga scavalcato per abitudine (`DECISIONI.md` §8).
+    const chiudeIFratelli = IMPLICITE[nome];
+    if (chiudeIFratelli) {
+      const cima = pila[pila.length - 1];
+      if (cima && chiudeIFratelli.has(cima.nome)) {
+        if (cima.nascosto) profondita -= 1;
+        pila.pop();
+        if (profondita === 0 && inizio !== null) {
+          regioni.push([inizio, m.index]);
+          inizio = null;
+        }
+      }
     }
     if (nascosto && profondita === 0) inizio = m.index;
     if (nascosto) profondita += 1;
@@ -602,7 +731,7 @@ export function candidatiInformativa(html, base) {
   const pulito = senzaScript(html);
   const nascoste = regioniNascoste(pulito);
   const trovati = new Map();
-  const re = /<(a)\b([^>]*)>([\s\S]*?)<\/a>/gi;
+  const re = new RegExp(`<(a)\\b(${DENTRO_TAG})>([\\s\\S]*?)</a>`, "gi");
   let m;
   while ((m = re.exec(pulito)) !== null) {
     const tag = `<a${m[2]}>`;
@@ -680,7 +809,11 @@ export function findingsInformativa({ pagine, informativa, htmlInformativa, dich
     });
   }
 
-  const testo = testoVisibile(htmlInformativa ?? "");
+  // `soloVisibile`: il documento che dice chi risponde dei dati non puo' essere
+  // bianco per chi lo apre e completo per il gate. Misurato dal tribunale: 516
+  // caratteri e sette voci dell'art. 13 dentro un `<div style="display:none">`
+  // superavano tutti i bloccanti di questo passo.
+  const testo = testoVisibile(htmlInformativa ?? "", { soloVisibile: true });
   if (RE_SEGNAPOSTO.test(testo)) {
     findings.push({
       severity: "block",
@@ -1175,7 +1308,10 @@ export function findingsArchiviazione({ cookie, archiviazioni, terzi, dichiarate
 /** Il nome accessibile di un elemento: contenuto, `aria-label`, `title`, `alt` interno. */
 export function nomeAccessibile(tag, dentro, documento = "") {
   const a = attributi(tag);
-  const daContenuto = testoVisibile(dentro ?? "");
+  // `soloVisibile`: uno `<span style="display:none">Leggi tutto</span>` dentro
+  // un collegamento non e' il nome di quel collegamento per nessuna tecnologia
+  // assistiva, e prima lo era per questo gate.
+  const daContenuto = testoVisibile(dentro ?? "", { soloVisibile: true });
   if (daContenuto) return daContenuto;
   if (a["aria-label"]?.trim()) return a["aria-label"].trim();
   // `aria-labelledby` si RISOLVE. Prima si accettava come nome il puntatore
@@ -1202,8 +1338,8 @@ export function nomeAccessibile(tag, dentro, documento = "") {
   for (const { dentro: titolo } of elementiDi(dentro ?? "", "title")) {
     if (testoVisibile(titolo)) return testoVisibile(titolo);
   }
-  for (const qualsiasi of (dentro ?? "").match(/<[a-zA-Z][^>]*\baria-label\s*=\s*("[^"]*"|'[^']*')/gi) ?? []) {
-    const etichetta = attributi(`${qualsiasi}>`)["aria-label"];
+  for (const qualsiasi of (dentro ?? "").match(new RegExp(`<[a-zA-Z]${DENTRO_TAG}>`, "gi"))?.filter((t) => /\baria-label\s*=/i.test(t)) ?? []) {
+    const etichetta = attributi(qualsiasi)["aria-label"];
     if (etichetta?.trim()) return etichetta.trim();
   }
   return "";
@@ -1212,15 +1348,24 @@ export function nomeAccessibile(tag, dentro, documento = "") {
 /** Il testo visibile dell'elemento con quell'`id`, oppure `""` se non esiste. */
 export function testoDellId(documento, id) {
   if (!documento || !id) return "";
-  const re = new RegExp(`<([a-zA-Z][a-zA-Z0-9-]*)\\b[^>]*\\bid\\s*=\\s*["']${perRegexp(id)}["'][^>]*>([\\s\\S]*?)<\\/\\1>`, "i");
+  // `(?:^|[\s"'])id\s*=` e non `\bid\s*=`: in `data-id="eti"` il carattere prima
+  // di `id` e' un trattino, che per `\b` e' un confine di parola — quindi un
+  // `aria-labelledby` che punta al vuoto tornava a risolversi su un qualunque
+  // `data-id` con quel valore, e nei framework a componenti i `data-*` con id
+  // sintetici sono la norma. E' SD-VERDE-06 riaperto in forma piu' stretta.
+  // Il valore si accetta anche SENZA apici: pretenderli era un falso rosso.
+  const re = new RegExp(
+    `<([a-zA-Z][a-zA-Z0-9-]*)\\b(?:[^>"']|"[^"]*"|'[^']*')*?[\\s]id\\s*=\\s*(?:"${perRegexp(id)}"|'${perRegexp(id)}'|${perRegexp(id)}(?=[\\s>]))${DENTRO_TAG}>([\\s\\S]*?)<\\/\\1>`,
+    "i",
+  );
   const m = re.exec(documento);
-  return m ? testoVisibile(m[2]) : "";
+  return m ? testoVisibile(m[2], { soloVisibile: true }) : "";
 }
 
 /** I livelli dei titoli, in ordine di documento. */
 export function livelliTitoli(html) {
   const pulito = senzaScript(html);
-  const re = /<h([1-6])\b[^>]*>/gi;
+  const re = new RegExp(`<h([1-6])\\b${DENTRO_TAG}>`, "gi");
   const livelli = [];
   let m;
   while ((m = re.exec(pulito)) !== null) livelli.push(Number(m[1]));
@@ -1229,10 +1374,18 @@ export function livelliTitoli(html) {
 
 /** Le regole del documento: titolo, lingua, punto di salto. */
 function regoleDocumento(html, pulito, dove) {
-  const titolo = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
+  // Il titolo si cerca nel documento RIPULITO e **prima del `<body>`**, e sono
+  // due correzioni distinte dello stesso rilievo del tribunale. Sul grezzo
+  // passavano un `<title>` dentro un commento e uno dentro un valore di
+  // attributo (la chiave universale, su l'unica riga del passo che non
+  // guardava il ripulito); e un `<svg><title>icona</title></svg>` nel corpo —
+  // markup che questa casa RACCOMANDA, perche' e' il rimedio SD-ROSSO-01 —
+  // chiudeva il bloccante sulla prima cosa che uno screen reader annuncia.
+  const testa = pulito.split(new RegExp(`<body\\b${DENTRO_TAG}>`, "i"))[0];
+  const titolo = new RegExp(`<title${DENTRO_TAG}>([\\s\\S]*?)</title>`, "i").exec(testa);
   if (!titolo || testoVisibile(titolo[1]).length === 0) dove("nessun <title>, o vuoto: e' la prima cosa che uno screen reader annuncia");
 
-  const html5 = /<html\b[^>]*>/i.exec(pulito);
+  const html5 = new RegExp(`<html\\b${DENTRO_TAG}>`, "i").exec(pulito);
   const lang = html5 ? attributi(html5[0]).lang : undefined;
   if (!lang || !lang.trim()) dove("nessun attributo `lang` su <html>: la sintesi vocale non sa in che lingua leggere");
 
@@ -1441,7 +1594,7 @@ export function hreflangDi(html, base) {
 
 /** Il `lang` di <html>, oppure `null`. */
 export function langDi(html) {
-  const tag = /<html\b[^>]*>/i.exec(senzaScript(html));
+  const tag = new RegExp(`<html\\b${DENTRO_TAG}>`, "i").exec(senzaScript(html));
   const lang = tag ? attributi(tag[0]).lang : "";
   return lang && lang.trim() ? lang.trim() : null;
 }

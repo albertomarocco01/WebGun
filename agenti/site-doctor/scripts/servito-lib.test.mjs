@@ -883,3 +883,160 @@ describe("i quattro stati", () => {
     assert.deepEqual(contaGravita([{ severity: "block" }, { severity: "warn" }]), { block: 1, issue: 0, warn: 1 });
   });
 });
+
+// ═══════════════════════════════════════ il tribunale del 2026-08-06 (P.6-P3)
+/**
+ * Un test per rilievo, nella forma d'ingresso vera: HTML che un server puo'
+ * servire davvero, non una struttura costruita a mano.
+ */
+describe("tribunale P.6-P3 — lo scanner che non guardava dove si trovava", () => {
+  describe("SD-TRIB-01: un `>` dentro un valore di attributo quotato", () => {
+    it("falso verde: il terzo resta censito", () => {
+      const t = terziDi('<script data-cfg="a>b" src="https://analitica.esempio.com/t.js"></script>', "http://sito.test/");
+      assert.deepEqual(t.map((x) => x.origine), ["https://analitica.esempio.com"]);
+    });
+
+    it('falso verde: il campo resta un type="email", non un testo senza nome', () => {
+      const c = campiDiPagina('<input data-cfg="a>b" type="email" name="email" autocomplete="email" required>')[0];
+      assert.equal(c.tipo, "email");
+      assert.equal(c.nome, "email");
+      assert.equal(classificaCampo(c).personale, true);
+    });
+
+    it("falso verde: l'action verso un'altra origine resta leggibile", () => {
+      const d = destinazioniModuli('<form data-x="a>b" action="http://raccolta.terzo.example/x"><input type="email" name="email"></form>', "http://sito.test/");
+      assert.equal(d.length, 1);
+      assert.equal(d[0].altraOrigine, true);
+    });
+
+    it("falso verde: il contenitore nascosto resta nascosto", () => {
+      assert.equal(regioniNascoste('<li title="a>b" style="display:none"><a href="/privacy">Informativa privacy</a></li>').length, 1);
+    });
+
+    it("falso verde: la pagina non sparisce dalla camminata", () => {
+      assert.deepEqual(
+        collegamentiInterni('<a data-x="a>b" href="/contatti">c</a><a href="/chi-siamo">b</a>', "http://sito.test/").sort(),
+        ["/chi-siamo", "/contatti"],
+      );
+    });
+
+    it('falso rosso: alt="prima > dopo" e\' un alt, e un img con > nell\'attributo prima ce l\'ha', () => {
+      const pagina = (img) => `<html lang="it"><head><title>t</title></head><body><main><h1>x</h1>${img}</main></body></html>`;
+      assert.deepEqual(findingsAccessibilitaPagina("/", pagina('<img src="/a.png" alt="prima > dopo">')), []);
+      assert.deepEqual(findingsAccessibilitaPagina("/", pagina('<img data-cfg="a>b" alt="descrizione">')), []);
+    });
+
+    it("lingua e hreflang restano leggibili", () => {
+      assert.equal(langDi('<html data-cfg="a>b" lang="it">'), "it");
+      assert.equal(hreflangDi('<link rel="alternate" data-x="a>b" hreflang="en" href="/en">', "http://sito.test/").length, 1);
+    });
+  });
+
+  it("SD-TRIB-02: un tag di chiusura con attributi chiude lo script, e il modulo dopo si conta", () => {
+    const doc = '<html lang="it"><head><title>t</title></head><body><main><h1>Contatti</h1>'
+      + '<script>var a=1;</script foo="bar">'
+      + '<form action="https://raccolta.esempio.com/x"><input type="email" name="email" autocomplete="email"><input type="tel" name="telefono" autocomplete="tel"></form>'
+      + "</main></body></html>";
+    assert.equal(campiDiPagina(doc).length, 2);
+    assert.equal(moduliDiPagina(doc), 1);
+    assert.equal(destinazioniModuli(doc, "http://sito.test/")[0].altraOrigine, true);
+  });
+
+  describe("SD-TRIB-03: template non e' reso mai, noscript si'", () => {
+    it("falso verde: un collegamento dentro un template non e' un candidato", () => {
+      assert.deepEqual(candidatiInformativa('<html lang="it"><body><main><h1>H</h1><template><a href="/privacy">Informativa privacy</a></template></main></body></html>', "http://sito.test/"), []);
+    });
+
+    it("noscript resta visibile: e' esattamente il visitatore che questo gate simula", () => {
+      assert.equal(candidatiInformativa('<html lang="it"><body><main><noscript><a href="/privacy">Informativa privacy</a></noscript></main></body></html>', "http://sito.test/").length, 1);
+    });
+  });
+
+  describe("SD-TRIB-04: la barra prima del > non autochiude un elemento non-void", () => {
+    it("falso verde: uno script con la barra resta aperto e il collegamento e' codice", () => {
+      assert.deepEqual(candidatiInformativa('<main><script src="/a.js"/><a href="/privacy">Informativa privacy</a></script></main>', "http://sito.test/"), []);
+    });
+
+    it("falso verde: un div hidden con la barra nasconde il resto della pagina", () => {
+      assert.deepEqual(candidatiInformativa('<main><div hidden/><a href="/privacy">Informativa privacy</a></main>', "http://sito.test/"), []);
+    });
+
+    it("un elemento davvero vuoto autochiude ancora", () => {
+      assert.equal(regioniNascoste('<img hidden/><a href="/privacy">x</a>').length, 1);
+    });
+  });
+
+  describe("SD-TRIB-06: un'informativa invisibile non e' un'informativa", () => {
+    const voci = "Titolare del trattamento, finalità del trattamento, base giuridica art. 6, tempi di conservazione, diritti dell'interessato, reclamo al Garante, destinatari. ";
+    const nascosta = `<div style="display:none">${voci}${"testo ".repeat(120)}</div>`;
+    const misura = (html) => findingsInformativa({
+      pagine: [{ percorso: "/", candidati: [{ percorso: "/privacy" }] }],
+      informativa: { percorso: "/privacy", stato: 200 },
+      htmlInformativa: html,
+      dichiarata: "/privacy",
+    });
+
+    it("falso verde: 800 caratteri e sette voci dentro un display:none", () => {
+      assert.match(misura(nascosta).filter((x) => x.severity === "block").map((x) => x.message).join(" "), /testo servito di 0 caratteri/);
+    });
+
+    it("lo stesso testo visibile passa: la regola guarda il nascosto, non il testo", () => {
+      assert.deepEqual(misura(nascosta.replace(' style="display:none"', "")).filter((x) => x.severity === "block"), []);
+    });
+
+    it("un nome accessibile nascosto non e' un nome accessibile", () => {
+      assert.equal(nomeAccessibile('<a href="/x">', '<span style="display:none">Leggi tutto</span>'), "");
+    });
+  });
+
+  describe("SD-TRIB-11: il title si cerca nella testa del documento ripulito", () => {
+    const senzaTitolo = (corpo) => `<html lang="it"><head></head><body><main><h1>x</h1>${corpo}</main></body></html>`;
+    const manca = (html) => findingsAccessibilitaPagina("/", html).some((f) => /nessun <title>/.test(f.message));
+
+    it("falso verde: un title dentro un svg non e' il titolo del documento", () => {
+      assert.equal(manca(senzaTitolo("<svg><title>icona</title></svg>")), true);
+    });
+
+    it("falso verde: un title dentro un commento o un attributo non conta", () => {
+      assert.equal(manca('<html lang="it"><head><!-- <title>vecchio</title> --></head><body><main><h1>x</h1></main></body></html>'), true);
+      assert.equal(manca(senzaTitolo('<div data-tpl="<title>ciao</title>"></div>')), true);
+    });
+
+    it("il titolo vero resta un titolo", () => {
+      assert.equal(manca('<html lang="it"><head><title>Studio</title></head><body><main><h1>x</h1></main></body></html>'), false);
+    });
+  });
+
+  describe("SD-TRIB-12: data-id non e' id", () => {
+    it("falso verde: un aria-labelledby che punta al vuoto resta vuoto", () => {
+      assert.equal(nomeAccessibile('<a href="/x" aria-labelledby="eti">', "", '<span data-id="eti">Vai</span>'), "");
+    });
+
+    it("un id vero risolve ancora, anche senza apici", () => {
+      assert.equal(nomeAccessibile('<a href="/x" aria-labelledby="eti">', "", '<span id="eti">Vai</span>'), "Vai");
+      assert.equal(nomeAccessibile('<a href="/x" aria-labelledby="eti">', "", "<span id=eti>Vai</span>"), "Vai");
+    });
+  });
+
+  describe("SD-TRIB-15: la chiusura implicita di li", () => {
+    it("falso rosso: il fratello di un li nascosto e' visibile", () => {
+      const html = '<ul><li style="display:none"><a href="/x">n</a><li><a href="/privacy">Informativa privacy</a></li></ul>';
+      assert.equal(candidatiInformativa(html, "http://sito.test/").length, 1);
+    });
+
+    it("un li nascosto e chiuso nasconde ancora il suo contenuto", () => {
+      assert.deepEqual(candidatiInformativa('<ul><li style="display:none"><a href="/privacy">Informativa privacy</a></li></ul>', "http://sito.test/"), []);
+    });
+  });
+
+  it("SD-TRIB-REDOS: gli scanner nuovi restano lineari su 200 KB", () => {
+    const doc = '<p x="y">testo</p>'.repeat(11000);
+    const cronometra = (f) => { const t = Date.now(); f(); return Date.now() - t; };
+    assert.ok(doc.length > 190000);
+    assert.ok(cronometra(() => ripulisciDocumento(doc)) < 3000);
+    assert.ok(cronometra(() => regioniNascoste(doc)) < 3000);
+    assert.ok(cronometra(() => testoVisibile(doc, { soloVisibile: true })) < 3000);
+    // un apice mai chiuso: la forma che fa esplodere una regexp ambigua
+    assert.ok(cronometra(() => regioniNascoste(`<a href="${"x".repeat(200000)}`)) < 3000);
+  });
+});
