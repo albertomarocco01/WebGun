@@ -32,6 +32,7 @@
  */
 
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { TextDecoder } from "node:util";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -574,7 +575,7 @@ const PASSI = [
   {
     id: ID.informativa,
     nome: "informativa privacy raggiungibile",
-    async esegui(ctx) {
+    async esegui(ctx, args) {
       if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
       const conCandidati = ctx.pagine.map((p) => ({ percorso: p.percorso, candidati: candidatiInformativa(p.corpo, ctx.baseUrl) }));
       const peso = new Map();
@@ -681,7 +682,7 @@ const PASSI = [
   {
     id: ID.archiviazione,
     nome: "cosa il sito archivia nel browser",
-    async esegui(ctx) {
+    async esegui(ctx, args) {
       if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
       // I cookie vengono dalla camminata, non dalle sole pagine entrate: un
       // `Set-Cookie` posto su un RIMANDO e' un cookie posto (vedi passo 2).
@@ -881,7 +882,7 @@ const PASSI = [
   {
     id: ID.favicon,
     nome: "favicon: dichiarata e servita",
-    async esegui(ctx) {
+    async esegui(ctx, args) {
       if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
       const pagine = ctx.pagine.map((p) => ({ percorso: p.percorso, icone: iconeDichiarate(p.corpo, ctx.baseUrl) }));
       const tutte = [...new Set(pagine.flatMap((p) => p.icone))];
@@ -913,7 +914,7 @@ const PASSI = [
   {
     id: ID.openGraph,
     nome: "Open Graph: l'anteprima che il sito sceglie",
-    async esegui(ctx) {
+    async esegui(ctx, args) {
       if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
       const pagine = ctx.pagine.map((p) => {
         const og = openGraphDi(p.corpo);

@@ -53,7 +53,7 @@ export const dettaglioFindings = (findings) =>
   findings.map((f) => `  [${perStampa(f.severity, 20)}] ${perStampa(f.object, 160)}: ${perStampa(f.message, 700)}`).join("\n");
 
 /** Le sole gravita' che questo gate sa leggere. Tutto il resto e' un refuso. */
-export const GRAVITA = Object.freeze(["block", "issue", "warn"]);
+const GRAVITA = Object.freeze(["block", "issue", "warn"]);
 
 export function contaGravita(findings) {
   const per = (s) => findings.filter((f) => f.severity === s).length;
@@ -514,7 +514,7 @@ export const perRegexp = (frammento) => String(frammento).replace(/[.*+?^${}()|[
  * gli apici), quindi la regexp non puo' backtrackare in modo esponenziale: e'
  * una scelta, non un caso, e ha il suo test di tempo.
  */
-export const DENTRO_TAG = `(?:[^>"']|"[^"]*"|'[^']*')*`;
+const DENTRO_TAG = `(?:[^>"']|"[^"]*"|'[^']*')*`;
 
 /** Tutti i tag di apertura di un nome, sul documento gia' ripulito. */
 export function tagDi(htmlPulito, nome) {
@@ -641,7 +641,7 @@ export function percorsiDaSitemap(xml, base) {
  * troncati e le build personalizzate — dove oggi si prendeva un `pass` e da qui
  * in avanti si prende un `skipped`, che e' l'esito onesto.
  */
-export const LUNGHEZZA_MINIMA_BUILD_ID = 8;
+const LUNGHEZZA_MINIMA_BUILD_ID = 8;
 
 export const eLaMiaBuild = (html, buildId) =>
   typeof html === "string" && typeof buildId === "string"
@@ -2055,7 +2055,7 @@ export function openGraphDi(html) {
 }
 
 /** Le voci che un'anteprima social deve avere per essere un'anteprima. */
-export const OG_OBBLIGATORIE = Object.freeze(["og:title", "og:type", "og:url", "og:image"]);
+const OG_OBBLIGATORIE = Object.freeze(["og:title", "og:type", "og:url", "og:image"]);
 
 export function findingsOpenGraph({ pagine, risposte }) {
   const findings = [];

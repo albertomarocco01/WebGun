@@ -524,7 +524,7 @@ export function findingsPerimetro({ tabella, leggiFile, statiPassi }) {
  * `contratto-uscita`, che esiste per impedire a un handoff di dichiarare VERDE
  * su un'esecuzione rossa, avallava esattamente quello.
  */
-export const STATI_VERDI = Object.freeze(["pass", "n/a"]);
+const STATI_VERDI = Object.freeze(["pass", "n/a"]);
 
 export const verdettoDa = (passi) =>
   passi.some((p) => !STATI_VERDI.includes(p.status)) ? "ROSSO" : "VERDE";
