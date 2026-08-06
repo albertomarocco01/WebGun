@@ -206,22 +206,41 @@ const MIO = /(^|-)launchpad$/i;
  * quattro agenti poteva farci niente — l'unico rimedio sarebbe stato ridatare
  * un certificato su una modifica che quell'agente non ha mai visto.
  *
- * L'esenzione e' STRETTA e misurata riga per riga, non dedotta dall'autore del
+ * L'esenzione e' STRETTA e misurata sul diff, non dedotta dall'autore del
  * commit: il commit deve toccare **soltanto** un `next.config.*`, deve
- * introdurre `generateBuildId`, e **ogni** riga aggiunta deve appartenere al
- * frammento che questa skill genera. Una virgola in piu' in quel file, e la
- * freschezza torna a scattare.
+ * introdurre `generateBuildId`, non deve aggiungere **nessun'altra proprieta'**
+ * all'oggetto esportato e non deve importare niente oltre a
+ * `node:child_process`. Una virgola in piu' in quel file, e la freschezza torna
+ * a scattare.
+ *
+ * NON si confronta col testo del frammento, e la prima stesura lo faceva: e'
+ * durata mezz'ora. Cambiato il frammento (per chiudere il difetto dell'identita'
+ * presa da un altro repository), ogni progetto il cui commit dell'impronta era
+ * stato scritto con la stesura PRECEDENTE si e' ritrovato di colpo tutti i
+ * certificati a monte scaduti — cioe' il rosso strutturale rientrava dalla
+ * finestra a ogni versione della skill. Un'esenzione legata a una stringa e'
+ * un'esenzione che scade quando cambia un commento.
+ *
+ * Cosa resta scoperto, e va detto: **dentro il corpo della funzione**
+ * dell'impronta si puo' scrivere qualunque cosa senza far scattare la
+ * freschezza. Quel codice pero' e' committato, e `segreti` lo legge come ogni
+ * altro file: qui si misura la scadenza di un certificato, non la bonta' del
+ * codice.
  */
-export function eSoloFrammentoImpronta(aggiunte, frammento) {
-  const ammesse = new Set([
-    ...String(frammento ?? "").split("\n").map((r) => r.trim()),
-    "generateBuildId: improntaDalCommit,",
-  ]);
-  ammesse.delete("");
-  const vere = (aggiunte ?? []).map((r) => r.trim()).filter(Boolean);
-  if (vere.length === 0) return false;
-  if (!vere.some((r) => /generateBuildId/.test(r))) return false;
-  return vere.every((r) => ammesse.has(r));
+export function eSoloFrammentoImpronta(aggiunte) {
+  const codice = (aggiunte ?? [])
+    .map((r) => r.replace(/\/\/.*$/, "").trim())
+    .filter(Boolean);
+  if (codice.length === 0) return false;
+  if (!codice.some((r) => /generateBuildId/.test(r))) return false;
+  // Nessun'altra PROPRIETA' dell'oggetto esportato: e' la garanzia che conta,
+  // ed e' quella che il testo del commento della prima stesura prometteva —
+  // «una virgola in piu' in quel file e la freschezza torna a scattare».
+  const proprieta = codice.filter((r) => /^[A-Za-z_$][\w$]*\s*:/.test(r));
+  if (!proprieta.every((r) => /^generateBuildId\s*:/.test(r))) return false;
+  // E nessun import oltre a quello che serve al frammento.
+  const importati = [...codice.join("\n").matchAll(/(?:from\s*|require\s*\(\s*)["']([^"']+)["']/g)].map((m) => m[1]);
+  return importati.every((m) => m === "node:child_process");
 }
 
 export function findingsCatena({ handoff = [], proveTrovate = [], ultimoCommitCodice = null, adesso = null } = {}) {

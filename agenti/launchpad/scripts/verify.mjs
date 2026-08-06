@@ -51,11 +51,6 @@ import {
 } from "./gate-lib.mjs";
 import { esitoSegreti } from "./segreti-lib.mjs";
 import { raccogli } from "./segreti.mjs";
-// `FRAMMENTO` serve a riconoscere il commit che questa skill scrive da sola:
-// una sola definizione, in `impronta.mjs`, che e' chi lo genera. Due copie
-// divergono (DECISIONI.md §7), e qui il prezzo di una divergenza sarebbe un
-// rosso strutturale che ritorna in silenzio.
-import { FRAMMENTO } from "./impronta.mjs";
 import { FUORI_DAL_PACCHETTO, git as gitIn, gitRighe as gitRigheIn, trovaGit } from "./git-lib.mjs";
 
 const PROGETTO = process.cwd();
@@ -169,7 +164,7 @@ function eRimedioDellImpronta(sha) {
   if (!file || file.length === 0) return false;
   if (!file.every((p) => /^next\.config\.(ts|mts|cts|js|mjs|cjs)$/i.test(p))) return false;
   const aggiunte = righeAggiunteDa(sha);
-  return aggiunte !== null && eSoloFrammentoImpronta(aggiunte, FRAMMENTO);
+  return aggiunte !== null && eSoloFrammentoImpronta(aggiunte);
 }
 
 /**

@@ -26,11 +26,12 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import ts from "typescript";
 
@@ -107,13 +108,18 @@ test("il frammento scritto in un `next.config.ts` COMPILA sotto `strict`", () =>
 test("la stesura PRE-correzione viene rifiutata dal compilatore (il difetto misurato)", () => {
   const esito = conFrammento(BASE_TS, { esm: true });
   const vecchia = esito.testo.replace(
-    /const motivo = e instanceof Error \? e\.message : String\(e\);\n(\s*)throw new Error\(\n\s*"impronta: `git rev-parse HEAD` non eseguibile \(" \+ motivo \+/,
-    'throw new Error(\n$1  "impronta: `git rev-parse HEAD` non eseguibile (" + (e && e.message ? e.message : e) +',
+    /const motivo = e instanceof Error \? e\.message : String\(e\);/,
+    "const motivo = e.message;",
   );
   assert.notEqual(vecchia, esito.testo, "la sostituzione non ha agganciato niente: il controllo negativo non prova niente");
   const errori = erroriTypeScript(vecchia);
   assert.ok(errori.length > 0, "il compilatore deve rifiutare l'accesso a una proprieta' del binding di `catch`");
-  assert.ok(errori.some((e) => /message/.test(e)), `atteso un errore su \`message\`, ricevuto: ${errori.join(" | ")}`);
+  // Il compilatore lo dice in due modi a seconda della forma — «Property
+  // 'message' does not exist on type '{}'» quando la variabile e' inferita,
+  // «'e' is of type 'unknown'» quando la si legge nuda: contano entrambi, ed e'
+  // la stessa causa.
+  assert.ok(errori.some((e) => /message|of type 'unknown'/.test(e)),
+    `atteso un errore sul binding di \`catch\`, ricevuto: ${errori.join(" | ")}`);
 });
 
 /**
@@ -189,17 +195,106 @@ test("il commit che porta SOLO il frammento non fa scadere i certificati a monte
   const esito = conFrammento(BASE_TS, { esm: true });
   const aggiunte = righeAggiunte(BASE_TS, esito.testo);
   assert.ok(aggiunte.some((r) => /generateBuildId/.test(r)), "il diff simulato non contiene il rimedio: il test non prova niente");
-  assert.equal(eSoloFrammentoImpronta(aggiunte, FRAMMENTO), true);
+  assert.equal(eSoloFrammentoImpronta(aggiunte), true);
 });
 
 test("una riga in piu' nello stesso commit e la freschezza torna a scattare", () => {
   const esito = conFrammento(BASE_TS, { esm: true });
   const aggiunte = [...righeAggiunte(BASE_TS, esito.testo), "  poweredByHeader: false,"];
-  assert.equal(eSoloFrammentoImpronta(aggiunte, FRAMMENTO), false,
+  assert.equal(eSoloFrammentoImpronta(aggiunte), false,
     "l'esenzione non deve coprire una modifica che qualcun altro ha infilato nello stesso commit");
 });
 
 test("un commit su next.config senza il frammento non e' esente", () => {
-  assert.equal(eSoloFrammentoImpronta(["  reactStrictMode: false,"], FRAMMENTO), false);
-  assert.equal(eSoloFrammentoImpronta([], FRAMMENTO), false, "un diff vuoto non e' il rimedio: e' un diff vuoto");
+  assert.equal(eSoloFrammentoImpronta(["  reactStrictMode: false,"]), false);
+  assert.equal(eSoloFrammentoImpronta([]), false, "un diff vuoto non e' il rimedio: e' un diff vuoto");
+});
+
+/**
+ * IL FRAMMENTO ESEGUITO DAVVERO, dentro un repository che non lo traccia.
+ *
+ * Il collaudo del 2026-08-06 ha misurato il difetto peggiore del pacchetto, e
+ * l'ha misurato per caso, riproducendo il contratto documentato di un provider:
+ * build senza `.git` proprio e senza variabili del provider, dentro una
+ * cartella contenuta in un ALTRO repository. `git rev-parse HEAD` risale le
+ * cartelle e risponde con la testa di quello — quindi
+ *
+ *     BUILD_ID prodotto        9c2914484e28   (la testa del repository che conteneva)
+ *     commit VERO del progetto 2d1355e3d697
+ *
+ * e la build usciva **0**. E' la stessa classe dello SHA scritto come letterale
+ * che la progettazione aveva gia' identificato come «peggiore dell'impronta
+ * casuale, perche' afferma il falso» — rientrata da un'altra porta.
+ *
+ * Il test esegue il frammento vero in due configurazioni, con git vero.
+ */
+async function eseguiFrammentoIn(dir) {
+  const modulo = join(dir, "impronta-frammento.mjs");
+  writeFileSync(modulo, `${FRAMMENTO}\n\nexport default improntaDalCommit;\n`, "utf8");
+  const cwd = process.cwd();
+  process.chdir(dir);
+  try {
+    // Si ASPETTA l'import dentro il `try`: `execSync` legge `process.cwd()` al
+    // momento della chiamata, e restituire la promessa avrebbe fatto girare il
+    // frammento con la cartella gia' ripristinata. Misurato mentre si scriveva
+    // questo test: restituiva la testa del repository di questa casa — cioe'
+    // riproduceva per sbaglio, una terza volta, il difetto che il test prova.
+    // Marca-tempo nell'URL: ogni chiamata deve rileggere il file.
+    const m = await import(`${pathToFileURL(modulo).href}?v=${dir.length}-${(process.hrtime.bigint() % 100000n).toString()}`);
+    return m.default();
+  } finally {
+    process.chdir(cwd);
+  }
+}
+
+function repoDiProva() {
+  const dir = mkdtempSync(join(tmpdir(), "launchpad-repo-"));
+  const g = (...args) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+  g("init", "-q", "-b", "main");
+  g("config", "user.email", "banco@esempio.invalid");
+  g("config", "user.name", "Banco");
+  writeFileSync(join(dir, "letto.txt"), "contenuto\n", "utf8");
+  g("add", "letto.txt");
+  g("commit", "-q", "-m", "primo");
+  return { dir, sha: g("rev-parse", "HEAD").trim() };
+}
+
+test("il frammento eseguito nella radice del repository restituisce il commit vero", async () => {
+  const { dir, sha } = repoDiProva();
+  try {
+    assert.equal(await eseguiFrammentoIn(dir), sha.toLowerCase().slice(0, 12));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("in una cartella che il repository NON traccia il frammento SOLLEVA, invece di dichiarare il commit di un altro", async () => {
+  const { dir } = repoDiProva();
+  const dentro = join(dir, "sito-non-tracciato");
+  mkdirSync(dentro);
+  writeFileSync(join(dir, ".gitignore"), "sito-non-tracciato/\n", "utf8");
+  try {
+    await assert.rejects(
+      () => eseguiFrammentoIn(dentro),
+      /NON TRACCIA nessun file qui|commit non risolvibile|git non risponde/,
+      "un artefatto che non sa dire chi e' non deve nascere: meglio una build che fallisce di una che afferma il falso",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("le variabili del provider hanno la precedenza su git, come dichiara la Legge n°4", async () => {
+  const { dir } = repoDiProva();
+  const dentro = join(dir, "sito-non-tracciato");
+  mkdirSync(dentro);
+  writeFileSync(join(dir, ".gitignore"), "sito-non-tracciato/\n", "utf8");
+  process.env.VERCEL_GIT_COMMIT_SHA = "abcdef0123456789abcdef0123456789abcdef01";
+  try {
+    assert.equal(await eseguiFrammentoIn(dentro), "abcdef012345",
+      "e' il caso vero di Vercel e Cloudflare: il provider imposta la variabile e git non serve");
+  } finally {
+    delete process.env.VERCEL_GIT_COMMIT_SHA;
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

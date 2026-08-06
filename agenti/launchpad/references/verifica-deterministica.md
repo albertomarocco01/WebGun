@@ -344,10 +344,21 @@ ho approvato?*
 |---|---|---|
 | `next.config.ts` non dichiara `generateBuildId` | `block` | l'impronta è casuale: dopo una ricostruzione del provider **nessuno può più dimostrare cosa c'è online**. Non è un dettaglio di comodità: è la sola prova d'identità che sopravvive al fatto che non siamo noi a costruire |
 | **`generateBuildId` contiene un SHA scritto come letterale** | `block` | trovato dalla domanda di metà pacchetto (§8, n°6), ed era **la mia prima versione**. Un letterale scritto il giorno di `impronta` resta lì al commit successivo: la build del provider dichiarerebbe con sicurezza il commit **sbagliato**. È peggio dell'impronta casuale — quella ammette di non sapere, questa afferma il falso |
+| **`generateBuildId` risolve il commit di un ALTRO repository** | (chiuso nel frammento, non nel gate) | il difetto più grave trovato dal collaudo del 2026-08-06, e l'ha trovato riproducendo il contratto documentato di un provider. `git rev-parse HEAD` **risale le cartelle**: in una cartella contenuta in un altro repository — e senza `.git` proprio né variabili del provider — risponde con la testa di *quello*. Misurato su una build Next vera: uscita **0**, `BUILD_ID = 9c2914484e28`, cioè la testa del repository che conteneva il banco, mentre il commit vero del progetto era `2d1355e3d697`. Un artefatto nato dichiarando **con sicurezza** l'identità di un altro progetto: è la stessa classe dello SHA scritto come letterale (§8 n°6), rientrata da un'altra porta — e lì la Legge n°4 («chiunque ricostruisca lo stesso commit ottiene la stessa impronta») è semplicemente falsa. Ora il frammento chiede prima `git ls-files -- .`: se il repository che risponde **non traccia nessun file** sotto questa cartella, la build si ferma. In un monorepo vero, dove i file sono tracciati, la testa del monorepo è l'identità giusta e la build passa |
 | `generateBuildId` non solleva quando il commit non è risolvibile | `issue` | un ripiego silenzioso è un artefatto che non sa dire chi è. Una build che non può identificarsi non deve nascere |
 | `.next/BUILD_ID` non corrisponde al commit di HEAD | `block` | l'artefatto sul disco è di un altro commit: si ricostruisce |
 | l'app servita su `--url` non porta l'impronta attesa | `block` | sta rispondendo un'altra applicazione, o una build precedente. È il caso che vetrina-crafter ha misurato per davvero il 2026-08-04 |
 | `--url` assente | MANCANTE | il meccanismo che verrà usato **dopo** il deploy non è stato esercitato. Approvare una pubblicazione la cui prova d'identità non si è mai vista funzionare è la definizione di firma in bianco |
+
+**Il contratto del provider, riprodotto in locale** (collaudo del 2026-08-06,
+senza toccare nessun provider):
+
+| configurazione | esito | impronta |
+|---|---|---|
+| clone `--depth 1`, `.git` presente | build **riuscita** | corretta — `git rev-parse HEAD` funziona in un clone superficiale |
+| `.git` assente, `VERCEL_GIT_COMMIT_SHA` impostata (Vercel, Cloudflare) | build **riuscita** | corretta — è il ramo che i provider usano davvero |
+| `.git` assente, nessuna variabile, cartella dentro un altro repository | build **riuscita** ← *il difetto* | **falsa**: la testa dell'altro repository |
+| idem, dopo la correzione | build **fallita** con il motivo scritto | nessuna: un artefatto che non sa dire chi è non nasce |
 
 **`--url` non ha un default.** Stessa regola di speed-demon e per lo stesso
 prezzo già pagato: un gate che indovina `localhost:3000` misura l'app di un

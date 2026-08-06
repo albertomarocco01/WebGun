@@ -69,8 +69,30 @@ const improntaDalCommit = () => {
     process.env.CF_PAGES_COMMIT_SHA;
   let sha = daAmbiente || "";
   if (!sha) {
+    let tracciati = null;
     try {
-      sha = execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
+      // PRIMA di chiedere il commit: il repository che risponde traccia
+      // davvero questo progetto? \`git rev-parse HEAD\` RISALE le cartelle, e
+      // risponde con la testa di qualunque repository contenga questa —
+      // anche di uno che con questo codice non c'entra niente.
+      //
+      // Misurato dal collaudo del 2026-08-06, e non e' un caso di laboratorio:
+      // il banco viveva dentro un altro repository (gitignorato), la build e'
+      // stata lanciata senza \`.git\` proprio e senza variabili del provider, ed
+      // e' RIUSCITA — uscita 0 — con \`BUILD_ID = 9c2914484e28\`, cioe' la testa
+      // del repository che lo conteneva, mentre il commit vero del progetto era
+      // \`2d1355e3d697\`. Un artefatto nato dichiarando con sicurezza l'identita'
+      // di un altro repository: e' la stessa classe dello SHA scritto come
+      // letterale — l'impronta casuale ammette di non sapere, questa AFFERMA IL
+      // FALSO — e la Legge n°4 («chiunque ricostruisca lo stesso commit ottiene
+      // la stessa impronta») li' e' semplicemente falsa.
+      //
+      // Il discriminante e' misurato e non euristico: se il repository che
+      // risponde non traccia NESSUN file sotto questa cartella, quel commit non
+      // e' di questo codice. In un monorepo vero — dove i file SONO tracciati —
+      // la testa del monorepo e' l'identita' giusta, e la build passa.
+      tracciati = execSync("git ls-files -- .", { encoding: "utf8" }).trim();
+      if (tracciati) sha = execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
     } catch (e) {
       // Il motivo vero non si inghiotte: chi legge deve sapere se e' git che
       // manca o il repository che non c'e'.
@@ -86,8 +108,15 @@ const improntaDalCommit = () => {
       // che lo SKILL.md nomina e quella che il 99% dei progetti Web Gun ha.
       const motivo = e instanceof Error ? e.message : String(e);
       throw new Error(
-        "impronta: \`git rev-parse HEAD\` non eseguibile (" + motivo + "). " +
+        "impronta: git non risponde (" + motivo + "). " +
           "Imposta WEBGUN_COMMIT, oppure costruisci da un repository git.",
+      );
+    }
+    if (tracciati === "") {
+      throw new Error(
+        "impronta: il repository che contiene questa cartella NON TRACCIA nessun file qui, " +
+          "quindi il commit che risponde e' di un altro progetto e l'impronta sarebbe falsa. " +
+          "Imposta WEBGUN_COMMIT con il commit vero, oppure costruisci dal repository di questo progetto.",
       );
     }
   }
