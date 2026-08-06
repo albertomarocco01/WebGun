@@ -704,6 +704,46 @@ export function regolaTestNegativi({ policy, testiPgtap }) {
   return findings;
 }
 
+// ─── la premessa: quanti oggetti sono stati guardati ─────────────────────────
+// Referto § M12. Il documento dell'audit aveva `ok`, `dbUrl`, `schemas`,
+// `findings`, `summary` — e ZERO campi di premessa. Un audit che ha guardato
+// zero tabelle produce zero findings e usciva `pass`, indistinguibile da un
+// audit su uno schema pulito. E' il gemello esatto di «azioni server: 1»
+// (§ H6), sul passo che la skill chiama «il controllo che non puo' mancare».
+//
+// La casa ha una regola sola su questo, ed e' che un conteggio zero non e' un
+// verde: `flow-sentinel` rifiuta gia' un database senza tabelle con lo stesso
+// argomento («la batteria girerebbe sul vuoto»).
+export function premesseDaCatalogo(catalogo) {
+  return {
+    tabelle: catalogo.tabelle.length,
+    policy: catalogo.policy.length,
+    viste: catalogo.viste.length,
+    funzioniSecurityDefiner: catalogo.funzioni.length,
+    colonne: catalogo.colonne.length,
+    chiaviEsterneSenzaIndice: catalogo.chiaviEsterne.length,
+    // `null` = i test non sono stati letti (nessun `--tests`), che e' diverso
+    // da «zero test», che e' un'informazione.
+    testiPgtap: catalogo.testiPgtap === null ? null : catalogo.testiPgtap.length,
+  };
+}
+
+/** Zero tabelle non e' un audit pulito: e' un audit su niente. */
+export function motivoPremessaVuota(premesse, schemi) {
+  if (premesse.tabelle > 0) return null;
+  return `l'audit ha guardato ZERO tabelle negli schemi ${schemi.join(", ")}. ` +
+    "Non e' uno schema pulito: e' un audit su niente, e nessuna delle undici regole puo' scattare. " +
+    "O le migrazioni non sono applicate su questo database, o gli schemi esposti non sono questi, o la URL punta a un altro progetto. " +
+    "Verifica MANCANTE, non un audit senza rilievi.";
+}
+
+/** La riga che dice cosa e' stato guardato. Si stampa SEMPRE, anche sul verde. */
+export function rigaPremesse(premesse) {
+  return `guardati: ${premesse.tabelle} tabelle · ${premesse.policy} policy · ${premesse.viste} viste · ` +
+    `${premesse.funzioniSecurityDefiner} funzioni security definer · ${premesse.colonne} colonne · ` +
+    (premesse.testiPgtap === null ? "test pgTAP NON letti (nessun --tests)" : `${premesse.testiPgtap} file di test pgTAP`);
+}
+
 // ─── composizione ────────────────────────────────────────────────────────────
 // L'ordine e' quello del report: prima le tabelle, per ultima la performance.
 export function auditAll(catalogo) {

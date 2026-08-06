@@ -18,6 +18,8 @@ import { describe, it, test } from "node:test";
 import {
   auditAll,
   motivoAritaSbagliata,
+  motivoPremessaVuota,
+  premesseDaCatalogo,
   recordDiAritaSbagliata,
   righeDaPsql,
   regolaChiaviEsterne,
@@ -1052,5 +1054,48 @@ describe("arita' dei record del catalogo", () => {
   it("con molti record rotti il motivo ne nomina tre e conta gli altri", () => {
     const rotti = [0, 1, 2, 3, 4].map((indice) => ({ indice, quanti: 8 }));
     assert.match(motivoAritaSbagliata("policy", 7, rotti), /e altri 2/);
+  });
+});
+
+// ── la premessa non contata (referto § M12, 2026-08-06) ──────────────────────
+// Il documento dell'audit aveva `ok`, `dbUrl`, `schemas`, `findings`, `summary`
+// e ZERO campi di premessa: un audit che ha guardato zero tabelle produce zero
+// findings e usciva `pass`, indistinguibile da uno schema pulito. E' il gemello
+// esatto di «azioni server: 1» (§ H6), sul passo che la skill chiama «il
+// controllo che non puo' mancare».
+
+const CATALOGO_VUOTO = {
+  tabelle: [], policy: [], viste: [], funzioni: [], colonne: [],
+  chiaviEsterne: [], indicizzate: [], privilegi: [], grantsScrittura: [],
+  trigger: [], vincoli: [], testiPgtap: null,
+};
+
+test("un catalogo vuoto produce zero findings — ed e' esattamente il difetto", () => {
+  assert.deepEqual(auditAll(CATALOGO_VUOTO), []);
+  assert.equal(premesseDaCatalogo(CATALOGO_VUOTO).tabelle, 0);
+  assert.match(
+    motivoPremessaVuota(premesseDaCatalogo(CATALOGO_VUOTO), ["public"]),
+    /ZERO tabelle/,
+  );
+});
+
+test("una tabella guardata basta a far tacere la premessa", () => {
+  const catalogo = { ...CATALOGO_VUOTO, tabelle: [["public", "t", "true", "1", "false"]] };
+  assert.equal(motivoPremessaVuota(premesseDaCatalogo(catalogo), ["public"]), null);
+});
+
+test("le premesse contano gli oggetti, non i findings", () => {
+  const premesse = premesseDaCatalogo({
+    ...CATALOGO_VUOTO,
+    tabelle: [["public", "t", "true", "1", "false"]],
+    policy: [["public", "t", "p", "SELECT", "authenticated", "true", ""]],
+    viste: [["public", "v", "v", ""]],
+    funzioni: [["public", "f", "", "", ""]],
+    colonne: [["public", "t", "id", "uuid"]],
+    testiPgtap: [{ nome: "a.sql", testo: "" }],
+  });
+  assert.deepEqual(premesse, {
+    tabelle: 1, policy: 1, viste: 1, funzioniSecurityDefiner: 1,
+    colonne: 1, chiaviEsterneSenzaIndice: 0, testiPgtap: 1,
   });
 });

@@ -29,7 +29,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { auditAll, motivoAritaSbagliata, recordDiAritaSbagliata, righeDaPsql } from "./audit-lib.mjs";
+import { auditAll, motivoAritaSbagliata, motivoPremessaVuota, premesseDaCatalogo, recordDiAritaSbagliata, righeDaPsql, rigaPremesse } from "./audit-lib.mjs";
 import { argomentiOstiliACmd, formaEseguibile, mascheraUrl, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
 
 const SEP = "\x1f"; // unit separator: non compare mai nei nomi degli oggetti
@@ -299,15 +299,26 @@ function leggiCatalogo({ dbUrl, schemas, tests }) {
 // ------------------------------------------------------------------ report
 function main() {
   const args = parseArgs(process.argv.slice(2));
-  const findings = auditAll(leggiCatalogo(args));
+  const catalogo = leggiCatalogo(args);
+  // LA PREMESSA PRIMA DEL VERDETTO (referto § M12). Zero tabelle guardate
+  // produce zero findings, e senza questa riga usciva 0 — cioe' `pass`.
+  const premesse = premesseDaCatalogo(catalogo);
+  const vuoto = motivoPremessaVuota(premesse, args.schemas);
+  if (vuoto) {
+    console.error(vuoto);
+    process.exit(2);
+  }
+  const findings = auditAll(catalogo);
   const count = (s) => findings.filter((f) => f.severity === s).length;
   const blocking = count("block");
 
   if (args.json) {
     // la URL esce MASCHERATA anche dal `--json`: e' il documento che finisce
-    // negli handoff committati (referto § M2).
+    // negli handoff committati (referto § M2). E `premesse` fa parte del
+    // contratto: chi legge questo documento deve poter dire quanto e' stato
+    // guardato, non solo quanti rilievi sono usciti.
     console.log(JSON.stringify({ ok: blocking === 0, dbUrl: mascheraUrl(args.dbUrl),
-      schemas: args.schemas, findings, summary: {
+      schemas: args.schemas, premesse, findings, summary: {
         block: blocking, issue: count("issue"), warn: count("warn") } }, null, 2));
     process.exit(blocking === 0 ? 0 : 1);
   }
@@ -318,6 +329,7 @@ function main() {
   // lettera, ha auditato il database di un altro progetto rispondendo «nessun
   // bloccante».
   console.log(`AUDIT RLS su ${mascheraUrl(args.dbUrl)} · schemi: ${args.schemas.join(", ")}`);
+  console.log(rigaPremesse(premesse));
   if (findings.length === 0) {
     console.log("Nessun problema rilevato.");
     process.exit(0);
