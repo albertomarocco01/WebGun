@@ -192,21 +192,113 @@ export function dentroGraffe(testo, indiceApertura) {
 // `service_role` ignora la RLS per costruzione. In un progetto generato non ha
 // nessun posto legittimo: un errore di permesso e' una conversazione con
 // schema-forge sulla policy, mai un cambio di chiave.
+//
+// FINO AL 2026-08-06 LA REGOLA CERCAVA UN NOME. Bastava chiamarla in un altro
+// modo (referto § H3, misurato):
+//
+//   const key = process.env.SB_ADMIN_KEY;
+//   export const admin = createClient(process.env.SUPABASE_URL, key);
+//     dentro un modulo DICHIARATO in `moduliClientSupabase`
+//       → regola 3 = 0, regola 4 = 0, block totali = 0
+//   la stessa riga con SUPABASE_SERVICE_ROLE_KEY
+//       → 1 block
+//
+// Il gate riconosceva la parola, non la cosa. Ora guarda tre cose diverse, e
+// nessuna delle tre e' il nome della variabile:
+//
+//   NOME       — la parola `service_role` resta un `block`, com'era: e' il caso
+//                piu' frequente e non si toglie niente;
+//   VALORE     — una chiave INCOLLATA nel codice si riconosce da com'e' fatta:
+//                un JWT il cui payload dichiara `"role":"service_role"`, o una
+//                chiave del formato nuovo (`sb_secret_…`). Il nome della
+//                costante non conta piu' niente;
+//   PROVENIENZA— dentro un modulo che costruisce un client Supabase, ogni
+//                `process.env.X` che non sia `NEXT_PUBLIC_*` (cioe' cio' che
+//                Next dichiara pubblicabile) e non sia un indirizzo e' una
+//                chiave di cui il gate NON sa la provenienza. E' la clausola
+//                che chiude il caso misurato, e non nomina nessuna parola.
 const SERVICE_ROLE = /service[_-]?role/i;
 
-export function regolaServiceRole(files) {
+/** Un JWT scritto nel codice: tre pezzi base64url separati da punto. */
+const JWT_LETTERALE = /\beyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g;
+/** Il formato nuovo delle chiavi Supabase: `sb_secret_…` non e' pubblicabile. */
+const CHIAVE_SEGRETA_NUOVA = /\bsb_secret_[A-Za-z0-9_-]{4,}/;
+/** `NEXT_PUBLIC_` E' la dichiarazione di Next che quel valore finisce nel browser. */
+const AMBIENTE_PUBBLICABILE = /^NEXT_PUBLIC_/;
+/** Un indirizzo non e' una credenziale, e i progetti lo tengono fuori dai NEXT_PUBLIC. */
+const AMBIENTE_NON_CREDENZIALE = /(^|_)(URL|URI|HOST|PORT|SCHEMA|REGION|PROJECT|REF)$/;
+const COSTRUISCE_CLIENT = /\b(createServerClient|createBrowserClient|createClient)\s*\(/;
+const AMBIENTE = /process\.env\.([A-Za-z_$][\w$]*)|process\.env\[\s*["'`]([^"'`]+)["'`]\s*\]/g;
+
+/**
+ * Il payload di un JWT dichiara `service_role`? Si guarda il VALORE, non il
+ * nome: una chiave incollata in una costante che si chiama `k` e' la stessa
+ * chiave. Un token illeggibile non e' un rilievo — e' un'altra cosa.
+ */
+export function jwtDiServiceRole(token) {
+  const parti = String(token ?? "").split(".");
+  if (parti.length !== 3) return false;
+  try {
+    const payload = Buffer.from(parti[1].replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
+    return SERVICE_ROLE.test(String(JSON.parse(payload)?.role ?? ""));
+  } catch {
+    return false;
+  }
+}
+
+/** Gli identificatori d'ambiente letti in un file, senza doppioni. */
+export function ambientiLetti(codice) {
+  return [...new Set([...String(codice).matchAll(AMBIENTE)].map((m) => m[1] ?? m[2]))];
+}
+
+/**
+ * Le variabili d'ambiente che, dentro un modulo che costruisce un client
+ * Supabase, portano una credenziale di provenienza non dichiarata.
+ */
+export function ambientiDiProvenienzaIgnota(codice) {
+  return ambientiLetti(codice).filter(
+    (nome) => !AMBIENTE_PUBBLICABILE.test(nome) && !AMBIENTE_NON_CREDENZIALE.test(nome),
+  );
+}
+
+function findingsChiaveNelCodice(percorso, codice) {
+  const findings = [];
+  for (const token of codice.match(JWT_LETTERALE) ?? []) {
+    if (!jwtDiServiceRole(token)) continue;
+    findings.push(trova("block", percorso,
+      "una chiave Supabase INCOLLATA nel codice, e il suo payload dichiara `role: service_role`: scavalca ogni policy RLS, e qualunque nome le sia stato dato non cambia cosa e'",
+      "togli la chiave dal repository, ruotala (e' compromessa: e' stata committata) e passa dal client con la sessione dell'utente"));
+  }
+  if (CHIAVE_SEGRETA_NUOVA.test(codice)) {
+    findings.push(trova("block", percorso,
+      "una chiave `sb_secret_…` nel codice: nel formato nuovo di Supabase e' quella che scavalca le policy, e non e' pubblicabile per costruzione",
+      "togli la chiave dal repository, ruotala e usa la `sb_publishable_…`"));
+  }
+  return findings;
+}
+
+export function regolaServiceRole(files, config = {}) {
+  const dichiarati = new Set((config.moduliClientSupabase ?? []).map(conBarre));
   const findings = [];
   for (const file of files) {
     const codice = senzaCommenti(file.testo);
-    if (!SERVICE_ROLE.test(codice)) continue;
-    findings.push(
-      trova(
-        "block",
-        conBarre(file.percorso),
+    const percorso = conBarre(file.percorso);
+
+    if (SERVICE_ROLE.test(codice)) {
+      findings.push(trova("block", percorso,
         "chiave `service_role` raggiungibile dal codice dell'applicazione: scavalca ogni policy RLS, e in un percorso client la pubblica",
-        "togli la chiave e passa dal client con la sessione dell'utente. Se un'operazione richiede piu' permessi di quelli che l'utente ha, la risposta e' una policy o una funzione `security definer` scritta da schema-forge",
-      ),
-    );
+        "togli la chiave e passa dal client con la sessione dell'utente. Se un'operazione richiede piu' permessi di quelli che l'utente ha, la risposta e' una policy o una funzione `security definer` scritta da schema-forge"));
+    }
+    findings.push(...findingsChiaveNelCodice(percorso, codice));
+
+    // La provenienza si guarda solo dove nasce un client: altrove un
+    // `process.env.STRIPE_SECRET` e' affar suo, e accusarlo sarebbe rumore.
+    if (!dichiarati.has(percorso) && !COSTRUISCE_CLIENT.test(codice)) continue;
+    for (const nome of ambientiDiProvenienzaIgnota(codice)) {
+      findings.push(trova("block", percorso,
+        `\`process.env.${nome}\` entra in un modulo che costruisce il client Supabase, e non e' un valore pubblicabile: il gate non sa che chiave sia. Una chiave che non e' l'anonima scavalca le policy, e il nome che le e' stato dato non lo dice`,
+        "usa la chiave anonima (`NEXT_PUBLIC_SUPABASE_ANON_KEY`, o la `NEXT_PUBLIC_…PUBLISHABLE_KEY` nel formato nuovo). Se serve piu' potere, la risposta e' una policy o una `security definer` di schema-forge, mai un'altra chiave"));
+    }
   }
   return { findings };
 }
@@ -446,7 +538,7 @@ export function auditAdmin({ files, config, catalogo = null }) {
   const findings = [
     ...guardie.findings,
     ...azioni.findings,
-    ...regolaServiceRole(files).findings,
+    ...regolaServiceRole(files, config).findings,
     ...regolaFabbricaClient(files, config).findings,
     ...regolaMiddleware(files).findings,
     ...scritture.findings,

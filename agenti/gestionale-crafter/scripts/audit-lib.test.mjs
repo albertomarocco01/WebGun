@@ -17,6 +17,8 @@ import {
   regolaAzioniServer,
   regolaFabbricaClient,
   regolaGuardieRotte,
+  ambientiLetti,
+  jwtDiServiceRole,
   regolaMiddleware,
   regolaScritture,
   regolaServiceRole,
@@ -222,6 +224,89 @@ describe("regolaServiceRole", () => {
       f("src/lib/supabase/server.ts", "// qui NON entra mai la chiave service_role\nexport const x = 1;"),
     ]);
     assert.deepEqual(findings, [], "altrimenti il commento che spiega la regola la fa scattare");
+  });
+
+  // ── la regola guardava un NOME (referto § H3, misurato il 2026-08-06)
+  // Riprodotto: dentro un modulo DICHIARATO in `moduliClientSupabase`,
+  //   const key = process.env.SB_ADMIN_KEY;
+  //   export const admin = createClient(process.env.SUPABASE_URL, key);
+  // dava regola 3 = 0 e regola 4 = 0, cioe' zero block. La stessa riga con
+  // SUPABASE_SERVICE_ROLE_KEY dava 1 block. Il gate riconosceva la parola, non
+  // la cosa.
+  const AGGIRATO = 'import { createClient } from "@supabase/supabase-js";\n'
+    + "const key = process.env.SB_ADMIN_KEY;\n"
+    + "export const admin = createClient(process.env.SUPABASE_URL, key);\n";
+
+  it("una chiave con un altro nome, dentro un modulo client, non passa piu'", () => {
+    const { findings } = regolaServiceRole([f("src/lib/supabase/server.ts", AGGIRATO)], CONFIG);
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].severity, "block");
+    assert.match(findings[0].message, /SB_ADMIN_KEY/);
+    assert.match(findings[0].message, /non sa che chiave sia/);
+  });
+
+  it("l'indirizzo non e' una credenziale: `SUPABASE_URL` da solo non e' un rilievo", () => {
+    const soloUrl = "export const c = createClient(process.env.SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);";
+    assert.deepEqual(regolaServiceRole([f("src/lib/supabase/server.ts", soloUrl)], CONFIG).findings, []);
+  });
+
+  it("la chiave anonima nel formato nuovo resta lecita", () => {
+    const nuovo = "export const c = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);";
+    assert.deepEqual(regolaServiceRole([f("src/lib/supabase/server.ts", nuovo)], CONFIG).findings, []);
+  });
+
+  it("fuori dai moduli client un altro segreto e' affar suo, e non e' rumore", () => {
+    const altrove = "const s = process.env.STRIPE_SECRET_KEY;\nexport const paga = () => s;\n";
+    assert.deepEqual(regolaServiceRole([f("src/lib/pagamenti.ts", altrove)], CONFIG).findings, [],
+      "accusare ogni segreto del progetto renderebbe la regola rumore, e il rumore si scavalca");
+  });
+
+  it("ma un client costruito altrove porta con se' il controllo di provenienza", () => {
+    const clientAltrove = "export const c = createClient(process.env.SUPABASE_URL, process.env.CHIAVE_MIA);";
+    const { findings } = regolaServiceRole([f("src/app/admin/x/page.tsx", clientAltrove)], CONFIG);
+    assert.equal(findings.length, 1);
+    assert.match(findings[0].message, /CHIAVE_MIA/);
+  });
+
+  // ── il VALORE, non il nome: una chiave incollata nel codice
+  // Il payload del JWT dichiara `role`. Il token qui sotto e' costruito per il
+  // test e la firma non e' vera: non e' una credenziale, e' la sua forma.
+  const jwtConRuolo = (ruolo) => {
+    const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+    return `${b64({ alg: "HS256", typ: "JWT" })}.${b64({ iss: "supabase", role: ruolo, exp: 2000000000 })}.finta_firma_abcdefgh`;
+  };
+
+  it("una chiave INCOLLATA nel codice si riconosce dal payload, non dal nome", () => {
+    const incollata = `const k = "${jwtConRuolo("service_role")}";\nexport const c = createClient(u, k);`;
+    const { findings } = regolaServiceRole([f("src/lib/x.ts", incollata)], CONFIG);
+    assert.ok(findings.some((x) => /payload dichiara `role: service_role`/.test(x.message)));
+  });
+
+  it("la chiave anonima incollata non e' quella che scavalca le policy", () => {
+    const anonima = `const k = "${jwtConRuolo("anon")}";\nexport const c = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, k);`;
+    const { findings } = regolaServiceRole([f("src/lib/x.ts", anonima)], CONFIG);
+    assert.deepEqual(findings, [], "e' pubblicabile per costruzione: accusarla e' un rosso falso");
+  });
+
+  it("il formato nuovo: `sb_secret_` non e' pubblicabile e non ha bisogno di un nome", () => {
+    const { findings } = regolaServiceRole([f("src/lib/x.ts", 'const k = "sb_secret_9aB7cD4eF";')], CONFIG);
+    assert.equal(findings.length, 1);
+    assert.match(findings[0].message, /sb_secret_/);
+  });
+
+  it("`sb_publishable_` e' l'altra meta' del formato nuovo, ed e' lecita", () => {
+    assert.deepEqual(regolaServiceRole([f("src/lib/x.ts", 'const k = "sb_publishable_9aB7cD4eF";')], CONFIG).findings, []);
+  });
+
+  it("un token illeggibile non e' un rilievo inventato", () => {
+    assert.equal(jwtDiServiceRole("eyJnon.e.unjwt"), false);
+    assert.equal(jwtDiServiceRole(null), false);
+    assert.equal(jwtDiServiceRole("una stringa qualsiasi"), false);
+  });
+
+  it("gli ambienti letti si raccolgono in tutte e due le forme, senza doppioni", () => {
+    const codice = 'process.env.UNO; process.env["DUE"]; process.env.UNO;';
+    assert.deepEqual(ambientiLetti(codice).sort(), ["DUE", "UNO"]);
   });
 });
 
