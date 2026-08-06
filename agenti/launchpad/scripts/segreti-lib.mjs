@@ -205,7 +205,7 @@ export const FAMIGLIE = Object.freeze([
     che: "variabile di servizio con un valore vero accanto",
     perche: "il nome dice che scavalca le policy; il valore dice che qualcuno ce l'ha messo",
     cerca(riga) {
-      const m = riga.match(/\b(SUPABASE_SERVICE_ROLE_KEY|SUPABASE_SECRET_KEY|SERVICE_ROLE_KEY)\b\s*[:=]\s*(.+)$/);
+      const m = riga.match(/\b(SUPABASE_SERVICE_ROLE_KEY|SUPABASE_SECRET_KEY|SERVICE_ROLE_KEY)\b["']?\s*[:=]\s*(.+)$/);
       if (!m) return [];
       const valore = m[2].trim().replace(/^["'`]|["'`,;]+$/g, "");
       if (eSegnaposto(valore)) return [];
@@ -274,7 +274,11 @@ export const FAMIGLIE = Object.freeze([
       // Solo su righe che assomigliano a un'assegnazione con nome sospetto:
       // altrimenti ogni hash di un lockfile e ogni id di una migrazione
       // diventerebbero rilievi, e il passo perderebbe ogni credibilita'.
-      const m = riga.match(/\b([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*["']?([A-Za-z0-9+/=_-]{32,})["']?/);
+      // `["']?` DOPO il nome, e non solo prima del valore: in un file JSON la
+      // chiave e' quotata (`"API_SECRET": "…"`) e senza questo la famiglia non
+      // vedeva niente in nessun `.json` — cioe' proprio nei file di
+      // configurazione per cui esiste.
+      const m = riga.match(/\b([A-Za-z_][A-Za-z0-9_]*)["']?\s*[:=]\s*["']?([A-Za-z0-9+/=_-]{32,})["']?/);
       if (!m) return [];
       const [, nome, valore] = m;
       if (!nomeSospetto(nome) || ePubblicaPerCostruzione(nome)) return [];

@@ -559,7 +559,10 @@ export function findingsRuntime({ engines = null, richieste = [], lockfile = [],
     });
   }
 
-  const dichiaratoProvider = minimoNode(runbook?.runtimeProvider ?? "");
+  // `Runtime del provider: Node 24` — la parola si toglie prima di leggere il
+  // numero. Il runbook lo legge un umano, e «24» da solo su quella riga non
+  // dice a nessuno di cosa si stia parlando.
+  const dichiaratoProvider = minimoNode((runbook?.runtimeProvider ?? "").replace(/^\s*node(?:js)?\s*[:v]?\s*/i, ""));
   const minimoVero = massimoRichiesto ? Math.max(massimoRichiesto.minimo, mio ?? 0) : mio;
   if (runbook) {
     if (dichiaratoProvider === null) {
