@@ -431,6 +431,145 @@ elencano per esteso.
 
 ---
 
+## 6. Il tribunale — 32 rilievi, e uno rompeva la build del cliente
+
+`/code-inquisition --focus security,reliability --depth 1 --council 3`. Tre
+periti in isolamento, modelli diversi per de-correlare gli errori, ognuno con
+una tassonomia e una postura avversaria sua:
+
+| perito | mandato | postura | rilievi |
+|---|---|---|---|
+| **dei segreti** | `segreti-lib.mjs`, `segreti.mjs` | *un segreto vuole partire col deploy* | 9 |
+| **dei falsi verdi** | `verify.mjs`, `gate-lib.mjs` | *sei uno sviluppatore che vuole il verde* | 16 |
+| **dell'esecuzione e I/O** | `git-lib.mjs`, `impronta.mjs`, l'I/O di `verify.mjs` | *il contenuto del repository è ostile* | 7 |
+
+**Quasi tutti riprodotti eseguendo il codice**, non dedotti dalla lettura: il
+secondo perito ha fatto uscire il gate **`ok=true` su un banco sabotato** sette
+volte, e il terzo ha installato un Next.js 16.3.0 vero per provarne uno.
+
+E la riga che vale per tutta la casa, di nuovo: **gli strumenti statici erano
+tutti verdi.** ESLint 0 errori, knip pulito, jscpd 0 cloni, 87 test verdi — e
+nessuno dei 32 è stato visto da loro.
+
+### 6.1 Il più grave, ed è quello che il mandato chiedeva di cercare per nome
+
+**IO-1 — il rimedio che questa skill prescrive rompeva la build del cliente.**
+Il frammento `generateBuildId` usa `require`, che in un `next.config.mjs` **non
+esiste**: `.mjs` è ESM nativo qualunque cosa dica `type` in `package.json`.
+Verificato con una build Next.js 16.3.0 vera:
+
+```
+Build error occurred
+Error: impronta: commit non risolvibile (...).
+    at improntaDalCommit (next.config.mjs:18:11)
+```
+
+E il mio `catch {}` inghiottiva il `ReferenceError` e stampava «commit non
+risolvibile», mandando chi debugga a controllare git e le variabili d'ambiente
+invece della vera causa. **Un rimedio che rompe chi lo applica è peggio di
+qualunque falso verde**, e il mandato lo aveva previsto per iscritto.
+
+### 6.2 La conferma incrociata con prove disgiunte
+
+**SEG-1 e IO-6 sono lo stesso difetto**, trovato da due periti con mandati
+diversi, tassonomie diverse e riproduzioni diverse. È la conferma più forte che
+questo protocollo sappia produrre.
+
+Un file salvato in **UTF-16LE** — il default di `Out-File` e di «Salva con nome
+→ Unicode» su Windows, che è la piattaforma di questa casa — ha un byte NUL dopo
+ogni carattere ASCII. Veniva classificato binario, mai decodificato, mai
+guardato. Per il perito dei segreti: la regola «un `.env` tracciato è un `block`
+a prescindere dal contenuto» girava sui soli file *letti*, quindi un
+`.env.production` in UTF-16 con dentro una chiave `service_role` faceva uscire
+il gate **verde**. Misurato da capo a fondo: stesso contenuto in UTF-8 → 3
+`block` e uscita 1; in UTF-16 → `ok: true`, uscita 0.
+
+### 6.3 I rilievi per gravità, e la sorte di ciascuno
+
+**Tutti e 32 chiusi.** Ognuno con il suo test di regressione, che riproduce il
+caso misurato **prima** della correzione: batteria **87 → 105**.
+
+| # | rilievo | sorte |
+|---|---|---|
+| **IO-1** | Critica · il frammento rompe la build su `.mjs` | il frammento si adatta al modulo di destinazione (`import` per ESM, `require` per CJS), e l'errore vero non si inghiotte più |
+| **SEG-1 · IO-6** | Critica · UTF-16 trattato come binario | `decodifica()` guarda il BOM prima dei byte; e le regole sul **nome** girano sui **percorsi**, prima e indipendentemente dalla lettura |
+| **VER-1** | Critica · runtime `pass` con zero `engines` letti | si conta quanti `package.json` sono stati **aperti**; zero = MANCANTE. Distinto da «N letti, nessuno dichiara `engines`», che è un pass legittimo |
+| **VER-2** | Critica · `--storia 0` lascia `segreti` verde | ora è `skipped`: la storia non guardata non è una storia pulita |
+| **VER-3** | Critica · registro letto a metà in silenzio | si accettano `n°27`, `**27**`, `27.`; e le righe di tabella **non lette** si contano e diventano un `block` |
+| **SEG-2** | Alta · `--json` scavalca la premessa §18 | il controllo su zero file sta ora **sopra** il ramo JSON |
+| **SEG-3** | Alta · `NEXT_PUBLIC_` assolveva il contenuto | assolve il **valore** (un JWT, un indirizzo), non il prefisso; e un prefisso non disarma più la famiglia dei nomi di servizio |
+| **VER-4** | Alta · «NON CHIUSA» valeva chiusa | gettone di forma fissa `CHIUSO <data>` ancorato all'inizio della cella |
+| **VER-5** | Alta · firma post-datata, e la prima data vinceva | una firma nel futuro è un `block`; si legge l'**ultima** data della riga |
+| **VER-6** | Alta · `ambiente` verde restringendo le radici | la radice sorgente vera dev'essere fra quelle dichiarate; zero coppie confrontate = MANCANTE |
+| **VER-7** | Alta · l'impronta passava su una pagina che *nomina* il commit | tolto il ripiego `html.includes()`; un 4xx non è più una risposta utile |
+| **VER-8** | Alta · `Commit approvato` letto e mai confrontato | si confronta con HEAD. E il caso normale — il runbook si scrive **dopo** il commit che approva — è un `warn`, non un `block`, se da allora sono cambiati solo documenti |
+| **VER-9** | Alta · handoff non tracciati spegnevano la freschezza | senza data di commit è un `block`: un certificato che non parte col repository non è un certificato |
+| **IO-2** | Alta · nomi non-ASCII quotati in ottale | `-c core.quotepath=false` su ogni comando. In una casa che scrive in italiano, un segreto in un file con un accento nel nome non veniva mai visto |
+| **IO-3** | Alta · `fetch` senza timeout | `AbortSignal.timeout(15s)`. Un indirizzo muto bloccava l'intero gate in silenzio |
+| **IO-4** | Alta · il frammento finiva nell'oggetto sbagliato | si scrive **nell'oggetto che viene esportato**, risalendo da `export default`; i commenti sono esclusi |
+| **IO-5** | Alta · storia troncata = storia vuota | `ENOBUFS` si distingue e si dichiara |
+| **VER-10** | Media · `out` usato senza `ok`; repo del genitore | la radice git dev'essere il progetto; il commit dev'essere 40 esadecimali |
+| **VER-11** | Media · ordine: il runbook non arrivava al passo 6 | si legge **una volta sola**, prima del ciclo |
+| **VER-12** | Media · `Node 24.x` rifiutato | si legge il primo numero della riga; si rifiuta solo ciò che non si può leggere senza indovinare |
+| **VER-13** | Media · l'epilogo fallisce verso il verde con `\\?\` | il ciclo dei passi è in un `try`: un'eccezione diventa un passo MANCANTE col motivo, mai una traccia muta |
+| **SEG-4** | Media · file oltre soglia e binari ignorati sparivano | si contano e si dichiarano, con il motivo |
+| **SEG-5** | Media · l'eccezione non distingueva firma da citazione | le zone recintate si tolgono. Il falso positivo era **dentro questo repo**, su `references/segreti.md` |
+| **SEG-6** | Media · `entropia-alta` guardava una coppia per riga | `matchAll` con un tetto di tre |
+| **SEG-7** | Media · la maschera consegnava 4 caratteri su 6 | proporzionale: niente sotto gli otto caratteri; e l'host dell'URL si riduce |
+| **SEG-8** | Media · `eSegnaposto` era un prefisso | le tre forme a parentesi sono ancorate |
+| **IO-7** | Media · file bloccato = file assente | `ENOENT` si distingue da `EBUSY`/`EPERM` |
+| **VER-14** | Bassa · la spec prometteva una misura inesistente | vedi §6.4 |
+| **VER-15** | Bassa · `--json` senza forma per il fallimento | il ciclo in `try`, i percorsi d'errore restano a uscita 2 |
+| **VER-16** | Bassa · l'handoff di launchpad si autoaccusava | escluso dal passo 2: a giudicarlo è il passo 9, l'unico che conosce il verdetto misurato |
+| **SEG-9** | Bassa · `*.key` promesso e non riconosciuto | predicato separato sull'estensione; `.crt` resta fuori, è materiale pubblico |
+
+Due classi sono state misurate e dichiarate **pulite** invece di riempite: il
+perito dei segreti ha provato le regex su righe da 800 KB senza trovare
+comportamento esponenziale (7,8 ms), e quello dell'I/O ha provato nomi di file
+ostili contro `spawnSync` — `--upload-pack=…`, `-n999.md`, parentesi, unicode —
+senza trovare un punto di iniezione. Un perito che dichiara pulito ciò che ha
+provato vale più di uno che riempie.
+
+### 6.4 Una correzione ha spostato la specifica invece del codice
+
+**VER-14**: `references/verifica-deterministica.md` §2 prometteva, sotto
+`radice-pulita`, di misurare che l'artefatto fosse *più giovane dell'ultimo
+commit di codice*. **Nessuno lo misurava**, e in `scripts/` non esiste una sola
+lettura di `mtime`. Il perito raccomanda di togliere la riga invece di
+implementarla, perché l'mtime non sopravvive a una copia della cartella e
+produrrebbe falsi rossi su artefatti spostati. **Concordo, e la riga è stata
+tolta dalla specifica.** Una specifica che promette una misura inesistente è una
+firma in bianco su carta intestata — ed è la stessa classe che questa casa ha
+già pagato con speed-demon: *sei dei diciassette difetti erano già descritti
+dentro le references e non implementati; la prosa sapeva, il codice no.*
+
+### 6.5 E una correzione ha prodotto un falso positivo, trovato rilanciando
+
+Chiuso il rilievo SEG-3b — il confine a sinistra che si lasciava disarmare da un
+prefisso — il gate rilanciato **sul pilota** ha prodotto due `block` nuovi:
+
+```
+[block] docs/PRODUZIONE.md:102 · variabile `SERVICE_ROLE_KEY` con un valore letterale
+[block] scripts/crea-titolare.mjs:68 · idem
+```
+
+Le due righe sono:
+
+```
+> mostrava `SUPABASE_SERVICE_ROLE_KEY=… node scripts/crea-titolare.mjs`, e
+```
+
+cioè **la documentazione che insegna a non committare la chiave**, accusata di
+committarla. Il valore eliso comincia con dei puntini di omissione, e
+`eSegnaposto` li riconosceva solo nella forma ASCII e solo come stringa intera.
+
+Corretto, con il suo test. Vale la pena scriverlo per intero perché è la lezione
+del pacchetto: **una correzione di sicurezza produce falsi positivi finché non la
+si rilancia su un progetto vero**, e il posto in cui li produce è quasi sempre la
+documentazione corretta di qualcun altro.
+
+---
+
 ## 7. Cosa questo pacchetto non ha potuto provare senza un umano
 
 L'elenco onesto, ed è il mandato del collaudo di P.5.
@@ -508,3 +647,20 @@ migrazioni**, che sono di P.4g.
 tracciato: la §25 chiede che un banco si tenga solo se un clone pulito lo sa
 rilanciare, e uno script che lo ricostruisce da zero soddisfa quel criterio
 meglio di una cartella che invecchia.
+
+---
+
+## 9. Riga finale
+
+**P.5 (P0+P1) consegnata.** Il gate di launchpad rifiuta la pubblicazione del
+pilota per **8 motivi misurati su 9 passi** (albero sporco · quattro certificati
+scaduti · tre bloccanti dichiarati e non risposti — n°4, n°12, n°17 · sei
+credenziali in file tracciati e nella storia · impronta non derivata dal commit ·
+runbook assente · variabili non confrontabili · handoff assente), e **nessun
+deploy è stato eseguito**. Sabotaggio: **36 classi, tutte rosse**, su un gemello
+pulito che chiude **VERDE 9/9**. Batteria **105/105**. Gate della regia **VERDE
+5/5**. Tribunale: **32 rilievi, 32 chiusi**, di cui uno era il rimedio che questa
+skill prescrive e che rompeva la build del cliente.
+
+*Un gate verde non prova che il sito sia pronto per il suo pubblico: prova che è
+pronto per il trasporto.* E questo non è verde.

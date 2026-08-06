@@ -106,7 +106,18 @@ const SEGNAPOSTO = [
   /^\{\{[^}]*\}\}$/,
   /^\$\{[^}]*\}$/,
   /^x+$/i,
-  /^\.{3,}$/,
+  // I PUNTINI DI OMISSIONE, anche come prefisso — e qui il prefisso e' giusto,
+  // al contrario delle parentesi qui sopra: un segreto non comincia mai con
+  // un'ellissi, mentre una riga di prosa che elide un valore si', ed e' il modo
+  // in cui si scrive un comando in un manuale.
+  //
+  // Misurato sul pilota il 2026-08-06, subito dopo la correzione SEG-3b: le due
+  // righe `SUPABASE_SERVICE_ROLE_KEY=… node scripts/crea-titolare.mjs` — in
+  // `docs/PRODUZIONE.md` e in `scripts/crea-titolare.mjs`, cioe' nella
+  // documentazione che insegna a NON committare la chiave — producevano due
+  // `block`. Un falso positivo li' e' grave quanto un falso negativo: insegna a
+  // ignorare il rosso.
+  /^(?:\.{3,}|…)/,
   /^(changeme|change-me|todo|tbd|placeholder|segnaposto|da-riempire)$/i,
   /^your[-_.]/i,
   /^(la-tua|il-tuo|inserisci)/i,

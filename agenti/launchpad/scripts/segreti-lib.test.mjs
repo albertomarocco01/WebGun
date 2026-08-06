@@ -401,3 +401,17 @@ test("SEG-9 · `*.key` e `*.pem` sono portatori di chiave; `.crt` no", () => {
   assert.equal(ePortatoreDiChiave("app.pem"), true);
   assert.equal(ePortatoreDiChiave("certs/server.crt"), false, "un certificato e' materiale pubblico");
 });
+
+test("un valore ELISO non e' un segreto: `NOME=… comando` e' prosa", () => {
+  // Falso positivo misurato sul pilota il 2026-08-06, introdotto dalla
+  // correzione SEG-3b e trovato rilanciando il gate: la documentazione che
+  // insegna a non committare la chiave veniva accusata di committarla.
+  assert.equal(eSegnaposto("… node scripts/crea-titolare.mjs"), true);
+  assert.equal(eSegnaposto("..."), true);
+  assert.deepEqual(
+    findingsFile("docs/PRODUZIONE.md", "> mostrava `SUPABASE_SERVICE_ROLE_KEY=… node scripts/crea-titolare.mjs`, e"),
+    [],
+  );
+  // E un valore vero resta un valore vero.
+  assert.equal(findingsFile("c.env", "SUPABASE_SERVICE_ROLE_KEY=Tr0ub4dor3Tr0ub4dor3").length, 1);
+});

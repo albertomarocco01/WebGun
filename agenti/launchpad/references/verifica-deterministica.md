@@ -50,7 +50,7 @@ un'affermazione che qualcun altro ha scritto e può sbagliare o mentire.
 
 | passo | misura | legge | cosa resta indimostrato |
 |---|---|---|---|
-| `radice-pulita` | albero git pulito, HEAD, artefatto più giovane dell'ultimo commit di codice | — | che l'albero sia ancora pulito **al momento del deploy** — lo ricontrolla `pubblica` |
+| `radice-pulita` | albero git pulito, HEAD, scarto col remoto | — | che l'albero sia ancora pulito **al momento del deploy** — lo ricontrolla `pubblica`. E **l'età dell'artefatto non si misura**: era promessa qui e non implementata (rilievo VER-14 del tribunale), e l'`mtime` non sopravvive a una copia della cartella — produrrebbe falsi rossi. Chi costruisce con l'albero sporco e poi lo pulisce ha un `.next/` che nessun commit contiene, e questo gate non lo vede |
 | `catena-gate` | **freschezza**: ogni handoff è più giovane dell'ultimo commit che tocca il codice che certifica | il verdetto `Gate: VERDE` scritto in ogni handoff | che quel verde fosse vero. Il gate **non rilancia** i gate a monte: vedi §6 |
 | `debito-bloccante` | quali voci del registro dichiarano di bloccare il deploy, e quali di esse il runbook risponde per numero | il testo del registro | che le voci siano tutte quelle vere. Un bloccante che nessuno ha scritto non esiste per questo passo |
 | `segreti` | contenuto di **ogni file tracciato** e della **storia git**, per otto famiglie di segreto | — | i segreti in forme che le otto famiglie non coprono (§5) |
