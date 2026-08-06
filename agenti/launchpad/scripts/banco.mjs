@@ -14,11 +14,18 @@
  * Questo script chiude quel buco per il banco del collaudo, e per il prossimo.
  *
  * USO:  node banco.mjs [--dove <cartella>] [--porta 3182]
+ *       node banco.mjs --contratti [--dove <cartella>] [--porta 3182]
  *
  * COSA FA DA SOLO: scrive il progetto, lo mette in un repository git con un
  * remoto locale (serve a `radice-pulita`), e mette in fila i commit
  * NELL'ORDINE CHE CONTA — codice, contratti, handoff, poi l'impronta, poi il
  * runbook — perche' la freschezza dei certificati dipende da quell'ordine.
+ *
+ * `--contratti` e' la SECONDA meta', e si lancia DOPO `impronta --scrivi`:
+ * scrive `docs/deploy.md` (col commit approvato letto da git, non inventato) e
+ * `docs/handoff/14-launchpad.md`, li committa e li spinge. Esiste perche' senza
+ * di lei due dei nove ingressi del banco vivevano nella sessione di chi lo
+ * aveva costruito — che e' esattamente il difetto per cui `banco.mjs` e' nato.
  *
  * COSA NON FA, e lo stampa invece di simularlo: `npm install`, `npm run build`
  * e l'avvio dell'app. Sono i tre passi che vogliono la rete e qualche minuto, e
@@ -31,7 +38,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -282,23 +289,176 @@ Confermato da: Alberto Marocco (committente) — ${OGGI}
   "docs/DEBITO-TECNICO.md": `# Registro del debito tecnico — Ponteverde
 
 La forma della tabella e' un contratto del gate: il numero in prima colonna, il
-gettone \`CHIUSO <data>\` che **apre la terza**.
+gettone \`CHIUSO <data>\` che **apre la terza**, e — dalla D23 §2 del
+\`CANTIERE.md\` — la riga di forma fissa \`Blocca il deploy: si | no\` dentro la
+riga di ogni voce **aperta**. Le voci chiuse sono esenti: una voce chiusa non e'
+un residuo. Senza quella riga il gate non dice «non blocca»: dice **MANCANTE**,
+perche' e' una domanda che a quella voce nessuno ha posto.
 
-| # | Agente | Gravita' / stato | Cosa | Rientro previsto |
-|---|---|---|---|---|
-| n°1 | flow-sentinel | alto | Nessun tetto ai tentativi sulla pagina \`/prenota\`: un robot puo' martellarla. La limitazione di frequenza sta nel gateway del provider, che prima del deploy non esiste — **blocca il deploy** finche' non e' configurata o mitigata per iscritto | alla nascita di cyber-shield |
-| n°2 | vetrina-crafter | basso | Le immagini dello studio sono segnaposto. **Non blocca il deploy**, e' un contenuto | quando arrivano le foto |
-| n°3 | schema-forge | CHIUSO ${OGGI} | \`engines.node\` non era dichiarato e la build falliva sotto Node 22 | — |
-| n°4 | schema-forge | CHIUSO ${OGGI} | Il seed di riferimento non porta account: nessuna credenziale committata | — |
+| # | Agente | Gravita' / stato | Cosa | Blocca il deploy? | Rientro previsto |
+|---|---|---|---|---|---|
+| n°1 | flow-sentinel | alto | Nessun tetto ai tentativi sulla pagina \`/prenota\`: un robot puo' martellarla. La limitazione di frequenza sta nel gateway del provider, che prima del deploy non esiste | **Blocca il deploy: si** — finche' non e' configurata o mitigata per iscritto | alla nascita di cyber-shield |
+| n°2 | vetrina-crafter | basso | Le immagini dello studio sono segnaposto: e' un contenuto, non un difetto | Blocca il deploy: no | quando arrivano le foto |
+| n°3 | schema-forge | CHIUSO ${OGGI} | \`engines.node\` non era dichiarato e la build falliva sotto Node 22 | — | — |
+| n°4 | schema-forge | CHIUSO ${OGGI} | Il seed di riferimento non porta account: nessuna credenziale committata | — | — |
 `,
 };
 
+/**
+ * I due documenti che li scrive launchpad, non il banco: il runbook e il
+ * proprio handoff. Qui stanno gia' compilati, ed e' una scelta dichiarata —
+ * il banco serve a provare il GATE, non la prosa dell'agente.
+ *
+ * **La firma e' di una persona che non esiste**, e deve restare tale: questo e'
+ * un banco di prova, non un progetto, e nessuno lo pubblichera' mai. Firmarlo
+ * col nome di una persona vera sarebbe la cosa che la §6 esiste per impedire,
+ * fatta su un file finto — e la casa ha gia' pagato una volta per una firma
+ * messa da chi non aveva letto.
+ */
+const runbook = (sha, porta) => `# Runbook di deploy — Studio Dentistico Ponteverde
+
+> **BANCO DI PROVA. Nessuno pubblichera' mai questo progetto**, e la firma qui
+> sotto e' di una persona che non esiste. Serve a esercitare il passo
+> \`runbook-firmato\`, non ad autorizzare niente.
+
+## Le coordinate
+
+Provider: Vercel
+Dominio: https://studioponteverde.it
+Runtime del provider: Node 24
+Modo di deploy: git
+Radici spedite: src/, next.config.ts, public/
+Commit approvato: ${sha}
+Impronta attesa: ${sha.slice(0, 12)}
+
+**Perche' questo provider**: e' il default dichiarato di questa pipeline
+(\`references/provider.md\` §0) e il sito e' interamente statico piu' una lettura
+con la chiave anonima: nessuna funzione lunga, nessun ISR, traffico minimo.
+
+**Apex e \`www\`**: l'apex serve il sito, \`www\` rimanda all'apex con un 308.
+Concorda col \`canonical\`, che \`src/lib/seo.ts\` costruisce sull'apex.
+
+**Chi possiede il dominio**: lo studio, non noi.
+
+**Chi riceve gli avvisi** quando il sito cade: la segreteria dello studio.
+
+## Variabili d'ambiente di produzione
+
+**Nomi, non valori.** Questo file e' committato.
+
+| Nome | Impostata | Note |
+|---|---|---|
+| NEXT_PUBLIC_SITO_URL | prima della build | https://studioponteverde.it |
+| NEXT_PUBLIC_SUPABASE_URL | prima della build | progetto Supabase di produzione |
+| NEXT_PUBLIC_SUPABASE_ANON_KEY | prima della build | pubblica per costruzione: a difendere i dati sono le policy |
+
+## Cosa diventa pubblico
+
+- **Pagine pubbliche**: \`/\` e \`/prenota\`, piu' \`sitemap.xml\` e \`robots.txt\`.
+- **Dati leggibili da un anonimo**: la sola tabella \`public.trattamenti\` — nome,
+  descrizione e prezzo del listino.
+- **Percorsi di scrittura aperti a un anonimo**: nessuno. La prenotazione e' un
+  numero di telefono, non un modulo.
+- **Aree protette**: nessuna. Questo progetto non ha gestionale.
+- **Account che esistono in produzione al primo avvio**: nessuno.
+
+## Rollback
+
+Versione precedente: il deployment immediatamente precedente sul pannello del
+provider, identificato dal commit che porta.
+
+Procedura, **verificata il ${OGGI}** (sul banco, non su un provider):
+
+\`\`\`
+vercel rollback <deployment-precedente>   # oppure «Promote to Production» sul
+                                          # deployment precedente dal pannello
+\`\`\`
+
+**Migrazioni in questa pubblicazione**: no. Lo schema non cambia, quindi il
+rollback ha una meta' sola.
+
+## Prescrizioni lasciate dagli altri agenti
+
+| # | Cosa | Risposta |
+|---|---|---|
+| 1 | nessun tetto ai tentativi su \`/prenota\` | mitigata qui: tetto per IP sul gateway del provider, 60 richieste al minuto, impostato prima della pubblicazione e accettato da chi firma |
+
+## Verdetti a monte, alla data della firma
+
+| Agente | Handoff | \`Gate:\` dichiarato | Rilanciato il | Esito |
+|---|---|---|---|---|
+| schema-forge | docs/handoff/07-schema-forge.md | VERDE | non rilanciato | letto, non rimisurato |
+| vetrina-crafter | docs/handoff/08-vetrina-crafter.md | VERDE | non rilanciato | letto, non rimisurato |
+| flow-sentinel | docs/handoff/12-flow-sentinel.md | VERDE | non rilanciato | letto, non rimisurato |
+| speed-demon | docs/handoff/13-speed-demon.md | VERDE | non rilanciato | letto, non rimisurato |
+
+## La procedura, per intero
+
+1. \`node <skill>/scripts/segreti.mjs\` — prima di tutto.
+2. \`node <skill>/scripts/impronta.mjs --scrivi\`, poi \`npm ci && npm run build\`.
+3. \`npx next start -p ${porta}\` e
+   \`node <skill>/scripts/verify.mjs --url http://127.0.0.1:${porta}\` → verde.
+4. **STOP.** Questo documento si legge e si firma.
+5. Pubblicazione: **mai** — questo e' un banco di prova.
+
+## Costi
+
+Piano gratuito del provider, traffico di uno studio di quartiere. Non e'
+misurabile da nessuno script: e' una dichiarazione, e chi firma la legge.
+
+---
+
+Confermato da: Elena Ferraris (titolare dello Studio Ponteverde) — ${OGGI}
+
+> Persona di fantasia, su un progetto che non si pubblichera' mai. La riga sta
+> **su una riga sola**, e non e' pignoleria: \`leggiRunbook\` legge la firma con
+> un'ancora di riga, quindi una firma mandata a capo perde la data e il gate
+> risponde «senza data: una firma non datata non si puo' confrontare con
+> niente». Misurato su questo banco il 2026-08-06, alla prima esecuzione.
+`;
+
+const handoffLaunchpad = (sha) => `# Handoff 14 — Launchpad
+
+## 1. Cosa ho fatto
+
+- \`next.config.ts\`: \`generateBuildId\` derivato dal commit (l'unica riga di
+  codice altrui che questo agente tocca).
+- \`docs/deploy.md\`: il runbook, firmato sul contenuto.
+- Gate a nove passi rilanciato sull'app servita in locale.
+
+**Nessuna pubblicazione.** Nessun account, nessun dominio, nessun DNS, nessuna
+spesa: questo e' il banco di prova del gate.
+
+## 2. Decisioni prese
+
+| Decisione | Alternativa scartata | Perche' |
+|---|---|---|
+| provider Vercel | Cloudflare | default dichiarato della pipeline, e il sito non usa niente che li distingua |
+| impronta derivata dal commit | impronta registrata a mano | il provider ricostruisce dal sorgente: una registrazione non sopravvive |
+
+## 3. Cosa si aspetta chi viene dopo
+
+Che l'indirizzo pubblico, dopo il deploy, porti l'impronta \`${sha.slice(0, 12)}\`.
+Si verifica con \`impronta.mjs --url <dominio> --commit ${sha.slice(0, 12)}\`.
+
+## 4. Problemi noti
+
+Il debito n°1 (nessun tetto ai tentativi) e' **mitigato**, non chiuso: la
+risposta e' nel runbook, in §Prescrizioni, e la difesa vera arrivera' con
+cyber-shield.
+
+## 5. Esito del gate
+
+**Gate: VERDE** (0 falliti, 0 verifiche mancanti su 9 passi).
+`;
+
 // ---------------------------------------------------------------- esecuzione
 function parseArgs(argv) {
-  const args = { dove: resolve("banco-launchpad"), porta: 3182 };
+  const args = { dove: resolve("banco-launchpad"), porta: 3182, contratti: false };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--dove") args.dove = resolve(argv[++i]);
     else if (argv[i] === "--porta") args.porta = Number(argv[++i]);
+    else if (argv[i] === "--contratti") args.contratti = true;
   }
   return args;
 }
@@ -349,12 +509,39 @@ function costruisci(args) {
   console.log("      git add package-lock.json && git commit -m \"Il lockfile\"   ← il gate lo pretende TRACCIATO");
   console.log("  2.  node <skill>/scripts/impronta.mjs --scrivi");
   console.log("      git add next.config.ts && git commit -m \"L'impronta dell'artefatto\"");
-  console.log("      poi si scrive docs/deploy.md dal template e docs/handoff/14-launchpad.md,");
-  console.log("      si committano insieme e si spinge: `git push origin main`");
+  console.log(`      node <skill>/scripts/banco.mjs --contratti --dove ${dove} --porta ${porta}`);
   console.log(`  3.  npm run build && npx next start -p ${porta}`);
   console.log("");
   console.log(`Poi il gate:  node <skill>/scripts/verify.mjs --url http://127.0.0.1:${porta}`);
-  console.log("Atteso: VERDE 9/9 (con due `issue` sul registro del debito, che sono voluti).");
+  console.log("Atteso: VERDE 9/9.");
+}
+
+function contratti(args) {
+  const { dove, porta } = args;
+  if (!existsSync(join(dove, ".git"))) {
+    console.error(`${dove} non e' un banco costruito: lancia prima \`node banco.mjs --dove ${dove}\`.`);
+    process.exit(2);
+  }
+  const g = (...a) => execFileSync("git", ["-C", dove, ...a], { encoding: "utf8" });
+  const sha = g("rev-parse", "HEAD").trim();
+  const config = join(dove, "next.config.ts");
+  if (!/generateBuildId/.test(readFileSync(config, "utf8"))) {
+    console.error("`next.config.ts` non dichiara ancora `generateBuildId`: lancia prima `impronta.mjs --scrivi` e committa.");
+    process.exit(2);
+  }
+  scrivi(dove, "docs/deploy.md", runbook(sha, porta));
+  scrivi(dove, "docs/handoff/14-launchpad.md", handoffLaunchpad(sha));
+  g("add", "docs/deploy.md", "docs/handoff/14-launchpad.md");
+  g("commit", "-q", "-m", "Il runbook firmato e il contratto d'uscita di launchpad");
+  g("push", "-q", "origin", "main");
+
+  console.log(`Scritti e committati in ${dove}:`);
+  console.log("  docs/deploy.md                   commit approvato " + sha.slice(0, 12) + ", firmato da una persona di FANTASIA");
+  console.log("  docs/handoff/14-launchpad.md     `Gate: VERDE`, come prescrive il Flusso (l'handoff si scrive PRIMA del gate)");
+  console.log("");
+  console.log("Se il gate uscisse rosso, e' l'handoff che va riscritto: dichiarare non e' fallire.");
+  console.log(`Ora: npm run build && npx next start -p ${porta}`);
+  console.log(`Poi: node <skill>/scripts/verify.mjs --url http://127.0.0.1:${porta}`);
 }
 
 // Epilogo a doppio confronto — vedi la nota estesa in `verify.mjs`.
@@ -363,5 +550,9 @@ if (process.argv[1]) {
   const invocato = resolve(process.argv[1]);
   let invocatoReale = invocato;
   try { invocatoReale = realpathSync(invocato); } catch { /* percorso sparito */ }
-  if (invocato === questoModulo || invocatoReale === questoModulo) costruisci(parseArgs(process.argv.slice(2)));
+  if (invocato === questoModulo || invocatoReale === questoModulo) {
+    const args = parseArgs(process.argv.slice(2));
+    if (args.contratti) contratti(args);
+    else costruisci(args);
+  }
 }
