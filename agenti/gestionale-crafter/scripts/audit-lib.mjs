@@ -53,10 +53,92 @@ const trova = (severity, object, message, hint) => ({ severity, object, message,
 // Un nome di guardia dentro un commento non e' una chiamata: `// qui manca
 // richiediStaff()` renderebbe protetta una rotta scoperta, cioe' il falso
 // negativo peggiore — quello che si scrive da solo mentre si prende nota.
+//
+// E SA DOVE SI TROVA. Fino al 2026-08-06 erano due `replace` con una regexp, e
+// una regexp non sa se e' dentro una stringa. Misurato quel giorno su un modulo
+// dichiarato in `moduliClientSupabase` (difetto n°51, trovato mentre si faceva
+// l'audit degli scanner scritti a mano che il n°50 ha aperto):
+//
+//   const doc = "vedi https://esempio.test/*";
+//   export const admin = createClient(process.env.SUPABASE_URL,
+//                                     process.env.SUPABASE_SERVICE_ROLE_KEY);
+//   const fine = "*/";
+//
+//   PRIMA  senzaCommenti → `const doc = "vedi https://esempio.test ";`
+//          la riga della chiave SPARISCE, e con lei tutti e tre i findings
+//          della regola 3: block = 0 su una `service_role` nel codice
+//   DOPO   3 findings, gli stessi che escono senza la prima e la terza riga
+//
+// Non e' un rosso falso: e' un VERDE falso sulla regola che la skill chiama
+// «la chiave che scavalca ogni policy». Bastano due stringhe qualunque, e la
+// prima e' una URL con un `/*` dentro — cioe' una cosa che si scrive per caso.
+//
+// Le stringhe restano INTATTE: la regola 3 cerca anche le chiavi INCOLLATE nel
+// codice, che vivono dentro una stringa. Toglierle qui sarebbe un altro falso
+// verde, dall'altra parte. A svuotarle ci pensa `senzaStringhe`, dopo, dove
+// serve.
+//
+// Il `\` fuori da una stringa si copia con cio' che segue: fuori da una stringa
+// il solo posto in cui compare e' un letterale di espressione regolare, e senza
+// questa riga `/https:\/\//` aprirebbe un commento di riga sul suo stesso `\/`.
 export function senzaCommenti(testo) {
-  return String(testo ?? "")
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+  const sorgente = String(testo ?? "");
+  let fuori = "";
+  let delimitatore = null; // ", ' oppure ` quando si e' dentro una stringa
+  let i = 0;
+
+  while (i < sorgente.length) {
+    const c = sorgente[i];
+
+    if (delimitatore !== null) {
+      if (c === "\\") {
+        fuori += c + (sorgente[i + 1] ?? "");
+        i += 2;
+        continue;
+      }
+      // Una stringa a virgolette non attraversa la fine della riga: se ci
+      // arriva, il delimitatore non era un delimitatore (JSX, un apostrofo in
+      // un commento gia' tolto, un file troncato). Meglio riprendere il conto
+      // che portarsi dietro uno stato sbagliato fino in fondo al file.
+      if (c === "\n" && delimitatore !== "`") delimitatore = null;
+      else if (c === delimitatore) delimitatore = null;
+      fuori += c;
+      i += 1;
+      continue;
+    }
+
+    if (c === "\\") {
+      fuori += c + (sorgente[i + 1] ?? "");
+      i += 2;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") {
+      delimitatore = c;
+      fuori += c;
+      i += 1;
+      continue;
+    }
+    if (c === "/" && sorgente[i + 1] === "*") {
+      const fine = sorgente.indexOf("*/", i + 2);
+      const corpo = fine === -1 ? sorgente.slice(i) : sorgente.slice(i, fine + 2);
+      // Gli a capo del commento si tengono: un rilievo che cita una riga deve
+      // citare la riga giusta.
+      fuori += ` ${corpo.replace(/[^\n]/g, "")}`;
+      i = fine === -1 ? sorgente.length : fine + 2;
+      continue;
+    }
+    if (c === "/" && sorgente[i + 1] === "/") {
+      const fine = sorgente.indexOf("\n", i + 2);
+      fuori += " ";
+      i = fine === -1 ? sorgente.length : fine;
+      continue;
+    }
+
+    fuori += c;
+    i += 1;
+  }
+
+  return fuori;
 }
 
 /** Ogni pezzo variabile che finisce in una RegExp passa di qui. I nomi arrivano

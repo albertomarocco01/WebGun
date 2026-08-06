@@ -626,6 +626,56 @@ describe("senzaCommenti", () => {
   it("non rompe un URL con le due barre", () => {
     assert.equal(senzaCommenti('const u = "http://x/y";').includes("http://x/y"), true);
   });
+
+  // ── il delimitatore dentro la stringa (difetto n°51, 2026-08-06) ──────────
+  // Stessa classe del n°50 e degli altri tre di questa famiglia: uno scanner
+  // scritto a mano che non sa dentro quale parte della struttura si trova.
+  // Qui il verso e' quello peggiore: un VERDE falso sulla regola 3.
+  const MODULO_OSTILE = [
+    'const doc = "vedi https://esempio.test/*";',
+    "export const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);",
+    'const fine = "*/";',
+  ].join("\n");
+
+  it("un `/*` dentro una stringa non apre un commento, e non mangia la riga dopo", () => {
+    const nudo = senzaCommenti(MODULO_OSTILE);
+    assert.ok(nudo.includes("SUPABASE_SERVICE_ROLE_KEY"), "la riga della chiave spariva del tutto");
+    assert.equal(nudo, MODULO_OSTILE, "qui non c'e' nessun commento da togliere");
+  });
+
+  it("e la regola 3 vede la chiave come se le due stringhe non ci fossero", () => {
+    const config = { moduliClientSupabase: ["src/lib/supabase-admin.ts"] };
+    const conStringhe = regolaServiceRole([{ percorso: "src/lib/supabase-admin.ts", testo: MODULO_OSTILE }], config);
+    const senza = regolaServiceRole(
+      [{ percorso: "src/lib/supabase-admin.ts", testo: MODULO_OSTILE.split("\n")[1] }], config,
+    );
+    assert.equal(conStringhe.findings.length, senza.findings.length);
+    assert.ok(conStringhe.findings.length > 0, "prima erano zero: block = 0 su una service_role nel codice");
+  });
+
+  it("un `//` dentro una stringa non spegne il resto della riga", () => {
+    const testo = 'const nota = "a // b"; richiediStaff();';
+    assert.ok(senzaCommenti(testo).includes("richiediStaff()"));
+    assert.equal(chiamaUnaDi(testo, ["richiediStaff"]), true);
+  });
+
+  it("le stringhe restano INTATTE: la regola 3 cerca anche le chiavi incollate", () => {
+    assert.equal(senzaCommenti('const k = "sb_secret_abcd1234";'), 'const k = "sb_secret_abcd1234";');
+  });
+
+  it("un letterale di espressione regolare con `\\/` non apre un commento", () => {
+    const testo = String.raw`const re = /https:\/\//; richiediStaff();`;
+    assert.equal(senzaCommenti(testo), testo);
+  });
+
+  it("gli a capo di un commento a blocco si tengono: le righe non si spostano", () => {
+    const testo = "a;\n/* uno\n   due */\nb;";
+    assert.equal(senzaCommenti(testo).split("\n").length, testo.split("\n").length);
+  });
+
+  it("H7 regge ancora: un nome di guardia dentro una stringa non e' una chiamata", () => {
+    assert.equal(chiamaUnaDi('throw new Error("richiediStaff() non e agganciata")', ["richiediStaff"]), false);
+  });
 });
 
 describe("funzioniEsportate / corpoFunzione", () => {
