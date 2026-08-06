@@ -74,8 +74,19 @@ const improntaDalCommit = () => {
     } catch (e) {
       // Il motivo vero non si inghiotte: chi legge deve sapere se e' git che
       // manca o il repository che non c'e'.
+      //
+      // \`e instanceof Error\` e NON \`e.message\`: sotto \`strict\` — che e' lo
+      // stack standard di questa casa e il default di \`create-next-app\` — il
+      // binding di \`catch\` ha tipo \`unknown\`, e leggerne una proprieta' NON
+      // COMPILA. Misurato dal collaudo del 2026-08-06 su Next 15.5.22:
+      // \`next build\` moriva con «Type error: Property 'message' does not exist
+      // on type '{}'» su next.config.ts:29. Stessa classe del rilievo IO-1 — il
+      // rimedio che questa skill prescrive rompe la build di chi lo applica —
+      // spostata dal \`.mjs\` (che non e' tipizzato) al \`.ts\`, che e' la forma
+      // che lo SKILL.md nomina e quella che il 99% dei progetti Web Gun ha.
+      const motivo = e instanceof Error ? e.message : String(e);
       throw new Error(
-        "impronta: \`git rev-parse HEAD\` non eseguibile (" + (e && e.message ? e.message : e) + "). " +
+        "impronta: \`git rev-parse HEAD\` non eseguibile (" + motivo + "). " +
           "Imposta WEBGUN_COMMIT, oppure costruisci da un repository git.",
       );
     }
