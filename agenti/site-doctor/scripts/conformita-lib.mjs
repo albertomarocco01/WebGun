@@ -159,9 +159,21 @@ export function tabellaSotto(testo, reIntestazione) {
     if (/^#{1,6}\s/.test(r) && (r.match(/^#+/) ?? ["#"])[0].length <= livello) break;
     corpo.push(r);
   }
-  const dentro = corpo.filter((r) => /^\s*\|/.test(r));
+  // Il PRIMO blocco contiguo di righe con la pipe, e non tutte le righe con la
+  // pipe della sezione: una seconda tabella (una bozza dimenticata, un tavolo di
+  // lavoro) veniva fusa con la prima, e la sua riga d'intestazione diventava una
+  // riga di DATI con le chiavi della prima — con i valori spostati di colonna.
+  const dentro = [];
+  for (const r of corpo) {
+    const eRiga = /^[^\S\n]*\|/.test(r);
+    if (eRiga) dentro.push(r);
+    else if (dentro.length > 0 && r.trim() !== "") break;
+  }
   if (dentro.length < 2) return { sezionePresente: true, righe: [] };
-  const celle = (r) => r.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(ripulisci);
+  // `\|` con l'escape e' una pipe LETTERALE dentro una cella, non un separatore.
+  const celle = (r) => r.trim().replace(/^\|/, "").replace(/\|$/, "")
+    .split(/(?<!\\)\|/)
+    .map((c) => ripulisci(c.replace(/\\\|/g, "|")));
   const intestazioni = celle(dentro[0]).map((c) => normalizza(c));
   const dati = [];
   for (const r of dentro.slice(1)) {
@@ -226,11 +238,47 @@ export function leggiCertificato(testo) {
   };
 }
 
+/**
+ * Dopo «per delega», tolte le parole di struttura, deve restare un NOME.
+ *
+ * `Direzione lavori (per delega del committente )` e `per delega il 2026-08-06`
+ * sono deleghe che non dicono di chi: D14 le vuole per esteso, e una parentesi
+ * vuota e' un modulo compilato a meta', non una firma.
+ */
+const STRUTTURA_DELEGA = /\b(del|della|dello|dei|delle|di|committente|cliente|titolare|direzione|lavori|il|la)\b/gi;
+const nomeDopoLaDelega = (firma) => {
+  const dopo = String(firma ?? "").split(/per delega/i).slice(1).join(" ");
+  return dopo
+    .replace(/\d{4}-\d{2}-\d{2}/g, " ")
+    .replace(STRUTTURA_DELEGA, " ")
+    .replace(/[^\p{L}]+/gu, " ")
+    .trim().length >= 3;
+};
+
+/** Cosa resta di una firma tolte la data, la parola «il» e i segni: deve restare un NOME. */
+const senzaData = (firma) =>
+  String(firma ?? "")
+    .replace(/\d{4}-\d{2}-\d{2}/g, " ")
+    .replace(/\bil\b/gi, " ")
+    .replace(/[^\p{L}]+/gu, " ")
+    .trim().length >= 3;
+
 export function findingsCertificato(cert) {
   const findings = [];
   const manca = (m) => findings.push({ severity: "block", object: "docs/conformita.md", message: m });
   if (!cert.confermatoDa) manca("nessuna riga `Confermato da:`: un certificato di idoneita' senza firma e' un promemoria");
   else if (RE_SEGNAPOSTO.test(cert.confermatoDa)) manca(`la riga \`Confermato da:\` e' ancora il segnaposto del modello: "${cert.confermatoDa}"`);
+  // Il controllo diceva «c'e' una riga e c'e' una data», non «c'e' una FIRMA».
+  // Il tribunale ha fatto passare `Confermato da: — il 2026-08-06` — lo stesso
+  // trattino che `SCOPERTO`, dieci righe piu' in la', legge come «nessuno» — e
+  // `Confermato da: 2026-08-06`, cioe' la sola data. Sono le due forme che
+  // scrive chi deve far passare il gate e non sa chi firma.
+  else if (!senzaData(cert.confermatoDa)) manca(`la riga \`Confermato da: ${cert.confermatoDa}\` non porta nessun nome: c'e' una data e non c'e' una firma. D14 vuole il nome per esteso, o la delega dichiarata — mai il nome di chi non ha letto`);
+  // La delega e' ammessa (D14) **dichiarata per esteso**: una parentesi vuota
+  // non e' una delega, e' un modulo compilato a meta'.
+  else if (/per delega/i.test(cert.confermatoDa) && !nomeDopoLaDelega(cert.confermatoDa)) {
+    manca(`la firma "${cert.confermatoDa}" dichiara una delega e non dice di chi: D14 la vuole per esteso — \`Direzione lavori (per delega del committente <nome>)\``);
+  }
   else if (!cert.dataConferma) manca(`la firma "${cert.confermatoDa}" non porta una data in forma ISO (AAAA-MM-GG): senza data non si sa se e' di prima o di dopo l'ultima build`);
   if (cert.lingue.length === 0) manca("nessuna riga `Lingue dichiarate:`: senza, il passo sulla lingua non ha niente contro cui confrontare quello che misura");
   if (cert.haSegnaposto) findings.push({ severity: "issue", object: "docs/conformita.md", message: "il certificato contiene ancora segnaposto `{{…}}` fuori dalla riga della firma" });
@@ -265,6 +313,32 @@ export function findingsPerimetro({ tabella, leggiFile, statiPassi }) {
   if (!tabella.sezionePresente) {
     return [{ severity: "block", object: "docs/conformita.md", message: "sezione «Voci di conformita' e proprieta'» assente" }];
   }
+  // L'INTESTAZIONE si verifica prima di leggere le righe, e la ragione e' il
+  // rilievo piu' silenzioso che il tribunale abbia trovato: con un `responsabile`
+  // al posto di `proprietario` — un refuso plausibile, una traduzione, una copia
+  // da una bozza — ogni `r.proprietario` diventava `undefined`, tutte e sedici
+  // le voci collassavano a «SCOPERTA» (`issue`), e il passo chiudeva **pass**.
+  // L'uscita era VISIVAMENTE IDENTICA a quella di un certificato sano, perche'
+  // otto SCOPERTE per costruzione ci sono in ogni giro pulito. Cosi' si
+  // disattivava in silenzio la regola per cui questa skill esiste — quella dei
+  // due proprietari — e chi l'avesse scoperto poteva tenersi il refuso per
+  // sempre. Una tabella che il gate non sa leggere non e' una tabella vuota.
+  const chiavi = new Set(tabella.righe.flatMap((r) => Object.keys(r)));
+  const attese = [
+    ["voce", ["voce", "id"]],
+    ["proprietario", ["proprietario"]],
+    ["dove e dichiarato", ["dove e dichiarato", "dove"]],
+    ["esito", ["esito"]],
+  ];
+  const mancanti = attese.filter(([, alias]) => !alias.some((a) => chiavi.has(a))).map(([nome]) => nome);
+  if (tabella.righe.length > 0 && mancanti.length > 0) {
+    return [{
+      severity: "block",
+      object: "docs/conformita.md",
+      message: `intestazione della tabella di proprieta' non riconosciuta: mancano le colonne ${mancanti.map((m) => `\`${m}\``).join(", ")} (lette invece: ${[...chiavi].map((c) => `\`${c}\``).join(", ") || "nessuna"}). Senza quelle colonne ogni riga diventerebbe una voce SCOPERTA e il passo passerebbe: la regola dei due proprietari si spegnerebbe in silenzio`,
+    }];
+  }
+
   const righe = tabella.righe.map((r) => ({
     voce: normalizza(r.voce ?? r.id ?? ""),
     proprietario: ripulisci(r.proprietario ?? ""),
@@ -394,10 +468,48 @@ export function findingsPerimetro({ tabella, leggiFile, statiPassi }) {
 }
 
 // ---------------------------------------------------------- contratto d'uscita
-export const verdettoDa = (passi) =>
-  passi.some((p) => p.status === "fail" || p.status === "skipped") ? "ROSSO" : "VERDE";
+/**
+ * Il verdetto dell'esecuzione, per elenco di AMMESSI e non di respinti.
+ *
+ * Con l'elenco dei respinti (`fail` o `skipped`) uno stato sconosciuto — un
+ * refuso, uno stato nuovo aggiunto domani — usciva VERDE di qui e ROSSO da
+ * `verdetto()`, che conta gli `ignoti`. Il tribunale l'ha misurato: il passo
+ * `contratto-uscita`, che esiste per impedire a un handoff di dichiarare VERDE
+ * su un'esecuzione rossa, avallava esattamente quello.
+ */
+export const STATI_VERDI = Object.freeze(["pass", "n/a"]);
 
-const RE_RIGA_GATE = /^\s*[-*>\s]*\**gate\**\s*:\s*\**\s*(VERDE|ROSSO)\b/im;
+export const verdettoDa = (passi) =>
+  passi.some((p) => !STATI_VERDI.includes(p.status)) ? "ROSSO" : "VERDE";
+
+// Spazi e tabulazioni per esteso, mai `\s`: `\s` comprende il ritorno a capo, ed
+// e' il difetto gia' pagato in `rigaEtichettata` — la ricerca scavalca la riga.
+const RE_RIGA_GATE = /^[-*> \t]*\**gate\**[ \t]*:[ \t]*\**[ \t]*(VERDE|ROSSO)\b/im;
+
+/**
+ * Il testo senza i blocchi di codice.
+ *
+ * La riga `Gate:` e' una DICHIARAZIONE, e il tribunale ha misurato che il gate
+ * non distingueva una dichiarazione da un esempio: un handoff mai compilato, che
+ * si limita a ricopiare dentro un ``` il fac-simile del modello e scrive sotto
+ * «non l'ho ancora fatto», superava il contratto d'uscita ogni volta che
+ * l'esempio coincideva col verdetto vero — con due soli valori possibili, una
+ * volta su due.
+ *
+ * **Il blockquote resta ammesso**, e qui il rilievo del tribunale si ferma. Il
+ * perito proponeva di togliere anche `> Gate: VERDE` perche' potrebbe essere una
+ * citazione altrui; ma un `>` in markdown e' anche il modo normale di mettere in
+ * evidenza una riga, un test misurato lo dichiara da prima come uno dei **tre
+ * modi, non tre significati**, e toglierlo produrrebbe un ROSSO SU UN HANDOFF
+ * CORRETTO — cioe' il rosso che si impara a scavalcare (`DECISIONI.md` §8). Un
+ * blocco recintato invece e' senza ambiguita' un esempio: e' li' che vive il
+ * fac-simile del modello.
+ *
+ * E' la stessa scelta di `senzaCommenti` per i segnaposto, applicata alla riga
+ * che un consumatore a valle legge per decidere se fidarsi.
+ */
+const senzaBlocchiDiCodice = (testo) =>
+  String(testo ?? "").replace(/^[^\S\n]*(```|~~~)[\s\S]*?^[^\S\n]*\1[^\S\n]*$/gm, " ");
 
 /**
  * §19 di DECISIONI.md: l'handoff dichiara il verdetto, e il gate lo confronta
@@ -410,9 +522,17 @@ export function contrattoUscita(percorso, testo, verdetto) {
   }
   const findings = [];
   if (RE_SEGNAPOSTO.test(senzaCommenti(testo))) findings.push({ severity: "block", object: percorso, message: "l'handoff contiene ancora segnaposto del modello" });
-  const m = RE_RIGA_GATE.exec(testo);
+  const proprio = senzaBlocchiDiCodice(senzaCommenti(testo));
+  const m = RE_RIGA_GATE.exec(proprio);
   if (!m) {
-    findings.push({ severity: "block", object: percorso, message: "nessuna riga `Gate: VERDE` o `Gate: ROSSO`: e' la riga che un consumatore a valle legge per decidere se fidarsi" });
+    const soloCitata = RE_RIGA_GATE.test(testo);
+    findings.push({
+      severity: "block",
+      object: percorso,
+      message: soloCitata
+        ? "l'unica riga `Gate:` sta dentro un blocco di codice o una citazione: e' un esempio del modello, non una dichiarazione. La riga che un consumatore a valle legge dev'essere scritta da chi firma l'handoff"
+        : "nessuna riga `Gate: VERDE` o `Gate: ROSSO`: e' la riga che un consumatore a valle legge per decidere se fidarsi",
+    });
     return findings;
   }
   if (m[1].toUpperCase() !== verdetto) {

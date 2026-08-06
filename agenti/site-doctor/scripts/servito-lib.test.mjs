@@ -881,7 +881,7 @@ describe("i quattro stati", () => {
   it("un `block` fa fallire, un `issue` no", () => {
     assert.equal(statoDaFindings([{ severity: "issue" }]), "pass");
     assert.equal(statoDaFindings([{ severity: "issue" }, { severity: "block" }]), "fail");
-    assert.deepEqual(contaGravita([{ severity: "block" }, { severity: "warn" }]), { block: 1, issue: 0, warn: 1 });
+    assert.deepEqual(contaGravita([{ severity: "block" }, { severity: "warn" }]), { block: 1, issue: 0, warn: 1, ignote: 0 });
   });
 });
 

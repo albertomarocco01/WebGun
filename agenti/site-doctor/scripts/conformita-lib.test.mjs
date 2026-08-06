@@ -394,3 +394,72 @@ describe("contratto d'uscita (§19)", () => {
     assert.equal(verdettoDa([{ status: "fail" }]), "ROSSO");
   });
 });
+
+// ═══════════════════════════════════════ il tribunale del 2026-08-06 (P.6-P3)
+describe("tribunale P.6-P3 — i documenti che scrive l'imputato", () => {
+  const certificato = (firma) =>
+    `Confermato da: ${firma}\nLingue dichiarate: it\n\n## Voci di conformita' e proprieta'\n\n| voce | proprietario | dove e' dichiarato | esito |\n|---|---|---|---|\n| antispam | — | — | scoperto |\n`;
+  const blocchiDi = (f) => f.filter((x) => x.severity === "block");
+
+  describe("SD-TRIB-D2: un'intestazione che il gate non sa leggere non e' una tabella vuota", () => {
+    it("falso verde: con `responsabile` al posto di `proprietario` tutto diventava SCOPERTA e il passo passava", () => {
+      const tabella = { sezionePresente: true, righe: [{ voce: "open-graph", responsabile: "speed-demon", esito: "delegato" }] };
+      const f = findingsPerimetro({ tabella, leggiFile: () => null, statiPassi: new Map() });
+      assert.equal(blocchiDi(f).length, 1);
+      assert.match(f[0].message, /intestazione della tabella/);
+    });
+
+    it("l'intestazione giusta continua a funzionare", () => {
+      const tabella = { sezionePresente: true, righe: [{ voce: "antispam", proprietario: "—", "dove e dichiarato": "—", esito: "scoperto" }] };
+      const f = findingsPerimetro({ tabella, leggiFile: () => null, statiPassi: new Map() });
+      assert.equal(f.some((x) => x.object === "antispam" && x.severity === "issue"), true);
+    });
+  });
+
+  describe("SD-TRIB-D4: una data non e' una firma", () => {
+    it("falso verde: un trattino, o la sola data", () => {
+      assert.ok(blocchiDi(findingsCertificato(leggiCertificato(certificato("— il 2026-08-06")))).length > 0);
+      assert.ok(blocchiDi(findingsCertificato(leggiCertificato(certificato("2026-08-06")))).length > 0);
+    });
+
+    it("falso verde: una delega che non nomina nessuno (D14)", () => {
+      assert.ok(blocchiDi(findingsCertificato(leggiCertificato(certificato("Direzione lavori (per delega del committente ) il 2026-08-06")))).length > 0);
+      assert.ok(blocchiDi(findingsCertificato(leggiCertificato(certificato("per delega il 2026-08-06")))).length > 0);
+    });
+
+    it("una firma vera e una delega dichiarata per esteso passano", () => {
+      assert.deepEqual(blocchiDi(findingsCertificato(leggiCertificato(certificato("Alberto Marocco il 2026-08-06")))), []);
+      assert.deepEqual(blocchiDi(findingsCertificato(leggiCertificato(certificato("Direzione lavori (per delega del committente Alberto Marocco) il 2026-08-06")))), []);
+    });
+  });
+
+  describe("SD-TRIB-D5: un esempio dentro un blocco recintato non e' una dichiarazione", () => {
+    it("falso verde: l'handoff ricopia il fac-simile del modello e non scrive niente di suo", () => {
+      const h = "# Handoff\n\nIstruzioni dal modello, non ancora sostituite:\n\n```\nGate: ROSSO\n```\n\nTODO: scrivere cosa e' successo davvero.\n";
+      const f = contrattoUscita("x.md", h, "ROSSO");
+      assert.equal(f.length, 1);
+      assert.match(f[0].message, /blocco di codice/);
+    });
+
+    it("il blockquote resta uno dei tre modi di scrivere la riga, non un terzo significato", () => {
+      assert.deepEqual(contrattoUscita("x.md", "# h\n> Gate: VERDE\n", "VERDE"), []);
+    });
+  });
+
+  describe("SD-TRIB-D6: una seconda tabella nella stessa sezione non si fonde con la prima", () => {
+    it("falso rosso e attribuzione sbagliata: l'intestazione della seconda diventava una riga di dati", () => {
+      const due = "## Voci di conformita'\n\n| voce | proprietario |\n|---|---|\n| a | b |\n\ntesto in mezzo\n\n| nota | draft |\n|---|---|\n| c | d |\n";
+      assert.deepEqual(tabellaSotto(due, /voci di conformit/i).righe, [{ voce: "a", proprietario: "b" }]);
+    });
+
+    it("una pipe con l'escape e' una pipe, non un separatore", () => {
+      assert.deepEqual(tabellaSotto("## X\n\n| a | b |\n|---|---|\n| uno \\| due | tre |\n", /X/).righe[0], { a: "uno | due", b: "tre" });
+    });
+  });
+
+  it("SD-TRIB-D7: uno stato sconosciuto e' ROSSO anche per `verdettoDa`", () => {
+    assert.equal(verdettoDa([{ status: "pass" }, { status: "skip" }]), "ROSSO");
+    assert.equal(verdettoDa([{ status: "pass" }, { status: "n/a" }]), "VERDE");
+    assert.equal(verdettoDa([{ status: "pass" }, { status: "skipped" }]), "ROSSO");
+  });
+});

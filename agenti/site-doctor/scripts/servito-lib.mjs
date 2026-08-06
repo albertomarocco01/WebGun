@@ -38,17 +38,45 @@ export const perStampa = (testo, massimo = 300) => {
   return pulito.length > massimo ? `${pulito.slice(0, massimo)}…` : pulito;
 };
 
+/**
+ * Il dettaglio di un passo, **sanificato in un punto solo**.
+ *
+ * `perStampa` c'era e si applicava a mano nelle regole di accessibilita': tutte
+ * le altre interpolavano testo del documento servito cosi' com'era. Il tribunale
+ * l'ha misurato con un `name` che contiene una sequenza ANSI — lo stdout del
+ * gate cancellava lo schermo e ci riscriveva sopra `GATE CONFORMITA': VERDE`.
+ * Il codice d'uscita restava vero, il verdetto stampato no, e in questa casa i
+ * verbali sono la prova archiviata. Ricordarsi `perStampa` a ogni sito di
+ * costruzione del messaggio e' una regola che si dimentica; qui non si puo'.
+ */
 export const dettaglioFindings = (findings) =>
-  findings.map((f) => `  [${f.severity}] ${f.object}: ${f.message}`).join("\n");
+  findings.map((f) => `  [${perStampa(f.severity, 20)}] ${perStampa(f.object, 160)}: ${perStampa(f.message, 700)}`).join("\n");
+
+/** Le sole gravita' che questo gate sa leggere. Tutto il resto e' un refuso. */
+export const GRAVITA = Object.freeze(["block", "issue", "warn"]);
 
 export function contaGravita(findings) {
   const per = (s) => findings.filter((f) => f.severity === s).length;
-  return { block: per("block"), issue: per("issue"), warn: per("warn") };
+  return {
+    block: per("block"),
+    issue: per("issue"),
+    warn: per("warn"),
+    ignote: findings.filter((f) => !GRAVITA.includes(f.severity)).length,
+  };
 }
 
-/** Un `block` non si consegna: il passo diventa rosso. Issue e warn si stampano. */
+/**
+ * Un `block` non si consegna: il passo diventa rosso. Issue e warn si stampano.
+ *
+ * **Una gravita' che il gate non sa leggere vale un `block`**, ed e' la stessa
+ * simmetria che `riepilogo` applica agli stati con `ignoti`: prima un refuso di
+ * un carattere — `"Block"`, `"block "` — rendeva il rilievo invisibile al
+ * conteggio e innocuo al verdetto, cioe' trasformava questo gate in un timbro su
+ * otto passi su nove. Non e' raggiungibile oggi, e la correzione e' esattamente
+ * cio' che lo rende falsificabile domani.
+ */
 export const statoDaFindings = (findings) =>
-  findings.some((f) => f.severity === "block") ? "fail" : "pass";
+  findings.some((f) => f.severity === "block" || !GRAVITA.includes(f.severity)) ? "fail" : "pass";
 
 /**
  * La QUARTA risposta, e il suo prezzo.
@@ -59,7 +87,13 @@ export const statoDaFindings = (findings) =>
  * ma «non ho trovato niente» senza aver detto DOVE ho guardato e' esattamente
  * il falso verde che la §18 di DECISIONI.md vieta.
  */
-export function statoNonApplicabile(premessa) {
+export function statoNonApplicabile(premessa, quante = null) {
+  // Il vincolo era sulla STRINGA, non sulla misura, e il tribunale ha mostrato
+  // cosa vuol dire: una premessa costruita da un template e' sempre non vuota,
+  // quindi «di 0 pagine: nessuna» superava la guardia. Chi possiede il contratto
+  // dei quattro stati deve poter pretendere anche il CONTEGGIO: zero pagine
+  // lette non e' «non applicabile», e' «non misurato».
+  if (quante !== null && !(Number(quante) > 0)) return "skipped";
   return premessa && String(premessa).trim().length > 0 ? "n/a" : "skipped";
 }
 
@@ -613,6 +647,18 @@ export function findingsSuperficie({ daCollegamenti, daSitemap, dichiarate, site
       message: collegate.size <= 1
         ? `nessuna sitemap leggibile E la camminata dai collegamenti ha trovato ${collegate.size} pagina: non c'e' NESSUNA sorgente indipendente, e la superficie non e' stata stabilita`
         : "nessuna sitemap leggibile: la superficie ha una sola sorgente (i collegamenti). Una scansione che non trova niente e una che ha trovato tutto qui si assomigliano",
+    });
+  } else if (inSitemap.size === 0) {
+    // Una `sitemap.xml` che risponde 200 e non dichiara NIENTE non e' un secondo
+    // testimone: e' un testimone muto, e prima veniva riportata meglio di una
+    // assente — «sorgenti: sitemap.xml (0)», nessun rilievo — mentre una sitemap
+    // mancante almeno un `issue` lo produceva. Servirla vuota conveniva.
+    findings.push({
+      severity: collegate.size <= 1 ? "block" : "issue",
+      object: "sitemap.xml",
+      message: collegate.size <= 1
+        ? `la sitemap risponde e non dichiara nessun indirizzo, E la camminata dai collegamenti ha trovato ${collegate.size} pagina: non c'e' NESSUNA sorgente indipendente`
+        : "la sitemap risponde e non dichiara nessun indirizzo: e' una sitemap rotta, non una sitemap assente, e come secondo testimone non ha detto niente",
     });
   } else {
     for (const p of inSitemap) {
@@ -1694,7 +1740,13 @@ export function esitoLingua({ pagine, lingueDichiarate, percorsi }) {
         message: `${conHreflang.length} pagine dichiarano hreflang su un sito che risulta monolingua`,
       });
     }
-    return { findings, stato: findings.some((f) => f.severity === "block") ? "fail" : statoNonApplicabile(premessa), premessa };
+    // `pagine.length` come conteggio, e non solo la premessa: la funzione che
+    // possiede il contratto dei quattro stati deve difenderlo da sola. Prima il
+    // «di 0 pagine» era irraggiungibile solo perche' il chiamante anteponeva
+    // `superficieUsabile` — cioe' il falso verde era chiuso in un punto e aperto
+    // nella regola, e il prossimo consumatore lo avrebbe riaperto senza toccare
+    // una riga di qui.
+    return { findings, stato: statoDaFindings(findings) === "fail" ? "fail" : statoNonApplicabile(premessa, pagine.length), premessa };
   }
 
   // Multilingua: gli hreflang si pretendono, e si pretendono reciproci.
