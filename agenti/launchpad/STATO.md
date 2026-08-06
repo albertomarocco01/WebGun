@@ -1,13 +1,22 @@
 # Stato — Launchpad
 
-- **Stato attuale:** **costruito e collaudato** (P.5 P0+P1+P2, 2026-08-06).
-  SKILL.md completo, gate a **nove passi** con `--json`, **148 test** sugli
-  script (erano 104 alla consegna), quattro reference, due template e un
-  generatore di banco. Il collaudo avversario in chat vergine (P2) **e' stato
-  fatto** ed e' costato **26 difetti**, di cui **nove falsi verdi con gravita' di
-  blocco**; prima c'era stato un tribunale a tre periti, 32 rilievi.
+- **Stato attuale:** **costruito, collaudato e con le tre decisioni della
+  direzione eseguite** (P.5 P0+P1+P2+P3, 2026-08-06). SKILL.md completo, gate a
+  **nove passi** con `--json`, **162 test** sugli script (erano 104 alla
+  consegna, 148 al collaudo), quattro reference, due template e un generatore di
+  banco. Il collaudo avversario in chat vergine (P2) **e' stato fatto** ed e'
+  costato **26 difetti**, di cui **nove falsi verdi con gravita' di blocco**;
+  prima c'era stato un tribunale a tre periti, 32 rilievi. P.5-P3 ha eseguito
+  **D20** e **D23** e chiuso una classe di difetto nei messaggi in **sette
+  punti**.
   **Nessun deploy è mai stato eseguito da questa skill.** Vedi §Cosa non è mai
   stato provato.
+- **Il gate è più severo di ieri, in tre modi**, e chi rilancia deve saperlo:
+  la firma **per delega** su `docs/deploy.md` è un `block` (D20); un verdetto
+  dentro una **citazione** non conta per `catena-gate` (D23 §1); una voce del
+  registro del debito senza la riga `Blocca il deploy: sì | no` vale
+  **MANCANTE** (D23 §2). Un gate che comincia a rifiutare un progetto che prima
+  accettava è il sistema che funziona.
 - **I due difetti che vale la pena sapere prima degli altri**, e nessuno dei due
   era nel gate: il **rimedio che questa skill scrive** nel `next.config.ts` del
   cliente **non compilava** sotto `strict`, e faceva nascere un artefatto che
@@ -61,7 +70,8 @@ La tabella completa — cosa resta indimostrato passo per passo — è in
 | **P1b** — sabotaggio | un difetto per classe, e il rosso misurato | **fatta** — gemello pulito VERDE 9/9, **36 classi, 36 rosse, 0 non prese** |
 | **P1c** — tribunale (`/code-inquisition`, council di 3) | tre periti in isolamento, modelli diversi, posture avversarie distinte | **fatto** — **32 rilievi, 32 chiusi**, ognuno col suo test di regressione. Il più grave: il rimedio che questa skill prescrive **rompeva la build del cliente** su un `next.config.mjs` |
 | **P2** — collaudo avversario, in chat vergine | il gate è il contratto sotto esame; il verbale di costruzione è un'affermazione da verificare | **fatto** — 2026-08-06, `COLLAUDO-2026-08-06.md`. **26 difetti, 26 chiusi**, ognuno con la sua misura prima/dopo e il suo test. Banco nuovo (studio dentistico) costruito dai soli documenti: **VERDE 9/9**, e ricostruibile con `scripts/banco.mjs`. **Quattro** affermazioni del verbale di costruzione non si riproducono: 105 test erano 104, «5 warning» erano 8, «0 cloni» erano 4, e `banco.mjs` non esisteva. Le 36 classi di sabotaggio invece **reggono**: 31 rilanciate, 31 rosse sul passo giusto |
-| **P3** — il primo deploy vero | **lo autorizza Alberto di persona.** È l'unica cosa che questa skill non ha potuto provare, ed è il suo mestiere | **da fare** |
+| **P3** — le tre decisioni della direzione, eseguite | D20 (la delega non copre ciò che autorizza), D23 §1 (la citazione non è un verdetto), D23 §2 (il registro dichiara con una riga di forma fissa), più la classe «il messaggio stampa una data e la regola confronta un istante» | **fatto** — 2026-08-06, `P5-P3-2026-08-06.md`. Batteria 148 → **162**. Banco **VERDE 9/9 due volte**, su due cartelle rigenerate dallo script. La misura non prevista: il gate **vecchio** davanti al registro **appena migrato** del pilota legge **45 bloccanti su 56**, quello nuovo ne legge **10** — una correzione a monte senza la sua metà a valle peggiora invece di lasciare uguale |
+| **P4** — il primo deploy vero | **lo autorizza Alberto di persona.** È l'unica cosa che questa skill non ha potuto provare, ed è il suo mestiere | **da fare** |
 
 ## Cosa un gate verde NON prova
 
@@ -139,6 +149,7 @@ Cose che questo agente ha **misurato** e che non può chiudere da solo.
 |---|---|---|
 | **schema-forge** | il template del seed produca **due file distinti** fin dall'inizio: `seed di riferimento` (ogni ambiente) e `seed di sviluppo` (mai in produzione), col secondo che porta già la riga `-- launchpad-consentito: credenziale-sql — …` | il pilota ci è arrivato **a un passo dal deploy** (debito n°27) e ha dovuto separarli in P.4g. Nascere separati costa una riga; separarli dopo costa un debito che blocca la pubblicazione |
 | **schema-forge** | dichiarare `engines.node` in `package.json` alla nascita del progetto, derivandolo dal massimo di ciò che le dipendenze pretendono | il pilota è arrivato a P.5 senza (debito n°32), e **il sito non si costruiva** su Node 20. Il gate lo misura, ma misurarlo dopo è tardi |
+| **schema-forge** | il template di `docs/DEBITO-TECNICO.md` porti la riga di forma fissa **`Blocca il deploy: sì \| no`** dentro la riga di ogni voce aperta (D23 §2). Forma completa in `references/verifica-deterministica.md` §3.3 | il registro lo genera lui, non launchpad. Finché il template non la porta, **ogni progetto nuovo nasce con un registro che il gate dichiara MANCANTE** — e il gate lo dice per nome nel testo che stampa. Sul pilota la migrazione è stata fatta a mano, nella stessa ondata (D18 §3) |
 | **vetrina-crafter** e **gestionale-crafter** | scrivere `generateBuildId` derivato dal commit già nello scaffold | è la sola prova d'identità che sopravvive alla ricostruzione del provider, e oggi il progetto generato non ce l'ha |
 | **tutti e cinque** | l'handoff **si ridata** quando il codice cambia dopo | sul pilota, al 2026-08-06, **quattro handoff su cinque** sono più vecchi dell'ultimo commit di codice: i certificati ci sono e sono scaduti |
 | **cyber-shield** (🔵) | la limitazione di frequenza. Il pilota la dichiara come prescrizione di deploy in **due** voci (n°4 e n°17) | non è materia di questa skill, e finché cyber-shield non esiste resta una riga nel runbook invece che una difesa |
@@ -148,24 +159,27 @@ Cose che questo agente ha **misurato** e che non può chiudere da solo.
 | A chi | Cosa |
 |---|---|
 | **demoniac** | l'handoff di launchpad dichiara dominio, commit e impronta: è da lì che si sa quale versione del sito sta riprendendo il video |
-| **chi mantiene** | `docs/deploy.md` è l'unico documento del progetto scritto perché una persona che non c'era sappia **rifare** e **disfare**. La firma **si rinnova** a ogni pubblicazione: una firma più vecchia dell'ultimo commit ha autorizzato un altro contenuto |
+| **chi mantiene** | `docs/deploy.md` è l'unico documento del progetto scritto perché una persona che non c'era sappia **rifare** e **disfare**. La firma **si rinnova** a ogni pubblicazione: una firma più vecchia dell'ultimo commit ha autorizzato un altro contenuto. E **non si delega** (D20): su questo file il gate rifiuta la forma `per delega di …` |
 
-## Le tre decisioni che restano alla direzione
+## Le tre decisioni che restavano alla direzione — **decise ed eseguite**
 
-Misurate dal collaudo e **non** chiuse da qui, perché chiuderle sarebbe
-riscrivere il contratto dell'agente. Per esteso in `COLLAUDO-2026-08-06.md` §9-10.
+Misurate dal collaudo, decise dalla direzione la notte del 2026-08-06 (D20 e
+D23 del `CANTIERE.md`), eseguite in P.5-P3. Per esteso in
+`P5-P3-2026-08-06.md`, col prima e il dopo di ognuna.
 
-1. **La firma per delega** su `docs/deploy.md`. Il gate oggi l'accetta e la
-   dichiara con un `warn`: la D14 ha introdotto quella forma per **due contratti
-   di collaudo**, la §6 vieta di delegare ciò che non si annulla, e questo
-   documento autorizza l'unica azione irreversibile della pipeline.
-2. **La §19 e la citazione.** Un `> Gate: VERDE` copiato da un altro progetto
-   vale come verdetto di questo. Per gli altri cinque agenti la §19 vale su un
-   documento proprio; launchpad è l'unico che legge **certificati altrui**.
-3. **Il registro del debito con una riga di forma fissa** (`Blocca il deploy:
-   sì | no`) invece della prosa. L'elenco delle forme che il gate riconosce è
-   aperto per costruzione: il collaudo ne ha scavalcate due e ne ha aggiunte due,
-   e la prossima persona ne inventerà una terza.
+1. **La firma per delega** su `docs/deploy.md` → **`block`** (D20). *Si può
+   delegare la firma su un verbale, non su un mandato:* la D14 vale sui
+   documenti che descrivono un lavoro già fatto, e questo **autorizza**. La
+   delega resta valida ovunque altrove, e un test lo tiene stretto.
+2. **La §19 e la citazione** → per il solo `catena-gate`, un verdetto dentro una
+   citazione **non conta** (D23 §1). La §19 generale, che vive in cinque gate e
+   nel passo 9, non è stata toccata. Costo accettato e dichiarato: un verdetto
+   legittimo scritto in citazione diventa un rosso, e il messaggio dice come si
+   toglie.
+3. **Il registro del debito con la riga `Blocca il deploy: sì | no`** (D23 §2).
+   L'assenza vale **MANCANTE per quella voce**; la prosa resta come `warn` che
+   nomina le voci da migrare e non decide più. **Il template è di schema-forge**
+   — vedi §Proposte a monte.
 
 ## Verbali
 
@@ -173,3 +187,8 @@ riscrivere il contratto dell'agente. Per esteso in `COLLAUDO-2026-08-06.md` §9-
 - `COLLAUDO-2026-08-06.md` — collaudo avversario indipendente (P.5, P2):
   26 difetti misurati e chiusi, l'audit delle affermazioni del verbale di
   costruzione, le tensioni con la `SKILL.md`.
+- `P5-P3-2026-08-06.md` — le tre decisioni della direzione eseguite (P.5, P3):
+  D20, D23 §1 e §2 col prima e il dopo di ognuna; i **sette** messaggi che
+  stampavano un valore più grossolano di quello che la regola aveva
+  confrontato; il banco **VERDE 9/9 due volte**; e la sezione «Cosa resta
+  MANCANTE, col suo nome».
