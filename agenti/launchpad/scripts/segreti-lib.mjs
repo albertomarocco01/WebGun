@@ -359,18 +359,25 @@ export function findingsFile(percorso, testo, { dove = "file" } = {}) {
 /**
  * Il verdetto complessivo su un insieme di file gia' letti.
  *
- * `letti` = [{percorso, testo}] tracciati · `ignorati` = [{percorso, testo}]
- * presenti sul disco ma fuori da git · `storia` = [{percorso, testo}] estratti
- * dai diff · `binari` = percorsi non letti perche' binari.
+ * `letti` = [{percorso, testo}] tracciati · `daTracciare` = [{percorso, testo}]
+ * nuovi e non ignorati · `ignorati` = [{percorso, testo}] fuori da git ·
+ * `storia` = [{percorso, testo}] estratti dai diff · `binari` = percorsi non
+ * letti perche' binari.
  *
  * PREMESSA PRIMA DELL'ESITO (DECISIONI.md §18): con zero file letti questa
  * funzione NON dice «nessun segreto». Chi la chiama deve guardare
  * `riassunto.letti` e dichiarare MANCANTE. Qui si ritorna il conteggio proprio
  * perche' il chiamante non possa fingere di non saperlo.
  */
-export function esitoSegreti({ letti = [], ignorati = [], storia = [], binari = [] } = {}) {
+export function esitoSegreti({ letti = [], daTracciare = [], ignorati = [], storia = [], binari = [] } = {}) {
   const findings = [];
-  for (const { percorso, testo } of letti) {
+  // I file NUOVI e non ignorati si guardano con la stessa gravita' dei
+  // tracciati, ed e' una correzione misurata: sul banco, il 2026-08-06, quattro
+  // sabotaggi su sette hanno scavalcato questo passo semplicemente scrivendo un
+  // file NUOVO. `git ls-files` non li elenca, `--others --ignored` nemmeno, e
+  // il passo dichiarava «140 file letti · nessun rilievo» sopra una chiave
+  // `service_role` sul disco. Il gesto successivo di chiunque e' `git add -A`.
+  for (const { percorso, testo } of [...letti, ...daTracciare]) {
     if (eFileAmbienteTracciato(percorso)) {
       findings.push({
         severity: "block",
@@ -428,6 +435,7 @@ export function esitoSegreti({ letti = [], ignorati = [], storia = [], binari = 
     findings,
     riassunto: {
       letti: letti.length,
+      daTracciare: daTracciare.length,
       ignorati: ignorati.length,
       storia: storia.length,
       binari: binari.length,

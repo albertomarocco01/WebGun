@@ -45,6 +45,7 @@ import {
   numeriCitati,
   riepilogo,
   statoDaFindings,
+  VARIABILI_IMPRONTA,
   variabiliLette,
   verdettoDa,
 } from "./gate-lib.mjs";
@@ -295,6 +296,17 @@ const PASSI = [
           else letti.push({ percorso, testo: buf.toString("utf8") });
         } catch { /* file sparito fra `ls-files` e la lettura: non si accusa nessuno */ }
       }
+      // I file NUOVI e non ignorati: `git ls-files` non li elenca e il gesto
+      // successivo di chiunque e' `git add -A`. Vedi la nota in `esitoSegreti`.
+      const daTracciare = [];
+      for (const percorso of gitRighe(["ls-files", "--others", "--exclude-standard"]) ?? []) {
+        if (FUORI_DAL_PACCHETTO.test(percorso)) continue;
+        try {
+          const buf = readFileSync(join(PROGETTO, percorso));
+          if (eBinario(buf)) binari.push(percorso);
+          else daTracciare.push({ percorso, testo: buf.toString("utf8") });
+        } catch { /* sparito fra l'elenco e la lettura */ }
+      }
       const ignorati = [];
       for (const percorso of gitRighe(["ls-files", "--others", "--ignored", "--exclude-standard"]) ?? []) {
         if (FUORI_DAL_PACCHETTO.test(percorso)) continue;
@@ -304,10 +316,10 @@ const PASSI = [
         } catch { /* ignorato e illeggibile: non e' un rilievo */ }
       }
       const storia = leggiStoria(args.storia);
-      const { findings, riassunto } = esitoSegreti({ letti, ignorati, storia, binari });
+      const { findings, riassunto } = esitoSegreti({ letti, daTracciare, ignorati, storia, binari });
       ctx.segretiRiassunto = riassunto;
       const testa = [
-        `${riassunto.letti} file tracciati letti · ${riassunto.binari} binari non letti · ${riassunto.ignorati} file ignorati guardati`,
+        `${riassunto.letti} file tracciati letti · ${riassunto.daTracciare} nuovi non ancora tracciati · ${riassunto.binari} binari non letti · ${riassunto.ignorati} file ignorati guardati`,
         `storia: ${storia.length} commit attraversati (--storia ${args.storia})`,
         `${riassunto.famiglie} famiglie di segreto cercate · quello che si trova NON si stampa: solo famiglia, file, riga e i primi quattro caratteri`,
       ].join("\n");
@@ -324,7 +336,13 @@ const PASSI = [
           `${RUNBOOK} assente: senza il runbook non si sa quali radici finiscono nel pacchetto, e contare le variabili di un file di test come variabili di produzione produce un rosso sull'imputato sbagliato`);
       }
       const radici = ctx.runbook.radiciSpedite.length > 0 ? ctx.runbook.radiciSpedite : RADICI_PREDEFINITE;
-      const tracciati = gitRighe(["ls-files"]) ?? [];
+      // Tracciati E nuovi: un sorgente appena scritto legge le sue variabili
+      // esattamente come uno vecchio, e aspettare che sia committato per
+      // accorgersene significa accorgersene un commit troppo tardi.
+      const tracciati = [
+        ...(gitRighe(["ls-files"]) ?? []),
+        ...(gitRighe(["ls-files", "--others", "--exclude-standard"]) ?? []).filter((p) => !FUORI_DAL_PACCHETTO.test(p)),
+      ];
       const spediti = tracciati.filter((p) =>
         /\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(p) &&
         radici.some((r) => p === r.replace(/\/$/, "") || p.startsWith(r.replace(/\/$/, "") + "/")));
@@ -342,10 +360,14 @@ const PASSI = [
         if (destruttura) destrutturano.push(percorso);
       }
       const findings = findingsAmbiente({ lette, destrutturano, runbook: ctx.runbook });
+      const escluse = VARIABILI_IMPRONTA.filter((n) => lette.has(n));
       const testa = [
         `radici spedite: ${radici.join(" · ")} · ${spediti.length} sorgenti letti`,
         `${lette.size} variabili lette dal codice · ${ctx.runbook.variabili.length} dichiarate nel runbook`,
-      ].join("\n");
+        escluse.length > 0
+          ? `${escluse.length} escluse perche' sono le fonti del commit dell'impronta, non configurazione dell'app: ${escluse.join(" · ")}`
+          : "",
+      ].filter(Boolean).join("\n");
       return conFindings(this.id, this.nome, findings, testa);
     },
   },

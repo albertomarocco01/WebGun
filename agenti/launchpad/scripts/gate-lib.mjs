@@ -409,11 +409,26 @@ export function variabiliLette(testo) {
 
 const INDIRIZZO_LOCALE = /(127\.0\.0\.1|localhost|0\.0\.0\.0|\[::1\])/i;
 
+/**
+ * Le fonti del commit che il frammento dell'impronta legge in `next.config`.
+ *
+ * NON sono configurazione dell'applicazione: sono gli ingressi del meccanismo
+ * che questa skill stessa scrive, e le ultime due le imposta il provider da
+ * solo su una build connessa a git. Pretenderle nel runbook produceva tre
+ * `block` — misurati sul banco il 2026-08-06 — cioe' il gate diventava rosso
+ * per il codice che il suo stesso comando `impronta` aveva appena messo li'.
+ *
+ * Un gate che boccia il rimedio che la sua skill prescrive e' un gate che
+ * insegna a non applicare il rimedio.
+ */
+export const VARIABILI_IMPRONTA = Object.freeze(["WEBGUN_COMMIT", "VERCEL_GIT_COMMIT_SHA", "CF_PAGES_COMMIT_SHA"]);
+
 export function findingsAmbiente({ lette = new Map(), destrutturano = [], runbook } = {}) {
   const findings = [];
   const dichiarate = new Map(runbook.variabili.map((v) => [v.nome, v]));
 
   for (const [nome, file] of lette) {
+    if (VARIABILI_IMPRONTA.includes(nome)) continue;
     const v = dichiarate.get(nome);
     if (!v) {
       findings.push({
@@ -641,8 +656,15 @@ export function findingsImpronta({ nextConfig = null, buildIdDisco = null, commi
       hint: "dopo una ricostruzione del provider nessuno puo' piu' dimostrare cosa c'e' online. Non e' un dettaglio di comodita': e' la sola prova d'identita' che sopravvive al fatto che non siamo noi a costruire",
     });
   } else {
-    const corpo = nextConfig.slice(nextConfig.indexOf("generateBuildId"));
-    if (SHA_LETTERALE.test(corpo.slice(0, 600))) {
+    // Il file INTERO, non una finestra dopo la chiave. Misurato sul banco il
+    // 2026-08-06: `generateBuildId: improntaDalCommit` rimanda a una funzione
+    // definita PRIMA — che e' la forma che il frammento della skill produce —
+    // e una finestra di 600 caratteri dopo la chiave non vede mai il corpo.
+    // Il gate accusava di «non sollevare» un frammento che solleva.
+    // Un `next.config` e' un file piccolo e dedicato: leggerlo tutto costa
+    // niente, e un letterale esadecimale li' dentro non ha altre spiegazioni.
+    const corpo = nextConfig;
+    if (SHA_LETTERALE.test(corpo)) {
       findings.push({
         severity: "block",
         object: "next.config.ts → generateBuildId",
@@ -650,7 +672,7 @@ export function findingsImpronta({ nextConfig = null, buildIdDisco = null, commi
         hint: "al commit successivo quel letterale e' ancora li', e la build del provider dichiarerebbe con sicurezza il commit SBAGLIATO. E' peggio dell'impronta casuale: quella ammette di non sapere, questa afferma il falso",
       });
     }
-    if (!/throw\b/.test(corpo.slice(0, 600))) {
+    if (!/throw\b/.test(corpo)) {
       findings.push({
         severity: "issue",
         object: "next.config.ts → generateBuildId",

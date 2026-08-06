@@ -20,6 +20,7 @@ import {
   minimoNode,
   numeriCitati,
   piuVecchioDi,
+  VARIABILI_IMPRONTA,
   verdettoDa,
   verdettoHandoff,
 } from "./gate-lib.mjs";
@@ -326,6 +327,36 @@ test("una variabile di servizio col VALORE nel runbook blocca: il runbook e' com
   ));
   const f = findingsAmbiente({ lette: new Map([["SUPABASE_SECRET_KEY", "src/lib/admin.ts"]]), runbook: r });
   assert.ok(blocchi(f).some((x) => /VALORE/.test(x.message)));
+});
+
+test("le fonti del commit dell'impronta non si pretendono nel runbook", () => {
+  // Difetto misurato sul banco il 2026-08-06: il frammento che il comando
+  // `impronta` scrive in `next.config.ts` legge tre variabili, e il passo
+  // `ambiente` produceva tre `block` — cioe' il gate diventava rosso per il
+  // codice che la sua stessa skill aveva appena messo li'. Un gate che boccia
+  // il rimedio che prescrive e' un gate che insegna a non applicarlo.
+  assert.deepEqual(VARIABILI_IMPRONTA, ["WEBGUN_COMMIT", "VERCEL_GIT_COMMIT_SHA", "CF_PAGES_COMMIT_SHA"]);
+  const lette = new Map(VARIABILI_IMPRONTA.map((n) => [n, "next.config.ts"]));
+  lette.set("NEXT_PUBLIC_SITO_URL", "src/lib/seo.ts");
+  const f = findingsAmbiente({ lette, runbook: leggiRunbook(RUNBOOK) });
+  assert.deepEqual(blocchi(f), []);
+});
+
+test("il corpo di `generateBuildId` si cerca in TUTTO il file, non dopo la chiave", () => {
+  // La forma che il frammento della skill produce e' `generateBuildId:
+  // improntaDalCommit`, con la funzione definita PRIMA. Una finestra di 600
+  // caratteri dopo la chiave non vede mai il corpo, e il gate accusava di «non
+  // sollevare» un frammento che solleva. Misurato sul banco il 2026-08-06.
+  const config = [
+    "const improntaDalCommit = () => {",
+    "  const sha = process.env.WEBGUN_COMMIT || leggiDaGit();",
+    "  if (!sha) { throw new Error('impronta: commit non risolvibile'); }",
+    "  return sha.slice(0, 12);",
+    "};",
+    "const nextConfig = { generateBuildId: improntaDalCommit };",
+  ].join("\n");
+  const f = findingsImpronta({ nextConfig: config, buildIdDisco: "dd7cf7bbdb93", commit: "dd7cf7bbdb93ee" });
+  assert.deepEqual(f, [], "ne' block ne' issue: questo frammento e' quello giusto");
 });
 
 test("una variabile dichiarata e mai letta e' un `issue`: quasi sempre un nome cambiato", () => {

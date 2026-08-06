@@ -210,6 +210,21 @@ test("esitoSegreti: un `.env` tracciato e' un block a prescindere dal contenuto"
   assert.match(findings[0].message, /TRACCIATO/);
 });
 
+test("esitoSegreti: un file NUOVO e non ignorato si guarda come un tracciato", () => {
+  // Difetto misurato sul banco il 2026-08-06: quattro sabotaggi su sette hanno
+  // scavalcato il passo semplicemente scrivendo un file nuovo. `git ls-files`
+  // non lo elenca, `--others --ignored` nemmeno, e il passo dichiarava «140
+  // file letti · nessun rilievo» sopra una chiave `service_role` sul disco.
+  const { findings, riassunto } = esitoSegreti({
+    letti: [{ percorso: "README.md", testo: "niente" }],
+    daTracciare: [{ percorso: "src/lib/admin.ts", testo: `const k = "${SERVICE}";` }],
+  });
+  assert.equal(riassunto.daTracciare, 1);
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].severity, "block", "il gesto successivo di chiunque e' `git add -A`");
+  assert.match(findings[0].object, /admin\.ts/);
+});
+
 test("esitoSegreti: i file ignorati danno UNA riga per file, non una per rilievo", () => {
   // Misurato sul pilota: per riga uscivano 40 issue, 34 delle quali erano lo
   // stesso file di segreti dello stack locale ripetuto.

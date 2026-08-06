@@ -98,6 +98,17 @@ export function raccogli(dir, storiaN) {
       else letti.push({ percorso, testo: buf.toString("utf8") });
     } catch { /* sparito fra `ls-files` e la lettura: non si accusa nessuno */ }
   }
+  // I file NUOVI e non ignorati: `git ls-files` non li elenca, e il gesto
+  // successivo di chiunque e' `git add -A`. Vedi la nota in `esitoSegreti`.
+  const daTracciare = [];
+  for (const percorso of gitRighe(dir, ["ls-files", "--others", "--exclude-standard"]) ?? []) {
+    if (FUORI_DAL_PACCHETTO.test(percorso)) continue;
+    try {
+      const buf = readFileSync(join(dir, percorso));
+      if (eBinario(buf)) binari.push(percorso);
+      else daTracciare.push({ percorso, testo: buf.toString("utf8") });
+    } catch { /* sparito fra l'elenco e la lettura */ }
+  }
   const ignorati = [];
   for (const percorso of gitRighe(dir, ["ls-files", "--others", "--ignored", "--exclude-standard"]) ?? []) {
     if (FUORI_DAL_PACCHETTO.test(percorso)) continue;
@@ -106,7 +117,7 @@ export function raccogli(dir, storiaN) {
       if (!eBinario(buf) && buf.length < 512 * 1024) ignorati.push({ percorso, testo: buf.toString("utf8") });
     } catch { /* ignorato e illeggibile: non e' un rilievo */ }
   }
-  return { letti, ignorati, binari, storia: leggiStoria(dir, storiaN) };
+  return { letti, daTracciare, ignorati, binari, storia: leggiStoria(dir, storiaN) };
 }
 
 function parseArgs(argv) {
@@ -150,7 +161,7 @@ function main() {
   // non deve poter somigliare a un controllo pulito.
   console.log(`SEGRETI: ${g.block === 0 ? "nessun bloccante" : `${g.block} BLOCCANTI`} (${g.issue} da guardare)`);
   console.log(`progetto: ${args.progetto}`);
-  console.log(`  ${riassunto.letti} file tracciati letti · ${riassunto.binari} binari non letti (le famiglie lavorano su testo)`);
+  console.log(`  ${riassunto.letti} file tracciati letti · ${riassunto.daTracciare} nuovi non ancora tracciati · ${riassunto.binari} binari non letti`);
   console.log(`  ${riassunto.ignorati} file ignorati guardati (partono solo con un deploy da CLI)`);
   console.log(`  ${riassunto.storia} commit attraversati nella storia · ${riassunto.famiglie} famiglie cercate`);
   if (riassunto.letti === 0) {
