@@ -1083,3 +1083,21 @@ test("ma un verdetto davvero diverso resta un block", () => {
   assert.equal(f[0].severity, "block");
   assert.match(f[0].message, /dichiara `Gate: VERDE` ma il gate chiude ROSSO/);
 });
+
+// ── sonde ostili PROVATE IMMUNI (audit di P.7e, 2026-08-06) ─────────────────
+// Uno scanner provato immune vale quanto uno riparato, ed e' l'unico modo in cui
+// questo audit finisce invece di ripetersi. Questi due restano verdi, e restano
+// scritti.
+
+test("un indizio di dev server dentro il TESTO della pagina non e' un indizio", () => {
+  assert.deepEqual(
+    indiziDevServer("<html><body><p>abbiamo aperto /_next/static/chunks/webpack.js in dev</p></body></html>"),
+    [],
+  );
+});
+
+test("ma una dev server vera si riconosce ancora", () => {
+  const html = '<script src="/_next/static/chunks/webpack.js"></script>'
+    + '<script src="/_next/static/development/_buildManifest.js"></script>';
+  assert.ok(indiziDevServer(html).length > 0);
+});

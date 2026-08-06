@@ -1240,3 +1240,36 @@ test("senza password non cambia niente: nessuna variabile, URL com'era", () => {
 test("cio' che non e' una URL si passa com'e': non e' compito di questa funzione", () => {
   assert.deepEqual(credenzialiPsql("dbname=postgres host=127.0.0.1"), { url: "dbname=postgres host=127.0.0.1", env: {} });
 });
+
+// ── sonda ostile: nemmeno una stringa configura qualcosa (P.7e, 2026-08-06) ──
+// `senzaCommentiJs` diceva «le stringhe restano: un `//` dentro un URL non apre
+// un commento, ed e' il solo caso che si incontra in un file di
+// configurazione» — la stessa frase del difetto n°50, una tolleranza aggiunta
+// per un caso e pagata su un altro.
+
+test("un `retries` scritto dentro una stringa non dichiara niente", () => {
+  const esito = contrattoUscita(
+    "docs/handoff/09-flow-sentinel.md", "Gate: VERDE\n",
+    'export default { use: { nota: "retries: 1" } };', "VERDE",
+  );
+  assert.equal(esito.status, "fail");
+  assert.match(esito.detail, /non dichiara `retries`/);
+});
+
+test("ma un `retries: 1` vero continua a bastare, commento sopra compreso", () => {
+  const cfg = "// retries: 3 sarebbe sbagliato\nexport default {\n  retries: 1,\n};";
+  assert.equal(contrattoUscita("docs/handoff/09-flow-sentinel.md", "Gate: VERDE\n", cfg, "VERDE").status, "pass");
+});
+
+test("e il `retries: 3` dentro `projects` resta un fail", () => {
+  const cfg = "export default {\n  retries: 1,\n  projects: [{ retries: 3 }],\n};";
+  assert.match(contrattoUscita("docs/handoff/09-flow-sentinel.md", "Gate: VERDE\n", cfg, "VERDE").detail, /retries: 3/);
+});
+
+test("l'helper del database vive dentro una stringa, e li' resta leggibile", () => {
+  // La stessa funzione con l'altra risposta: due domande diverse, due
+  // spogliatori. Se qui le stringhe si svuotassero, il percorso del modulo
+  // sparirebbe e nessuna spec risulterebbe mai importare l'helper.
+  const spec = 'import { test } from "@playwright/test";\nimport { conta } from "./helpers/db";\ntest("x", async () => { await conta(); });';
+  assert.deepEqual(usaHelperDb(spec), { importa: true, chiama: true, nomi: ["conta"] });
+});

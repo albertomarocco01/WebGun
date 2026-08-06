@@ -17,7 +17,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
-import { costruisciErd, righeDaPsql } from "./erd-lib.mjs";
+import { costruisciErd, motivoAritaSbagliata, recordDiAritaSbagliata, righeDaPsql } from "./erd-lib.mjs";
 import { argomentiOstiliACmd, formaEseguibile, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
 
 const SEP = "\x1f";
@@ -54,7 +54,7 @@ const psql = (() => {
   return formaEseguibile("psql", () => percorso);
 })();
 
-function query(dbUrl, sql) {
+function query(dbUrl, sql, arita, nomeQuery) {
   if (psql.file === null) {
     console.error("psql non disponibile nel PATH: diagramma NON generato.");
     process.exit(2);
@@ -87,7 +87,16 @@ function query(dbUrl, sql) {
     console.error(`psql ha fallito: ${(res.stderr || "").trim()}`);
     process.exit(2);
   }
-  return righeDaPsql(res.stdout, SEP, REC);
+  const record = righeDaPsql(res.stdout, SEP, REC);
+  // OGNI query dichiara quanti campi ha (2026-08-06, trovato con una sonda
+  // ostile): un separatore dentro un testo del catalogo sposta le colonne, e un
+  // diagramma con le colonne slittate descrive un altro catalogo.
+  const rotti = recordDiAritaSbagliata(record, arita);
+  if (rotti.length > 0) {
+    console.error(motivoAritaSbagliata(nomeQuery, arita, rotti));
+    process.exit(2);
+  }
+  return record;
 }
 
 // ------------------------------------------------------- lettura del catalogo
@@ -109,7 +118,8 @@ function leggiCatalogo({ dbUrl, schemas }) {
        join pg_namespace n on n.oid = c.relnamespace
       where n.nspname in (${list}) and c.relkind = 'r'
         and a.attnum > 0 and not a.attisdropped
-      order by c.relname, a.attnum`
+      order by c.relname, a.attnum`,
+    6, "colonne"
   );
 
   // L'ultima colonna dice se l'insieme di colonne della FK e' anche UNICO: in
@@ -135,7 +145,8 @@ function leggiCatalogo({ dbUrl, schemas }) {
        join pg_namespace tgtn on tgtn.oid = tgt.relnamespace
        join pg_namespace n on n.oid = con.connamespace
       where con.contype = 'f' and n.nspname in (${list})
-      order by 1, 2`
+      order by 1, 2`,
+    6, "relazioni"
   );
 
   return { colonne, relazioni, schemi: schemas };

@@ -32,6 +32,39 @@ export function righeDaPsql(stdout, sep = "\x1f", rs = "\x1e") {
 }
 
 /**
+ * L'ARITA' ANCHE QUI (2026-08-06).
+ *
+ * `audit-lib.mjs` l'ha guadagnata col § H5 del referto — un separatore di campo
+ * dentro un testo libero del catalogo sposta le colonne — e questa libreria era
+ * rimasta indietro: misurato lo stesso giorno con una sonda ostile,
+ * `righeDaPsql("a\x1fb\x1fc\x1fd\x1e")` restituisce quattro campi dove la query
+ * ne dichiara tre, e nessuno lo diceva.
+ *
+ * Qui il danno e' minore e va scritto: questo file produce un DIAGRAMMA, non un
+ * verdetto, e un nome di tabella o di colonna un separatore di controllo non lo
+ * contiene. Ma il commento che diceva «qui il rischio e' minore» e' esattamente
+ * la frase che questo pacchetto ha visto smentita tre volte in due giorni, e uno
+ * scanner immune per fortuna torna difettoso al primo riuso.
+ *
+ * Le otto righe sono duplicate da `audit-lib.mjs` per la stessa decisione
+ * dichiarata di sempre: le due librerie di Schema Forge restano indipendenti.
+ */
+export function recordDiAritaSbagliata(record, arita) {
+  return (record ?? [])
+    .map((campi, indice) => ({ indice, quanti: campi.length }))
+    .filter((r) => r.quanti !== arita);
+}
+
+export function motivoAritaSbagliata(nomeQuery, arita, rotti) {
+  const primi = rotti.slice(0, 3)
+    .map((r) => `record ${r.indice + 1}: ${r.quanti} campi invece di ${arita}`)
+    .join("; ");
+  return `la query \`${nomeQuery}\` ha restituito ${rotti.length} record con un numero di campi diverso da quello dichiarato (${primi}). ` +
+    "Quasi certamente un separatore di campo (\\x1f) o di record (\\x1e) dentro un testo del catalogo. " +
+    "Diagramma NON generato: meglio nessun diagramma di uno che descrive un altro catalogo.";
+}
+
+/**
  * @param colonne   righe [tabella, colonna, tipo, notNull, isPk, isFk]
  * @param relazioni righe [origine, destinazione, nomeVincolo, obbligatoria,
  *                         schemaDestinazione, esclusiva]

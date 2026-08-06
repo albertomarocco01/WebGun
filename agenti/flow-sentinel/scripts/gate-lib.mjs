@@ -280,7 +280,7 @@ const COMMENTO = /^\s*(\/\/|\*|\/\*)/;
 //                svuotato — cosi' nemmeno un `.only` NOMINATO dentro una
 //                stringa vale come un `.only` chiamato;
 //   `commento` = `true` se su quella riga c'era un commento VERO.
-function codiceSenzaCommenti(linee) {
+function codiceSenzaCommenti(linee, svuotaStringhe = true) {
   let inBlocco = false;
   return linee.map((linea) => {
     let codice = "";
@@ -301,9 +301,15 @@ function codiceSenzaCommenti(linee) {
       }
 
       if (delimitatore !== null) {
-        if (c === "\\") { i += 2; continue; }
+        if (c === "\\") {
+          if (!svuotaStringhe) codice += c + (linea[i + 1] ?? "");
+          i += 2;
+          continue;
+        }
         if (c === delimitatore) {
           delimitatore = null;
+          codice += c;
+        } else if (!svuotaStringhe) {
           codice += c;
         }
         i += 1;
@@ -1021,11 +1027,32 @@ const RIGA_RETRIES = /(^|[^\w.])retries\s*:\s*(\d+)/gm;
  * prescrive ha, sopra quella riga, quattro righe di commento che spiegano
  * perche' il numero e' 1.
  *
- * Le stringhe restano: `//` dentro un URL non apre un commento, ed e' il solo
- * caso che si incontra in un file di configurazione.
+ * E NEMMENO UNA STRINGA CONFIGURA QUALCOSA (2026-08-06, sonda ostile). La forma
+ * a due `replace` diceva «le stringhe restano: un `//` dentro un URL non apre un
+ * commento, ed e' il solo caso che si incontra in un file di configurazione» —
+ * cioe' la stessa frase del difetto n°50, una tolleranza aggiunta per un caso e
+ * pagata su un altro. Misurato:
+ *
+ *   export default { use: { nota: "retries: 1" } };
+ *     PRIMA  il gate legge `retries: 1` e chiude `pass`, su una configurazione
+ *            che `retries` NON lo dichiara affatto
+ *     DOPO   fail: «non dichiara `retries`»
+ *
+ * Ora passa dallo stesso scanner delle spec: i commenti se ne vanno sapendo
+ * dove si trovano, e il CONTENUTO delle stringhe si svuota — perche' qui la
+ * domanda e' «questa configurazione dichiara?», e cio' che sta dentro una
+ * stringa non dichiara niente.
  */
+// Due domande diverse, due funzioni. Qui il CONTENUTO delle stringhe RESTA:
+// `usaHelperDb` cerca il percorso di un modulo, e un percorso dentro una
+// stringa ci vive per definizione.
 const senzaCommentiJs = (testo) =>
-  testo.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  codiceSenzaCommenti(righe(testo), false).map((l) => l.codice).join("\n");
+
+// E qui no: la domanda e' «questa configurazione DICHIARA `retries`?», e cio'
+// che sta dentro una stringa non dichiara niente.
+const soloStruttura = (testo) =>
+  codiceSenzaCommenti(righe(testo), true).map((l) => l.codice).join("\n");
 
 export function contrattoUscita(percorsoHandoff, testoHandoff, testoConfigPlaywright, verdettoPrima) {
   const mancanti = [];
@@ -1037,7 +1064,7 @@ export function contrattoUscita(percorsoHandoff, testoHandoff, testoConfigPlaywr
     // Playwright suggerisce per alzare i tentativi di un progetto solo.
     // Misurato il 2026-07-28: con globale 1 e progetto 3, il runner esegue
     // quattro tentativi. Il gate leggeva il primo numero e diceva `pass`.
-    const valori = [...senzaCommentiJs(senzaBom(testoConfigPlaywright)).matchAll(RIGA_RETRIES)]
+    const valori = [...soloStruttura(testoConfigPlaywright).matchAll(RIGA_RETRIES)]
       .map((t) => t[2]);
     const diversi = [...new Set(valori.filter((v) => v !== "1"))];
     if (valori.length === 0) mancanti.push("playwright.config.ts non dichiara `retries`: il default cambia il significato di ogni verde, e non si legge da nessuna parte");

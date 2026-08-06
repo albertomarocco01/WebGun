@@ -630,3 +630,19 @@ test("test pgTAP NON letti si distingue da zero test pgTAP", () => {
   assert.match(rigaPremesse({ tabelle: 1, policy: 0, viste: 0, funzioniSecurityDefiner: 0, colonne: 1, testiPgtap: null }), /NON letti/);
   assert.match(rigaPremesse({ tabelle: 1, policy: 0, viste: 0, funzioniSecurityDefiner: 0, colonne: 1, testiPgtap: 0 }), /0 file di test pgTAP/);
 });
+
+// ── sonde ostili sugli scanner scritti a mano (audit di P.7e, 2026-08-06) ────
+
+test("una quadra nella prosa della CLI non nasconde il JSON degli advisors", () => {
+  // Misurato: `Connecting to local database [locale]...` bastava a far uscire
+  // il dettaglio grezzo, e con lui spariva «nessun rilievo».
+  assert.equal(dettaglioAdvisors("Connecting to local database [locale]...\n[]\n"), "nessun rilievo");
+  assert.equal(
+    dettaglioAdvisors('Avvio [container: db]\n[{"name":"rls_disabled","level":"ERROR","metadata":{"name":"t","schema":"public"}}]\nfine [ok]'),
+    "[ERROR] rls_disabled (1): public.t",
+  );
+});
+
+test("un'uscita davvero senza JSON resta grezza, come prima", () => {
+  assert.match(dettaglioAdvisors("failed to connect [127.0.0.1]: connection refused"), /connection refused/);
+});

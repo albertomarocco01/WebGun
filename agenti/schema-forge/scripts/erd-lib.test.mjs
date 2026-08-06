@@ -12,7 +12,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { costruisciErd } from "./erd-lib.mjs";
+import {
+  costruisciErd,
+  motivoAritaSbagliata,
+  recordDiAritaSbagliata,
+  righeDaPsql,
+} from "./erd-lib.mjs";
 
 // [tabella, colonna, tipo, notNull, isPk, isFk]
 const COLONNE = [
@@ -142,4 +147,20 @@ test("regressione CRLF: il \\r non entra nel diagramma", () => {
   });
   assert.ok(!erd.includes("\r"), "il diagramma non deve contenere ritorni a capo di psql");
   assert.match(erd, /uuid id PK "obbligatorio"/);
+});
+
+// ── l'arita' anche nel diagramma (sonda ostile di P.7e, 2026-08-06) ──────────
+// `audit-lib.mjs` ha guadagnato il controllo col § H5; questa libreria era
+// rimasta indietro, e il commento che diceva «qui il rischio e' minore» e' la
+// frase che questo pacchetto ha visto smentita tre volte in due giorni.
+
+test("un record che ha i suoi campi passa", () => {
+  assert.deepEqual(recordDiAritaSbagliata(righeDaPsql("a\x1fb\x1fc\x1e"), 3), []);
+});
+
+test("un separatore dentro un testo del catalogo sposta le colonne, e si vede", () => {
+  const rotti = recordDiAritaSbagliata(righeDaPsql("a\x1fb\x1fc\x1fd\x1e"), 3);
+  assert.equal(rotti.length, 1);
+  assert.equal(rotti[0].quanti, 4);
+  assert.match(motivoAritaSbagliata("colonne", 3, rotti), /Diagramma NON generato/);
 });

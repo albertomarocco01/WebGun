@@ -179,17 +179,54 @@ export function dettaglioReset(res, ritentato, migrazioni) {
 // righe e nel dettaglio del gate non lo leggerebbe nessuno. Qui si comprime a
 // una riga per regola — nessun giudizio: il verdetto lo da' il codice d'uscita
 // del CLI (`--fail-on error`), non questa funzione.
+/**
+ * IL PRIMO ARRAY JSON DENTRO LA PROSA DI UNO STRUMENTO.
+ *
+ * L'uscita di `supabase db advisors` e' incorniciata: «Connecting to local
+ * database...» davanti e, se la CLI e' vecchia, l'avviso di aggiornamento
+ * dietro. Si prendeva dalla PRIMA quadra all'ULTIMA — e una quadra dentro la
+ * prosa della CLI (un percorso, il nome di un container, un `[ok]` finale) fa
+ * fallire l'analisi. Misurato il 2026-08-06 con una sonda ostile:
+ * `Connecting to local database [locale]...` bastava, e con l'analisi spariva
+ * anche «nessun rilievo».
+ *
+ * Il verdetto del passo non cambia — lo decide `--fail-on error` della CLI, non
+ * questa funzione — ma il residuo che qualcuno deve leggere si'.
+ *
+ * Le quadre si contano SALTANDO LE STRINGHE: e' la stessa lezione del n°50 e
+ * del n°52, applicata al JSON invece che al codice. Una `]` dentro il messaggio
+ * di un advisor non chiude niente.
+ */
+function primoArrayJson(testo) {
+  for (let i = testo.indexOf("["); i !== -1; i = testo.indexOf("[", i + 1)) {
+    let livello = 0;
+    let inStringa = false;
+    for (let j = i; j < testo.length; j++) {
+      const c = testo[j];
+      if (inStringa) {
+        if (c === "\\") { j += 1; continue; }
+        if (c === '"') inStringa = false;
+        continue;
+      }
+      if (c === '"') { inStringa = true; continue; }
+      if (c === "[") livello += 1;
+      else if (c === "]") {
+        livello -= 1;
+        if (livello > 0) continue;
+        try {
+          const forse = JSON.parse(testo.slice(i, j + 1));
+          if (Array.isArray(forse)) return forse;
+        } catch { /* questa quadra non apriva il JSON: si prova la prossima */ }
+        break;
+      }
+    }
+  }
+  return null;
+}
+
 export function dettaglioAdvisors(stdout, massimoOggetti = 3) {
   const testo = stdout ?? "";
-  let trovati;
-  try {
-    // il JSON e' incorniciato: "Connecting to local database..." davanti e, se la
-    // CLI e' vecchia, l'avviso di aggiornamento dietro. Si prende dalla prima
-    // quadra all'ULTIMA, non fino alla fine del testo.
-    trovati = JSON.parse(testo.slice(testo.indexOf("["), testo.lastIndexOf("]") + 1));
-  } catch {
-    trovati = null;
-  }
+  const trovati = primoArrayJson(testo);
   // uscita non-JSON (errore di connessione, avviso della CLI): si riporta grezza
   if (!Array.isArray(trovati)) return testo.trim().split("\n").slice(0, 20).join("\n");
   if (trovati.length === 0) return "nessun rilievo";
