@@ -85,6 +85,15 @@ che succede quando si apre.
 - **Launchpad non misura il sito.** Non apre Chrome, non lancia Playwright, non
   interroga il database. Quei verdetti li **legge** dagli handoff e ne misura
   solo la freschezza: §Perimetro dice a chi tocca.
+- **Il gate legge il disco, il provider riceve il commit.** È la premessa che
+  regge tutti e nove i passi, e va letta prima dei comandi. Ogni passo che apre
+  un file — il registro del debito, il runbook, gli handoff, i sorgenti di
+  `ambiente`, i file che guarda `segreti` — apre **il file sul disco**, non il
+  blob del commit. L'unica cosa che rende quella lettura equivalente a ciò che
+  il provider costruirà è il passo `radice-pulita`: non è un preliminare
+  cortese, è la condizione senza la quale gli altri otto misurano un altro
+  progetto. È il motivo per cui un albero sporco, un `HEAD` sfasato col remoto o
+  un file marcato `assume-unchanged` sono `block` e non avvisi.
 
 ## Perimetro: cosa è mio, cosa non lo è
 
