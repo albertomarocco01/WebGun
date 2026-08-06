@@ -192,6 +192,40 @@ E la prima esecuzione vera di `plan` e `tune` su guadagni misurati: home
    incomprimibili per costruzione, quindi il guadagno viene quasi tutto dal
    ridimensionamento e dalla compressione con perdita. Su foto vere la
    ripartizione fra le due cause e' diversa; la direzione no.
+9. **Il passo `misura` verifica che Lighthouse ESISTA, non che possa girare.**
+   Misurato sul pilota `fornodoro` il 2026-08-06 (`PILOTA-2026-08-06.md` §4):
+   l'audit `canonical` di Lighthouse 13.4.1 chiama `URL.parse`, aggiunta in
+   **Node 22**. Lanciato col node di sistema 20.12.2 — che e' il node con cui il
+   `CLAUDE.md` dei progetti generati prescrive di lanciare i gate — quell'audit
+   non emette un rilievo: va in **errore**, e l'errore porta l'**intera
+   categoria SEO a `null`**. Stessa build, stesso Chrome: `seo: null` col node
+   di sistema, `seo: 100` col Node 24. Il gate si comporta bene a valle (mappa
+   `null → null` e chiude **rosso** con «soglia dichiarata per `seo` e nessuna
+   misura»), quindi **non e' un falso verde** — ma nomina la categoria invece
+   della causa, e chi legge va a cercare un difetto nel sito. Due aggravanti:
+   **(a)** il difetto si accende **solo quando in pagina esiste un
+   `<link rel="canonical">`**, cioe' solo dopo che la skill ha fatto il proprio
+   lavoro — sui progetti senza canonical l'audit esce `notApplicable` e non si
+   vede niente; **(b)** e' lo stesso ceppo del punto 7: una premessa
+   dell'ambiente che si assume invece di misurarla. Il rimedio sta a monte del
+   passo — lanciare Lighthouse con un node dichiarato, o rifiutarsi di girare
+   sotto il minimo — non nel messaggio d'errore. Sul pilota e' registrato come
+   `docs/DEBITO-TECNICO.md` n°31, con la deroga alla riga del `CLAUDE.md`
+   dichiarata in quattro posti.
+10. **`seo-meta` non guarda l'HOST del `canonical`.** Conta i canonical, ne
+    pretende l'unicita' e verifica che due pagine non se lo dividano — tutte
+    regole giuste. Ma **cinque canonical verso `http://127.0.0.1:3621` sono
+    cinque canonical unici**, e il passo chiude verde su un sito che sta dicendo
+    a ogni motore di ricerca «l'originale di questa pagina sta a un indirizzo che
+    nessuno al mondo puo' raggiungere». Trovato dal tribunale sul pilota
+    `fornodoro` (`PILOTA-2026-08-06.md` §5, rilievo MET-1) e confermato dal
+    Verificatore contro l'app viva. E' il difetto piu' probabile di tutta la
+    famiglia SEO, perche' il ripiego a un indirizzo locale e' esattamente cio'
+    che fa un progetto non ancora deployato: il gate e' verde durante tutta la
+    costruzione e resta verde il giorno del rilascio. Non basta confrontare con
+    l'`--url` misurato (in locale coinciderebbero): serve che il contratto possa
+    dichiarare il **dominio pubblico atteso**, distinto dall'indirizzo su cui si
+    misura, e che il passo confronti i due.
 
 ## Punti chiusi dai collaudi
 
