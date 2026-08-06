@@ -375,6 +375,7 @@ Non duplicano nulla di quanto sta già scritto altrove:
 | `scripts/gate-lib.mjs` | **le regole** del gate: funzioni pure, da testo a verdetto |
 | `scripts/segreti.mjs` | guscio di I/O del controllo segreti: legge i file tracciati e la storia, stampa cosa ha letto |
 | `scripts/segreti-lib.mjs` | **le regole** sui segreti: le otto famiglie, pure e testabili |
+| `scripts/git-lib.mjs` | l'**unico** posto in cui questa skill parla con git: risolutore dell'eseguibile, comandi, lettura della storia. Nato da un rilievo di `jscpd` — due copie divergono, e in questa casa è già successo (`DECISIONI.md` §7) |
 | `scripts/impronta.mjs` | l'impronta derivata dal commit: la calcola, la scrive in `next.config.ts`, la verifica su un indirizzo |
 | `scripts/*.test.mjs` | test degli script — si elencano per esteso (il glob di `node --test` vuole Node 21+) |
 | `resources/templates/deploy.md` | modello del runbook |
