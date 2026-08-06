@@ -115,7 +115,7 @@ persona. In pipeline Launchpad esegue `piano`, `segreti`, `impronta`, `verify` e
 |---|---|---|
 | `piano` | Legge handoff, debito e sorgenti; scrive `docs/deploy.md` dal template con ciò che ha **misurato** (variabili lette dal codice, runtime richiesto, bloccanti dichiarati a monte); **STOP: il runbook lo firma un umano** | `resources/templates/deploy.md` · `references/provider.md` |
 | `segreti` | Il controllo dei segreti da solo, su file tracciati **e storia git**: `node <skill>/scripts/segreti.mjs [--progetto <dir>] [--storia N] [--json]` | `references/segreti.md` |
-| `impronta` | Lega l'artefatto al commit (`generateBuildId` in `next.config.ts`), stampa l'impronta attesa e cosa serve un indirizzo: `node <skill>/scripts/impronta.mjs [--url <url>] [--commit <sha>] [--json]` | §Legge n°4 |
+| `impronta` | Lega l'artefatto al commit (`generateBuildId` in `next.config.ts`), stampa l'impronta attesa e cosa serve un indirizzo: `node <skill>/scripts/impronta.mjs [--progetto <dir>] [--url <url>] [--commit <sha>] [--scrivi] [--json]`. **`--scrivi` è l'unica riga di codice altrui che questo agente tocca**, e la tocca solo se glielo si chiede | §Legge n°4 |
 | `verify` | **Il gate**: nove passi con id stabili e `--json`, misura le premesse prima degli esiti: `node <skill>/scripts/verify.mjs [--url <url>] [--json]` | `references/verifica-deterministica.md` |
 | `pubblica` | **L'unico comando che tocca il mondo.** Rilancia il gate, mostra cosa va online, **STOP: conferma umana esplicita**, poi esegue la procedura del runbook | §Flusso, passi 7-9 |
 | `verifica-pubblicato` | Dopo il deploy: l'indirizzo pubblico serve il commit approvato? `node <skill>/scripts/impronta.mjs --url https://… --commit <sha>` | `references/provider.md` §Dopo |
@@ -134,7 +134,11 @@ persona. In pipeline Launchpad esegue `piano`, `segreti`, `impronta`, `verify` e
   decidere io**: provider, dominio, valori di produzione, chi firma.
   **STOP allo Specchio del deploy** — e qui lo STOP non ha una modalità
   «pipeline» (§Modalità).
-- **`segreti`** → `node <skill>/scripts/segreti.mjs [--progetto <dir>] [--storia N] [--json]`.
+- **`segreti`** → `node <skill>/scripts/segreti.mjs [--progetto <dir>] [--storia N] [--json]`,
+  **dalla radice del progetto generato** come tutti i comandi di questa skill: il
+  default è `process.cwd()`, e lanciato dalla cartella sbagliata guarda un altro
+  repository — che è il difetto per cui esiste la §11. `--progetto` serve a
+  dirlo esplicitamente.
   Gira senza app e senza database. Stampa **sempre** quanti file ha letto e
   quanti commit ha attraversato: un controllo su una cartella vuota non deve
   poter somigliare a un controllo pulito (`DECISIONI.md` §11 e §18).
@@ -301,8 +305,8 @@ meno di quello che sembra.
   scritta da chi l'ha eseguito. Misura che non sia scaduta; non che fosse vera.
   Rilanciarli da qui è stato **valutato e scartato**, coi tre motivi in
   `references/verifica-deterministica.md` §6.
-- **Che non ci siano segreti.** Prova che non ce ne sono **delle otto famiglie
-  che sa riconoscere**, nei file tracciati e nella storia. Un segreto codificato
+- **Che non ci siano segreti.** Prova che non ce ne sono **delle sei famiglie di
+  contenuto che sa riconoscere, più le due regole sul nome del file**, nei file tracciati e nella storia. Un segreto codificato
   due volte, spezzato su due righe, dentro un'immagine o in un documento binario
   passa. La regola a entropia ne prende una parte, e resta un `issue` proprio
   perché il resto è euristica.
@@ -359,7 +363,7 @@ fatto.
 |---|---|---|
 | `references/verifica-deterministica.md` | prima di toccare il gate: i nove passi con premessa e MANCANTE, la tabella **misurato vs letto**, il contratto `--json`, gli otto falsi verdi possibili, i passi scartati | scritta in P0 |
 | `references/provider.md` | quando si sceglie dove pubblicare: cosa cambia fra Vercel e Cloudflare **per questa pipeline**, e la procedura di rollback di ciascuno | scritta in P1 |
-| `references/segreti.md` | prima di toccare il controllo dei segreti: le otto famiglie, cosa **non** vede, i formati Supabase vecchi e nuovi, e cosa fare quando ne trovi uno | scritta in P1 |
+| `references/segreti.md` | prima di toccare il controllo dei segreti: le sei famiglie e le due regole sul nome, cosa **non** vede, i formati Supabase vecchi e nuovi, e cosa fare quando ne trovi uno | scritta in P1 |
 | `references/ambiente-e-runtime.md` | quando si compilano variabili e runtime: quali radici finiscono nel pacchetto, `NEXT_PUBLIC_*` e il momento in cui vengono lette, `engines`, lockfile, riproducibilità | scritta in P1 |
 
 Non duplicano nulla di quanto sta già scritto altrove:

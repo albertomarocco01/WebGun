@@ -7,7 +7,10 @@
   // I tre gusci sono ENTRY POINT da riga di comando, non moduli importati; le
   // batterie si lanciano con `node --test`. Senza queste righe knip li dichiara
   // file morti.
-  "entry": ["scripts/verify.mjs", "scripts/segreti.mjs", "scripts/impronta.mjs", "scripts/*.test.mjs"],
+  // `banco.mjs` e' il quarto entry point: ricostruisce il banco di prova, e
+  // esiste perche' il verbale di costruzione ne dichiarava uno che non era mai
+  // stato tracciato — un'affermazione non riproducibile (DECISIONI.md §25).
+  "entry": ["scripts/verify.mjs", "scripts/segreti.mjs", "scripts/impronta.mjs", "scripts/banco.mjs", "scripts/*.test.mjs"],
   "project": ["scripts/**/*.mjs"],
 
 

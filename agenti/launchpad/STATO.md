@@ -1,12 +1,20 @@
 # Stato — Launchpad
 
-- **Stato attuale:** **costruito e non collaudato** (P.5, 2026-08-06). SKILL.md
-  completo, gate a **nove passi** con `--json`, **105 test** sugli script, 36 classi
-  di sabotaggio tutte rosse, quattro reference e due template. Il collaudo
-  avversario in chat vergine (P2) **non e' stato fatto**; un tribunale a tre
-  periti si', ed e' costato 32 rilievi (§6 del verbale).
+- **Stato attuale:** **costruito e collaudato** (P.5 P0+P1+P2, 2026-08-06).
+  SKILL.md completo, gate a **nove passi** con `--json`, **148 test** sugli
+  script (erano 104 alla consegna), quattro reference, due template e un
+  generatore di banco. Il collaudo avversario in chat vergine (P2) **e' stato
+  fatto** ed e' costato **26 difetti**, di cui **nove falsi verdi con gravita' di
+  blocco**; prima c'era stato un tribunale a tre periti, 32 rilievi.
   **Nessun deploy è mai stato eseguito da questa skill.** Vedi §Cosa non è mai
   stato provato.
+- **I due difetti che vale la pena sapere prima degli altri**, e nessuno dei due
+  era nel gate: il **rimedio che questa skill scrive** nel `next.config.ts` del
+  cliente **non compilava** sotto `strict`, e faceva nascere un artefatto che
+  dichiarava **l'identita' di un altro repository** quando il progetto stava
+  dentro un repository che non lo tracciava. Il terzo: il gate aveva un **rosso
+  strutturale contro se stesso** — la riga che launchpad scrive faceva scadere
+  tutti i certificati a monte.
 - **Proprietario:** Alberto
 - **Dipendenze:**
   - **A monte:** tutti e cinque gli agenti costruttori (schema-forge,
@@ -52,7 +60,7 @@ La tabella completa — cosa resta indimostrato passo per passo — è in
 | **P1** — costruzione | `verify.mjs` + tre librerie pure + due gusci; 105 test; 4 reference; 2 template | **fatta** — 2026-08-06 |
 | **P1b** — sabotaggio | un difetto per classe, e il rosso misurato | **fatta** — gemello pulito VERDE 9/9, **36 classi, 36 rosse, 0 non prese** |
 | **P1c** — tribunale (`/code-inquisition`, council di 3) | tre periti in isolamento, modelli diversi, posture avversarie distinte | **fatto** — **32 rilievi, 32 chiusi**, ognuno col suo test di regressione. Il più grave: il rimedio che questa skill prescrive **rompeva la build del cliente** su un `next.config.mjs` |
-| **P2** — collaudo avversario, in chat vergine | il gate è il contratto sotto esame; il verbale di costruzione è un'affermazione da verificare | **da fare** — e un tribunale non lo sostituisce: quello ha guardato il codice, un collaudo avversario guarda **le affermazioni** |
+| **P2** — collaudo avversario, in chat vergine | il gate è il contratto sotto esame; il verbale di costruzione è un'affermazione da verificare | **fatto** — 2026-08-06, `COLLAUDO-2026-08-06.md`. **26 difetti, 26 chiusi**, ognuno con la sua misura prima/dopo e il suo test. Banco nuovo (studio dentistico) costruito dai soli documenti: **VERDE 9/9**, e ricostruibile con `scripts/banco.mjs`. **Quattro** affermazioni del verbale di costruzione non si riproducono: 105 test erano 104, «5 warning» erano 8, «0 cloni» erano 4, e `banco.mjs` non esisteva. Le 36 classi di sabotaggio invece **reggono**: 31 rilanciate, 31 rosse sul passo giusto |
 | **P3** — il primo deploy vero | **lo autorizza Alberto di persona.** È l'unica cosa che questa skill non ha potuto provare, ed è il suo mestiere | **da fare** |
 
 ## Cosa un gate verde NON prova
@@ -75,9 +83,14 @@ pesano di più:
   scritta da chi l'ha eseguito, e ne misura solo la scadenza. Rilanciarli da qui
   è stato **valutato e scartato**, coi tre motivi in
   `references/verifica-deterministica.md` §6;
-- **che non ci siano segreti.** Prova che non ce ne sono *delle sei famiglie che
-  sa riconoscere*, nei file letti. Un segreto codificato due volte, spezzato su
-  due righe o dentro un binario passa;
+- **che non ci siano segreti.** Prova che non ce ne sono *delle sei famiglie di
+  contenuto e delle due regole sul nome*, nei file letti — tracciati, nuovi,
+  ignorati, e nella storia (diff **e** messaggi di commit e di tag). Un segreto
+  codificato due volte, spezzato su due righe o dentro un binario vero passa;
+- **che il file letto sia quello che parte.** Ogni passo apre il file **sul
+  disco**, non il blob del commit: a rendere le due cose la stessa è
+  `radice-pulita`, ed è il motivo per cui quel passo non è un preliminare
+  cortese;
 - **che il rollback funzioni.** Il gate legge una procedura scritta. Che
   funzioni si scopre la prima volta che serve.
 
@@ -106,16 +119,17 @@ Sono il mandato del collaudo di P.5, ed è giusto che ci vada un umano.
 
 ## Non usabile su un progetto cliente
 
-Per due motivi distinti, e vanno tenuti separati:
+Resta **un** motivo, ed è quello che conta:
 
-1. **Il primo deploy non è ancora avvenuto.** Tutto ciò che sta qui sopra è
-   misurato su un banco e su un pilota che **non si deve pubblicare**. Fra
-   «il gate rifiuta correttamente» e «il deploy riesce» c'è esattamente lo
-   spazio dove vivono i guasti di questa fase.
-2. **Il collaudo avversario indipendente (P2) non è stato fatto.** Sulle cinque
-   skill che l'hanno avuto, il tribunale ha trovato qualcosa **ogni volta** —
-   11+6+5+21+6 rilievi — e gli strumenti statici erano **tutti verdi ogni
-   volta**. Non c'è motivo di credere che questa sia diversa.
+**Il primo deploy non è ancora avvenuto.** Tutto ciò che sta qui sopra è
+misurato su due banchi e su un pilota che **non si deve pubblicare**. Fra «il
+gate rifiuta correttamente» e «il deploy riesce» c'è esattamente lo spazio dove
+vivono i guasti di questa fase.
+
+Il secondo motivo — *il collaudo avversario indipendente non è stato fatto* — è
+caduto il 2026-08-06, e ha confermato la regola della casa per la sesta volta su
+sei: il collaudo ha trovato qualcosa, e **gli strumenti statici erano tutti
+verdi**.
 
 ## Proposte a monte
 
@@ -136,6 +150,26 @@ Cose che questo agente ha **misurato** e che non può chiudere da solo.
 | **demoniac** | l'handoff di launchpad dichiara dominio, commit e impronta: è da lì che si sa quale versione del sito sta riprendendo il video |
 | **chi mantiene** | `docs/deploy.md` è l'unico documento del progetto scritto perché una persona che non c'era sappia **rifare** e **disfare**. La firma **si rinnova** a ogni pubblicazione: una firma più vecchia dell'ultimo commit ha autorizzato un altro contenuto |
 
+## Le tre decisioni che restano alla direzione
+
+Misurate dal collaudo e **non** chiuse da qui, perché chiuderle sarebbe
+riscrivere il contratto dell'agente. Per esteso in `COLLAUDO-2026-08-06.md` §9-10.
+
+1. **La firma per delega** su `docs/deploy.md`. Il gate oggi l'accetta e la
+   dichiara con un `warn`: la D14 ha introdotto quella forma per **due contratti
+   di collaudo**, la §6 vieta di delegare ciò che non si annulla, e questo
+   documento autorizza l'unica azione irreversibile della pipeline.
+2. **La §19 e la citazione.** Un `> Gate: VERDE` copiato da un altro progetto
+   vale come verdetto di questo. Per gli altri cinque agenti la §19 vale su un
+   documento proprio; launchpad è l'unico che legge **certificati altrui**.
+3. **Il registro del debito con una riga di forma fissa** (`Blocca il deploy:
+   sì | no`) invece della prosa. L'elenco delle forme che il gate riconosce è
+   aperto per costruzione: il collaudo ne ha scavalcate due e ne ha aggiunte due,
+   e la prossima persona ne inventerà una terza.
+
 ## Verbali
 
 - `COSTRUZIONE-2026-08-06.md` — progettazione e costruzione (P.5, P0+P1).
+- `COLLAUDO-2026-08-06.md` — collaudo avversario indipendente (P.5, P2):
+  26 difetti misurati e chiusi, l'audit delle affermazioni del verbale di
+  costruzione, le tensioni con la `SKILL.md`.
