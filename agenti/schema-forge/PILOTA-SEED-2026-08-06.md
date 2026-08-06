@@ -10,8 +10,13 @@ database remoto, i cinque certificati sono rilanciati e ridatati sulle corse
 vere, il runbook di pubblicazione esiste e **non è firmato di proposito**, e
 **n°27 è tornata aperta** perché era stata rinumerata, non chiusa.
 
-**Stato del pilota alla consegna**: commit `c60cee3e3ae2`, app viva sulla 3621
-con `BUILD_ID = c60cee3e3ae2ae7c4a1f5a9b137b772f6d443c38`, stack Supabase
+**E a lavoro finito il gate del gestionale, irrigidito da P.7d, ha cominciato a
+rifiutare il pilota**: uno dei due rilievi era vero ed è stato corretto, l'altro
+è un difetto del gate su un `tsconfig.json` valido. L'handoff `10` dichiara
+`Gate: ROSSO` e non il verde di poche ore prima — §4.1/bis.
+
+**Stato del pilota alla consegna**: commit `749faaeaadcf`, app viva sulla 3621
+con `BUILD_ID = 749faaeaadcf9236d75afebab52ba9e9a967226b`, stack Supabase
 acceso (api 7621, db 7622), database allo stato di sviluppo completo. Nessun
 deploy, nessun account, nessun dominio, nessun DNS.
 
@@ -509,13 +514,13 @@ Due dei cinque gate sono stati misurati su **codice non committato di P.7d**.
 Questi verdi valgono per quelle versioni lì, e vanno riletti quando P.7d
 committa. È scritto accanto al verde nei rispettivi handoff.
 
-| Gate | Esito |
-|---|---|
-| schema-forge | `GATE SCHEMA: VERDE (0 falliti, 0 verifiche mancanti su 9 passi)` |
-| gestionale-crafter | `GATE GESTIONALE: VERDE (0 falliti, 0 verifiche mancanti su 7 passi)` |
-| vetrina-crafter | `GATE VETRINA: VERDE (0 falliti, 0 verifiche mancanti su 10 passi)` |
-| flow-sentinel | `GATE FLUSSI: VERDE (0 falliti, 0 verifiche mancanti su 7 passi)` — **22 passati** |
-| speed-demon | `GATE PERFORMANCE: VERDE (0 falliti, 0 verifiche mancanti su 7 passi)` |
+| Gate | Esito su regia `47065da` | Esito su regia `fe2da8a` (la consegna) |
+|---|---|---|
+| schema-forge | `VERDE (0 falliti, 0 mancanti su 9 passi)` | **VERDE**, immutato |
+| gestionale-crafter | `VERDE (0 falliti, 0 mancanti su 7 passi)` | **ROSSO** — §4.1/bis |
+| vetrina-crafter | `VERDE (0 falliti, 0 mancanti su 10 passi)` | **VERDE** |
+| flow-sentinel | `VERDE (0 falliti, 0 mancanti su 7 passi)` — **22 passati** | **VERDE**, **22 passati** |
+| speed-demon | `VERDE (0 falliti, 0 mancanti su 7 passi)` | **VERDE** |
 
 Le uscite per intero sono **incollate negli handoff** `07`, `08`, `10`, `12`,
 `13`, che sono anche il posto in cui devono stare per il contratto a valle.
@@ -544,6 +549,103 @@ che non è quello che si sta giudicando.
 
 **Nessun altro rosso**: i cinque gate accettano il pilota anche dopo il lavoro
 di P.7d che c'era al momento della corsa.
+
+### 4.1/bis Poi i gate si sono irrigiditi davvero, e uno ha cominciato a rifiutare
+
+Il mandato avvertiva: «i gate si irrigidiranno sotto di te». È successo **a
+lavoro finito**. Fra la mia prima tornata (regia `47065da`, working tree
+sporco) e la consegna, **P.7d ha committato** — `6c06046`, `0d59fc1`, `1e24aaf`,
+`9c29144`, `8bd7f37`, `3c6f152`, `4e67d10`, `e65f356`, `5493be4` — e i due gate
+che al momento della mia corsa erano sporchi sono cambiati sul serio:
+
+```
+git diff --stat 47065da HEAD -- agenti/*/scripts
+ agenti/gestionale-crafter/scripts/admin-audit.mjs  |  14 +-
+ agenti/gestionale-crafter/scripts/audit-lib.mjs    | 150 ++++++++++++++++++---
+ agenti/gestionale-crafter/scripts/audit-lib.test.mjs | 101 ++++++++++++++
+ agenti/gestionale-crafter/scripts/progetto-lib.mjs |  88 +++++++++++-
+ agenti/gestionale-crafter/scripts/progetto-lib.test.mjs | 98 ++++++++++++++
+ agenti/gestionale-crafter/scripts/verify.mjs       |  86 ++++++++++--
+ agenti/schema-forge/scripts/audit-lib.mjs          |  46 +++++++
+ agenti/schema-forge/scripts/audit-lib.test.mjs     |  79 ++++++++++-
+ agenti/schema-forge/scripts/erd.mjs                |  15 ++-
+ agenti/schema-forge/scripts/rls-audit.mjs          |  58 +++++---
+ 10 files changed, 683 insertions(+), 52 deletions(-)
+```
+
+**Rilanciati tutti sulla versione nuova.** schema-forge: **VERDE 9/9**, immutato.
+Gestionale: **ROSSO**, con due rilievi. Ed è qui che sta la parte che il mandato
+chiedeva di distinguere — *mia regressione o loro regola nuova?*
+
+**Rilievo 1 — quattro `jsx-a11y/control-has-associated-label`. Loro regola
+nuova, cosa che era sempre stata lì, e l'ho corretta.** Il gate adesso misura con
+le regole **della skill** e non con quelle del progetto (H8: «il gate non chiede
+più all'imputato con quali regole vuole essere misurato»), ed è giusto. I quattro
+errori stanno in file dell'**2026-08-05**, che P.4h non ha toccato.
+
+Ma la cosa che la regola vede **non è un difetto**: il pattern era
+`<label htmlFor="x"><input id="x" />Testo</label>`, cioè l'associazione
+dichiarata due volte, in modo nativo. Invece di dedurlo, l'ho misurato — quattro
+varianti nello stesso file, la config della skill:
+
+```
+   6:9  error  A control must be associated with a text label   <- label che AVVOLGE, con htmlFor
+  12:9  error  A control must be associated with a text label   <- label SORELLA, con htmlFor
+                                                                <- aria-labelledby: accettata
+                                                                <- aria-label: accettata
+✖ 2 problems (2 errors, 0 warnings)
+```
+
+La regola guarda **solo** il sottoalbero del controllo e i suoi attributi ARIA:
+non risolve l'annidamento, non risolve `htmlFor`. **Adottato `aria-labelledby`
+verso lo span del testo visibile e non `aria-label`**, e la differenza non è di
+stile: `aria-labelledby` punta al testo che si vede, quindi il nome annunciato
+non cambia di un carattere; `aria-label` lo **sostituirebbe** con una stringa
+che alla prima modifica del testo visibile diverge in silenzio. La ridondanza è
+commentata sul posto. **Passo verde.** Debito n°49.
+
+Verificato che la correzione non abbia rotto niente: `prettier`, `eslint`, `tsc`
+puliti, e soprattutto **la batteria E2E ancora 22/22** — le spec trovano i
+controlli per nome accessibile, e il nome accessibile è identico.
+
+**Rilievo 2 — il gate non riesce a leggere un `tsconfig.json` che è JSON valido.
+Non è mia, e non è correggibile dal lato del pilota.**
+
+```
+MANC  tipi del progetto (tsc)
+        tsconfig.json non interpretabile (Expected ':' after property name in JSON at position 472 (line 22 column 15)): non si sa con quali controlli `tsc` abbia misurato
+        I tipi NON sono stati controllati sul serio: verifica mancante, non un successo.
+```
+
+Il file è JSON valido. Misurato, e la causa è al carattere:
+
+```
+node -e "JSON.parse(readFileSync('tsconfig.json','utf8'))"
+  ->  tsconfig.json e' JSON VALIDO per JSON.parse: ok
+
+node -e "JSON.parse(t.replace(/\/\*[\s\S]*?\*\//g, ''))"
+  ->  dopo lo spoglio: Expected ':' after property name in JSON at position 471
+      primo /*  a 466   "    \"@/*\": ["
+      primo */  a 536   ",\n    \"**/*."
+```
+
+Il gate tratta il file come JSONC e ne toglie i commenti a blocco, ma **lo
+spogliatore non salta le stringhe**: `"@/*"` — l'alias che `create-next-app`
+scrive in *ogni* progetto Next — viene letto come apertura di commento, e il
+primo `*/` che lo chiude sta dentro `"**/*.ts"` di `include`. **Settanta
+caratteri di JSON valido spariscono**, e la posizione dell'errore combacia.
+
+**Non l'ho corretto dal lato del pilota, ed è una scelta.** `"@/*"` è l'alias
+standard, `"**/*.ts"` lo scrive il generatore; riordinare il `tsconfig` per
+schivare uno spogliatore di commenti sarebbe piegare il progetto a un difetto
+del gate, che è vietato tanto quanto piegare il gate. Debito **n°50**, con il
+caso minimo per riprodurlo.
+
+**Conseguenza, e non è stata nascosta**: l'handoff `10` dichiara adesso
+**`Gate: ROSSO`** invece di conservare il verde di poche ore prima, e questo fa
+scattare anche il passo `verdetti` di launchpad, cioè **un quarto rifiuto** al
+gate di pubblicazione. Un handoff che scrive VERDE quando il gate dice ROSSO
+sarebbe il sistema che fallisce.
 
 ### 4.2 La trappola di speed-demon
 
@@ -726,7 +828,7 @@ git, **ma solo se la radice che git dichiara è questa cartella**; poi `null`.
 | dentro un repository estraneo | `mwJiahdQV9ZB9gWD-COKV` (casuale) | ok |
 
 Sul pilota, che è la radice del proprio repository:
-`BUILD_ID = c60cee3e3ae2ae7c4a1f5a9b137b772f6d443c38`, uguale a HEAD, e il gate
+`BUILD_ID = 749faaeaadcf9236d75afebab52ba9e9a967226b`, uguale a HEAD, e il gate
 riporta `OK l'impronta dell'artefatto e' derivata dal commit`.
 
 **Verdetto: adottato.** Nessuno SHA letterale è stato scritto da nessuna parte —
@@ -793,6 +895,41 @@ ottiene davvero. È in «Proposte a valle».
    risulta chiusa e io la sto ancora bloccando». È materia di launchpad, e sta
    anche in §7.2.
 
+### 7.1/bis Proposte a P.7d (i gate della catena)
+
+Due, e la seconda è un difetto con il caso minimo per riprodurlo.
+
+1. **`jsx-a11y/control-has-associated-label` misura una cosa diversa da quella
+   che dichiara** (n°49). Non risolve né una `<label>` che avvolge il controllo
+   né `htmlFor`: guarda solo il sottoalbero del controllo e i suoi attributi
+   ARIA. Su un pattern nativo e **doppiamente** corretto —
+   `<label htmlFor="x"><input id="x" />Testo</label>` — alza un errore, e
+   l'unico modo di zittirla è aggiungere ARIA ridondante. È il motivo per cui
+   quella regola è uscita dal preset `recommended` del plugin.
+   **Proposta**: sostituirla con `jsx-a11y/label-has-associated-control`, che
+   l'associazione nativa la vede, oppure configurarla con `depth` e
+   `labelComponents` in modo che l'annidamento conti. Il rischio della forma
+   attuale non è il falso positivo in sé: è che insegna ad aggiungere
+   `aria-label`, che **sostituisce** il nome accessibile con una stringa
+   destinata a divergere dal testo visibile — cioè la regola spinge verso un
+   difetto vero mentre segnala uno falso.
+2. **Lo spogliatore di commenti del `tsconfig.json` mangia le glob** (n°50, e la
+   conseguenza è un **rifiuto indebito**, che la libreria di launchpad stessa
+   definisce «il difetto peggiore di un gate, perché insegna a scavalcarlo»).
+   Caso minimo, su un `tsconfig.json` che `JSON.parse` accetta senza errori:
+
+   ```js
+   const t = readFileSync("tsconfig.json", "utf8");
+   JSON.parse(t);                                    // ok
+   JSON.parse(t.replace(/\/\*[\s\S]*?\*\//g, ""));   // SyntaxError, posizione 471
+   ```
+
+   `"@/*"` — l'alias che `create-next-app` scrive in ogni progetto Next — apre
+   il finto commento; `"**/*.ts"` di `include` lo chiude. **Ogni progetto Next
+   generato da questa pipeline ha entrambe le stringhe**, quindi il difetto non
+   è del pilota: colpisce chiunque. Il rimedio è non spogliare dentro le
+   stringhe, o usare un lettore JSONC vero.
+
 ### 7.2 Proposte a valle (launchpad, P.5-P2)
 
 1. **La prescrizione del n°45 resta da implementare**: il gate di pubblicazione
@@ -836,40 +973,56 @@ ottiene davvero. È in «Proposte a valle».
 ## 8. Il gate di pubblicazione alla consegna
 
 ```
-GATE LAUNCHPAD: ROSSO (3 falliti, 0 verifiche mancanti su 9 passi)
+GATE LAUNCHPAD: ROSSO (4 falliti, 0 verifiche mancanti su 9 passi)
 OK    si pubblica un commit, non un working tree
-OK    verdetti dichiarati dagli agenti a monte
+FAIL  verdetti dichiarati dagli agenti a monte
+        [block] docs/handoff/10-gestionale-crafter.md: dichiara `Gate: ROSSO`
 OK    bloccanti dichiarati nel registro del debito
 FAIL  nessun segreto nel pacchetto che parte
 OK    variabili d'ambiente dichiarate e non committate
 OK    la build si rifa' uguale su un'altra macchina
 OK    l'impronta dell'artefatto e' derivata dal commit
+        impronta attesa dal commit di HEAD: `749faaeaadcf` · `.next/BUILD_ID`: `749faaeaadcf9236d75afebab52ba9e9a967226b`
 FAIL  runbook firmato da un umano, sul contenuto
+        [block] Confermato da: segnaposto del template, non una firma
 FAIL  contratto d'uscita (handoff)
+        [block] docs/handoff/<n>-launchpad.md: handoff assente
 Non si pubblica. Ogni motivo dice di chi e': quasi nessuno e' di launchpad.
 ```
 
-**Da 5 falliti + 2 mancanti a 3 falliti + 0 mancanti.** I tre che restano, e di
-chi è ciascuno:
+Rilanciato dalla radice del pilota, con la regia a `fe2da8a` più il lavoro non
+committato di P.5-P2 su `SKILL.md`, `knip.jsonc` e
+`references/verifica-deterministica.md` — gli **script** del gate non erano
+sporchi, quindi questa uscita è quella del codice committato.
+
+**Da 5 falliti + 2 mancanti a 4 falliti + 0 mancanti**, e il quarto è nato
+stasera, dal gate del gestionale irrigidito da P.7d — §4.1/bis. I quattro che
+restano, e di chi è ciascuno:
 
 | Rifiuto | Di chi è | Perché non è di questo pacchetto |
 |---|---|---|
 | `segreti` | **della direzione** | è il n°27: la credenziale è in HEAD e in 5 punti della storia, e le tre strade sono decisioni sue |
+| `verdetti` — handoff `10` dichiara ROSSO | **di P.7d** | il gate del gestionale non legge un `tsconfig.json` valido (n°50). L'alternativa era scrivere VERDE su un gate che dice ROSSO |
 | `runbook-firmato` | **di Alberto, in persona** | autorizza l'unico atto irreversibile della pipeline; il segnaposto è scritto apposta nella forma che il gate rifiuta |
 | `contratto d'uscita` | **di launchpad (P.5)** | è l'handoff di launchpad, e un agente non firma il certificato di un altro |
 
-I quattro passi portati dal rosso al verde: `verdetti`, `debito-bloccante`,
-`ambiente`, `impronta-artefatto`.
+I passi portati dal rosso al verde da questo pacchetto: `debito-bloccante`,
+`ambiente`, `impronta-artefatto`. E `verdetti`, che era rosso con **sette**
+`[block]` (cinque certificati scaduti, la riga `Gate:` mancante del `14`), è
+stato portato a `nessun rilievo` — **e poi è tornato rosso con uno solo**, per
+una ragione nuova e altrui. Va detto in questo modo e non come «resta rosso»:
+sono due rossi diversi, e il secondo si spegne il giorno in cui P.7d corregge
+una riga.
 
 ---
 
 ## 9. Stato alla consegna, e cosa NON è stato fatto
 
-**Pilota** — commit `c60cee3e3ae2`, ramo `master`, albero pulito. App viva sulla
+**Pilota** — commit `749faaeaadcf`, ramo `master`, albero pulito. App viva sulla
 **3621**, `BUILD_ID` uguale a HEAD. Stack Supabase **acceso** (api 7621, db
 7622), unico stack acceso sulla macchina. Database allo stato di sviluppo
 completo. Nessun `git add -A`, nessun `git add .`, nessun `commit -a`: tutto
-messo in scena per nome, in dodici commit.
+messo in scena per nome, in quindici commit.
 
 **Regia** — scritto **solo questo file**. Nessuna modifica a `agenti/launchpad`,
 `agenti/site-doctor`, agli `scripts/` o agli `STATO.md` dei cinque agenti, a
