@@ -136,6 +136,63 @@ export const ATTESA_MS = 15000;
  */
 export const MAX_CORPO = 8 * 1024 * 1024;
 
+/**
+ * **La scadenza complessiva, e il numero non e' tondo per caso.**
+ *
+ * Il timeout per richiesta funziona — misurato: un server che scrive un byte al
+ * secondo e non chiude mai costa 30,8 s e produce un `block` onesto. Ma 60
+ * pagine ostili sono mezz'ora **senza verdetto**, e in CI il lavoro viene ucciso
+ * dal proprio timeout prima di produrne uno. Un gate ucciso e' il MANCANTE
+ * peggiore che esista: un silenzio che nessuno ha scritto.
+ *
+ * Il default e' estrapolato da una misura, non scelto perche' suona bene. Il
+ * banco «studio legale» il 2026-08-06, con i quattordici passi:
+ *
+ *   ritardo per risposta   0 ms    25 ms   50 ms   100 ms   200 ms
+ *   giro completo          298 ms  859 ms  1419 ms 2356 ms  4334 ms
+ *   richieste                                                    19
+ *
+ * La pendenza e' **20,2 ms per ogni ms di ritardo**, cioe' le 19 richieste sono
+ * in pratica seriali: il costo di un giro e' `avvio + richieste × (locale + RTT)`.
+ * Le richieste sono ~1,9 per pagina su questo banco, e su un sito Next con un
+ * pezzo di codice per rotta arrivano a ~2 per pagina: al tetto documentato
+ * (`MAX_PAGINE` = 60) fanno **circa 126 richieste**.
+ *
+ *   RTT 1 ms (locale)    126 × ~16 ms  ≈   2 s
+ *   RTT 200 ms           126 × 215 ms  ≈  27 s
+ *   RTT 500 ms           126 × 515 ms  ≈  65 s
+ *   RTT 1 s (pessimo)    126 × 1015 ms ≈ 128 s
+ *
+ * **300 secondi** stanno 2,3 volte sopra il caso sano peggiore e tagliano il
+ * caso patologico da mezz'ora a cinque minuti. Il pilota, per confronto, gira in
+ * 356-584 ms su 6 pagine.
+ *
+ * Chi ha un sito piu' grande alza il numero **e lo scrive**: alzarlo e' una
+ * decisione, lasciarlo scadere in silenzio no.
+ */
+export const SCADENZA_S = 300;
+
+/**
+ * Il momento oltre il quale il gate smette di misurare e va a stampare.
+ * Vive qui e non in `ctx` perche' `preleva` deve poterlo leggere per accorciare
+ * l'attesa dell'ultima richiesta: scadere non deve costare altri 15 secondi.
+ */
+let FINE = Infinity;
+/**
+ * Che la scadenza sia stata **vista** e' un fatto del giro, non di un passo: va
+ * nel `--json` perche' un consumatore possa distinguere «rosso perche' il sito
+ * e' rotto» da «rosso perche' il gate non ha fatto in tempo» senza leggere la
+ * prosa. Misurato: senza questo flag, una richiesta accorciata dalla scadenza
+ * falliva e il passo la raccontava come un intoppo di rete.
+ */
+let SCADUTA_VISTA = false;
+const rimasto = () => Math.max(0, FINE - Date.now());
+const scaduta = () => {
+  const si = Date.now() >= FINE;
+  if (si) SCADUTA_VISTA = true;
+  return si;
+};
+
 const steps = [];
 const record = (id, name, status, detail = "") => {
   const passo = { id, name, status, detail };
@@ -209,8 +266,13 @@ const leggiDentroIlProgetto = (relativo) => {
  */
 async function preleva(url, { tentativi = 2, segui = false, attesa = ATTESA_MS } = {}) {
   for (let i = 0; i < tentativi; i++) {
+    // L'attesa non supera mai il tempo che resta: scaduta la scadenza, il gate
+    // deve andare a stampare, non regalare altri 15 secondi a chi lo sta
+    // facendo aspettare. Un solo millisecondo di margine, cosi' `AbortSignal`
+    // non riceve mai uno zero.
+    const quanto = Math.max(1, Math.min(attesa, rimasto()));
     try {
-      const r = await fetch(url, { redirect: segui ? "follow" : "manual", signal: AbortSignal.timeout(attesa) });
+      const r = await fetch(url, { redirect: segui ? "follow" : "manual", signal: AbortSignal.timeout(quanto) });
       // Si legge a pezzi e si conta: `r.text()` bufferizza tutto quello che il
       // server vuole mandare, e con 900 MB il gate paga banda e memoria di chi
       // sta misurando. Un corpo oltre il tetto NON diventa un corpo troncato che
@@ -255,7 +317,10 @@ async function preleva(url, { tentativi = 2, segui = false, attesa = ATTESA_MS }
         url: r.url || url,
       };
     } catch {
-      if (i === tentativi - 1) return null;
+      // Scaduta la scadenza non si ritenta: il secondo tentativo servirebbe a
+      // distinguere un intoppo di rete da un difetto del sito, e quella
+      // distinzione non si fa piu' in tempo per entrare nel verdetto.
+      if (i === tentativi - 1 || scaduta()) return null;
       await new Promise((ok) => setTimeout(ok, 500));
     }
   }
@@ -316,9 +381,27 @@ const motivoSuperficie = (ctx) =>
  *
  * Vale identico per la camminata troncata da `--max-pagine`.
  */
-const superficieCompleta = (ctx) => superficieUsabile(ctx) && !ctx.troncata && (ctx.nonLette ?? []).length === 0;
+/**
+ * Il motivo di un MANCANTE per scadenza, **col conteggio di cio' che si e'
+ * guardato**. Senza il conteggio sarebbe «non ho finito», che e' vero e inutile:
+ * chi legge deve poter decidere se alzare `--scadenza` o se il sito e' ostile.
+ */
+const motivoScadenza = (ctx, args, inizio, cosa) => {
+  const secondi = Math.round((Date.now() - inizio) / 1000);
+  const lette = Array.isArray(ctx.pagine) ? ctx.pagine.length : 0;
+  const scoperte = lette + (ctx.nonLette?.length ?? 0) + (ctx.rimandi?.size ?? 0);
+  return `SCADENZA di ${args.scadenza}s superata dopo ${secondi}s: questo passo ${cosa}.\n`
+    + `Quando il tempo e' finito la camminata aveva letto ${lette} pagine su ${scoperte} scoperte`
+    + `${ctx.baseUrl ? ` di ${ctx.baseUrl}` : ""}. Alza \`--scadenza\` se il sito e' grande, o guarda perche' e' lento: `
+    + "un passo non eseguito e' una verifica MANCANTE, e tiene il gate rosso.";
+};
+
+const superficieCompleta = (ctx) => superficieUsabile(ctx) && !ctx.troncata && !ctx.scaduta && (ctx.nonLette ?? []).length === 0;
 const motivoIncompleta = (ctx) => {
   if (!superficieUsabile(ctx)) return motivoSuperficie(ctx);
+  if (ctx.scaduta) {
+    return `camminata interrotta dalla SCADENZA dopo ${ctx.pagine.length} pagine: il resto del sito non e' stato guardato, e questo passo non puo' concludere niente — un passo che conclude su meta' superficie e' un passo che dice una cosa che non ha misurato`;
+  }
   if (ctx.troncata) {
     return `camminata TRONCATA a ${ctx.pagine.length} pagine (--max-pagine): il resto del sito non e' stato guardato, e questo passo non puo' concludere niente sul sito — solo sul troncone`;
   }
@@ -355,8 +438,12 @@ const PASSI = [
     async esegui(ctx, args) {
       const radice = await preleva(args.url, { segui: true });
       if (!radice) {
-        return record(this.id, this.nome, "skipped",
-          `nessuna risposta da ${args.url}: avvia la build con \`npm run build && npm run start\` prima del gate. Si certifica cio' che si pubblica, e per certificarlo bisogna poterlo leggere`);
+        // Se la scadenza e' passata, la colpa non e' della rete ed e' sbagliato
+        // raccontarla cosi': un rilievo che punta all'imputato sbagliato manda a
+        // cercare a vuoto, ed e' un difetto che questa casa ha gia' pagato.
+        return record(this.id, this.nome, "skipped", scaduta()
+          ? motivoScadenza(ctx, args, ctx.inizio, "non ha ricevuto risposta entro il tempo che restava")
+          : `nessuna risposta da ${args.url}: avvia la build con \`npm run build && npm run start\` prima del gate. Si certifica cio' che si pubblica, e per certificarlo bisogna poterlo leggere`);
       }
       if (radice.stato >= 400) {
         return record(this.id, this.nome, "fail", `${args.url} risponde ${radice.stato}`);
@@ -397,8 +484,10 @@ const PASSI = [
       const grafo = new Map();
       let troncata = false;
       const cookieVisti = [];
+      let perScadenza = false;
       while (daVedere.length > 0) {
         if (viste.size >= args.maxPagine) { troncata = true; break; }
+        if (scaduta()) { perScadenza = true; break; }
         const percorso = daVedere.shift();
         if (viste.has(percorso) || rimandi.has(percorso)) continue;
         const r = await preleva(unisci(args.url, percorso));
@@ -431,6 +520,7 @@ const PASSI = [
       ctx.pagine = [...viste].filter(([, r]) => r !== null).map(([percorso, r]) => ({ percorso, ...r }));
       ctx.nonLette = [...viste].filter(([, r]) => r === null).map(([p]) => p);
       ctx.troncata = troncata;
+      ctx.scaduta = perScadenza;
       ctx.rimandi = rimandi;
       ctx.cookie = cookieVisti;
 
@@ -452,6 +542,9 @@ const PASSI = [
       if (troncata) {
         findings.push({ severity: "block", object: "superficie", message: `camminata interrotta a ${args.maxPagine} pagine (--max-pagine): il resto del sito NON e' stato guardato, e un certificato parziale non deve somigliare a uno completo` });
       }
+      if (perScadenza) {
+        findings.push({ severity: "block", object: "superficie", message: `camminata interrotta dalla SCADENZA (--scadenza ${args.scadenza}s) dopo ${viste.size} pagine, con ${daVedere.length} ancora da vedere: il resto del sito non e' stato guardato` });
+      }
       if (ctx.nonLette.length > 0) {
         findings.push({ severity: "block", object: "superficie", message: `${ctx.nonLette.length} pagine non scaricate: ${ctx.nonLette.join(", ")}` });
       }
@@ -466,7 +559,15 @@ const PASSI = [
         rimandi.size > 0 ? `non entrate: ${[...rimandi].map(([p, d]) => `${p} → ${perStampa(d, 120)}`).join(" · ")}` : "",
         dettaglioFindings(findings),
       ].filter(Boolean).join("\n");
-      return record(this.id, this.nome, statoDaFindings(findings), dettaglio);
+      // La camminata interrotta dalla SCADENZA e' una verifica NON FATTA, non un
+      // difetto del sito: `skipped`, non `fail`. La differenza conta per chi
+      // legge — un `fail` accusa l'imputato, un `skipped` accusa il tempo che
+      // gli abbiamo dato. I rilievi trovati sulle pagine che si e' fatto in
+      // tempo a leggere restano stampati: sono misure vere.
+      // `--max-pagine` invece resta un `fail`, ed e' voluto: li' il tetto l'ha
+      // scelto chi lancia il gate, e un troncone dichiarato completo sarebbe la
+      // sua responsabilita'.
+      return record(this.id, this.nome, perScadenza ? "skipped" : statoDaFindings(findings), dettaglio);
     },
   },
 
@@ -486,6 +587,10 @@ const PASSI = [
       // VISIBILE porta a un 404: quello nessuno lo scaricava (SD-VERDE-04).
       const esiti = [];
       for (const [percorso] of [...peso].sort((a, b) => b[1] - a[1])) {
+        if (scaduta()) {
+          return record(this.id, this.nome, "skipped",
+            motivoScadenza(ctx, args, ctx.inizio, `si e' fermato dopo ${esiti.length} candidati su ${peso.size}`));
+        }
         const gia = ctx.pagine.find((p) => p.percorso === percorso);
         const r = gia ?? (await preleva(unisci(ctx.baseUrl, percorso)));
         if (!r) {
@@ -620,6 +725,10 @@ const PASSI = [
           }
         }
         for (const src of sorgentiInterne(pagina.corpo, ctx.baseUrl)) {
+          if (scaduta()) {
+            return record(this.id, this.nome, "skipped",
+              motivoScadenza(ctx, args, ctx.inizio, `si e' fermato dopo ${bundleLetti} script su almeno ${bundleVisti.size + 1}`));
+          }
           if (!bundleVisti.has(src)) {
             const r = await preleva(unisci(ctx.baseUrl, src), { segui: true });
             if (!r || r.stato >= 400 || r.troppoGrande) { bundleFalliti.push(src); bundleVisti.set(src, null); continue; }
@@ -778,6 +887,10 @@ const PASSI = [
       const tutte = [...new Set(pagine.flatMap((p) => p.icone))];
       const risposte = new Map();
       for (const url of tutte) {
+        if (scaduta()) {
+          return record(this.id, this.nome, "skipped",
+            `${motivoScadenza(ctx, args, ctx.inizio, `si e' fermato dopo ${risposte.size} icone su ${tutte.length}`)}`);
+        }
         const r = await preleva(url, { segui: true });
         risposte.set(url, r ? r.stato : null);
       }
@@ -815,6 +928,10 @@ const PASSI = [
       const immagini = [...new Set(pagine.map((p) => p.immagine).filter(Boolean))];
       const risposte = new Map();
       for (const url of immagini) {
+        if (scaduta()) {
+          return record(this.id, this.nome, "skipped",
+            motivoScadenza(ctx, args, ctx.inizio, `si e' fermato dopo ${risposte.size} immagini di anteprima su ${immagini.length}`));
+        }
         const r = await preleva(url, { segui: true });
         risposte.set(url, r ? r.stato : null);
       }
@@ -1104,7 +1221,14 @@ function verdetto(json, args = {}, extra = {}) {
     // come prova d'idoneita' non puo' ricostruire COSA e' stato misurato.
     console.log(JSON.stringify({
       contract: CONTRATTO_JSON, ok: verde, url: args.url ?? null, buildId: extra.buildId ?? null,
-      maxPagine: args.maxPagine ?? null, summary: riassunto, steps, ...(extra.error ? { error: extra.error } : {}),
+      maxPagine: args.maxPagine ?? null,
+      // `scadenza` e `scaduta` sono parte del contratto dal 2026-08-06: un
+      // consumatore che archivia questo documento come prova d'idoneita' deve
+      // poter distinguere «rosso perche' il sito e' rotto» da «rosso perche' il
+      // gate non ha fatto in tempo», senza leggere la prosa dei passi.
+      scadenza: args.scadenza ?? null,
+      scaduta: SCADUTA_VISTA,
+      summary: riassunto, steps, ...(extra.error ? { error: extra.error } : {}),
     }, null, 2));
     return verde ? 0 : 1;
   }
@@ -1126,13 +1250,15 @@ function verdetto(json, args = {}, extra = {}) {
 }
 
 function parseArgs(argv) {
-  const args = { url: null, json: false, maxPagine: MAX_PAGINE, ignoti: [] };
+  const args = { url: null, json: false, maxPagine: MAX_PAGINE, scadenza: SCADENZA_S, ignoti: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--url") args.url = argv[++i] ?? "";
     else if (a.startsWith("--url=")) args.url = a.slice(6);
     else if (a === "--max-pagine") args.maxPagine = Number(argv[++i]);
     else if (a.startsWith("--max-pagine=")) args.maxPagine = Number(a.slice(13));
+    else if (a === "--scadenza") args.scadenza = Number(argv[++i]);
+    else if (a.startsWith("--scadenza=")) args.scadenza = Number(a.slice(11));
     else if (a === "--json") args.json = true;
     else args.ignoti.push(a);
   }
@@ -1185,9 +1311,26 @@ async function main() {
     console.error("--max-pagine deve essere un intero >= 1.");
     process.exit(2);
   }
+  if (!Number.isFinite(args.scadenza) || args.scadenza < 1) {
+    console.error("--scadenza deve essere un numero di secondi >= 1.");
+    process.exit(2);
+  }
   const ctx = { certificato: null, baseUrl: null, pagine: null, informativaRaggiungibile: null, buildId: null, daCertificato };
+  const inizio = Date.now();
+  ctx.inizio = inizio;
+  FINE = inizio + args.scadenza * 1000;
   try {
-    for (const passo of PASSI) await passo.esegui(ctx, args);
+    for (const passo of PASSI) {
+      if (scaduta()) {
+        // **Mai una fine senza verdetto.** Un passo che non e' partito e' una
+        // verifica MANCANTE — non un `pass`, non un `n/a` — e porta con se' il
+        // conteggio di cio' che il giro aveva guardato quando il tempo e'
+        // finito: chi legge deve sapere quanto lontano si era arrivati.
+        record(passo.id, passo.nome, "skipped", motivoScadenza(ctx, args, inizio, "non e' partito"));
+        continue;
+      }
+      await passo.esegui(ctx, args);
+    }
   } catch (errore) {
     // Un gate che va in crash NON e' ne' verde ne' rosso: e' assente, e questo e'
     // peggio di entrambi. Senza questo `catch` un `EISDIR` su un percorso scritto

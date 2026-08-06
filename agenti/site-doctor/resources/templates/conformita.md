@@ -127,14 +127,14 @@ esisteva, e la favicon del pilota è stata un `404` su ogni pagina per tre anell
 | consenso | site-doctor | — | {{conforme}} |
 | accessibilita-pubblico | site-doctor | — | {{conforme}} |
 | lingua-hreflang | site-doctor | — | {{non applicabile}} |
-| contrasti | speed-demon | {{docs/handoff/13-speed-demon.md}} | delegato |
+| favicon | site-doctor | — | {{conforme}} |
+| open-graph | site-doctor | — | {{conforme}} |
+| dati-strutturati | site-doctor | — | {{conforme}} |
+| sitemap | site-doctor | — | {{conforme}} |
+| robots | site-doctor | — | {{conforme}} |
+| contrasti | speed-demon | {{docs/performance.md}} | delegato |
 | canonical | speed-demon | {{docs/handoff/13-speed-demon.md}} | delegato |
-| sitemap | speed-demon | {{docs/handoff/13-speed-demon.md}} | delegato |
-| robots | speed-demon | {{docs/handoff/13-speed-demon.md}} | delegato |
 | noindex-private | speed-demon | {{docs/handoff/13-speed-demon.md}} | delegato |
-| open-graph | speed-demon | {{docs/handoff/13-speed-demon.md}} | delegato |
-| favicon | speed-demon | {{docs/handoff/13-speed-demon.md}} | delegato |
-| dati-strutturati | speed-demon | {{docs/handoff/13-speed-demon.md}} | delegato |
 | accessibilita-admin | gestionale-crafter | {{docs/handoff/10-gestionale-crafter.md}} | delegato |
 | antispam | — | — | scoperto |
 

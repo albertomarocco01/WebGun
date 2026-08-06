@@ -348,7 +348,12 @@ describe("il modello del certificato e il parser sono la stessa cosa", () => {
     const stati = new Map(VOCI.filter((v) => v.mio).map((v) => [v.mio, v.mio === "lingua-e-hreflang" ? "n/a" : "pass"]));
     const f = findingsPerimetro({
       tabella: leggiCertificato(riempito).voci,
-      leggiFile: (p) => (p.startsWith("docs/handoff/") ? "canonical sitemap robots noindex Open Graph favicon dati strutturati contrasti accessibilità" : null),
+      // Dopo D21 il modello delega `contrasti` a `docs/performance.md` (che ne
+      // dichiara la soglia) e non piu' all'handoff: sono due file diversi, e
+      // devono esistere tutti e due.
+      leggiFile: (p) => (p.startsWith("docs/handoff/") || p === "docs/performance.md"
+        ? "canonical sitemap robots noindex Open Graph favicon dati strutturati contrasti accessibilità"
+        : null),
       statiPassi: stati,
     });
     assert.deepEqual(blocchi(f), [], "il modello della casa non deve produrre bloccanti sul gate della casa");

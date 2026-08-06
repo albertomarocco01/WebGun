@@ -450,6 +450,24 @@ export function findingsPerimetro({ tabella, leggiFile, statiPassi }) {
       continue;
     }
 
+    // **Una voce che QUESTO gate misura non si delega.** Il buco l'ha aperto D21
+    // stessa e l'ha scoperto la misura sul pilota: le cinque voci tornate a casa
+    // hanno un passo che le guarda, ma un certificato scritto prima — o scritto
+    // per abitudine — continuava a dichiararle di speed-demon, e il ramo
+    // «delegata» chiedeva solo che il file citato le nominasse. Il documento di
+    // quel vicino le nomina davvero, quindi passava: il gate misurava una cosa e
+    // il certificato ne attribuiva un'altra a qualcun altro, e nessuno dei due
+    // se ne accorgeva. E' «una voce con due proprietari e' una voce di nessuno»
+    // con i due proprietari su due documenti diversi invece che su due righe.
+    if (voce.mio) {
+      findings.push({
+        severity: "block",
+        object: voce.id,
+        message: `delegata a ${proprietario}, ma questo gate la MISURA con il passo \`${voce.mio}\`. Dal 2026-08-06 (D21) e' di site-doctor: il certificato va aggiornato, perche' cosi' com'e' attribuisce a un altro una cosa che ho appena guardato io`,
+      });
+      continue;
+    }
+
     if (!riga.dove || SCOPERTO.test(riga.dove)) {
       findings.push({
         severity: "block",

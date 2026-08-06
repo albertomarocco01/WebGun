@@ -338,3 +338,103 @@ createServer((q,s)=>{ if(q.url.startsWith("/_next/")){s.writeHead(200,{"content-
     });
   });
 });
+
+// ══════════════════════════════════ `--scadenza`: mai una fine senza verdetto
+/**
+ * Il timeout per richiesta impedisce al gate di restare appeso su UNA pagina.
+ * Non impedisce che sessanta pagine ostili costino mezz'ora, e in CI un lavoro
+ * ucciso dal proprio timeout non produce niente: **il MANCANTE peggiore e' un
+ * silenzio che nessuno ha scritto.**
+ */
+describe("`--scadenza` — il gate finisce sempre, e sempre con un verdetto", () => {
+  const GATE = fileURLToPath(new URL("./verify.mjs", import.meta.url));
+  const attendi = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  /** Un banco che risponde a rilento, in un processo suo. */
+  const BANCO_LENTO = `const {createServer}=require("http");
+const p='<!DOCTYPE html><html lang="it"><head><title>T</title><link rel="icon" href="/i.svg"></head><body><main><h1>T</h1><p>TEMPOBANCO00001</p>'
+ + '<a href="/a">a</a><a href="/b">b</a><a href="/c">c</a><a href="/d">d</a></main></body></html>';
+createServer((q,s)=>{ setTimeout(()=>{ s.writeHead(200,{"content-type":"text/html; charset=utf-8"}); s.end(p); }, 900); })
+ .listen(__PORTA__,"127.0.0.1");`;
+
+  const giro = async (scadenza) => {
+    const dir = mkdtempSync(join(tmpdir(), "sd-scad-"));
+    const porta = 3921;
+    let proc = null;
+    try {
+      mkdirSync(join(dir, ".next"), { recursive: true });
+      mkdirSync(join(dir, "docs"), { recursive: true });
+      writeFileSync(join(dir, ".next", "BUILD_ID"), "TEMPOBANCO00001", "utf8");
+      writeFileSync(join(dir, "docs", "PROGETTO.md"), "progetto finto", "utf8");
+      const file = join(dir, "banco-lento.cjs");
+      writeFileSync(file, BANCO_LENTO.replace("__PORTA__", String(porta)), "utf8");
+      proc = spawn(process.execPath, [file], { stdio: "ignore" });
+      for (let i = 0; i < 60; i += 1) {
+        try {
+          const r = await fetch(`http://127.0.0.1:${porta}/__vivo`, { signal: AbortSignal.timeout(2000) });
+          if (r.status) break;
+        } catch { /* non ancora */ }
+        await attendi(200);
+      }
+      const t = Date.now();
+      const r = spawnSync(process.execPath, [GATE, "--url", `http://127.0.0.1:${porta}`, "--json", "--scadenza", String(scadenza)], {
+        cwd: dir, encoding: "utf8", timeout: 180000,
+      });
+      return { doc: JSON.parse(r.stdout), uscita: r.status, ms: Date.now() - t };
+    } finally {
+      proc?.kill();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  it("scaduta: quattordici passi, un verdetto stampato, e l'uscita e' rossa", async () => {
+    const { doc, uscita, ms } = await giro(3);
+    assert.equal(doc.steps.length, 14, "un passo senza `record` sparisce dal denominatore");
+    assert.equal(doc.summary.passi, 14);
+    assert.equal(typeof doc.ok, "boolean", "senza `ok` non c'e' verdetto");
+    assert.equal(doc.ok, false);
+    assert.equal(uscita, 1, "un gate scaduto e' ROSSO, non un errore d'esecuzione");
+    assert.equal(doc.scaduta, true, "il `--json` deve dire che il rosso viene dalla scadenza, non dal sito");
+    assert.equal(doc.scadenza, 3);
+    assert.ok(ms < 30000, `il gate ha impiegato ${ms} ms con una scadenza di 3 s`);
+  });
+
+  it("i passi non completati sono `skipped` col motivo e il conteggio — mai `pass`, mai `n/a`", async () => {
+    const { doc } = await giro(3);
+    const perScadenza = doc.steps.filter((s) => /SCADENZA/.test(s.detail ?? ""));
+    assert.ok(perScadenza.length > 0, "nessun passo attribuisce il proprio stato alla scadenza");
+    for (const s of perScadenza) {
+      assert.equal(s.status, "skipped", `${s.id} non e' MANCANTE`);
+      // Due forme, e dicono la stessa cosa: il passo che ha camminato conta le
+      // pagine viste e quelle che restavano; i passi che non sono partiti
+      // riportano quanto aveva guardato il giro quando il tempo e' finito.
+      assert.match(
+        s.detail,
+        /aveva letto \d+ pagine su \d+ scoperte|dopo \d+ pagine, con \d+ ancora da vedere/,
+        `${s.id} non dice quanto aveva guardato`,
+      );
+    }
+    assert.deepEqual(perScadenza.filter((s) => s.status === "pass" || s.status === "n/a"), []);
+  });
+
+  it("scadenza larga: lo stesso banco lento finisce e nessun passo la nomina", async () => {
+    const { doc } = await giro(120);
+    assert.equal(doc.scaduta, false);
+    assert.deepEqual(doc.steps.filter((s) => /SCADENZA/.test(s.detail ?? "")), []);
+    assert.equal(doc.steps.length, 14);
+  });
+
+  it("una scadenza non numerica o zero non passa in silenzio", () => {
+    const dir = mkdtempSync(join(tmpdir(), "sd-scad-arg-"));
+    try {
+      mkdirSync(join(dir, "docs"), { recursive: true });
+      for (const valore of ["zero", "0", "-5"]) {
+        const r = spawnSync(process.execPath, [GATE, "--url", "http://127.0.0.1:1", "--scadenza", valore], { cwd: dir, encoding: "utf8" });
+        assert.equal(r.status, 2, `--scadenza ${valore} doveva fermare il gate`);
+        assert.match(r.stderr, /--scadenza deve essere/);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

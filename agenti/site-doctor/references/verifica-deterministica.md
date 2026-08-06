@@ -1,4 +1,4 @@
-# La verifica deterministica — i nove passi, i quattro stati, il contratto `--json`
+# La verifica deterministica — i quattordici passi, i quattro stati, il contratto `--json`
 
 > Carica questo file **prima di toccare il gate**.
 
@@ -47,7 +47,7 @@ La premessa dev'essere una misura **indipendente** da ciò che si sta
 verificando: qui è l'insieme dei `lang` dichiarati dalle pagine servite, più gli
 indizi di rotte per lingua (`/en/…`) nella superficie.
 
-## I nove passi
+## I quattordici passi
 
 L'**ordine della lista `PASSI` è il gate**, ed è bloccato da un test.
 
@@ -136,7 +136,38 @@ di pagine e script letti.
 **`n/a`**: una sola lingua misurata su tutte le pagine e nessun indizio di rotte
 per lingua.
 
-### 8. `perimetro`
+### 8-12. Le cinque voci tornate a casa (D21, 2026-08-06)
+
+`favicon` · `open-graph` · `dati-strutturati` · `sitemap-xml` · `robots-txt`.
+
+**Premessa**: la superficie e' stabilita **e completa** (nessuna pagina scoperta
+e non scaricata, nessun troncamento, nessuna scadenza).
+
+**Il criterio comune, e vale per tutte e cinque**: *il dichiarato che non
+risponde e' un bloccante, l'assenza e' un rilievo.* Una pagina che scrive
+`<link rel="icon" href="/favicon.svg">` e serve un `404` ha **mentito nel markup
+servito**, e chi legge quel markup — un browser, un motore, il prossimo agente —
+sbaglia per causa sua. Un'assenza invece e' una scelta, e una scelta si firma in
+una deroga.
+
+| passo | bloccante | rilievo |
+|---|---|---|
+| `favicon` | un'icona dichiarata che non risponde `200`; **oppure** nessuna icona dichiarata e `/favicon.ico` che non risponde `200` (e' il difetto del pilota, dove la favicon e' stata un `404` per tre anelli) | alcune pagine dichiarano l'icona e altre no |
+| `open-graph` | `og:image` che punta a una risorsa che non risponde | nessun tag `og:` sul sito; alcune pagine senza; `og:title`/`type`/`url`/`image` mancanti dove l'Open Graph c'e' |
+| `dati-strutturati` | un blocco `application/ld+json` che **non e' JSON valido** (un motore lo scarta per intero, e il sito crede di avere dati strutturati) | nessun blocco sul sito; un blocco senza `@type` |
+| `sitemap-xml` | `200` con un corpo che non e' una sitemap (un `200` che serve un'altra cosa e' peggio di un `404`); un indirizzo dichiarato e non servito | sitemap assente o non `200`; sitemap valida con zero indirizzi |
+| `robots-txt` | vieta ai motori indirizzi che la **`sitemap.xml` pubblicizza**: sono due file dello stesso sito che dicono il contrario | `robots.txt` assente; vieta pagine pubbliche non in sitemap; nessuna riga `Sitemap:`; `Sitemap:` verso un'altra origine |
+
+**Perche' cinque passi e non uno.** La tabella di proprieta' assegna UNA voce a
+UN proprietario, e il confronto §19 lega la riga del certificato allo stato del
+passo. Un passo unico «indicizzazione» darebbe a cinque voci lo stesso `id`,
+cioe' rifarebbe al contrario il difetto che questa skill esiste per chiudere.
+
+**Il confronto che nessuno faceva.** `robots.txt` contro `sitemap.xml` era
+elencato fra le cose scoperte del collaudo P2 — «due file che scrive lo stesso
+agente e che nessuno confronta». Con D21 sono tutti e due di questa skill.
+
+### 13. `perimetro`
 
 **Premessa**: la sezione delle voci esiste.
 **Prova**: `references/perimetro.md`.
@@ -144,7 +175,7 @@ Sta **dopo** i passi che misurano, perché confronta l'esito **dichiarato** dell
 voci mie con lo stato dei passi di **questa** esecuzione. È la §19 applicata
 voce per voce.
 
-### 9. `contratto-uscita`
+### 14. `contratto-uscita`
 
 `DECISIONI.md` §19. L'handoff esiste, non ha segnaposto, e la sua riga `Gate:`
 combacia col verdetto di questa esecuzione. **Non è un rosso strutturale**: se il
@@ -160,7 +191,9 @@ italiana, così l'etichetta può cambiare senza rompere l'orchestratore.
 {
   "contract": 1,
   "ok": false,
-  "summary": { "passi": 9, "pass": 1, "fail": 5, "skipped": 3, "na": 0 },
+  "scadenza": 300,
+  "scaduta": false,
+  "summary": { "passi": 14, "pass": 1, "fail": 5, "skipped": 8, "na": 0, "ignoti": 0 },
   "steps": [ { "id": "certificato", "name": "…", "status": "skipped", "detail": "…" } ]
 }
 ```
@@ -168,6 +201,64 @@ italiana, così l'etichetta può cambiare senza rompere l'orchestratore.
 Le chiavi restano in inglese come nelle altre skill (§15): il formato di scambio
 è nato così, e mescolare le due lingue nello stesso oggetto è peggio di entrambe.
 `status` vale `pass` · `fail` · `skipped` · `n/a`.
+
+## La scadenza complessiva — `--scadenza`
+
+**Un gate ucciso produce il MANCANTE peggiore che esista: un silenzio che nessuno
+ha scritto.** Il timeout per richiesta (15 s × 2 tentativi) impedisce di restare
+appesi su UNA pagina — misurato: un server che scrive un byte al secondo e non
+chiude mai costa 30,8 s e produce un `block` onesto. Non impedisce che sessanta
+pagine ostili costino mezz'ora, e in CI il lavoro viene ucciso dal proprio
+timeout prima di produrre un verdetto.
+
+### Il default, e come e' stato ottenuto
+
+Misura sul banco «studio legale» il 2026-08-06, quattordici passi, dieci pagine,
+con un ritardo artificiale su ogni risposta (`banco-sl.mjs --ritardo`):
+
+| ritardo per risposta | 0 ms | 25 ms | 50 ms | 100 ms | 200 ms |
+|---|---|---|---|---|---|
+| giro completo | 298 ms | 859 ms | 1419 ms | 2356 ms | 4334 ms |
+
+**19 richieste** per 10 pagine, e una pendenza di **20,2 ms per ogni ms di
+ritardo**: le richieste sono in pratica seriali, e il costo di un giro e'
+`avvio + richieste × (locale + RTT)`.
+
+Le richieste sono ~1,9 per pagina su questo banco; su un Next con un pezzo di
+codice per rotta arrivano a ~2. Al tetto documentato (`MAX_PAGINE` = 60) fanno
+**circa 126 richieste**, quindi:
+
+| RTT | giro completo, estrapolato |
+|---|---|
+| 1 ms (locale) | ≈ 2 s |
+| 200 ms | ≈ 27 s |
+| 500 ms | ≈ 65 s |
+| 1 s (pessimo) | ≈ 128 s |
+
+**300 secondi** stanno 2,3 volte sopra il caso sano peggiore e tagliano il caso
+patologico da mezz'ora a cinque minuti. Il pilota, per confronto, gira in
+356-584 ms su sei pagine. Chi ha un sito più grande alza il numero **e lo
+scrive**: alzarlo è una decisione, lasciarlo scadere in silenzio no.
+
+### Cosa succede quando scade
+
+- L'attesa di ogni richiesta si accorcia al tempo che resta, e il secondo
+  tentativo non parte: scadere non deve costare altri 15 secondi.
+- La camminata si interrompe, e il passo 2 diventa **`skipped`** — non `fail`: la
+  causa non è il sito, è il tempo che gli abbiamo dato. I rilievi trovati sulle
+  pagine già lette restano stampati, perché sono misure vere. (`--max-pagine`
+  invece resta un `fail`: lì il tetto lo sceglie chi lancia il gate.)
+- Ogni passo non completato è **`skipped`** con il motivo **e il conteggio di
+  quello che aveva guardato** — mai `pass`, mai `n/a`.
+- Ogni passo ha comunque il suo `record`: `steps[]` ha sempre quattordici voci, e
+  **la riga finale si stampa sempre**.
+- `--json` porta `scadenza` e `scaduta`: un consumatore distingue «rosso perché
+  il sito è rotto» da «rosso perché il gate non ha fatto in tempo» senza leggere
+  la prosa.
+
+Provato con dodici scadenze diverse (1-16 s) contro un banco che risponde a
+400 ms: quattordici passi e un verdetto stampato **in tutti e dodici i giri**,
+con la scadenza che cade in punti diversi del gate.
 
 ## Nessuno strumento esterno, e cosa costa
 
@@ -215,14 +306,17 @@ STOP di progettazione o dal sabotaggio.
 | **validazione HTML** (W3C) | rumore: produce centinaia di rilievi su ogni progetto Next, e nessuno di quelli che contano per la conformità |
 | **misura del tempo di risposta** | è di speed-demon, e sarebbe la terza misura della stessa cosa |
 | **verifica che i file citati dai vicini dicano «fatto»** | vedi sopra: comprensione di un testo |
-| **`robots.txt` e `sitemap.xml` come voci misurate** | sono di speed-demon (`CANTIERE.md`, riga P.6: *«non si rimisurano»*). La `sitemap.xml` qui si **legge** come seconda sorgente della superficie, che è un'altra cosa dal verificarla |
+| ~~**`robots.txt` e `sitemap.xml` come voci misurate**~~ | **scartato fino al 2026-08-05, ripreso il 2026-08-06 con D21.** Erano di speed-demon, e una misura ha trovato che il suo gate non li rilegge: la proprietà segue la misura, non l'argomento. Restano due domande distinte — la `sitemap.xml` si **legge** come seconda sorgente nel passo 2, e si **verifica** nel passo 11 |
 
 ## Le trappole di piattaforma già pagate
 
 - **Il carico RSC** è HTML dentro `<script>`: vedi sopra.
-- **`getSetCookie()`** esiste su Node 20+, ma il codice tiene la ricaduta su
-  `headers.get("set-cookie")`: un solo cookie con una virgola dentro va letto
-  come uno, non come due.
+- **`getSetCookie()` e' l'unico modo di leggere i cookie**, e la ricaduta su
+  `headers.get("set-cookie")` e' stata **tolta** dal tribunale del 2026-08-06:
+  quel metodo restituisce le intestazioni fuse con una virgola, e una virgola
+  dentro un `Expires=Wed, 09 Jun 2027` non si distingue da un separatore. Con due
+  `Set-Cookie` — uno dichiarato e uno di tracciamento — il secondo spariva. Senza
+  il metodo, i cookie non si sanno leggere e il passo lo **dichiara**: `skipped`.
 - **`\b` dopo una lettera accentata non esiste**: in JS senza il flag `u` la
   parola-confine è definita su `[A-Za-z0-9_]`, quindi `/^s[iì]\b/` non trova
   niente dopo la `ì` di «sì». `Banner di consenso: sì` si leggeva come «no».
