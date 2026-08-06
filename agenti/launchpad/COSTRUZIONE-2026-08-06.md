@@ -390,6 +390,45 @@ giusto e rifiuta quello sbagliato, e che il codice d'uscita è utilizzabile in
 una procedura. **Non** prova che funzioni contro un dominio vero dietro una CDN,
 né che il provider costruisca lo stesso commit: quello è il punto 4 di §7.
 
+### 5.9 Interprete o `PATH`? — la domanda del direttore, con la misura
+
+Il mandato prescrive: *«lanciare col Node 24» e «avere il Node 24 nel `PATH`»
+non sono la stessa cosa. Il tuo gate quasi certamente chiamerà strumenti
+esterni: dichiara quale delle due cose ti serve, e provalo.*
+
+**Dichiarazione: a questo gate non serve nessuna delle due.** L'unico strumento
+esterno che chiama è **`git`**, e su questa macchina `git` è un `.exe`:
+
+```
+$ where git
+C:\Program Files\Git\mingw64\bin\git.exe
+C:\Program Files\Git\cmd\git.exe
+```
+
+Non è uno shim `.cmd` che riavvia Node, quindi non eredita né l'interprete né il
+node del `PATH`. La differenza che ha morso speed-demon con Lighthouse — un
+`npx` che riparte col node del `PATH` e muore su un'API arrivata in Node 22 —
+**qui non esiste per costruzione**, e non perché sia stata evitata con cura.
+
+Misurato invece di dedotto, sul pilota, con lo stesso commit e lo stesso stato:
+
+| | interprete | `PATH` | esito |
+|---|---|---|---|
+| A | node di sistema 20.12.2 | invariato | `ok=false · 1 pass · 5 fail · 3 skipped` |
+| B | Node 24.18.1 | invariato | `ok=false · 1 pass · 5 fail · 3 skipped` |
+| C | node di sistema | Node 24 in testa | `ok=false · 1 pass · 5 fail · 3 skipped` |
+| D | node di sistema, **dalla junction** `.claude/skills/launchpad/` | invariato | `ok=false · 1 pass · 5 fail · 3 skipped` |
+
+**Quattro canali, un solo verdetto.** La riga D è quella che costava di più
+sbagliare: dalla junction, otto script di questa casa uscivano **0 muti** —
+cioè verdi — prima di P.0-igiene-2. Qui l'uscita testuale stampa **57 righe** e
+il verdetto è quello giusto; e lo stesso vale per gli altri due gusci
+(`segreti.mjs` e `impronta.mjs`), provati anch'essi dalla junction.
+
+L'unica dipendenza di versione che resta è **la batteria**, non il gate:
+`node --test` con un glob vuole Node 21+, e per questo i tre file di test si
+elencano per esteso.
+
 ---
 
 ## 7. Cosa questo pacchetto non ha potuto provare senza un umano
