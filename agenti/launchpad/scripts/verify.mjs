@@ -37,6 +37,7 @@ import {
   findingsRadice,
   findingsRunbook,
   findingsRuntime,
+  eSoloFrammentoImpronta,
   improntaAttesa,
   leggiDebito,
   leggiRunbook,
@@ -49,6 +50,11 @@ import {
   verdettoDa,
 } from "./gate-lib.mjs";
 import { decodifica, esitoSegreti } from "./segreti-lib.mjs";
+// `FRAMMENTO` serve a riconoscere il commit che questa skill scrive da sola:
+// una sola definizione, in `impronta.mjs`, che e' chi lo genera. Due copie
+// divergono (DECISIONI.md §7), e qui il prezzo di una divergenza sarebbe un
+// rosso strutturale che ritorna in silenzio.
+import { FRAMMENTO } from "./impronta.mjs";
 import { FUORI_DAL_PACCHETTO, git as gitIn, gitRighe as gitRigheIn, leggiStoria as leggiStoriaIn, trovaGit } from "./git-lib.mjs";
 
 const PROGETTO = process.cwd();
@@ -136,10 +142,57 @@ async function preleva(url, { tentativi = 2, attesaMs = 15_000 } = {}) {
   return null;
 }
 
-/** L'ultima data di commit che tocca il codice: la scadenza di ogni certificato. */
+/**
+ * I percorsi che contano come «codice» per la scadenza di un certificato.
+ *
+ * `next.config.mjs` e `next.config.js` sono stati aggiunti dal collaudo del
+ * 2026-08-06: c'era il solo `.ts`, quindi un progetto con la configurazione in
+ * `.mjs` — forma che questa skill sa scrivere e che il gate sa leggere —
+ * cambiava la propria configurazione senza far scadere nessun handoff.
+ */
+const PERCORSI_CODICE = ["src", "supabase", "package.json", "next.config.ts", "next.config.mjs", "next.config.js"];
+
+/**
+ * Le righe AGGIUNTE da un commit, per capire se e' il rimedio di questa skill.
+ */
+function righeAggiunteDa(sha) {
+  const { ok, out } = git(["show", "--format=", "--unified=0", "--no-color", sha]);
+  if (!ok) return null;
+  return out.split(/\r?\n/).filter((r) => r.startsWith("+") && !r.startsWith("+++")).map((r) => r.slice(1));
+}
+
+/** Un commit che contiene SOLO il `generateBuildId` scritto da `impronta`. */
+function eRimedioDellImpronta(sha) {
+  const file = gitRighe(["show", "--name-only", "--format=", sha]);
+  if (!file || file.length === 0) return false;
+  if (!file.every((p) => /^next\.config\.(ts|mts|cts|js|mjs|cjs)$/i.test(p))) return false;
+  const aggiunte = righeAggiunteDa(sha);
+  return aggiunte !== null && eSoloFrammentoImpronta(aggiunte, FRAMMENTO);
+}
+
+/**
+ * L'ultima data di commit che tocca il codice: la scadenza di ogni certificato.
+ *
+ * Salta i commit che contengono SOLO il frammento dell'impronta, e lo dichiara.
+ * Senza, il gate ha un rosso strutturale contro se stesso: vedi la nota estesa
+ * su `eSoloFrammentoImpronta` in `gate-lib.mjs`. Non e' una deroga di comodo —
+ * l'esenzione si misura riga per riga sul diff, non si deduce da chi ha
+ * committato.
+ */
+const saltatiPerchePropri = [];
 function ultimoCommitCodice() {
-  const { ok, out } = git(["log", "-1", "--format=%cI", "--", "src", "supabase", "package.json", "next.config.ts"]);
-  return ok ? out.trim() || null : null;
+  const { ok, out } = git(["log", "--format=%H %cI", "-n", "50", "--", ...PERCORSI_CODICE]);
+  if (!ok) return null;
+  saltatiPerchePropri.length = 0;
+  for (const riga of out.split(/\r?\n/).map((r) => r.trim()).filter(Boolean)) {
+    const [sha, data] = riga.split(" ");
+    if (eRimedioDellImpronta(sha)) {
+      saltatiPerchePropri.push(sha.slice(0, 12));
+      continue;
+    }
+    return data || null;
+  }
+  return null;
 }
 
 /**
@@ -263,7 +316,10 @@ const PASSI = [
       const testa = [
         `${handoff.length} handoff letti: ${handoff.map((h) => h.agente).join(" · ")}`,
         `contratti trovati sul disco (prova che l'agente doveva passare): ${proveTrovate.join(" · ") || "nessuno"}`,
-        `ultimo commit che tocca il codice: ${ctx.ultimoCodice?.slice(0, 10) ?? "(sconosciuto)"}`,
+        `ultimo commit che tocca il codice: ${ctx.ultimoCodice?.slice(0, 10) ?? "(sconosciuto)"}`
+          + (saltatiPerchePropri.length > 0
+            ? ` · ${saltatiPerchePropri.length} commit saltati perche' contengono SOLO il \`generateBuildId\` che questa skill scrive (${saltatiPerchePropri.join(" · ")}): un certificato non scade per una riga che ha aggiunto launchpad dopo`
+            : ""),
         "questo passo LEGGE una dichiarazione e ne misura la freschezza: non rilancia i gate a monte (references/verifica-deterministica.md §6)",
       ].join("\n");
       return conFindings(this.id, this.nome, findings, testa);

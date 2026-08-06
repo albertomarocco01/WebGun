@@ -34,6 +34,7 @@ import { fileURLToPath } from "node:url";
 
 import ts from "typescript";
 
+import { eSoloFrammentoImpronta } from "./gate-lib.mjs";
 import { conFrammento, FRAMMENTO } from "./impronta.mjs";
 
 const QUI = dirname(fileURLToPath(import.meta.url));
@@ -157,4 +158,48 @@ test("la forma ESM porta `import` e non nomina mai `require`", () => {
   const esito = conFrammento(BASE_TS, { esm: true });
   assert.match(esito.testo, /^import \{ execSync \} from "node:child_process";$/m);
   assert.ok(!/\brequire\(/.test(esito.testo), "`require` non esiste in un modulo ESM: e' il difetto IO-1");
+});
+
+/**
+ * L'ESENZIONE DI FRESCHEZZA, misurata sul diff vero e non dedotta dall'autore.
+ *
+ * Il collaudo del 2026-08-06 ha misurato un rosso strutturale: il flusso di
+ * questa skill scrive `generateBuildId` (passo 5) DOPO che gli agenti a monte
+ * hanno depositato i loro handoff, quindi quel commit e' il piu' recente che
+ * tocca il codice spedito e fa scadere **tutti** i certificati a monte. Su un
+ * banco corretto in tutto il resto: quattro `block` su quattro handoff, e
+ * nessuno dei quattro agenti poteva farci niente.
+ *
+ * L'esenzione vale per il frammento e per niente altro: se in quel commit
+ * entra una riga in piu', la freschezza torna a scattare.
+ */
+function righeAggiunte(prima, dopo) {
+  const a = prima.split("\n");
+  const b = dopo.split("\n");
+  let i = 0;
+  const agg = [];
+  for (const riga of b) {
+    if (i < a.length && a[i] === riga) { i++; continue; }
+    agg.push(riga);
+  }
+  return agg;
+}
+
+test("il commit che porta SOLO il frammento non fa scadere i certificati a monte", () => {
+  const esito = conFrammento(BASE_TS, { esm: true });
+  const aggiunte = righeAggiunte(BASE_TS, esito.testo);
+  assert.ok(aggiunte.some((r) => /generateBuildId/.test(r)), "il diff simulato non contiene il rimedio: il test non prova niente");
+  assert.equal(eSoloFrammentoImpronta(aggiunte, FRAMMENTO), true);
+});
+
+test("una riga in piu' nello stesso commit e la freschezza torna a scattare", () => {
+  const esito = conFrammento(BASE_TS, { esm: true });
+  const aggiunte = [...righeAggiunte(BASE_TS, esito.testo), "  poweredByHeader: false,"];
+  assert.equal(eSoloFrammentoImpronta(aggiunte, FRAMMENTO), false,
+    "l'esenzione non deve coprire una modifica che qualcun altro ha infilato nello stesso commit");
+});
+
+test("un commit su next.config senza il frammento non e' esente", () => {
+  assert.equal(eSoloFrammentoImpronta(["  reactStrictMode: false,"], FRAMMENTO), false);
+  assert.equal(eSoloFrammentoImpronta([], FRAMMENTO), false, "un diff vuoto non e' il rimedio: e' un diff vuoto");
 });
