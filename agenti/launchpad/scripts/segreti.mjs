@@ -21,124 +21,41 @@
  * pubblicato una seconda volta.
  */
 
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { contaGravita, dettaglioFindings, eBinario, esitoSegreti } from "./segreti-lib.mjs";
-
-export const FUORI_DAL_PACCHETTO =
-  /(^|[/\\])(node_modules|\.next|\.git|\.claude|\.turbo|\.vercel|\.wrangler|out|dist|coverage|test-results|playwright-report|\.perf)([/\\]|$)|(^|[/\\])supabase[/\\]\.(temp|branches)([/\\]|$)|(^|[/\\])e2e[/\\]\.auth([/\\]|$)/;
+import { FUORI_DAL_PACCHETTO, gitRighe, leggiStoria, trovaGit } from "./git-lib.mjs";
 
 export const STORIA_DEFAULT = 200;
-const MARCATORE = "\u0001";
 
-let GIT = null;
-function trovaGit() {
-  if (GIT !== null) return GIT;
-  const res = spawnSync(process.platform === "win32" ? "where" : "which", ["git"], { encoding: "utf8" });
-  if (res.error || res.status !== 0) return (GIT = false);
-  const righe = res.stdout.split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
-  const scelta = process.platform === "win32" ? righe.find((r) => /\.(exe|cmd|bat)$/i.test(r)) : righe[0];
-  return (GIT = scelta || false);
-}
-
-function git(dir, args) {
-  const exe = trovaGit();
-  if (!exe) return { ok: false, out: "" };
-  const res = spawnSync(exe, ["-C", dir, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-  if (res.error || res.status !== 0) return { ok: false, out: res.stdout ?? "" };
-  return { ok: true, out: res.stdout ?? "" };
-}
-
-const gitRighe = (dir, args) => {
-  const { ok, out } = git(dir, args);
-  return ok ? out.split(/\r?\n/).map((r) => r.trim()).filter(Boolean) : null;
-};
-
-/**
- * Le righe AGGIUNTE dagli ultimi N commit, raggruppate per commit.
- *
- * Solo le aggiunte: una riga rimossa e' gia' contata dal commit che l'aveva
- * introdotta, e contarla due volte raddoppierebbe ogni rilievo storico.
- */
-export function leggiStoria(dir, quanti) {
-  if (quanti <= 0) return [];
-  const { ok, out } = git(dir, [
-    "log", "--all", `-n${quanti}`, "-p", "--unified=0", "--no-color", "--format=%x01%H %cI", "--", ".",
-  ]);
-  if (!ok || !out) return [];
-  // Raggruppate per FILE dentro il commit, non per commit.
-  //
-  // La prima stesura appiattiva tutte le righe aggiunte di un commit in un
-  // blocco solo, etichettato col solo sha — e quella scelta rendeva CIECA la
-  // famiglia `credenziale-sql`, che si applica ai soli `.sql`: nessuna
-  // etichetta finiva per `.sql`, quindi una password committata in un seed e
-  // tolta il giorno dopo non veniva vista da nessuno. Trovato da un test il
-  // 2026-08-06.
-  const pezzi = [];
-  let sha = null;
-  let data = null;
-  let file = null;
-  let righeAggiunte = [];
-  const chiudi = () => {
-    if (file && righeAggiunte.length > 0) {
-      pezzi.push({ percorso: file, etichetta: `${file} @ ${sha} (${(data ?? "").slice(0, 10)})`, testo: righeAggiunte.join("\n") });
-    }
-    righeAggiunte = [];
-  };
-  for (const riga of out.split(/\r?\n/)) {
-    if (riga.startsWith(MARCATORE)) {
-      chiudi();
-      file = null;
-      [sha, data] = riga.slice(1).split(" ");
-      sha = (sha ?? "").slice(0, 12);
-      continue;
-    }
-    if (riga.startsWith("+++ ")) {
-      chiudi();
-      const p = riga.slice(4).trim();
-      file = p === "/dev/null" ? null : p.replace(/^b\//, "");
-      continue;
-    }
-    if (riga.startsWith("--- ") || riga.startsWith("+++")) continue;
-    if (riga.startsWith("+") && file) righeAggiunte.push(riga.slice(1));
+/** Legge i file di un elenco git. Il conteggio dei binari e' condiviso: un file
+ *  non letto si DICHIARA, non si tace (DECISIONI.md §18). */
+function leggiElenco(dir, elenco, binari, { salta = false, maxByte = Infinity } = {}) {
+  const letti = [];
+  for (const percorso of elenco ?? []) {
+    if (salta && FUORI_DAL_PACCHETTO.test(percorso)) continue;
+    try {
+      const buf = readFileSync(join(dir, percorso));
+      if (eBinario(buf)) binari.push(percorso);
+      else if (buf.length <= maxByte) letti.push({ percorso, testo: buf.toString("utf8") });
+    } catch { /* sparito fra l'elenco e la lettura: non si accusa nessuno */ }
   }
-  chiudi();
-  return pezzi;
+  return letti;
 }
+
 export function raccogli(dir, storiaN) {
   const tracciati = gitRighe(dir, ["ls-files"]);
   if (tracciati === null) return null;
-  const letti = [];
   const binari = [];
-  for (const percorso of tracciati) {
-    try {
-      const buf = readFileSync(join(dir, percorso));
-      if (eBinario(buf)) binari.push(percorso);
-      else letti.push({ percorso, testo: buf.toString("utf8") });
-    } catch { /* sparito fra `ls-files` e la lettura: non si accusa nessuno */ }
-  }
+  const letti = leggiElenco(dir, tracciati, binari);
   // I file NUOVI e non ignorati: `git ls-files` non li elenca, e il gesto
   // successivo di chiunque e' `git add -A`. Vedi la nota in `esitoSegreti`.
-  const daTracciare = [];
-  for (const percorso of gitRighe(dir, ["ls-files", "--others", "--exclude-standard"]) ?? []) {
-    if (FUORI_DAL_PACCHETTO.test(percorso)) continue;
-    try {
-      const buf = readFileSync(join(dir, percorso));
-      if (eBinario(buf)) binari.push(percorso);
-      else daTracciare.push({ percorso, testo: buf.toString("utf8") });
-    } catch { /* sparito fra l'elenco e la lettura */ }
-  }
-  const ignorati = [];
-  for (const percorso of gitRighe(dir, ["ls-files", "--others", "--ignored", "--exclude-standard"]) ?? []) {
-    if (FUORI_DAL_PACCHETTO.test(percorso)) continue;
-    try {
-      const buf = readFileSync(join(dir, percorso));
-      if (!eBinario(buf) && buf.length < 512 * 1024) ignorati.push({ percorso, testo: buf.toString("utf8") });
-    } catch { /* ignorato e illeggibile: non e' un rilievo */ }
-  }
+  const daTracciare = leggiElenco(dir, gitRighe(dir, ["ls-files", "--others", "--exclude-standard"]), binari, { salta: true });
+  // Gli ignorati non partono con un deploy da git: si guardano lo stesso,
+  // perche' un deploy da CLI carica la cartella di lavoro.
+  const ignorati = leggiElenco(dir, gitRighe(dir, ["ls-files", "--others", "--ignored", "--exclude-standard"]), [], { salta: true, maxByte: 512 * 1024 });
   return { letti, daTracciare, ignorati, binari, storia: leggiStoria(dir, storiaN) };
 }
 
@@ -185,7 +102,7 @@ function main() {
   console.log(`progetto: ${args.progetto}`);
   console.log(`  ${riassunto.letti} file tracciati letti · ${riassunto.daTracciare} nuovi non ancora tracciati · ${riassunto.binari} binari non letti`);
   console.log(`  ${riassunto.ignorati} file ignorati guardati (partono solo con un deploy da CLI)`);
-  console.log(`  ${riassunto.storia} commit attraversati nella storia · ${riassunto.famiglie} famiglie cercate`);
+  console.log(`  ${riassunto.storia} pezzi di storia (file x commit) letti · ${riassunto.famiglie} famiglie cercate`);
   if (riassunto.letti === 0) {
     console.log("\nZERO file letti non e' «nessun segreto»: e' una verifica non fatta.");
     process.exit(2);

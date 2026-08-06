@@ -21,7 +21,6 @@
  * qui c'e' solo il guscio di I/O, e l'ORDINE della lista `PASSI` e' il gate.
  */
 
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -50,6 +49,7 @@ import {
   verdettoDa,
 } from "./gate-lib.mjs";
 import { eBinario, esitoSegreti } from "./segreti-lib.mjs";
+import { FUORI_DAL_PACCHETTO, git as gitIn, gitRighe as gitRigheIn, leggiStoria as leggiStoriaIn, trovaGit } from "./git-lib.mjs";
 
 const PROGETTO = process.cwd();
 const RUNBOOK = "docs/deploy.md";
@@ -57,17 +57,6 @@ const DEBITO = "docs/DEBITO-TECNICO.md";
 const HANDOFF_DIR = "docs/handoff";
 /** Le radici che finiscono nel pacchetto, quando il runbook non le dichiara. */
 const RADICI_PREDEFINITE = ["src", "next.config.ts", "next.config.mjs", "next.config.js"];
-
-/**
- * Cio' che nessun deploy carica, nemmeno da CLI: artefatti di build, cache,
- * artefatti di runtime dello stack Supabase locale, e — la piu' importante —
- * `.claude/skills/`, che in questa casa e' una JUNCTION verso la regia. Senza
- * questa riga il controllo dei segreti attraversa il link e legge un altro
- * repository intero: misurato sul pilota il 2026-08-06, 181 file «ignorati»
- * di cui la maggior parte erano i verbali di un'altra skill.
- */
-const FUORI_DAL_PACCHETTO =
-  /(^|[/\\])(node_modules|\.next|\.git|\.claude|\.turbo|\.vercel|\.wrangler|out|dist|coverage|test-results|playwright-report|\.perf)([/\\]|$)|(^|[/\\])supabase[/\\]\.(temp|branches)([/\\]|$)|(^|[/\\])e2e[/\\]\.auth([/\\]|$)/;
 
 export const ID = Object.freeze({
   radice: "radice-pulita",
@@ -108,39 +97,11 @@ const leggiSeCe = (relativo) => {
   }
 };
 
-// --------------------------------------- eseguibili risolti a mano su Windows
-// `spawnSync(cmd, args)` senza shell non consulta PATHEXT: uno shim `.cmd`
-// risulta ENOENT sul nome nudo. NON si abilita `shell: true`: li' gli argomenti
-// vengono concatenati invece che passati come vettore. Prezzo gia' pagato da
-// Schema Forge, Flow Sentinel e Speed Demon; non si ripaga.
-let GIT = null;
-function trovaGit() {
-  if (GIT !== null) return GIT;
-  const res = spawnSync(process.platform === "win32" ? "where" : "which", ["git"], { encoding: "utf8" });
-  if (res.error || res.status !== 0) return (GIT = false);
-  const righe = res.stdout.split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
-  // Su Windows la prima riga di `where` puo' essere uno script senza
-  // estensione, che il sistema non sa eseguire: si prende la prima ESEGUIBILE.
-  // Difetto gia' misurato da Speed Demon il 2026-07-30 su `where npx`.
-  const scelta = process.platform === "win32"
-    ? righe.find((r) => /\.(exe|cmd|bat)$/i.test(r))
-    : righe[0];
-  return (GIT = scelta || false);
-}
-
-/** Un comando git. Ritorna `{ ok, out }`: mai un'eccezione, mai un `pass` finto. */
-function git(args, { maxBuffer = 64 * 1024 * 1024 } = {}) {
-  const exe = trovaGit();
-  if (!exe) return { ok: false, out: "" };
-  const res = spawnSync(exe, ["-C", PROGETTO, ...args], { encoding: "utf8", maxBuffer });
-  if (res.error || res.status !== 0) return { ok: false, out: res.stdout ?? "" };
-  return { ok: true, out: res.stdout ?? "" };
-}
-
-const gitRighe = (args) => {
-  const { ok, out } = git(args);
-  return ok ? out.split(/\r?\n/).map((r) => r.trim()).filter(Boolean) : null;
-};
+// git: risolutore, comandi e lettura della storia stanno in `git-lib.mjs`.
+// Due copie divergono, e in questa casa e' gia' successo (DECISIONI.md §7).
+const git = (args, opzioni) => gitIn(PROGETTO, args, opzioni);
+const gitRighe = (args) => gitRigheIn(PROGETTO, args);
+const leggiStoria = (quanti) => leggiStoriaIn(PROGETTO, quanti);
 
 async function preleva(url, { tentativi = 2 } = {}) {
   for (let i = 0; i < tentativi; i++) {
@@ -320,7 +281,7 @@ const PASSI = [
       ctx.segretiRiassunto = riassunto;
       const testa = [
         `${riassunto.letti} file tracciati letti · ${riassunto.daTracciare} nuovi non ancora tracciati · ${riassunto.binari} binari non letti · ${riassunto.ignorati} file ignorati guardati`,
-        `storia: ${storia.length} commit attraversati (--storia ${args.storia})`,
+        `storia: ${storia.length} pezzi (file x commit) letti dagli ultimi ${args.storia} commit — un segreto tolto da HEAD e' ancora consegnato a chi ha clonato`,
         `${riassunto.famiglie} famiglie di segreto cercate · quello che si trova NON si stampa: solo famiglia, file, riga e i primi quattro caratteri`,
       ].join("\n");
       return conFindings(this.id, this.nome, findings, testa);
@@ -485,63 +446,6 @@ const PASSI = [
     },
   },
 ];
-
-// ------------------------------------------------------------------ storia
-/**
- * Le righe AGGIUNTE dagli ultimi N commit, raggruppate per commit.
- *
- * Un segreto tolto da HEAD con un commit successivo e' ancora consegnato: chi
- * ha clonato ce l'ha, e un deploy connesso a git da' al provider la STORIA.
- * Si guardano le sole righe aggiunte perche' una riga rimossa e' gia' contata
- * dal commit che l'aveva aggiunta.
- */
-const MARCATORE = "\u0001"; // il marcatore di commit, come escape: un byte 0x01 scritto grezzo nel sorgente e invisibile a chi legge
-function leggiStoria(quanti) {
-  if (quanti <= 0) return [];
-  const { ok, out } = git([
-    "log", "--all", `-n${quanti}`, "-p", "--unified=0", "--no-color",
-    "--format=%x01%H %cI", "--", ".",
-  ]);
-  if (!ok || !out) return [];
-  // Raggruppate per FILE dentro il commit, non per commit.
-  //
-  // La prima stesura appiattiva tutte le righe aggiunte di un commit in un
-  // blocco solo, etichettato col solo sha — e quella scelta rendeva CIECA la
-  // famiglia `credenziale-sql`, che si applica ai soli `.sql`: nessuna
-  // etichetta finiva per `.sql`, quindi una password committata in un seed e
-  // tolta il giorno dopo non veniva vista da nessuno. Trovato da un test il
-  // 2026-08-06.
-  const pezzi = [];
-  let sha = null;
-  let data = null;
-  let file = null;
-  let righeAggiunte = [];
-  const chiudi = () => {
-    if (file && righeAggiunte.length > 0) {
-      pezzi.push({ percorso: file, etichetta: `${file} @ ${sha} (${(data ?? "").slice(0, 10)})`, testo: righeAggiunte.join("\n") });
-    }
-    righeAggiunte = [];
-  };
-  for (const riga of out.split(/\r?\n/)) {
-    if (riga.startsWith(MARCATORE)) {
-      chiudi();
-      file = null;
-      [sha, data] = riga.slice(1).split(" ");
-      sha = (sha ?? "").slice(0, 12);
-      continue;
-    }
-    if (riga.startsWith("+++ ")) {
-      chiudi();
-      const p = riga.slice(4).trim();
-      file = p === "/dev/null" ? null : p.replace(/^b\//, "");
-      continue;
-    }
-    if (riga.startsWith("--- ") || riga.startsWith("+++")) continue;
-    if (riga.startsWith("+") && file) righeAggiunte.push(riga.slice(1));
-  }
-  chiudi();
-  return pezzi;
-}
 
 /** `engines.node` di ogni dipendenza installata. `null` se l'albero non c'e'. */
 function engineDelleDipendenze() {

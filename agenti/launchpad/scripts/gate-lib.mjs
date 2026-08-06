@@ -12,8 +12,8 @@
 import { ePubblicaPerCostruzione, eSegnaposto, nomeSospetto } from "./segreti-lib.mjs";
 
 // ------------------------------------------------------------------- comuni
-const senzaBom = (testo) => testo.replace(/^﻿/, "");
-export const righe = (testo) => senzaBom(testo ?? "").split(/\r?\n/);
+const senzaBom = (testo) => testo.replace(/^\uFEFF/, "");
+const righe = (testo) => senzaBom(testo ?? "").split(/\r?\n/);
 
 /**
  * Le zone citate non dichiarano niente: un blocco recintato dentro un template
@@ -21,7 +21,7 @@ export const righe = (testo) => senzaBom(testo ?? "").split(/\r?\n/);
  * Leggerli come dichiarazioni fa nascere firme che nessuno ha messo — difetto
  * gia' pagato da Flow Sentinel il 2026-07-28 sul contratto dei flussi.
  */
-export const senzaZoneCitate = (testo) =>
+const senzaZoneCitate = (testo) =>
   senzaBom(testo ?? "")
     .replace(/^[ \t]*```[\s\S]*?^[ \t]*```/gm, "")
     .replace(/<!--[\s\S]*?-->/g, "");
@@ -638,9 +638,17 @@ export function buildIdDaHtml(html) {
 const SHA_LETTERALE = /["'`][0-9a-f]{7,40}["'`]/i;
 
 export function findingsImpronta({ nextConfig = null, buildIdDisco = null, commit = null, html = null, url = null } = {}) {
-  const findings = [];
   const atteso = improntaAttesa(commit);
+  return [
+    ...findingsConfigImpronta(nextConfig),
+    ...findingsArtefatto(buildIdDisco, atteso),
+    ...(html === null ? [] : findingsServito(html, atteso, url)),
+  ];
+}
 
+/** Come nasce l'impronta: la parte che decide se sara' dimostrabile DOPO. */
+function findingsConfigImpronta(nextConfig) {
+  const findings = [];
   if (nextConfig === null) {
     findings.push({
       severity: "block",
@@ -682,35 +690,41 @@ export function findingsImpronta({ nextConfig = null, buildIdDisco = null, commi
     }
   }
 
+  return findings;
+}
+
+/** L'artefatto sul disco: e' di QUESTO commit? */
+function findingsArtefatto(buildIdDisco, atteso) {
   if (buildIdDisco === null) {
-    findings.push({
+    return [{
       severity: "block",
       object: ".next/BUILD_ID",
       message: "assente: nessun artefatto costruito",
       hint: "`npm run build` dalla radice del progetto, con il runtime dichiarato",
-    });
-  } else if (!improntaCombacia(buildIdDisco, atteso)) {
-    findings.push({
+    }];
+  }
+  if (!improntaCombacia(buildIdDisco, atteso)) {
+    return [{
       severity: "block",
       object: ".next/BUILD_ID",
       message: `l'artefatto sul disco porta \`${buildIdDisco}\`, il commit di HEAD e' \`${atteso}\``,
       hint: "l'artefatto e' di un altro commit, oppure l'impronta non e' ancora derivata dal commit. Si ricostruisce",
-    });
+    }];
   }
+  return [];
+}
 
-  if (html !== null) {
-    const serviti = buildIdDaHtml(html);
-    const combacia = serviti.some((s) => improntaCombacia(s, atteso)) || (atteso.length >= 7 && html.includes(atteso));
-    if (!combacia) {
-      findings.push({
-        severity: "block",
-        object: url ?? "app servita",
-        message: `non porta l'impronta attesa \`${atteso}\`${serviti.length ? ` (serve \`${serviti.join("`, `")}\`)` : " (nessun build id riconoscibile nell'HTML)"}`,
-        hint: "sta rispondendo un'altra applicazione, o una build precedente. Misurare qualunque altra cosa su questo indirizzo darebbe numeri plausibili di un sito che non e' questo",
-      });
-    }
-  }
-  return findings;
+/** Cio' che risponde sull'indirizzo: e' l'artefatto che credo? */
+function findingsServito(html, atteso, url) {
+  const serviti = buildIdDaHtml(html);
+  const combacia = serviti.some((s) => improntaCombacia(s, atteso)) || (atteso.length >= 7 && html.includes(atteso));
+  if (combacia) return [];
+  return [{
+    severity: "block",
+    object: url ?? "app servita",
+    message: `non porta l'impronta attesa \`${atteso}\`${serviti.length ? ` (serve \`${serviti.join("`, `")}\`)` : " (nessun build id riconoscibile nell'HTML)"}`,
+    hint: "sta rispondendo un'altra applicazione, o una build precedente. Misurare qualunque altra cosa su questo indirizzo darebbe numeri plausibili di un sito che non e' questo",
+  }];
 }
 
 // ==================================================== 9. contratto-uscita

@@ -1,0 +1,15 @@
+{
+  "name": "launchpad-scripts",
+  "private": true,
+  "type": "module",
+  "description": "Solo per far girare i guardiani sugli script della skill. Il repo di regia NON e' un progetto applicativo: qui non si pubblica nulla e non si costruisce nulla — e questa skill, in particolare, non ha mai pubblicato niente da nessuna parte.",
+  "scripts": {
+    "test": "node --test scripts/gate-lib.test.mjs scripts/segreti-lib.test.mjs scripts/verify.test.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "eslint": "^9.39.0",
+    "jscpd": "^4.0.5",
+    "knip": "^5.66.0"
+  }
+}

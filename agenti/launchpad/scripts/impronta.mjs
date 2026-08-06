@@ -27,12 +27,12 @@
  * USCITA: 0 = impronta coerente · 1 = non coerente · 2 = errore
  */
 
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildIdDaHtml, findingsImpronta, dettaglioFindings, improntaAttesa, improntaCombacia } from "./gate-lib.mjs";
+import { git } from "./git-lib.mjs";
 
 const CONFIG = ["next.config.ts", "next.config.mjs", "next.config.js"];
 
@@ -79,21 +79,10 @@ const improntaDalCommit = () => {
   return sha.toLowerCase().slice(0, 12);
 };`;
 
-let GIT = null;
-function trovaGit() {
-  if (GIT !== null) return GIT;
-  const res = spawnSync(process.platform === "win32" ? "where" : "which", ["git"], { encoding: "utf8" });
-  if (res.error || res.status !== 0) return (GIT = false);
-  const righe = res.stdout.split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
-  const scelta = process.platform === "win32" ? righe.find((r) => /\.(exe|cmd|bat)$/i.test(r)) : righe[0];
-  return (GIT = scelta || false);
-}
-
+// git sta in `git-lib.mjs`: qui serve una domanda sola.
 function commitDi(dir) {
-  const exe = trovaGit();
-  if (!exe) return null;
-  const res = spawnSync(exe, ["-C", dir, "rev-parse", "HEAD"], { encoding: "utf8" });
-  return res.error || res.status !== 0 ? null : res.stdout.trim() || null;
+  const { ok, out } = git(dir, ["rev-parse", "HEAD"]);
+  return ok ? out.trim() || null : null;
 }
 
 const trovaConfig = (dir) => CONFIG.map((n) => join(dir, n)).find((p) => existsSync(p)) ?? null;
@@ -136,6 +125,46 @@ function parseArgs(argv) {
   return args;
 }
 
+/**
+ * Scrive `generateBuildId` in `next.config`: l'UNICA riga di codice altrui che
+ * questo agente tocca, e la tocca solo se glielo si chiede con `--scrivi`.
+ */
+function scriviFrammento(percorsoConfig, progetto) {
+  if (!percorsoConfig) {
+    console.error(`Nessun next.config in ${progetto}: non c'e' dove scrivere il frammento.`);
+    process.exit(2);
+  }
+  const testo = readFileSync(percorsoConfig, "utf8");
+  const esito = conFrammento(testo);
+  if (esito.cambiato) {
+    writeFileSync(percorsoConfig, esito.testo);
+    console.log(`scritto in ${percorsoConfig}: ${esito.motivo}`);
+    console.log("Ricostruisci (`npm run build`) perche' l'impronta entri nell'artefatto.");
+    return;
+  }
+  console.log(`non scritto: ${esito.motivo}`);
+  if (!/generateBuildId/.test(testo)) {
+    console.log(`\nDa inserire a mano:\n\n${FRAMMENTO}\n\n  generateBuildId: improntaDalCommit,`);
+  }
+}
+
+/** Il riepilogo leggibile. Stampa SEMPRE cosa ha guardato, anche sul verde. */
+function stampa({ coerente, commit, atteso, percorsoConfig, nextConfig, buildIdDisco, url, servito, findings }) {
+  console.log(`IMPRONTA: ${coerente ? "coerente" : "NON coerente"}`);
+  console.log(`  commit            ${commit}`);
+  console.log(`  impronta attesa   ${atteso}`);
+  console.log(`  next.config       ${percorsoConfig ?? "assente"}${nextConfig && /generateBuildId/.test(nextConfig) ? " · generateBuildId dichiarato" : " · generateBuildId ASSENTE"}`);
+  console.log(`  .next/BUILD_ID    ${buildIdDisco ?? "assente"}`);
+  if (url) {
+    console.log(`  servito da ${url}   ${servito.join(" · ") || "(nessun build id riconoscibile)"}`);
+    console.log(`  combacia          ${servito.some((s) => improntaCombacia(s, atteso)) ? "SI" : "NO"}`);
+  }
+  if (findings.length > 0) console.log(`\n${dettaglioFindings(findings)}`);
+  if (!url) {
+    console.log("\nSenza `--url` questo comando non ha verificato niente di pubblicato: ha guardato il disco.");
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const percorsoConfig = trovaConfig(args.progetto);
@@ -146,23 +175,7 @@ async function main() {
   }
   const atteso = improntaAttesa(commit);
 
-  if (args.scrivi) {
-    if (!percorsoConfig) {
-      console.error(`Nessun next.config in ${args.progetto}: non c'e' dove scrivere il frammento.`);
-      process.exit(2);
-    }
-    const esito = conFrammento(readFileSync(percorsoConfig, "utf8"));
-    if (esito.cambiato) {
-      writeFileSync(percorsoConfig, esito.testo);
-      console.log(`scritto in ${percorsoConfig}: ${esito.motivo}`);
-      console.log("Ricostruisci (`npm run build`) perche' l'impronta entri nell'artefatto.");
-    } else {
-      console.log(`non scritto: ${esito.motivo}`);
-      if (!/generateBuildId/.test(readFileSync(percorsoConfig, "utf8"))) {
-        console.log(`\nDa inserire a mano:\n\n${FRAMMENTO}\n\n  generateBuildId: improntaDalCommit,`);
-      }
-    }
-  }
+  if (args.scrivi) scriviFrammento(percorsoConfig, args.progetto);
 
   const nextConfig = percorsoConfig ? readFileSync(percorsoConfig, "utf8") : null;
   const buildIdDisco = existsSync(join(args.progetto, ".next", "BUILD_ID"))
@@ -189,19 +202,7 @@ async function main() {
     process.exit(coerente ? 0 : 1);
   }
 
-  console.log(`IMPRONTA: ${coerente ? "coerente" : "NON coerente"}`);
-  console.log(`  commit            ${commit}`);
-  console.log(`  impronta attesa   ${atteso}`);
-  console.log(`  next.config       ${percorsoConfig ?? "assente"}${nextConfig && /generateBuildId/.test(nextConfig) ? " · generateBuildId dichiarato" : " · generateBuildId ASSENTE"}`);
-  console.log(`  .next/BUILD_ID    ${buildIdDisco ?? "assente"}`);
-  if (args.url) {
-    console.log(`  servito da ${args.url}   ${servito.join(" · ") || "(nessun build id riconoscibile)"}`);
-    console.log(`  combacia          ${servito.some((s) => improntaCombacia(s, atteso)) ? "SI" : "NO"}`);
-  }
-  if (findings.length > 0) console.log(`\n${dettaglioFindings(findings)}`);
-  if (!args.url) {
-    console.log("\nSenza `--url` questo comando non ha verificato niente di pubblicato: ha guardato il disco.");
-  }
+  stampa({ coerente, commit, atteso, percorsoConfig, nextConfig, buildIdDisco, url: args.url, servito, findings });
   process.exit(coerente ? 0 : 1);
 }
 

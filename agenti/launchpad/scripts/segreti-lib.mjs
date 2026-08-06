@@ -20,7 +20,7 @@
  */
 
 // ------------------------------------------------------------------- comuni
-const senzaBom = (testo) => testo.replace(/^﻿/, "");
+const senzaBom = (testo) => testo.replace(/^\uFEFF/, "");
 const righe = (testo) => senzaBom(testo).split(/\r?\n/);
 
 export const dettaglioFindings = (findings) =>
@@ -415,11 +415,30 @@ export function findingsFile(percorso, testo, { dove = "file", etichetta = null,
       }
     });
   }
-  // Un'eccezione su una famiglia NON derogabile non declassa niente e vale un
-  // rilievo suo: e' qualcuno che si e' scritto il permesso da solo.
+  findings.push(...findingsSulleEccezioni({ eccezioni, usate, nome, dove }));
+  return findings;
+}
+
+/**
+ * I rilievi che riguardano l'ECCEZIONE stessa, non il segreto.
+ *
+ * Tre casi, e tutti e tre dicono la stessa cosa da angoli diversi: un permesso
+ * che nessuno rilegge sembra proteggere e non protegge.
+ */
+function findingsSulleEccezioni({ eccezioni, usate, nome, dove }) {
+  const findings = [];
   for (const [id, motivo] of eccezioni) {
     const famiglia = FAMIGLIE.find((f) => f.id === id);
-    if (famiglia && !famiglia.derogabile) {
+    if (!famiglia) {
+      findings.push({
+        severity: "warn",
+        object: nome,
+        message: `dichiara un'eccezione per \`${id}\`, che non e' una famiglia di questo controllo`,
+        hint: "un refuso in un'eccezione e' un'eccezione che non protegge niente, e sembra proteggere",
+        famiglia: "eccezione-sconosciuta",
+        dove,
+      });
+    } else if (!famiglia.derogabile) {
       findings.push({
         severity: "block",
         object: nome,
@@ -427,15 +446,6 @@ export function findingsFile(percorso, testo, { dove = "file", etichetta = null,
         hint: "una chiave che apre un sistema vero non ha un caso legittimo: li' l'eccezione sarebbe solo il modo di scriversi il permesso da soli. Le famiglie derogabili sono " +
           FAMIGLIE.filter((f) => f.derogabile).map((f) => `\`${f.id}\``).join(", "),
         famiglia: "eccezione-non-derogabile",
-        dove,
-      });
-    } else if (!famiglia) {
-      findings.push({
-        severity: "warn",
-        object: nome,
-        message: `dichiara un'eccezione per \`${id}\`, che non e' una famiglia di questo controllo`,
-        hint: "un refuso in un'eccezione e' un'eccezione che non protegge niente, e sembra proteggere",
-        famiglia: "eccezione-sconosciuta",
         dove,
       });
     } else if (!usate.has(id)) {
@@ -465,6 +475,33 @@ export function findingsFile(percorso, testo, { dove = "file", etichetta = null,
  * `riassunto.letti` e dichiarare MANCANTE. Qui si ritorna il conteggio proprio
  * perche' il chiamante non possa fingere di non saperlo.
  */
+/**
+ * I file ignorati: UNA riga per file, non una per rilievo.
+ *
+ * Misurato sul pilota il 2026-08-06: per riga uscivano 40 `issue`, di cui 34
+ * erano lo stesso file di segreti dello stack Supabase locale ripetuto.
+ * Quaranta righe che dicono la stessa cosa non sono piu' informazione: sono il
+ * modo in cui un passo si impara a saltare, e il giorno che dice una cosa nuova
+ * nessuno se ne accorge.
+ */
+function findingsIgnorati(ignorati) {
+  const findings = [];
+  for (const { percorso, testo } of ignorati) {
+    const trovati = findingsFile(percorso, testo, { dove: "ignorato" });
+    if (trovati.length === 0) continue;
+    const famiglie = [...new Set(trovati.map((f) => f.famiglia))];
+    findings.push({
+      severity: "issue",
+      object: percorso,
+      message: `${trovati.length} rilievi in un file IGNORATO da git (${famiglie.join(" · ")}) — prime righe: ${trovati.slice(0, 3).map((f) => f.object).join(" · ")}`,
+      hint: "non parte con un deploy connesso al repository; parte con un deploy da CLI, che carica la cartella di lavoro. Il runbook deve dichiarare quale dei due si usa (`Modo di deploy:`)",
+      famiglia: "ignorato",
+      dove: "ignorato",
+    });
+  }
+  return findings;
+}
+
 export function esitoSegreti({ letti = [], daTracciare = [], ignorati = [], storia = [], binari = [] } = {}) {
   const findings = [];
   // I file NUOVI e non ignorati si guardano con la stessa gravita' dei
@@ -496,23 +533,7 @@ export function esitoSegreti({ letti = [], daTracciare = [], ignorati = [], stor
   // dello stack Supabase locale ripetuto. Quaranta righe che dicono la stessa
   // cosa non sono piu' informazione: sono il modo in cui un passo si impara a
   // saltare, e il giorno che dice una cosa nuova nessuno se ne accorge.
-  const perFile = new Map();
-  for (const { percorso, testo } of ignorati) {
-    const trovati = findingsFile(percorso, testo, { dove: "ignorato" });
-    if (trovati.length === 0) continue;
-    const famiglie = [...new Set(trovati.map((f) => f.famiglia))];
-    perFile.set(percorso, { quanti: trovati.length, famiglie, righe: trovati.slice(0, 3).map((f) => f.object) });
-  }
-  for (const [percorso, r] of perFile) {
-    findings.push({
-      severity: "issue",
-      object: percorso,
-      message: `${r.quanti} rilievi in un file IGNORATO da git (${r.famiglie.join(" · ")}) — prime righe: ${r.righe.join(" · ")}`,
-      hint: "non parte con un deploy connesso al repository; parte con un deploy da CLI, che carica la cartella di lavoro. Il runbook deve dichiarare quale dei due si usa (`Modo di deploy:`)",
-      famiglia: "ignorato",
-      dove: "ignorato",
-    });
-  }
+  findings.push(...findingsIgnorati(ignorati));
   // `percorso` e' il file VERO (serve a `soloIn`), `etichetta` porta il commit.
   // I numeri di riga di un diff non sono quelli del file: non si stampano.
   for (const { percorso, etichetta, testo } of storia) {
