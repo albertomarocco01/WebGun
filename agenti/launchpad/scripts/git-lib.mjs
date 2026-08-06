@@ -96,6 +96,48 @@ const MARCATORE = "\u0001";
  * in un seed e tolta il giorno dopo non veniva vista da nessuno. Trovato da un
  * test il 2026-08-06.
  */
+/**
+ * I MESSAGGI dei commit e dei tag annotati.
+ *
+ * Trovato dal collaudo del 2026-08-06: `leggiStoria` guarda i **diff**, cioe'
+ * le righe aggiunte ai file. Un segreto incollato nel messaggio di un commit —
+ * «chiave ruotata, la vecchia era eyJ…» — viaggia con il repository esattamente
+ * come un file, lo legge chiunque faccia `git log`, e nessun passo lo guardava.
+ * Misurato: `pass` con zero rilievi su una `service_role` completa nel
+ * messaggio.
+ *
+ * Il `percorso` non e' un file e non deve sembrarlo: le famiglie con `soloIn`
+ * (oggi `credenziale-sql`) non devono scattare su un messaggio di commit.
+ */
+export function leggiMessaggi(dir, quanti) {
+  if (quanti <= 0) return [];
+  const pezzi = [];
+  const log = git(dir, ["log", "--all", `-n${quanti}`, "--format=%x01%H%n%B"]);
+  if (log.ok && log.out) {
+    for (const blocco of log.out.split(MARCATORE).slice(1)) {
+      const aCapo = blocco.indexOf("\n");
+      const sha = aCapo === -1 ? blocco : blocco.slice(0, aCapo);
+      const corpo = aCapo === -1 ? "" : blocco.slice(aCapo + 1);
+      if (!corpo.trim()) continue;
+      pezzi.push({
+        percorso: NON_UN_FILE.commit,
+        etichetta: `messaggio del commit ${sha.trim().slice(0, 12)}`,
+        testo: corpo,
+      });
+    }
+  }
+  // I tag annotati in un blocco solo: il nome del tag sta nel testo, e la
+  // precisione che si perde non vale un secondo formato da analizzare.
+  const tag = git(dir, ["for-each-ref", "--format=%(refname:short): %(contents)", "refs/tags"]);
+  if (tag.ok && tag.out.trim()) {
+    pezzi.push({ percorso: NON_UN_FILE.tag, etichetta: "messaggi dei tag annotati", testo: tag.out });
+  }
+  return pezzi;
+}
+
+/** Etichette che NON sono percorsi: le famiglie con `soloIn` non devono scattarci. */
+const NON_UN_FILE = Object.freeze({ commit: "(messaggio di commit)", tag: "(messaggio di tag)" });
+
 export function leggiStoria(dir, quanti) {
   if (quanti <= 0) return [];
   const { ok, out, troncato } = git(dir, [

@@ -159,7 +159,7 @@ export function findingsRadice({ sporco = [], ramo = null, upstream = null, avan
 const RIGA_GATE = /^(?! {4}|\t)[ \t>*_-]*Gate[ \t*_]*:[ \t*_]*(VERDE|ROSSO)\b/gim;
 
 /** Tutti i verdetti leggibili, in ordine. Serve a scoprirne DUE diversi. */
-export function verdettiHandoff(testo) {
+function verdettiHandoff(testo) {
   return [...senzaZoneCitate(testo ?? "").matchAll(RIGA_GATE)].map((m) => m[1]);
 }
 

@@ -25,38 +25,78 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { contaGravita, dettaglioFindings, eBinario, esitoSegreti } from "./segreti-lib.mjs";
-import { FUORI_DAL_PACCHETTO, gitRighe, leggiStoria, trovaGit } from "./git-lib.mjs";
+import { contaGravita, decodifica, dettaglioFindings, esitoSegreti } from "./segreti-lib.mjs";
+import { FUORI_DAL_PACCHETTO, gitRighe, leggiMessaggi, leggiStoria, trovaGit } from "./git-lib.mjs";
 
 export const STORIA_DEFAULT = 200;
 
-/** Legge i file di un elenco git. Il conteggio dei binari e' condiviso: un file
- *  non letto si DICHIARA, non si tace (DECISIONI.md §18). */
-function leggiElenco(dir, elenco, binari, { salta = false, maxByte = Infinity } = {}) {
+/**
+ * LA RACCOLTA, in un posto solo — e non e' un gusto estetico.
+ *
+ * Fino al collaudo del 2026-08-06 questa lettura era scritta due volte: qui e
+ * dentro `verify.mjs`. Le due copie sono divergute esattamente come la §7 di
+ * `DECISIONI.md` prevede, e la copia rimasta indietro era quella di QUESTO
+ * file — cioe' del comando che lo `SKILL.md` prescrive di lanciare **per
+ * primo**, «perche' e' il solo che non si puo' rimediare dopo».
+ *
+ * Misurato, stesso repository e stesso commit, con una chiave `service_role`
+ * dentro `src/lib/admin.ts` salvato in UTF-16:
+ *
+ *     verify.mjs  → passo `segreti` FAIL, 1 block
+ *     segreti.mjs → «nessun bloccante», uscita 0
+ *
+ * `verify.mjs` decodificava con `decodifica()` (correzione SEG-1/IO-6 del
+ * tribunale); qui si usava ancora `eBinario()` + `toString("utf8")`, e la
+ * correzione non era mai arrivata. Ora la funzione e' una sola e la importano
+ * tutti e due.
+ */
+export function leggiElenco(dir, elenco, { salta = false, maxByte = Infinity } = {}) {
   const letti = [];
+  const binari = [];
+  const nonLetti = [];
   for (const percorso of elenco ?? []) {
     if (salta && FUORI_DAL_PACCHETTO.test(percorso)) continue;
     try {
       const buf = readFileSync(join(dir, percorso));
-      if (eBinario(buf)) binari.push(percorso);
-      else if (buf.length <= maxByte) letti.push({ percorso, testo: buf.toString("utf8") });
-    } catch { /* sparito fra l'elenco e la lettura: non si accusa nessuno */ }
+      if (buf.length > maxByte) {
+        nonLetti.push({ percorso, motivo: `${Math.round(buf.length / 1024)} KB, oltre la soglia di ${Math.round(maxByte / 1024)} KB` });
+        continue;
+      }
+      const { testo, codifica } = decodifica(buf);
+      if (testo === null) binari.push(percorso);
+      else letti.push({ percorso, testo, codifica });
+    } catch (e) {
+      if (e?.code !== "ENOENT") nonLetti.push({ percorso, motivo: e?.code ?? "errore di lettura" });
+    }
   }
-  return letti;
+  return { letti, binari, nonLetti };
 }
 
 export function raccogli(dir, storiaN) {
   const tracciati = gitRighe(dir, ["ls-files"]);
   if (tracciati === null) return null;
-  const binari = [];
-  const letti = leggiElenco(dir, tracciati, binari);
+  const a = leggiElenco(dir, tracciati);
   // I file NUOVI e non ignorati: `git ls-files` non li elenca, e il gesto
   // successivo di chiunque e' `git add -A`. Vedi la nota in `esitoSegreti`.
-  const daTracciare = leggiElenco(dir, gitRighe(dir, ["ls-files", "--others", "--exclude-standard"]), binari, { salta: true });
+  const nuovi = gitRighe(dir, ["ls-files", "--others", "--exclude-standard"]) ?? [];
+  const b = leggiElenco(dir, nuovi, { salta: true });
   // Gli ignorati non partono con un deploy da git: si guardano lo stesso,
   // perche' un deploy da CLI carica la cartella di lavoro.
-  const ignorati = leggiElenco(dir, gitRighe(dir, ["ls-files", "--others", "--ignored", "--exclude-standard"]), [], { salta: true, maxByte: 512 * 1024 });
-  return { letti, daTracciare, ignorati, binari, storia: leggiStoria(dir, storiaN) };
+  const c = leggiElenco(dir, gitRighe(dir, ["ls-files", "--others", "--ignored", "--exclude-standard"]), { salta: true, maxByte: 512 * 1024 });
+  return {
+    tracciati,
+    letti: a.letti,
+    daTracciare: b.letti,
+    ignorati: c.letti,
+    binari: [...a.binari, ...b.binari],
+    nonLetti: [...a.nonLetti, ...b.nonLetti, ...c.nonLetti],
+    // Le regole sul NOME girano sui PERCORSI, prima e indipendentemente dalla
+    // lettura (rilievo SEG-1): un file illeggibile non e' un file assolto.
+    percorsi: [...tracciati, ...nuovi.filter((p) => !FUORI_DAL_PACCHETTO.test(p))],
+    // La storia sono i diff **e** i messaggi: un segreto incollato in un
+    // messaggio di commit viaggia col repository come un file.
+    storia: [...leggiStoria(dir, storiaN), ...leggiMessaggi(dir, storiaN)],
+  };
 }
 
 function parseArgs(argv) {
@@ -102,7 +142,8 @@ function main() {
   console.log(`progetto: ${args.progetto}`);
   console.log(`  ${riassunto.letti} file tracciati letti · ${riassunto.daTracciare} nuovi non ancora tracciati · ${riassunto.binari} binari non letti`);
   console.log(`  ${riassunto.ignorati} file ignorati guardati (partono solo con un deploy da CLI)`);
-  console.log(`  ${riassunto.storia} pezzi di storia (file x commit) letti · ${riassunto.famiglie} famiglie cercate`);
+  console.log(`  ${riassunto.storia} pezzi di storia (file x commit, piu' i messaggi di commit e di tag) letti · ${riassunto.famiglie} famiglie cercate`);
+  console.log(`  ${riassunto.nonLetti} file NON letti · regole sul nome applicate a ${raccolto.percorsi.length} percorsi, prima e indipendentemente dalla lettura`);
   if (riassunto.letti === 0) {
     console.log("\nZERO file letti non e' «nessun segreto»: e' una verifica non fatta.");
     process.exit(2);

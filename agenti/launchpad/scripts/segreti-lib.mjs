@@ -81,9 +81,66 @@ export function decodifica(buffer) {
     return { testo: senzaBom(scambiato.toString("utf16le")), codifica: "utf-16be" };
   }
   const finestra = buffer.subarray(0, Math.min(buffer.length, 8000));
-  if (finestra.includes(0)) return { testo: null, codifica: "binario" };
-  return { testo: senzaBom(buffer.toString("utf8")), codifica: "utf-8" };
+  if (!finestra.includes(0)) return { testo: senzaBom(buffer.toString("utf8")), codifica: "utf-8" };
+
+  /**
+   * UTF-16 SENZA BOM — il fratello che la correzione del tribunale non copriva.
+   *
+   * SEG-1 e IO-6 hanno chiuso il caso con il BOM. Ma il BOM e' facoltativo:
+   * `iconv -t UTF-16LE`, `[System.Text.UnicodeEncoding]::new($false, $false)` e
+   * mezza catena di strumenti scrivono UTF-16 senza. Misurato dal collaudo del
+   * 2026-08-06: `src/lib/admin.ts` in UTF-16LE senza BOM, con dentro una chiave
+   * `service_role`, tracciato e committato → il passo `segreti` chiudeva
+   * **`pass` con zero rilievi**. Identico al difetto gia' pagato, con due byte
+   * in meno.
+   *
+   * Il riconoscimento e' stretto e non indovina: in UTF-16 il testo ASCII ha un
+   * NUL ogni due byte, sempre dalla stessa parte. Si pretende che almeno il 30%
+   * della finestra sia NUL, che i NUL stiano **tutti** dalla stessa parte, e
+   * che i byte rimasti siano quasi tutti stampabili. Un eseguibile o un PNG non
+   * hanno questa forma; un file di testo UTF-16 ce l'ha sempre.
+   */
+  const parita = (offset) => {
+    let nul = 0;
+    let totale = 0;
+    for (let i = offset; i < finestra.length; i += 2) { totale++; if (finestra[i] === 0) nul++; }
+    return totale === 0 ? 0 : nul / totale;
+  };
+  const stampabili = (offset) => {
+    let buoni = 0;
+    let totale = 0;
+    for (let i = offset; i < finestra.length; i += 2) {
+      totale++;
+      const b = finestra[i];
+      if (b === 9 || b === 10 || b === 13 || (b >= 32 && b !== 127)) buoni++;
+    }
+    return totale === 0 ? 0 : buoni / totale;
+  };
+  const quotaNul = finestra.reduce((n, b) => n + (b === 0 ? 1 : 0), 0) / finestra.length;
+  if (quotaNul >= 0.3) {
+    // NUL nei byte dispari + testo nei pari = UTF-16LE; il contrario = UTF-16BE.
+    if (parita(1) >= 0.9 && parita(0) <= 0.02 && stampabili(0) >= 0.9) {
+      return { testo: senzaBom(buffer.toString("utf16le")), codifica: "utf-16le (senza BOM)" };
+    }
+    if (parita(0) >= 0.9 && parita(1) <= 0.02 && stampabili(1) >= 0.9) {
+      const scambiato = Buffer.from(buffer);
+      scambiato.swap16();
+      return { testo: senzaBom(scambiato.toString("utf16le")), codifica: "utf-16be (senza BOM)" };
+    }
+  }
+  return { testo: null, codifica: "binario" };
 }
+
+/**
+ * Un'estensione che promette testo. Serve a non far sparire in silenzio un
+ * file che *dovrebbe* essere leggibile e non lo e' (§18): un `.ts` classificato
+ * binario e' un'anomalia, e un byte NUL in mezzo a un sorgente e' il modo piu'
+ * economico di nascondere tutto quello che viene dopo — misurato dal collaudo
+ * del 2026-08-06 con un solo NUL davanti a una chiave `service_role`.
+ */
+const ESTENSIONE_DI_TESTO = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|json|jsonc|sql|md|markdown|ya?ml|toml|ini|cfg|conf|txt|css|scss|html?|xml|svg|sh|ps1|env|example|sample|template)$/i;
+const ePromessaDiTesto = (percorso) =>
+  ESTENSIONE_DI_TESTO.test(String(percorso ?? "")) || AMBIENTE.test(String(percorso ?? ""));
 
 export const eBinario = (buffer) => decodifica(buffer).testo === null;
 
@@ -669,8 +726,32 @@ export function esitoSegreti({
   findings.push(...findingsIgnorati(ignorati));
   // `percorso` e' il file VERO (serve a `soloIn`), `etichetta` porta il commit.
   // I numeri di riga di un diff non sono quelli del file: non si stampano.
+  /**
+   * E la regola sul NOME vale anche nella STORIA.
+   *
+   * `references/segreti.md` §2 promette «le stesse famiglie cercate sulla
+   * storia», e le due regole che guardano il nome del file non ci arrivavano:
+   * giravano sui soli percorsi di `git ls-files`. Misurato dal collaudo del
+   * 2026-08-06 — un `.env.production` con `SMTP_PASSWORD=…` committato, poi
+   * tolto dall'indice e gitignorato: il passo chiudeva **`pass` con zero
+   * rilievi**. Quel file e' consegnato a chiunque abbia clonato, ed e'
+   * esattamente il caso per cui la storia si guarda; il contenuto non lo
+   * spiegava nessuna famiglia (una password di ventun caratteri non arriva alla
+   * soglia dell'entropia), ma il NOME diceva tutto.
+   */
+  const visti = new Set();
   for (const { percorso, etichetta, testo } of storia) {
     findings.push(...findingsFile(percorso, testo, { dove: "storia", etichetta: etichetta ?? percorso, righeVere: false }));
+    if (!eFileAmbienteTracciato(percorso) || visti.has(percorso)) continue;
+    visti.add(percorso);
+    findings.push({
+      severity: "block",
+      object: etichetta ?? percorso,
+      message: "file di ambiente COMMITTATO in passato: toglierlo da HEAD non lo toglie a chi ha clonato",
+      hint: "un deploy connesso a git da' al provider la storia, e chi ha clonato ce l'ha gia'. Il rimedio non e' un commit: e' RUOTARE ogni credenziale che quel file conteneva, e poi scriverlo nell'handoff con la data della rotazione",
+      famiglia: "file-ambiente-nella-storia",
+      dove: "storia",
+    });
   }
 
   const binariSospetti = binari.filter((p) => AMBIENTE.test(p) || nomeSospetto(p) || ePortatoreDiChiave(p));
@@ -681,6 +762,25 @@ export function esitoSegreti({
       message: "file binario con un nome che suggerisce un segreto: non e' stato letto",
       hint: "le famiglie lavorano su testo. Questo file va guardato a mano",
       famiglia: "binario-sospetto",
+      dove: "file",
+    });
+  }
+  /**
+   * Un file con estensione di TESTO che risulta binario e' un'anomalia, e va
+   * detta. Misurato dal collaudo del 2026-08-06: un `src/lib/admin.ts` con un
+   * solo byte NUL in testa e una chiave `service_role` sotto usciva
+   * **`pass` con zero rilievi** — il file finiva fra i binari, che si contano e
+   * non si nominano. Un byte invisibile e' il modo piu' economico di nascondere
+   * tutto il resto del file, ed e' esattamente la §18: un passo che tace su
+   * cio' che non ha letto dichiara di aver letto tutto.
+   */
+  for (const percorso of binari.filter((p) => ePromessaDiTesto(p) && !binariSospetti.includes(p))) {
+    findings.push({
+      severity: "block",
+      object: percorso,
+      message: "estensione di testo e contenuto binario: NON e' stato letto, quindi NON e' stato controllato",
+      hint: "e' la §18 applicata a un file solo: uno strumento che non ha letto il suo input non produce un pass. Quasi sempre e' una codifica inattesa o un byte NUL finito dentro un sorgente — e un byte invisibile e' il modo piu' economico di nascondere tutto il resto del file. Si risalva in UTF-8 e si rilancia",
+      famiglia: "testo-non-leggibile",
       dove: "file",
     });
   }

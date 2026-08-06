@@ -49,13 +49,14 @@ import {
   variabiliLette,
   verdettoDa,
 } from "./gate-lib.mjs";
-import { decodifica, esitoSegreti } from "./segreti-lib.mjs";
+import { esitoSegreti } from "./segreti-lib.mjs";
+import { raccogli } from "./segreti.mjs";
 // `FRAMMENTO` serve a riconoscere il commit che questa skill scrive da sola:
 // una sola definizione, in `impronta.mjs`, che e' chi lo genera. Due copie
 // divergono (DECISIONI.md §7), e qui il prezzo di una divergenza sarebbe un
 // rosso strutturale che ritorna in silenzio.
 import { FRAMMENTO } from "./impronta.mjs";
-import { FUORI_DAL_PACCHETTO, git as gitIn, gitRighe as gitRigheIn, leggiStoria as leggiStoriaIn, trovaGit } from "./git-lib.mjs";
+import { FUORI_DAL_PACCHETTO, git as gitIn, gitRighe as gitRigheIn, trovaGit } from "./git-lib.mjs";
 
 const PROGETTO = process.cwd();
 const RUNBOOK = "docs/deploy.md";
@@ -119,7 +120,6 @@ const leggiSeCe = (relativo) => {
 // Due copie divergono, e in questa casa e' gia' successo (DECISIONI.md §7).
 const git = (args, opzioni) => gitIn(PROGETTO, args, opzioni);
 const gitRighe = (args) => gitRigheIn(PROGETTO, args);
-const leggiStoria = (quanti) => leggiStoriaIn(PROGETTO, quanti);
 
 /**
  * Una GET che non esplode e **che finisce**.
@@ -373,61 +373,34 @@ const PASSI = [
     id: ID.segreti,
     nome: "nessun segreto nel pacchetto che parte",
     async esegui(ctx, args) {
-      const tracciati = gitRighe(["ls-files"]);
-      if (tracciati === null || tracciati.length === 0) {
+      // LA RACCOLTA E' UNA SOLA, e vive in `segreti.mjs` (che e' anche il
+      // comando autonomo). Fino al collaudo del 2026-08-06 erano due copie, e
+      // sono divergute: quella del comando autonomo non aveva mai ricevuto la
+      // correzione SEG-1/IO-6 sulle codifiche, quindi lo stesso repository
+      // usciva FAIL da qui e «nessun bloccante» da li'. Il comando che lo
+      // SKILL.md fa lanciare per PRIMO era il piu' cieco dei due.
+      const raccolto = raccogli(PROGETTO, args.storia);
+      if (raccolto === null || raccolto.tracciati.length === 0) {
         return record(this.id, this.nome, "skipped",
           "`git ls-files` non elenca niente: zero file letti non e' «nessun segreto», e' una verifica non fatta (DECISIONI.md §18)");
       }
-      const letti = [];
-      const binari = [];
-      const nonLetti = [];
-      // Un elenco, una funzione: la lettura dichiara sempre PERCHE' non ha
-      // letto (rilievi SEG-4 e IO-5). Prima un file oltre la soglia cadeva nel
-      // vuoto — ne' fra i letti ne' fra i binari — e i binari ignorati
-      // sparivano del tutto, perche' il loro array era un `[]` creato sul
-      // posto e mai guardato.
-      const leggiElenco = (elenco, dentro, { maxByte = Infinity, salta = false } = {}) => {
-        for (const percorso of elenco ?? []) {
-          if (salta && FUORI_DAL_PACCHETTO.test(percorso)) continue;
-          try {
-            const buf = readFileSync(join(PROGETTO, percorso));
-            if (buf.length > maxByte) {
-              nonLetti.push({ percorso, motivo: `${Math.round(buf.length / 1024)} KB, oltre la soglia di ${Math.round(maxByte / 1024)} KB` });
-              continue;
-            }
-            const { testo, codifica } = decodifica(buf);
-            if (testo === null) binari.push(percorso);
-            else dentro.push({ percorso, testo, codifica });
-          } catch (e) {
-            if (e?.code !== "ENOENT") nonLetti.push({ percorso, motivo: e?.code ?? "errore di lettura" });
-          }
-        }
-      };
-      leggiElenco(tracciati, letti);
-      // I file NUOVI e non ignorati: `git ls-files` non li elenca e il gesto
-      // successivo di chiunque e' `git add -A`. Vedi la nota in `esitoSegreti`.
-      const daTracciare = [];
-      leggiElenco(gitRighe(["ls-files", "--others", "--exclude-standard"]), daTracciare, { salta: true });
-      const ignorati = [];
-      leggiElenco(gitRighe(["ls-files", "--others", "--ignored", "--exclude-standard"]), ignorati, { salta: true, maxByte: 512 * 1024 });
       // `--storia 0` non e' un pass: e' la storia non guardata (rilievo VER-2).
       // Misurato: con una chiave Stripe committata e tolta, `--storia 200`
       // usciva rosso e `--storia 0` usciva `ok=true`. Il passo lo DICHIARAVA in
       // prosa dentro un `pass`, che e' esattamente la forma che la §18 vieta.
       if (args.storia === 0) {
         return record(this.id, this.nome, "skipped",
-          `${letti.length} file tracciati letti, ma \`--storia 0\`: la storia git non e' stata guardata.\n` +
+          `${raccolto.letti.length} file tracciati letti, ma \`--storia 0\`: la storia git non e' stata guardata.\n` +
           "Un segreto tolto da HEAD e' ancora consegnato a chi ha clonato, e un deploy connesso a git da' al provider la STORIA");
       }
-      const storia = leggiStoria(args.storia);
-      const percorsi = [...tracciati, ...(gitRighe(["ls-files", "--others", "--exclude-standard"]) ?? []).filter((p) => !FUORI_DAL_PACCHETTO.test(p))];
-      const { findings, riassunto } = esitoSegreti({ letti, daTracciare, ignorati, storia, binari, percorsi, nonLetti });
+      const { findings, riassunto } = esitoSegreti(raccolto);
       ctx.segretiRiassunto = riassunto;
+      const codifiche = [...new Set(raccolto.letti.filter((f) => f.codifica !== "utf-8").map((f) => f.codifica))];
       const testa = [
         `${riassunto.letti} file tracciati letti · ${riassunto.daTracciare} nuovi non ancora tracciati · ${riassunto.binari} binari · ${riassunto.ignorati} ignorati guardati · ${riassunto.nonLetti} NON letti`,
-        `regole sul nome applicate a ${percorsi.length} percorsi, prima e indipendentemente dalla lettura` +
-          (letti.some((f) => f.codifica !== "utf-8") ? ` · codifiche diverse da utf-8: ${[...new Set(letti.filter((f) => f.codifica !== "utf-8").map((f) => f.codifica))].join(" · ")}` : ""),
-        `storia: ${storia.length} pezzi (file x commit) letti dagli ultimi ${args.storia} commit — un segreto tolto da HEAD e' ancora consegnato a chi ha clonato`,
+        `regole sul nome applicate a ${raccolto.percorsi.length} percorsi, prima e indipendentemente dalla lettura` +
+          (codifiche.length > 0 ? ` · codifiche diverse da utf-8: ${codifiche.join(" · ")}` : ""),
+        `storia: ${raccolto.storia.length} pezzi (file x commit, piu' i messaggi di commit e di tag) letti dagli ultimi ${args.storia} commit — un segreto tolto da HEAD e' ancora consegnato a chi ha clonato`,
         `${riassunto.famiglie} famiglie di segreto cercate · quello che si trova NON si stampa: solo famiglia, file, riga e i primi quattro caratteri`,
       ].join("\n");
       return conFindings(this.id, this.nome, findings, testa);

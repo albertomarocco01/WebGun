@@ -415,3 +415,110 @@ test("un valore ELISO non e' un segreto: `NOME=… comando` e' prosa", () => {
   // E un valore vero resta un valore vero.
   assert.equal(findingsFile("c.env", "SUPABASE_SERVICE_ROLE_KEY=Tr0ub4dor3Tr0ub4dor3").length, 1);
 });
+
+// ============ collaudo 2026-08-06: cosa restava invisibile al controllo
+const SERVICE_ROLE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9." +
+  Buffer.from(JSON.stringify({ role: "service_role", iss: "supabase" })).toString("base64url") +
+  ".Kx8pQ2vN4mZ7bR1tY6wE3sD9fG0hJ5kL";
+
+/**
+ * UTF-16 SENZA BOM: il fratello che la correzione SEG-1/IO-6 non copriva.
+ * Misurato sull'arena del collaudo: `src/lib/admin.ts` in UTF-16LE senza BOM,
+ * chiave `service_role` dentro, tracciato → passo `segreti` **pass**, 0 rilievi.
+ */
+test("un file UTF-16LE SENZA BOM si legge come testo, e la chiave si vede", () => {
+  const buf = Buffer.from(`export const ADMIN = "${SERVICE_ROLE}";\n`, "utf16le");
+  const { testo, codifica } = decodifica(buf);
+  assert.equal(codifica, "utf-16le (senza BOM)");
+  assert.ok(testo.includes(SERVICE_ROLE));
+  const f = findingsFile("src/lib/admin.ts", testo);
+  assert.equal(f.filter((x) => x.severity === "block").length, 1);
+});
+
+test("un file UTF-16BE SENZA BOM si legge come testo", () => {
+  const le = Buffer.from(`const K = "${SERVICE_ROLE}";\n`, "utf16le");
+  const be = Buffer.from(le);
+  be.swap16();
+  const { testo, codifica } = decodifica(be);
+  assert.equal(codifica, "utf-16be (senza BOM)");
+  assert.ok(testo.includes(SERVICE_ROLE));
+});
+
+test("un binario vero resta binario: il riconoscimento non indovina", () => {
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(400)]);
+  assert.equal(decodifica(png).testo, null, "un falso positivo qui riempirebbe il passo di rumore su ogni immagine");
+  assert.equal(eBinario(png), true);
+});
+
+/**
+ * Un byte NUL in un sorgente: il modo piu' economico di nascondere il resto del
+ * file. Misurato: `pass` con zero rilievi sopra una chiave `service_role`.
+ */
+test("un file con estensione di testo e contenuto binario BLOCCA: non e' stato letto", () => {
+  const { findings } = esitoSegreti({
+    letti: [{ percorso: "src/app/page.tsx", testo: "export default function P() { return null; }" }],
+    binari: ["src/lib/admin.ts"],
+    percorsi: ["src/app/page.tsx", "src/lib/admin.ts"],
+  });
+  const block = findings.filter((f) => f.severity === "block");
+  assert.equal(block.length, 1);
+  assert.match(block[0].message, /estensione di testo e contenuto binario/);
+});
+
+test("un binario con estensione da binario non produce niente: nessun rumore sulle immagini", () => {
+  const { findings } = esitoSegreti({
+    letti: [{ percorso: "src/app/page.tsx", testo: "// niente" }],
+    binari: ["public/logo.png", "public/foto/interno.jpg"],
+    percorsi: ["src/app/page.tsx", "public/logo.png", "public/foto/interno.jpg"],
+  });
+  assert.equal(findings.length, 0);
+});
+
+/**
+ * Il `.env` che c'e' stato. `references/segreti.md` §2 prometteva «le stesse
+ * famiglie cercate sulla storia», e le due regole sul NOME non ci arrivavano:
+ * misurato, un `.env.production` con `SMTP_PASSWORD=…` committato e poi tolto
+ * usciva `pass` con zero rilievi. Chi ha clonato ce l'ha.
+ */
+test("un `.env` committato in passato blocca, anche se oggi e' gitignorato", () => {
+  const { findings } = esitoSegreti({
+    letti: [{ percorso: "src/app/page.tsx", testo: "// niente" }],
+    percorsi: ["src/app/page.tsx"],
+    storia: [{ percorso: ".env.production", etichetta: ".env.production @ 9be1c07 (2026-08-06)", testo: "SMTP_PASSWORD=Tr0ub4dor3-Ponteverde" }],
+  });
+  const block = findings.filter((f) => f.severity === "block");
+  assert.equal(block.length, 1);
+  assert.match(block[0].message, /COMMITTATO in passato/);
+  assert.match(block[0].hint, /RUOTARE/);
+});
+
+test("un `.env.example` nella storia non e' un file di ambiente: nessun rilievo", () => {
+  const { findings } = esitoSegreti({
+    letti: [{ percorso: "src/app/page.tsx", testo: "// niente" }],
+    percorsi: ["src/app/page.tsx"],
+    storia: [{ percorso: ".env.example", etichetta: ".env.example @ abc", testo: "NEXT_PUBLIC_SITO_URL=" }],
+  });
+  assert.equal(findings.length, 0);
+});
+
+/**
+ * Il messaggio di commit. `leggiStoria` guarda i diff: un segreto incollato nel
+ * messaggio viaggia col repository esattamente come un file, e non lo guardava
+ * nessuno. Misurato: `pass` con zero rilievi.
+ */
+test("una chiave dentro un messaggio di commit blocca", () => {
+  const { findings } = esitoSegreti({
+    letti: [{ percorso: "src/app/page.tsx", testo: "// niente" }],
+    percorsi: ["src/app/page.tsx"],
+    storia: [{ percorso: "(messaggio di commit)", etichetta: "messaggio del commit f8274d640504", testo: `chiave ruotata, la vecchia era ${SERVICE_ROLE}` }],
+  });
+  const block = findings.filter((f) => f.severity === "block");
+  assert.equal(block.length, 1);
+  assert.match(block[0].object, /messaggio del commit/);
+  assert.match(block[0].hint, /ruotare la credenziale/i);
+});
+
+test("la famiglia dei soli `.sql` non scatta su un messaggio di commit", () => {
+  const f = findingsFile("(messaggio di commit)", "ho tolto il crypt('password123') dal seed", { dove: "storia" });
+  assert.equal(f.length, 0, "`soloIn` deve continuare a valere: un messaggio non e' un file `.sql`");
+});

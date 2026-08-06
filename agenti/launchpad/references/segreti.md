@@ -121,6 +121,7 @@ arriverebbe al provider**:
 |---|---|---|
 | **file tracciati da git** | quella della famiglia | è il pacchetto che parte con un deploy connesso al repository. È *il* caso |
 | **storia git** | `block`, con un rimedio diverso | un deploy connesso a git dà al provider **la storia**. E toglierlo da HEAD non basta: chi ha clonato ce l'ha già. Il rimedio è **ruotare la credenziale**, e il messaggio lo dice |
+| **messaggi di commit e di tag annotati** | `block`, stesso rimedio della storia | aggiunti dal collaudo del 2026-08-06. `leggiStoria` guarda i **diff**: un segreto incollato in un messaggio — «chiave ruotata, la vecchia era `eyJ…`» — viaggia col repository esattamente come un file, lo legge chiunque faccia `git log`, e non lo guardava nessuno. Misurato: `pass` con zero rilievi su una `service_role` completa |
 | **file ignorati** | `issue`, **una riga per file** | non partono con un deploy da git; partono con un deploy da CLI, che carica la cartella di lavoro. La gravità dipende da una scelta che sta nel runbook (`Modo di deploy:`) |
 
 **Una riga per file, e non una per rilievo**, è una correzione misurata: sul
@@ -152,6 +153,37 @@ Si contano, e se uno ha un nome che suggerisce un segreto (`*.key`, `.env*`) si
 segnala come `issue` dichiarando che **non è stato letto** — che è diverso da
 dire che è pulito.
 
+**E «binario» non è un giudizio, è un tentativo di lettura che può fallire.** Il
+tribunale aveva chiuso il caso dell'UTF-16 **con BOM**; il collaudo del
+2026-08-06 ha misurato i due fratelli rimasti:
+
+- **UTF-16 senza BOM** — il BOM è facoltativo, e mezza catena di strumenti
+  Windows lo omette. `src/lib/admin.ts` in UTF-16LE senza BOM, con dentro una
+  chiave `service_role`, tracciato e committato: passo `segreti` **`pass` con
+  zero rilievi**. Ora la forma si riconosce dai byte (un NUL ogni due, tutti
+  dalla stessa parte, il resto stampabile) e il file si legge. Il
+  riconoscimento è stretto di proposito: un PNG non ha quella forma, e un falso
+  positivo qui riempirebbe il passo di rumore su ogni immagine.
+- **un solo byte NUL in un sorgente** — bastava a far finire il file fra i
+  binari, cioè fra quelli che si contano e non si nominano. Un byte invisibile
+  è il modo più economico di nascondere tutto il resto del file. Ora un file con
+  **estensione di testo** e contenuto binario è un **`block`**: è la §18
+  applicata a un file solo — uno strumento che non ha letto il suo input non
+  produce un `pass`. Le estensioni da binario (`.png`, `.jpg`, …) restano mute.
+
+**E la lettura è UNA SOLA.** Fino al collaudo del 2026-08-06 questa raccolta era
+scritta due volte, in `verify.mjs` e in `segreti.mjs`, e le due copie erano
+divergute esattamente come la §7 di `DECISIONI.md` prevede — con la copia
+rimasta indietro nel **comando che lo `SKILL.md` prescrive di lanciare per
+primo**. Misurato, stesso repository e stesso commit:
+
+```
+verify.mjs  → passo `segreti` FAIL, 1 block
+segreti.mjs → «nessun bloccante», uscita 0
+```
+
+Ora `raccogli()` vive in `segreti.mjs` e la importa anche il gate.
+
 ## 4. Cosa questo controllo NON vede
 
 Elencato qui perché la sua assenza è il modo in cui un verde diventa una firma
@@ -162,8 +194,11 @@ in bianco.
    euristica.
 2. **Un segreto spezzato e ricomposto a runtime.**
    `const k = "sk_live_" + a + b;` non assomiglia a niente.
-3. **Un segreto dentro un binario.** Un token in un PNG, in un `.docx`, in un
-   `.xlsx`, in un archivio. I binari si contano e si dichiarano, non si leggono.
+3. **Un segreto dentro un binario vero.** Un token in un PNG, in un `.docx`, in
+   un `.xlsx`, in un archivio. I binari si contano e si dichiarano, non si
+   leggono. Dal 2026-08-06 un file con **estensione di testo** che risulta
+   binario non è più fra questi: è un `block`, perché lì «non l'ho letto» e «è
+   pulito» non devono potersi assomigliare.
 4. **Un segreto in un file minificato o generato.** Sintatticamente è una riga
    sola lunghissima; le famiglie funzionano ma il numero di riga non aiuta
    nessuno.
