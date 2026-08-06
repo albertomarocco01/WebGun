@@ -844,6 +844,59 @@ test("una rinomina si dichiara col nome NUOVO: e' quello che il commit porterebb
   assert.deepEqual(percorsiSporchi(["R  src/lib/seo.ts -> src/lib/seo-nuovo.ts"]), ["src/lib/seo-nuovo.ts"]);
 });
 
+// ============================================================================
+// Il messaggio stampa il valore che la regola ha confrontato — trovato dalla
+// direzione il 2026-08-06 sul pilota, e poi cercato in tutta la libreria.
+// «2026-08-06 e' piu' vecchio di 2026-08-06» e' un blocco che sembra un
+// difetto, e un blocco che sembra un difetto e' un blocco che si scavalca.
+// ============================================================================
+test("un handoff scaduto DENTRO la giornata stampa i due istanti, non due volte la stessa data", () => {
+  const f = findingsCatena({
+    handoff: [{ percorso: "docs/handoff/07-schema-forge.md", agente: "schema-forge", testo: "Gate: VERDE", data: "2026-08-06T09:12:03+02:00" }],
+    ultimoCommitCodice: "2026-08-06T17:45:10+02:00",
+  });
+  assert.equal(blocchi(f).length, 1);
+  assert.match(blocchi(f)[0].message, /2026-08-06T09:12:03\+02:00/);
+  assert.match(blocchi(f)[0].message, /2026-08-06T17:45:10\+02:00/);
+  assert.equal(/2026-08-06\D.*2026-08-06(?!T)/.test(blocchi(f)[0].message.replace(/T[\d:+-]+/g, "T")), false,
+    "il caso misurato sul pilota: due date identiche e nessun modo di verificare il rifiuto");
+});
+
+test("una firma scaduta DENTRO la giornata dichiara la soglia che ha usato", () => {
+  const runbook = leggiRunbook(RUNBOOK);
+  // Un commit fatto la sera del 6 a ovest di Greenwich: la sua DATA e' il 6,
+  // il suo istante e' gia' il 7 in UTC. La firma vale fino alle 23:59:59Z del
+  // 6, quindi e' scaduta — e col vecchio messaggio si leggeva «firma del
+  // 2026-08-06, codice modificato il 2026-08-06».
+  const f = findingsRunbook({ runbook, ultimoCommitCodice: "2026-08-06T21:00:00-05:00", adesso: "2026-08-08T00:00:00Z" });
+  const scaduta = blocchi(f).find((x) => /firma del/.test(x.message));
+  assert.ok(scaduta, "la firma copre il 6 fino a mezzanotte UTC, e quel commit e' oltre");
+  assert.match(scaduta.message, /T23:59:59Z/, "la soglia che la regola ha costruito si stampa");
+  assert.match(scaduta.message, /2026-08-06T21:00:00-05:00/, "e l'istante del commit, intero");
+});
+
+test("due commit che divergono dopo il dodicesimo carattere non si stampano uguali", () => {
+  const approvato = "abcdef1234567777777777777777777777777777";
+  const head = "abcdef1234569999999999999999999999999999";
+  const f = findingsImpronta({
+    nextConfig: "generateBuildId: () => { throw new Error('x'); }",
+    buildIdDisco: head.slice(0, 12), commit: head, commitApprovato: approvato, soloDocumentiDaAllora: false,
+  });
+  const b = blocchi(f).find((x) => x.object === "Commit approvato");
+  assert.ok(b);
+  assert.match(b.message, /7777/);
+  assert.match(b.message, /9999/, "con `.slice(0, 12)` il messaggio mostrava due stringhe identiche e un `block`");
+});
+
+test("un `BUILD_ID` rifiutato perche' TROPPO CORTO lo dice: il prefisso sembrava combaciare", () => {
+  const f = findingsImpronta({
+    nextConfig: "generateBuildId: () => { throw new Error('x'); }",
+    buildIdDisco: "749fa", commit: "749faaeaadcf9236d75afebab52ba9e9a967226b",
+  });
+  const b = blocchi(f).find((x) => x.object === ".next/BUILD_ID");
+  assert.match(b.message, /sotto i sette caratteri/);
+});
+
 test("uno sha citato in un COMMENTO non e' un'impronta scritta a mano", () => {
   const config = `// Misurato: BUILD_ID = \`9c2914484e28\`, il commit vero era \`2d1355e3d697\`.
 const improntaDalCommit = () => {

@@ -327,7 +327,10 @@ const PASSI = [
       const testa = [
         `${handoff.length} handoff letti: ${handoff.map((h) => h.agente).join(" · ")}`,
         `contratti trovati sul disco (prova che l'agente doveva passare): ${proveTrovate.join(" · ") || "nessuno"}`,
-        `ultimo commit che tocca il codice: ${ctx.ultimoCodice?.slice(0, 10) ?? "(sconosciuto)"}`
+        // L'istante intero, non la sua data: e' il valore con cui la regola di
+        // freschezza confronta ogni handoff, e chi legge un `block` deve poter
+        // rifare il confronto con quello che vede stampato qui.
+        `ultimo commit che tocca il codice: ${ctx.ultimoCodice ?? "(sconosciuto)"}`
           + (saltatiPerchePropri.length > 0
             ? ` · ${saltatiPerchePropri.length} commit saltati perche' contengono SOLO il \`generateBuildId\` che questa skill scrive (${saltatiPerchePropri.join(" · ")}): un certificato non scade per una riga che ha aggiunto launchpad dopo`
             : ""),

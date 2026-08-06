@@ -57,6 +57,29 @@ export function riepilogo(passi) {
 export const verdettoDa = (passi) =>
   passi.some((s) => s.status === "fail" || s.status === "skipped") ? "ROSSO" : "VERDE";
 
+/**
+ * Un istante si stampa **come il confronto lo ha usato**, non piu' corto.
+ *
+ * Trovato dalla direzione il 2026-08-06, lanciando questo gate sul pilota:
+ *
+ * ```
+ * [block] docs/handoff/07-schema-forge.md: piu' vecchio del codice che certifica
+ *         (handoff 2026-08-06 · ultimo commit di codice 2026-08-06)
+ * ```
+ *
+ * La regola era giusta — `piuVecchioDi` confronta istanti interi, e l'handoff
+ * era davvero committato prima nella stessa giornata — ma il messaggio
+ * stampava `.slice(0, 10)` sui due lati, cioe' *«2026-08-06 e' piu' vecchio di
+ * 2026-08-06»*. Chi legge non puo' verificarlo, e **un blocco che sembra un
+ * difetto e' un blocco che qualcuno scavalca**: e' la stessa famiglia dei
+ * rifiuti indebiti, con l'aggravante che qui il rifiuto e' corretto e a
+ * sembrare rotto e' solo la riga che lo spiega.
+ *
+ * Da qui la regola per tutta questa libreria: **se una regola ha confrontato
+ * un valore, il messaggio stampa quel valore** — non un suo arrotondamento.
+ */
+const istante = (iso) => (iso ? String(iso) : "(sconosciuto)");
+
 /** Confronto fra date ISO che tollera l'assenza: senza data non si accusa nessuno. */
 export const piuVecchioDi = (aIso, bIso) => {
   if (!aIso || !bIso) return false;
@@ -319,7 +342,7 @@ export function findingsCatena({ handoff = [], proveTrovate = [], ultimoCommitCo
       findings.push({
         severity: "block",
         object: h.percorso,
-        message: `datato ${h.data.slice(0, 10)}, cioe' nel futuro (oggi e' ${adesso.slice(0, 10)})`,
+        message: `datato ${istante(h.data)}, cioe' nel futuro (adesso e' ${istante(adesso)}, con 24h di franchigia per i fusi)`,
         hint: "una data futura non e' mai «piu' vecchia» di niente: quel certificato non scadrebbe mai piu'. Si ricommitta con la data vera",
       });
     }
@@ -371,7 +394,7 @@ export function findingsCatena({ handoff = [], proveTrovate = [], ultimoCommitCo
       findings.push({
         severity: "block",
         object: h.percorso,
-        message: `piu' vecchio del codice che certifica (handoff ${h.data?.slice(0, 10)} · ultimo commit di codice ${ultimoCommitCodice?.slice(0, 10)})`,
+        message: `piu' vecchio del codice che certifica (handoff ${istante(h.data)} · ultimo commit di codice ${istante(ultimoCommitCodice)})`,
         hint: "quel verde certificava un altro artefatto. E' l'idea del `BUILD_ID` applicata alla catena dei certificati: si rilancia il gate di quell'agente e si riscrive la riga",
       });
     }
@@ -805,7 +828,9 @@ function findingFirmaFutura(firma, adesso) {
   return {
     severity: "block",
     object: "Confermato da",
-    message: `firma datata ${firma.data}, cioe' nel futuro (oggi e' ${adesso.slice(0, 10)})`,
+    // La regola confronta `${firma.data}T00:00:00Z` con l'istante di adesso: si
+    // stampano tutti e due i valori che ha usato, non le loro date.
+    message: `firma datata ${firma.data} (letta come ${firma.data}T00:00:00Z), cioe' nel futuro: adesso e' ${istante(adesso)}, con 24h di franchigia per i fusi`,
     hint: "una firma futura non scade mai: autorizzerebbe ogni commit successivo senza che nessuno la rinnovi. La §6 non e' una costante",
   };
 }
@@ -905,7 +930,11 @@ export function findingsRunbook({ runbook, ultimoCommitCodice = null, adesso = n
     findings.push({
       severity: "block",
       object: "Confermato da",
-      message: `firma del ${firma.data}, codice modificato il ${ultimoCommitCodice?.slice(0, 10)}`,
+      // Una firma vale per tutto il suo giorno: la regola confronta
+      // `${firma.data}T23:59:59Z` con l'istante del commit. Con un fuso a est
+      // dello zero i due possono cadere nella stessa data, e stampare le sole
+      // date darebbe «firma del 6, codice modificato il 6».
+      message: `firma del ${firma.data} (vale fino a ${firma.data}T23:59:59Z), ultimo commit di codice ${istante(ultimoCommitCodice)}`,
       hint: "ha firmato un altro contenuto. La firma si rinnova: e' l'unica riga del progetto che vale per un'azione che non si annulla",
     });
   }
@@ -1274,18 +1303,24 @@ function findingsCommitApprovato(commitApprovato, commit, soloDocumentiDaAllora)
   // — il runbook si scrive dopo il commit che approva, e scriverlo produce un
   // altro commit. Se invece dopo l'approvazione e' cambiato del CODICE, la
   // firma e' su un altro contenuto e non vale piu'.
+  // I due sha si stampano INTERI, come `improntaCombacia` li ha confrontati.
+  // Con `.slice(0, 12)` due commit che divergono al tredicesimo carattere
+  // producevano un `block` il cui messaggio mostrava due stringhe identiche —
+  // la stessa classe del «2026-08-06 e' piu' vecchio di 2026-08-06» trovato
+  // dalla direzione sul pilota, sui commit invece che sulle date.
+  const testa = String(commit ?? "");
   if (soloDocumentiDaAllora === true) {
     return [{
       severity: "warn",
       object: "Commit approvato",
-      message: `il runbook approva \`${dichiarato.slice(0, 12)}\` e HEAD e' \`${String(commit ?? "").slice(0, 12)}\`: da allora sono cambiati solo documenti`,
+      message: `il runbook approva \`${dichiarato}\` e HEAD e' \`${testa}\`: da allora sono cambiati solo documenti`,
       hint: "va bene, ed e' il caso normale: il runbook si scrive dopo il commit che approva. Ma cio' che va online e' HEAD",
     }];
   }
   return [{
     severity: "block",
     object: "Commit approvato",
-    message: `il runbook approva \`${dichiarato.slice(0, 12)}\`, HEAD e' \`${String(commit ?? "").slice(0, 12)}\`${soloDocumentiDaAllora === false ? " e da allora e' cambiato del CODICE" : ""}`,
+    message: `il runbook approva \`${dichiarato}\`, HEAD e' \`${testa}\`${soloDocumentiDaAllora === false ? " e da allora e' cambiato del CODICE" : ""}`,
     hint: "chi ha firmato ha autorizzato un altro contenuto. O si pubblica quel commit, o si rinnova la firma su questo",
   }];
 }
@@ -1356,10 +1391,16 @@ function findingsArtefatto(buildIdDisco, atteso) {
     }];
   }
   if (!improntaCombacia(buildIdDisco, atteso)) {
+    // Il MOTIVO del rifiuto, quando non e' la differenza. Sotto i sette
+    // caratteri `improntaCombacia` non confronta niente, e senza dirlo il
+    // messaggio mostrava un prefisso che a un lettore sembra combaciare — un
+    // blocco che sembra un difetto e' un blocco che qualcuno scavalca.
+    const corta = String(buildIdDisco).trim().length < 7;
     return [{
       severity: "block",
       object: ".next/BUILD_ID",
-      message: `l'artefatto sul disco porta \`${buildIdDisco}\`, il commit di HEAD e' \`${atteso}\``,
+      message: `l'artefatto sul disco porta \`${buildIdDisco}\`, il commit di HEAD e' \`${atteso}\``
+        + (corta ? " — e sotto i sette caratteri non si confronta niente: due commit diversi collidono davvero" : ""),
       hint: "l'artefatto e' di un altro commit, oppure l'impronta non e' ancora derivata dal commit. Si ricostruisce",
     }];
   }

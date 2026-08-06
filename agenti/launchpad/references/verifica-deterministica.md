@@ -89,6 +89,18 @@ vale lo stesso per uno strumento presente che non ha letto il suo input. Un gate
 rosso per verifiche mancanti **resta rosso**: qui più che altrove, perché la cosa
 che sta per succedere non si annulla.
 
+**E il messaggio stampa il valore che la regola ha confrontato**, non un suo
+arrotondamento. Trovato dalla direzione il 2026-08-06 lanciando questo gate sul
+pilota: `piu' vecchio del codice che certifica (handoff 2026-08-06 · ultimo
+commit di codice 2026-08-06)`. La regola era giusta — confronta istanti interi, e
+l'handoff era davvero più vecchio nella stessa giornata — ma il messaggio
+tagliava i due lati alla data, e diceva *«2026-08-06 è più vecchio di
+2026-08-06»*. Chi legge non può verificarlo, e **un blocco che sembra un difetto
+è un blocco che qualcuno scavalca**: è la famiglia del rifiuto indebito, con
+l'aggravante che qui il rifiuto è corretto e a sembrare rotto è solo la riga che
+lo spiega. La stessa forma è stata cercata in tutta la libreria e trovata in
+altri sei punti (date della firma, sha del commit approvato, testa del passo 2).
+
 ### 3.1 `radice-pulita`
 
 **Premessa misurata prima dell'esito:** `git rev-parse --is-inside-work-tree`
