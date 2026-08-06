@@ -182,10 +182,56 @@ const eLocaleDiSviluppo = (utente, password, host) =>
   utente === "postgres" && password === "postgres" &&
   /^(127\.0\.0\.1|localhost|0\.0\.0\.0|\[::1\]|db|host\.docker\.internal)$/.test(host);
 
+/**
+ * L'ECCEZIONE DICHIARATA — precedente di `DECISIONI.md` §10.
+ *
+ * Il pilota, il 2026-08-06, ha dimostrato che senza questo il gate ha un rosso
+ * STRUTTURALE: `supabase/seed/90-solo-sviluppo.sql` crea due account con una
+ * password nota, e **e' giusto che li crei** — senza, nessuno prova il
+ * gestionale in locale e ventidue test E2E non hanno sessioni. Il file lo
+ * dichiara in testa, in maiuscolo, con il motivo. Il debito n°27 non era «quelle
+ * password esistono»: era «il percorso di produzione legge lo stesso file di
+ * quello di sviluppo», e P.4g l'ha chiuso separando i seed.
+ *
+ * Un gate che resta rosso su un progetto corretto non e' severo: e' rotto. E la
+ * §19 lo dice per tutta la casa — un rosso strutturale e' la cosa da non fare.
+ *
+ * Le tre strade erano: declassare la famiglia per tutti, aggiungere una
+ * configurazione, oppure **dichiarare l'eccezione nel file che la contiene**.
+ * Vale qui la stessa scelta della §10, e per lo stesso motivo: le prime due
+ * spengono il controllo anche per chi non ha autorizzato niente; la terza
+ * costringe a FIRMARE l'eccezione dove si esercita.
+ *
+ *     -- launchpad-consentito: credenziale-sql — solo sviluppo, non applicato
+ *        in produzione (debito n°27, docs/PRODUZIONE.md)
+ *
+ * Tre vincoli, e nessuno e' negoziabile:
+ *  1. l'eccezione vale per UNA famiglia e per QUEL file;
+ *  2. declassa a `issue`, non cancella: resta stampata, resta contata, resta
+ *     nell'handoff;
+ *  3. **le famiglie che consegnano l'accesso a un sistema vero non sono
+ *     derogabili.** Una chiave `service_role`, un token di provider, un `.env`
+ *     tracciato: li' non esiste il caso legittimo, e un'eccezione sarebbe solo
+ *     il modo di scriversi il permesso da soli.
+ */
+const ECCEZIONE = /^[ \t]*(?:--|#|\/\/|\*|<!--)?[ \t]*launchpad-consentito[ \t]*:[ \t]*([a-z][a-z-]+)[ \t]*(?:—|–|--|-)[ \t]*(.+?)[ \t]*(?:-->)?[ \t]*$/gim;
+
+export function eccezioniDichiarate(testo) {
+  const trovate = new Map();
+  for (const m of String(testo ?? "").matchAll(ECCEZIONE)) {
+    const motivo = m[2].trim();
+    // Un'eccezione senza motivo non e' un'eccezione: e' un interruttore.
+    if (motivo.length < 10) continue;
+    trovate.set(m[1], motivo);
+  }
+  return trovate;
+}
+
 export const FAMIGLIE = Object.freeze([
   {
     id: "service-role",
     gravita: "block",
+    derogabile: false,
     che: "chiave `service_role` di Supabase",
     perche: "scavalca OGNI policy RLS: con quella, i dati di tutti gli utenti sono un `select`",
     cerca(riga) {
@@ -202,6 +248,7 @@ export const FAMIGLIE = Object.freeze([
   {
     id: "nome-di-servizio-valorizzato",
     gravita: "block",
+    derogabile: false,
     che: "variabile di servizio con un valore vero accanto",
     perche: "il nome dice che scavalca le policy; il valore dice che qualcuno ce l'ha messo",
     cerca(riga) {
@@ -218,6 +265,7 @@ export const FAMIGLIE = Object.freeze([
   {
     id: "credenziale-sql",
     gravita: "block",
+    derogabile: true,
     che: "credenziale cablata in una migrazione o in un seed",
     perche: "un seed e' un file che si riusa: applicato su un ambiente vero consegna gli accessi a chiunque legga il repo",
     soloIn: /\.sql$/i,
@@ -238,6 +286,7 @@ export const FAMIGLIE = Object.freeze([
   {
     id: "token-provider",
     gravita: "block",
+    derogabile: false,
     che: "token di un servizio esterno",
     perche: "un token di deploy pubblicato e' un deploy che puo' fare chiunque",
     cerca(riga) {
@@ -252,6 +301,7 @@ export const FAMIGLIE = Object.freeze([
   {
     id: "url-con-credenziali",
     gravita: "block",
+    derogabile: true,
     che: "password dentro l'autorita' di un URL",
     perche: "viaggia nei log, nei messaggi d'errore e nella cronologia della shell",
     cerca(riga) {
@@ -268,6 +318,7 @@ export const FAMIGLIE = Object.freeze([
   {
     id: "entropia-alta",
     gravita: "issue",
+    derogabile: true,
     che: "stringa opaca che nessuna famiglia spiega",
     perche: "e' un'euristica: puo' essere una chiave, un hash di lockfile o un identificativo. Va guardata, non creduta",
     cerca(riga) {
@@ -333,17 +384,28 @@ export function findingsEsempio(percorso, testo) {
  * il rimedio e' diverso: nel primo caso si toglie e si committa, nel secondo
  * si ruota la chiave — riscrivere la storia non basta, chi ha clonato ce l'ha.
  */
-export function findingsFile(percorso, testo, { dove = "file" } = {}) {
+export function findingsFile(percorso, testo, { dove = "file", etichetta = null, righeVere = true } = {}) {
+  const nome = etichetta ?? percorso;
   const findings = [];
   const linee = righe(testo);
+  // Le eccezioni valgono sul file in cui sono scritte, e NON nella storia: un
+  // commit vecchio che porta la propria assoluzione e' un'assoluzione scritta
+  // da chi aveva sbagliato.
+  const eccezioni = dove === "storia" ? new Map() : eccezioniDichiarate(testo);
+  const usate = new Set();
   for (const famiglia of FAMIGLIE) {
     if (famiglia.soloIn && !famiglia.soloIn.test(percorso)) continue;
+    const motivo = eccezioni.get(famiglia.id);
+    const derogata = motivo !== undefined && famiglia.derogabile;
     linee.forEach((riga, i) => {
       for (const { estratto, nota } of famiglia.cerca(riga)) {
+        if (derogata) usate.add(famiglia.id);
         findings.push({
-          severity: famiglia.gravita,
-          object: `${percorso}:${i + 1}`,
-          message: `${famiglia.che} — ${nota}: ${maschera(estratto)}`,
+          severity: derogata ? "issue" : famiglia.gravita,
+          object: righeVere ? `${nome}:${i + 1}` : nome,
+          message: derogata
+            ? `${famiglia.che} — ${nota}: ${maschera(estratto)} · ECCEZIONE DICHIARATA: ${motivo}`
+            : `${famiglia.che} — ${nota}: ${maschera(estratto)}`,
           hint: dove === "storia"
             ? `${famiglia.perche}. E' nella STORIA git: toglierlo da HEAD non basta, chi ha clonato ce l'ha gia'. Il rimedio e' ruotare la credenziale`
             : famiglia.perche,
@@ -352,6 +414,40 @@ export function findingsFile(percorso, testo, { dove = "file" } = {}) {
         });
       }
     });
+  }
+  // Un'eccezione su una famiglia NON derogabile non declassa niente e vale un
+  // rilievo suo: e' qualcuno che si e' scritto il permesso da solo.
+  for (const [id, motivo] of eccezioni) {
+    const famiglia = FAMIGLIE.find((f) => f.id === id);
+    if (famiglia && !famiglia.derogabile) {
+      findings.push({
+        severity: "block",
+        object: nome,
+        message: `dichiara un'eccezione per \`${id}\`, che NON e' derogabile — «${motivo}»`,
+        hint: "una chiave che apre un sistema vero non ha un caso legittimo: li' l'eccezione sarebbe solo il modo di scriversi il permesso da soli. Le famiglie derogabili sono " +
+          FAMIGLIE.filter((f) => f.derogabile).map((f) => `\`${f.id}\``).join(", "),
+        famiglia: "eccezione-non-derogabile",
+        dove,
+      });
+    } else if (!famiglia) {
+      findings.push({
+        severity: "warn",
+        object: nome,
+        message: `dichiara un'eccezione per \`${id}\`, che non e' una famiglia di questo controllo`,
+        hint: "un refuso in un'eccezione e' un'eccezione che non protegge niente, e sembra proteggere",
+        famiglia: "eccezione-sconosciuta",
+        dove,
+      });
+    } else if (!usate.has(id)) {
+      findings.push({
+        severity: "warn",
+        object: nome,
+        message: `dichiara un'eccezione per \`${id}\` che non serve piu': in questo file non c'e' niente da derogare`,
+        hint: "un'eccezione scaduta e' un permesso aperto che nessuno rilegge. Si toglie",
+        famiglia: "eccezione-inutile",
+        dove,
+      });
+    }
   }
   return findings;
 }
@@ -417,7 +513,11 @@ export function esitoSegreti({ letti = [], daTracciare = [], ignorati = [], stor
       dove: "ignorato",
     });
   }
-  for (const { percorso, testo } of storia) findings.push(...findingsFile(percorso, testo, { dove: "storia" }));
+  // `percorso` e' il file VERO (serve a `soloIn`), `etichetta` porta il commit.
+  // I numeri di riga di un diff non sono quelli del file: non si stampano.
+  for (const { percorso, etichetta, testo } of storia) {
+    findings.push(...findingsFile(percorso, testo, { dove: "storia", etichetta: etichetta ?? percorso, righeVere: false }));
+  }
 
   const binariSospetti = binari.filter((p) => AMBIENTE.test(p) || nomeSospetto(p));
   for (const percorso of binariSospetti) {

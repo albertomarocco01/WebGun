@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   eBinario,
+  eccezioniDichiarate,
   eFileAmbienteTracciato,
   eFileEsempio,
   entropia,
@@ -16,6 +17,7 @@ import {
   maschera,
   nomeSospetto,
   payloadJwt,
+  statoDaFindings,
 } from "./segreti-lib.mjs";
 
 /**
@@ -258,4 +260,63 @@ test("le famiglie sono sei e hanno id stabili", () => {
     "url-con-credenziali",
     "entropia-alta",
   ]);
+});
+
+// ------------------------------------------------- l'eccezione dichiarata (§10)
+const SEED_DEROGATO = [
+  "-- Forno d'Oro — seed 90: SOLO SVILUPPO. NON APPLICARE IN PRODUZIONE.",
+  "-- launchpad-consentito: credenziale-sql — solo sviluppo, il percorso di produzione non legge questo file (debito n°27)",
+  "insert into auth.users (email, encrypted_password) values ('a@b.it', crypt('password123', gen_salt('bf')));",
+].join("\n");
+
+test("eccezioniDichiarate legge famiglia e motivo, e rifiuta un motivo troppo corto", () => {
+  const e = eccezioniDichiarate(SEED_DEROGATO);
+  assert.equal(e.size, 1);
+  assert.match(e.get("credenziale-sql"), /solo sviluppo/);
+  assert.equal(eccezioniDichiarate("-- launchpad-consentito: credenziale-sql — ok").size, 0,
+    "un'eccezione senza motivo non e' un'eccezione: e' un interruttore");
+});
+
+test("l'eccezione DECLASSA a issue, non cancella: resta stampata e resta contata", () => {
+  // Il pilota, il 2026-08-06, ha dimostrato che senza questo il gate ha un rosso
+  // STRUTTURALE su un progetto corretto — e un rosso strutturale e' la cosa che
+  // la §19 dice di non fare.
+  const f = findingsFile("supabase/seed/90-solo-sviluppo.sql", SEED_DEROGATO);
+  assert.equal(f.length, 1);
+  assert.equal(f[0].severity, "issue");
+  assert.match(f[0].message, /ECCEZIONE DICHIARATA: solo sviluppo/);
+  assert.equal(statoDaFindings(f), "pass", "declassata: il passo non e' piu' rosso per questa");
+});
+
+test("l'eccezione vale per UNA famiglia e per QUEL file", () => {
+  const conAltro = `${SEED_DEROGATO}\n-- e anche: ${SERVICE}`;
+  const f = findingsFile("supabase/seed/90.sql", conAltro);
+  assert.equal(f.filter((x) => x.severity === "block").length, 1, "la service_role resta bloccante");
+  assert.equal(f.find((x) => x.severity === "block").famiglia, "service-role");
+});
+
+test("un'eccezione su una famiglia NON derogabile e' essa stessa un `block`", () => {
+  const f = findingsFile("src/lib/admin.ts",
+    `// launchpad-consentito: service-role — ci serve davvero, giuro\nconst k = "${SERVICE}";`);
+  assert.ok(f.some((x) => x.famiglia === "eccezione-non-derogabile" && x.severity === "block"));
+  assert.ok(f.some((x) => x.famiglia === "service-role" && x.severity === "block"),
+    "e la chiave resta bloccante: un'eccezione non derogabile non declassa niente");
+});
+
+test("le famiglie che consegnano l'accesso a un sistema vero non sono derogabili", () => {
+  const derogabili = FAMIGLIE.filter((f) => f.derogabile).map((f) => f.id);
+  assert.deepEqual(derogabili, ["credenziale-sql", "url-con-credenziali", "entropia-alta"]);
+});
+
+test("un'eccezione scaduta o con un refuso si segnala: sembra proteggere e non protegge", () => {
+  const scaduta = findingsFile("supabase/seed/pulito.sql",
+    "-- launchpad-consentito: credenziale-sql — motivo lungo abbastanza\nselect 1;");
+  assert.ok(scaduta.some((x) => x.famiglia === "eccezione-inutile" && x.severity === "warn"));
+  const refuso = findingsFile("a.sql", "-- launchpad-consentito: credenziale-sqll — motivo lungo abbastanza\nselect 1;");
+  assert.ok(refuso.some((x) => x.famiglia === "eccezione-sconosciuta"));
+});
+
+test("nella STORIA un'eccezione non vale: e' scritta da chi aveva sbagliato", () => {
+  const f = findingsFile("supabase/seed/90.sql", SEED_DEROGATO, { dove: "storia", etichetta: "supabase/seed/90.sql @ abc123", righeVere: false });
+  assert.equal(f.filter((x) => x.severity === "block").length, 1);
 });

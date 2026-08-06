@@ -181,6 +181,16 @@ essere verde senza aver guardato, i passi **scartati** col perché — sta in
 vale lo stesso per uno strumento presente che non ha letto il suo input. Un gate
 rosso per verifiche mancanti resta rosso.
 
+**L'eccezione si dichiara, non si aggira** (precedente della §10). Un progetto
+può avere una credenziale in un file per un motivo legittimo — il seed di
+sviluppo che serve a ventidue test E2E è il caso vero, misurato sul pilota. La
+riga `-- launchpad-consentito: <famiglia> — <motivo>` **nel file che la
+contiene** declassa quel rilievo a `issue`: resta stampato, resta contato, resta
+nell'handoff. Vale per una famiglia e per quel file; **non vale** per le
+famiglie che consegnano l'accesso a un sistema vero (`service-role`,
+`token-provider`, un `.env` tracciato), dove un'eccezione sarebbe solo il modo
+di scriversi il permesso da soli. `references/segreti.md` §1.
+
 **Cinque di questi nove passi misurano; tre leggono una dichiarazione altrui e
 ne misurano solo la forma; uno legge e data.** La tabella che dice quale è
 quale è `references/verifica-deterministica.md` §2, ed è la più importante di
@@ -385,4 +395,3 @@ nasce nella lib, col suo test.**
 - **Non dice mai «pubblicato con successo» prima di `verifica-pubblicato`.**
   Fra «il comando è tornato 0» e «il dominio serve il commit approvato» c'è
   esattamente lo spazio in cui vivono i guasti di deploy.
-</content>

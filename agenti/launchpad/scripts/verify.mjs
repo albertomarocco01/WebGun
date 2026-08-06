@@ -503,21 +503,44 @@ function leggiStoria(quanti) {
     "--format=%x01%H %cI", "--", ".",
   ]);
   if (!ok || !out) return [];
-  const commit = [];
-  let corrente = null;
+  // Raggruppate per FILE dentro il commit, non per commit.
+  //
+  // La prima stesura appiattiva tutte le righe aggiunte di un commit in un
+  // blocco solo, etichettato col solo sha — e quella scelta rendeva CIECA la
+  // famiglia `credenziale-sql`, che si applica ai soli `.sql`: nessuna
+  // etichetta finiva per `.sql`, quindi una password committata in un seed e
+  // tolta il giorno dopo non veniva vista da nessuno. Trovato da un test il
+  // 2026-08-06.
+  const pezzi = [];
+  let sha = null;
+  let data = null;
+  let file = null;
+  let righeAggiunte = [];
+  const chiudi = () => {
+    if (file && righeAggiunte.length > 0) {
+      pezzi.push({ percorso: file, etichetta: `${file} @ ${sha} (${(data ?? "").slice(0, 10)})`, testo: righeAggiunte.join("\n") });
+    }
+    righeAggiunte = [];
+  };
   for (const riga of out.split(/\r?\n/)) {
     if (riga.startsWith(MARCATORE)) {
-      if (corrente && corrente.righe.length > 0) commit.push(corrente);
-      const [sha, data] = riga.slice(1).split(" ");
-      corrente = { sha: (sha ?? "").slice(0, 12), data, righe: [] };
+      chiudi();
+      file = null;
+      [sha, data] = riga.slice(1).split(" ");
+      sha = (sha ?? "").slice(0, 12);
       continue;
     }
-    if (!corrente) continue;
-    if (riga.startsWith("+++") || riga.startsWith("---")) continue;
-    if (riga.startsWith("+")) corrente.righe.push(riga.slice(1));
+    if (riga.startsWith("+++ ")) {
+      chiudi();
+      const p = riga.slice(4).trim();
+      file = p === "/dev/null" ? null : p.replace(/^b\//, "");
+      continue;
+    }
+    if (riga.startsWith("--- ") || riga.startsWith("+++")) continue;
+    if (riga.startsWith("+") && file) righeAggiunte.push(riga.slice(1));
   }
-  if (corrente && corrente.righe.length > 0) commit.push(corrente);
-  return commit.map((c) => ({ percorso: `storia ${c.sha} (${(c.data ?? "").slice(0, 10)})`, testo: c.righe.join("\n") }));
+  chiudi();
+  return pezzi;
 }
 
 /** `engines.node` di ogni dipendenza installata. `null` se l'albero non c'e'. */

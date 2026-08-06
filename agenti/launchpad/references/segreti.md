@@ -55,6 +55,54 @@ stretta: utente e password devono essere **entrambi** `postgres` **e** l'host
 deve essere locale. `postgres://postgres:Tr0ub4dor@db.example.com` resta un
 `block`.
 
+### L'eccezione dichiarata — precedente della §10
+
+Il pilota, il 2026-08-06, ha dimostrato che senza questo il gate ha un **rosso
+strutturale**: `supabase/seed/90-solo-sviluppo.sql` crea due account con una
+password nota, **ed è giusto che li crei** — senza, nessuno prova il gestionale
+in locale e ventidue test E2E non hanno sessioni con cui partire. Il file lo
+dichiara in testa, in maiuscolo, con il motivo. Il debito n°27 non era «quelle
+password esistono»: era «il percorso di produzione legge lo stesso file di
+quello di sviluppo», e P.4g l'ha chiuso separando i seed.
+
+Un gate che resta rosso su un progetto corretto non è severo: **è rotto.** Ed è
+esattamente la cosa che la §19 dice di non fare.
+
+Le tre strade erano quelle della §10: declassare la famiglia per tutti,
+aggiungere una configurazione, oppure **dichiarare l'eccezione nel file che la
+contiene**. Vale qui la stessa scelta, e per lo stesso motivo: le prime due
+spengono il controllo anche per chi non ha autorizzato niente; la terza
+costringe a **firmare** l'eccezione dove si esercita.
+
+```sql
+-- launchpad-consentito: credenziale-sql — solo sviluppo, il percorso di
+--   produzione non legge questo file (debito n°27, docs/PRODUZIONE.md)
+```
+
+Tre vincoli, e nessuno è negoziabile:
+
+1. **vale per UNA famiglia e per QUEL file.** Non c'è una configurazione
+   globale, e non c'è un modo di spegnere il controllo altrove;
+2. **declassa a `issue`, non cancella.** Il rilievo resta stampato, resta
+   contato, e finisce nell'handoff con la motivazione accanto. Un'eccezione che
+   fa sparire la riga è un interruttore;
+3. **le famiglie che consegnano l'accesso a un sistema vero non sono
+   derogabili.** `service-role`, `nome-di-servizio-valorizzato`,
+   `token-provider`, e un `.env` tracciato: lì non esiste il caso legittimo, e
+   un'eccezione sarebbe solo il modo di scriversi il permesso da soli. Le
+   derogabili sono tre: `credenziale-sql`, `url-con-credenziali`,
+   `entropia-alta`.
+
+E tre casi che il controllo segnala **sull'eccezione stessa**: una motivazione
+più corta di dieci caratteri non conta (è un interruttore travestito);
+un'eccezione su una famiglia non derogabile è **essa stessa un `block`**; e
+un'eccezione che non ha più niente da derogare, o che nomina una famiglia che
+non esiste, è un `warn` — perché un permesso aperto che nessuno rilegge sembra
+proteggere e non protegge.
+
+**Nella storia un'eccezione non vale.** Un commit vecchio che porta la propria
+assoluzione è un'assoluzione scritta da chi aveva sbagliato.
+
 ### Perché `NEXT_PUBLIC_*` è trattata a parte
 
 Una variabile con quel prefisso è **pubblica per costruzione**: `next build` la
