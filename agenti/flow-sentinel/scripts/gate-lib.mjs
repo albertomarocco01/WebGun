@@ -470,14 +470,29 @@ const PAROLA_IMPORT = /\bimport\b/g;
 // c'e', quell'`import` non e' l'inizio di QUESTO import.
 const FINE_ISTRUZIONE = /[;"'`]/;
 
+/** L'indice dell'ultimo `import` come PAROLA in `prefisso`, o `-1`. */
+function ultimaParolaImport(prefisso) {
+  for (let i = prefisso.lastIndexOf("import"); i !== -1; i = prefisso.lastIndexOf("import", i - 1)) {
+    const prima = i === 0 ? "" : prefisso[i - 1];
+    const dopo = prefisso[i + 6] ?? "";
+    if (!/[\w$]/.test(prima) && !/[\w$]/.test(dopo)) return i;
+    if (i === 0) break;
+  }
+  return -1;
+}
+
 /** Le clausole `import <clausola> from "…helpers/db…"`, cercate al contrario. */
 export function clausoleHelperDb(testo) {
   const clausole = [];
   for (const trovato of testo.matchAll(DA_HELPER_DB)) {
+    // All'INDIETRO, non rifacendo `matchAll` su tutto il prefisso a ogni
+    // occorrenza: quello era quadratico (concilio, 2026-08-07 — ×4 sul codice
+    // di prima su 3 200 import). Il ReDoS di § M5 resta chiuso: 20 000 spazi
+    // fra `import` e `from` costano 0,1 ms.
     const prima = testo.slice(0, trovato.index);
-    const importi = [...prima.matchAll(PAROLA_IMPORT)];
-    if (importi.length === 0) continue;
-    const clausola = prima.slice(importi[importi.length - 1].index + "import".length);
+    const inizio = ultimaParolaImport(prima);
+    if (inizio === -1) continue;
+    const clausola = prima.slice(inizio + "import".length);
     if (FINE_ISTRUZIONE.test(clausola)) continue;
     clausole.push(clausola.replace(/^\s*type\b/, ""));
   }
@@ -585,18 +600,39 @@ function visita(suites, antenati, esito) {
   // guasto della voce nulla da un'altra porta. Il report lo scrive Playwright,
   // ma il gate legge un file che sta nel progetto AUDITATO: la profondita' non
   // e' un dato di cui questo gate possa fidarsi.
-  const pila = [[suites, antenati]];
+  // Il percorso viaggia come STRINGA gia' unita, non come array ricopiato a ogni
+  // nodo: ricopiarlo costa O(profondita) a nodo, cioe' quadratico sull'albero —
+  // misurato dal concilio il 2026-08-07, profondita' 40 000 in 14,5 secondi. La
+  // versione ricorsiva pagava lo stesso costo ma moriva prima (`RangeError`);
+  // toglierle la morte senza toglierle il costo lascia il gate MUTO, che e' lo
+  // stato che § L3 voleva evitare.
+  //
+  // I figli si impilano AL CONTRARIO: una pila e' LIFO, e senza questo l'ordine
+  // dei test stampati non sarebbe ne' quello dei file ne' quello d'esecuzione.
+  // I conteggi non cambiavano, ma la lista che un umano legge per triare si'.
+  const unisci = (padre, titolo) => (padre ? (titolo ? `${padre} › ${titolo}` : padre) : (titolo ?? ""));
+  const radice = [...(antenati ?? [])].filter(Boolean).join(" › ");
+  // La pila porta UN NODO per elemento, non la lista dei fratelli: cosi' l'ordine
+  // di visita e' quello in profondita' della versione ricorsiva, cioe' quello in
+  // cui i test si leggono. Con la lista dei fratelli si registravano prima tutte
+  // le spec di un livello e poi si scendeva, e la lista dei falliti usciva in
+  // un ordine che non era ne' quello dei file ne' quello d'esecuzione.
+  const pila = [];
+  const impila = (elenco, percorso) => {
+    const nodi = elenco ?? [];
+    for (let k = nodi.length - 1; k >= 0; k--) pila.push([nodi[k], percorso]);
+  };
+  impila(suites, radice);
+
   while (pila.length > 0) {
-    const [correnti, percorsoPadre] = pila.pop();
-    for (const suite of correnti ?? []) {
-      if (!suite || typeof suite !== "object") continue;
-      const percorso = [...percorsoPadre, suite.title].filter(Boolean);
-      for (const spec of suite.specs ?? []) {
-        if (!spec || typeof spec !== "object") continue;
-        for (const t of spec.tests ?? []) registra([...percorso, spec.title].join(" › "), t?.status, esito);
-      }
-      pila.push([suite.suites, percorso]);
+    const [suite, percorsoPadre] = pila.pop();
+    if (!suite || typeof suite !== "object") continue;
+    const percorso = unisci(percorsoPadre, suite.title);
+    for (const spec of suite.specs ?? []) {
+      if (!spec || typeof spec !== "object") continue;
+      for (const t of spec.tests ?? []) registra(unisci(percorso, spec.title), t?.status, esito);
     }
+    impila(suite.suites, percorso);
   }
 }
 

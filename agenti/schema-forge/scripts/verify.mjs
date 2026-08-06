@@ -215,8 +215,18 @@ function chiusuraQuadra(testo, da) {
   return -1;
 }
 
+// Le quadre della CORNICE sono poche: un percorso fra parentesi, il nome di un
+// container, un `[ok]` finale. Provarle tutte costa quadratico su un'uscita
+// TRONCATA — misurato dal concilio il 2026-08-07: 64 000 quadre mai chiuse in
+// 9,2 secondi, e 5,9 s su 243 kB di prosa. Il ripiego («uscita non-JSON, si
+// riporta grezza») esiste gia' ed e' la risposta giusta: meglio il dump che un
+// gate che si ferma dentro una funzione che serve solo a riassumere.
+const TENTATIVI_ARRAY = 16;
+
 function primoArrayJson(testo) {
+  let tentativi = 0;
   for (let i = testo.indexOf("["); i !== -1; i = testo.indexOf("[", i + 1)) {
+    if (++tentativi > TENTATIVI_ARRAY) return null;
     const fine = chiusuraQuadra(testo, i);
     if (fine === -1) continue;
     try {

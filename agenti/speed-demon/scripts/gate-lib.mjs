@@ -1106,6 +1106,16 @@ function senzaSvg(html) {
   let fuori = "";
   let profondita = 0;
   let i = 0;
+  // Dove si e' aperto l'svg piu' esterno, e cosa c'era gia' scritto: servono se
+  // quell'svg non si chiude mai. Un `<svg` senza `</svg>` — o con una virgoletta
+  // spaiata dentro, che rende illeggibile il tag — teneva `profondita` a 1 fino
+  // in fondo e SI PORTAVA VIA IL RESTO DEL DOCUMENTO: misurato dal concilio il
+  // 2026-08-07, un `<meta name="robots" content="noindex">` piu' sotto spariva
+  // e il `block` sulla pagina dichiarata pubblica passava da 1 a 0. E' il verso
+  // che § M7 chiama «il peggiore», rientrato dalla porta opposta. La regexp di
+  // prima, senza `</svg>`, non cancellava niente: qui si torna a quello.
+  let apertura = -1;
+  let fuoriAllApertura = "";
 
   while (i < html.length) {
     if (html[i] !== "<") {
@@ -1128,7 +1138,10 @@ function senzaSvg(html) {
 
     if (nome === "svg") {
       if (chiusura) profondita = Math.max(0, profondita - 1);
-      else if (!autochiuso) profondita += 1;
+      else if (!autochiuso) {
+        if (profondita === 0) { apertura = i; fuoriAllApertura = fuori; }
+        profondita += 1;
+      }
       i = fine + 1;
       continue;
     }
@@ -1138,6 +1151,13 @@ function senzaSvg(html) {
       i = fineTestoGrezzo(html, i, nome);
     }
   }
+
+  // L'svg piu' esterno non si e' mai chiuso: cio' che si e' buttato via non era
+  // un elemento, era il resto del documento. Si torna al comportamento della
+  // regexp — non si cancella niente — perche' un `<title>` di un'icona letto per
+  // sbaglio e' un rilievo in piu' su una pagina, e un `noindex` cancellato e'
+  // una pagina esclusa dall'indice che risulta pubblica.
+  if (profondita > 0 && apertura !== -1) return fuoriAllApertura + html.slice(apertura);
 
   return fuori;
 }

@@ -517,8 +517,14 @@ export function stringheOscurate(codice) {
  *          azioni server, quella che pretende `richiediStaff()`.
  *   DOPO   il corpo e' quello, in tutti e due i casi.
  */
-export function dentroGraffe(testo, indiceApertura) {
-  const struttura = stringheOscurate(testo);
+export function dentroGraffe(testo, indiceApertura, mascherato = null) {
+  // La maschera si puo' PASSARE: ricalcolarla dentro un ciclo su ogni scrittura
+  // di un file rendeva `scrittureNelCodice` quadratica — misurato dal concilio
+  // il 2026-08-07: 3 200 scritture / 138 kB in **15,5 secondi**, ×24 rispetto
+  // al codice di prima. E' lo stesso ordine di grandezza del ReDoS che questo
+  // pacchetto ha appena chiuso (§ M5), su un file che nessuno definirebbe
+  // ostile. Il valore e' identico: e' solo calcolato una volta sola.
+  const struttura = mascherato ?? stringheOscurate(testo);
   let livello = 0;
   for (let i = indiceApertura; i < struttura.length; i++) {
     if (struttura[i] === "{") livello += 1;
@@ -712,14 +718,14 @@ export function scrittureNelCodice(testo) {
   SCRITTURE.lastIndex = 0;
   let m;
   while ((m = SCRITTURE.exec(struttura)) !== null) {
-    const tabella = tabellaPrimaDi(codice, m.index);
+    const tabella = tabellaPrimaDi(codice, m.index, struttura);
     if (!tabella) continue;
     const graffa = struttura.indexOf("{", m.index);
     if (graffa === -1) continue;
     trovate.push({
       tabella,
       operazione: m[1] === "update" ? "update" : "insert",
-      colonne: chiaviOggetto(dentroGraffe(codice, graffa)),
+      colonne: chiaviOggetto(dentroGraffe(codice, graffa, struttura)),
     });
   }
 
@@ -728,12 +734,12 @@ export function scrittureNelCodice(testo) {
 
 /** L'ultima `.from("x")` che precede la scrittura: nella forma generata la
  *  catena e' una sola espressione, quindi la piu' vicina e' la sua. */
-export function tabellaPrimaDi(codice, indice) {
+export function tabellaPrimaDi(codice, indice, mascherato = null) {
   // Il `.from(` si cerca sulla STRUTTURA — dentro una stringa non e' una
   // chiamata — ma il NOME della tabella sta dentro una stringa, quindi si legge
   // dal testo vero, alla stessa posizione. E' esattamente per questo che la
   // maschera conserva la lunghezza (difetto n°52).
-  const struttura = stringheOscurate(codice).slice(0, indice);
+  const struttura = (mascherato ?? stringheOscurate(codice)).slice(0, indice);
   const trovate = [...struttura.matchAll(/\.from\s*\(\s*(["'`])/g)];
   if (trovate.length === 0) return null;
   const ultima = trovate[trovate.length - 1];

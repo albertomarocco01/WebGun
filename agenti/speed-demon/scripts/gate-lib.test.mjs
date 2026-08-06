@@ -1101,3 +1101,26 @@ test("ma una dev server vera si riconosce ancora", () => {
     + '<script src="/_next/static/development/_buildManifest.js"></script>';
   assert.ok(indiziDevServer(html).length > 0);
 });
+
+// ── un `<svg` che non si chiude non si porta via la coda (concilio, 2026-08-07)
+// La correzione di § M7 aveva un rovescio: `profondita` restava a 1 fino in
+// fondo, e il resto del documento spariva. Un `noindex` piu' sotto se ne andava
+// con lui — cioe' il verso che § M7 chiama «il peggiore», rientrato dalla porta
+// opposta. La regexp di prima, senza `</svg>`, non cancellava niente.
+
+test("un `<svg>` mai chiuso non cancella il `noindex` che sta piu' sotto", () => {
+  const html = '<head><title>Vera</title></head><body><svg><path/><meta name="robots" content="noindex"></body>';
+  const t = metatagDaHtml(html);
+  assert.equal(t.robots, "noindex", "prima spariva, e la pagina esclusa dall'indice risultava pubblica");
+  assert.equal(t.title, "Vera");
+});
+
+test("e nemmeno un `<svg` con una virgoletta spaiata dentro", () => {
+  const html = '<head><title>Vera</title></head><body><svg class="a><path/></svg><meta name="robots" content="noindex"></body>';
+  assert.equal(metatagDaHtml(html).robots, "noindex");
+});
+
+test("ma un `<svg>` regolarmente chiuso nasconde ancora il suo `<title>`", () => {
+  const html = "<head></head><body><svg><title>icona telefono</title></svg></body>";
+  assert.equal(metatagDaHtml(html).title, null);
+});

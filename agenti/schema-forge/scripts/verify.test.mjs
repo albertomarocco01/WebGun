@@ -685,3 +685,15 @@ test("una `]` spaiata dentro il messaggio di un advisor non chiude l'array", () 
   const uscita = 'Connecting...\n[{"name":"rls_disabled","level":"ERROR","metadata":{"name":"t","schema":"public"},"detail":"la policy usa ] qui"}]\n';
   assert.equal(dettaglioAdvisors(uscita), "[ERROR] rls_disabled (1): public.t");
 });
+
+// ── il costo di `primoArrayJson` (concilio, 2026-08-07) ─────────────────────
+// Provare OGNI quadra costava quadratico su un'uscita troncata: 64 000 quadre
+// mai chiuse in 9,2 secondi, dentro una funzione che serve solo a riassumere.
+
+test("un'uscita troncata non fa fermare il gate dentro il riassunto", () => {
+  const inizio = process.hrtime.bigint();
+  const dettaglio = dettaglioAdvisors("[".repeat(64_000) + "\nprosa senza JSON");
+  const ms = Number(process.hrtime.bigint() - inizio) / 1e6;
+  assert.ok(ms < 1000, `64 000 quadre in ${ms.toFixed(0)} ms (prima: 9 228 ms)`);
+  assert.match(dettaglio, /prosa senza JSON|\[/, "si ricade sul dump grezzo, che e' il ripiego previsto");
+});

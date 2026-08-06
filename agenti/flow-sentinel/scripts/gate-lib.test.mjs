@@ -1380,3 +1380,35 @@ test("e un flusso le cui spec non guardano il database resta un block", () => {
   assert.equal(findings.length, 1);
   assert.equal(findings[0].severity, "block");
 });
+
+// ── il costo e l'ordine della visita (concilio, 2026-08-07) ─────────────────
+// § L3 ha tolto la `RangeError` e ha lasciato il costo: il percorso era un array
+// ricopiato a ogni nodo, cioe' quadratico sulla profondita'. Profondita' 40 000
+// costava 14,5 s — un gate che non muore e non risponde e' MUTO lo stesso.
+
+test("un albero profondo 40 000 si percorre in millisecondi, non in secondi", () => {
+  let radice = { title: "fondo", specs: [{ title: "s", tests: [{ status: "expected" }] }], suites: [] };
+  for (let i = 0; i < 40_000; i++) radice = { title: `s${i}`, specs: [], suites: [radice] };
+  const inizio = process.hrtime.bigint();
+  const esito = esitoPlaywright({ suites: [radice] });
+  const ms = Number(process.hrtime.bigint() - inizio) / 1e6;
+  assert.equal(esito.passati, 1);
+  assert.ok(ms < 2000, `profondita' 40 000 in ${ms.toFixed(0)} ms (prima: 14 484 ms)`);
+});
+
+test("e l'ordine dei falliti resta quello in profondita', che e' quello che si legge", () => {
+  const report = { suites: [
+    { title: "A", specs: [{ title: "a1", tests: [{ status: "expected" }] }], suites: [{ title: "A1", specs: [{ title: "a1x", tests: [{ status: "unexpected" }] }] }] },
+    { title: "B", suites: [{ title: "B1", specs: [{ title: "b1x", tests: [{ status: "expected" }] }] }] },
+    { title: "C", specs: [{ title: "c1", tests: [{ status: "unexpected" }] }] },
+  ] };
+  assert.deepEqual(esitoPlaywright(report).falliti, ["A › A1 › a1x", "C › c1"]);
+});
+
+test("e la ricerca dell'import non e' piu' quadratica", () => {
+  const spec = Array.from({ length: 3200 }, (_, i) => `import { a${i} } from "./helpers/db";`).join("\n");
+  const inizio = process.hrtime.bigint();
+  usaHelperDb(spec);
+  const ms = Number(process.hrtime.bigint() - inizio) / 1e6;
+  assert.ok(ms < 400, `3 200 import in ${ms.toFixed(0)} ms (prima della correzione dei costi: 750 ms)`);
+});

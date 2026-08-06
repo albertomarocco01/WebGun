@@ -931,3 +931,18 @@ describe("il corpo di una funzione non e' il suo parametro destrutturato", () =>
     assert.equal(regolaAzioniServer([f("src/modules/x/azioni.ts", testo)], { ...CONFIG, guardie: ["richiediStaff"] }).findings.length, 1);
   });
 });
+
+// ── il costo della maschera (concilio, 2026-08-07) ──────────────────────────
+// Il n°52 ha corretto la semantica e ha messo `stringheOscurate` DENTRO il
+// ciclo: 3 200 scritture in 15,5 secondi, ×24 sul codice di prima. E' lo stesso
+// ordine di grandezza del ReDoS che questo pacchetto ha appena chiuso, su un
+// file che nessuno definirebbe ostile. La maschera si calcola una volta e viaggia.
+
+it("un modulo con 3 200 scritture non costa quindici secondi", () => {
+  const codice = Array.from({ length: 3200 }, (_, i) => `await sb.from("t${i % 7}").insert({ a: 1, b: "x" });`).join("\n");
+  const inizio = process.hrtime.bigint();
+  const trovate = scrittureNelCodice(codice);
+  const ms = Number(process.hrtime.bigint() - inizio) / 1e6;
+  assert.equal(trovate.length, 3200);
+  assert.ok(ms < 3000, `3 200 scritture in ${ms.toFixed(0)} ms (prima: 15 466 ms)`);
+});
