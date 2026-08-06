@@ -734,6 +734,21 @@ describe("i reperti del tribunale, uno per uno", () => {
     assert.ok(Date.now() - inizio < 2000, "20k contenitori nascosti: millisecondi, non secondi");
   });
 
+  // LA CHIAVE UNIVERSALE NUOVA (collaudo P2), piu' economica di quella del
+  // tribunale: un tag invece di due `<div>`. `</script>` veniva riconosciuto
+  // col nome `script` e trattato come un'APERTURA, e il ripulitore si mangiava
+  // tutto fino alla fine del documento. Sul banco: `dati-raccolti` chiudeva
+  // NON APPLICABILE — «zero moduli e zero campi» — su un sito che raccoglie
+  // nome, email, telefono e PEC.
+  it("falso n/a: una CHIUSURA ORFANA non apre niente e non amputa il documento", () => {
+    for (const testa of ["</script>", "</style>", "<script>/* </script> */</script>", '<script>var s="</script>";</script>']) {
+      const doc = `<html lang="it"><head><title>t</title></head><body><main><h1>x</h1>${testa}<input name="telefono" autocomplete="tel"><img src="/a.png"></main></body></html>`;
+      assert.equal(campiDiPagina(doc).length, 1, `campi dopo ${testa}`);
+      assert.match(ripulisciDocumento(doc).pulito, /<img/, `img dopo ${testa}`);
+      assert.equal(terziDi(`${doc}<script src="https://terzo.example/a.js"></script>`, BASE).length, 1, `terzi dopo ${testa}`);
+    }
+  });
+
   it("`ripulisciDocumento` restituisce i corpi inline e gli stili, senza rileggere il documento", () => {
     const r = ripulisciDocumento('<script>localStorage.x=1</script><style>@import url("https://f.test/a.css");</style><p>x</p>');
     assert.equal(r.inline.length, 1);

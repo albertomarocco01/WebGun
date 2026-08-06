@@ -147,8 +147,29 @@ export function ripulisciDocumento(html) {
     const tag = leggiTag(html, i);
     if (!tag) { fuori.push(c); i += 1; continue; }
     const nome = (/^<\/?\s*([a-zA-Z][a-zA-Z0-9-]*)/.exec(tag.testo)?.[1] ?? "").toLowerCase();
+    // LA CHIAVE UNIVERSALE NUOVA, misurata al collaudo P2. Quel `\/?` accetta
+    // anche la barra, quindi `</script>` veniva riconosciuto col nome `script`
+    // e trattato come un'APERTURA: il ripulitore si mangiava tutto da li' alla
+    // prossima chiusura — o **alla fine del documento**, se non ce n'erano
+    // altre. Una sola chiusura orfana, e il documento che il gate giudica
+    // finisce li'.
+    //
+    // Misurato sul banco: `</script>` piantato dentro il `<main>` delle due
+    // pagine di contatto, e il passo `dati-raccolti` chiude
+    // **NON APPLICABILE — «zero moduli e zero campi nell'HTML servito di 10
+    // pagine»** su un sito che raccoglie nome, email, telefono e PEC. E' il
+    // punto aperto n°12 del costruttore avverato: la premessa di un `n/a`
+    // misurata su un documento amputato e' falsa e sembra misurata. Sparisce
+    // anche un terzo (la mappa incorporata), che e' un `block` in meno.
+    //
+    // E' piu' economica di quella del tribunale: un tag invece di due `<div>`,
+    // e non serve nemmeno volerlo — un `</script>` dentro una stringa o un
+    // commento JavaScript e' il classico infortunio che i bundler prevengono
+    // scrivendo `<\/script>`.
+    const eChiusura = /^<\s*\//.test(tag.testo);
     fuori.push(tag.testo);
     i = tag.fine;
+    if (eChiusura) continue;
 
     // Il CORPO di `<script>` e `<style>` non entra nel documento ripulito: su
     // Next il carico RSC porta l'albero serializzato della pagina, e contarlo
