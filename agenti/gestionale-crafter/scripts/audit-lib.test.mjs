@@ -17,6 +17,7 @@ import {
   regolaAzioniServer,
   regolaFabbricaClient,
   regolaGuardieRotte,
+  ambientiDiProvenienzaIgnota,
   ambientiLetti,
   jwtDiServiceRole,
   regolaMiddleware,
@@ -307,6 +308,12 @@ describe("regolaServiceRole", () => {
   it("gli ambienti letti si raccolgono in tutte e due le forme, senza doppioni", () => {
     const codice = 'process.env.UNO; process.env["DUE"]; process.env.UNO;';
     assert.deepEqual(ambientiLetti(codice).sort(), ["DUE", "UNO"]);
+  });
+
+  it("la provenienza ignota e' tutto cio' che non e' pubblicabile ne' un indirizzo", () => {
+    const codice = "process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY; process.env.SUPABASE_URL; "
+      + "process.env.DATABASE_URI; process.env.SB_ADMIN_KEY; process.env.CHIAVE;";
+    assert.deepEqual(ambientiDiProvenienzaIgnota(codice).sort(), ["CHIAVE", "SB_ADMIN_KEY"]);
   });
 });
 

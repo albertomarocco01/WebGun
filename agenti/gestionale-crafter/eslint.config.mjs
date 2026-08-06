@@ -18,7 +18,11 @@ export default [
       // invisibile, perche' su questa macchina i `node_modules` della skill non
       // erano installati e ESLint non girava affatto — stesso difetto e stessa
       // correzione di schema-forge (P.8).
-      globals: { console: "readonly", process: "readonly", URL: "readonly" },
+      // `Buffer` arriva il 2026-08-06 con la regola 3 riscritta (referto § H3):
+      // per sapere se una chiave incollata nel codice dichiara `service_role`
+      // se ne decodifica il payload, e la decodifica base64url di Node e'
+      // quella. E' un globale come gli altri due, non una dipendenza.
+      globals: { console: "readonly", process: "readonly", URL: "readonly", Buffer: "readonly" },
     },
     rules: {
       complexity: ["warn", 15],
