@@ -17,6 +17,7 @@ import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { argomentiOstiliACmd, formaEseguibile, mascheraUrl, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
+import { rigaPremesse } from "./audit-lib.mjs";
 
 const SKILL_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 // Le configurazioni dei linter viaggiano con la SKILL, non col progetto: il
@@ -216,10 +217,51 @@ export function dettaglioAdvisors(stdout, massimoOggetti = 3) {
 // Tre chiavi in tutto: niente parser TOML fra le dipendenze di uno script che
 // deve girare ovunque con `node` e basta. Serve anche per il `.sqlfluff`, che
 // e' un INI con la stessa forma `[sezione]` + `chiave = valore`.
+/**
+ * Il `#` che apre un commento TOML, e quello che non lo apre.
+ *
+ * Referto § M13: un commento dentro l'array multi-riga produceva schemi
+ * fantasma. `schemas = [` / `"public",` / `"shop", # esposto anche qui, vedi
+ * PROGETTO.md` / `]` diventava `["public","shop","# esposto anche qui","vedi
+ * PROGETTO.md"]`, l'audit usciva 2 e il passo diventava `skipped` accusando un
+ * `config.toml` che non e' rotto — un rosso falso, che insegna a ignorare il
+ * rosso.
+ *
+ * E il verso opposto, referto § L7 (in flow-sentinel): chi il commento lo
+ * toglieva lo faceva con una regexp che morde anche dentro una stringa, e un
+ * `site_url = "http://127.0.0.1:3000/#/app"` diventava mezza URL.
+ *
+ * Due difetti opposti, una causa sola: uno scanner che non sa se il carattere
+ * che sta guardando e' dentro una stringa. La stessa del n°50 e del n°51.
+ *
+ * TOML ha due stringhe su una riga: `"…"` con le fughe e `'…'` letterale, dove
+ * il `\` non fugge niente. LIMITE DICHIARATO: le stringhe multi-riga (`"""`,
+ * `'''`) non sono gestite — il `config.toml` di Supabase non ne usa per le tre
+ * chiavi che questo gate legge, e riconoscerle a meta' sarebbe peggio che
+ * dichiararle fuori.
+ */
+export function senzaCommentoToml(riga) {
+  const testo = String(riga ?? "");
+  let delimitatore = null;
+  for (let i = 0; i < testo.length; i++) {
+    const c = testo[i];
+    if (delimitatore === '"' && c === "\\") { i += 1; continue; }
+    if (delimitatore !== null) {
+      if (c === delimitatore) delimitatore = null;
+      continue;
+    }
+    if (c === '"' || c === "'") { delimitatore = c; continue; }
+    if (c === "#") return testo.slice(0, i);
+  }
+  return testo;
+}
+
 function valoreToml(testoConfig, sezione, chiave) {
   let dentro = false;
   const cerca = new RegExp(`^\\s*${chiave}\\s*=\\s*(.+)$`);
-  const righe = (testoConfig ?? "").split(/\r?\n/);
+  // Il commento si toglie PRIMA di ogni confronto, riga per riga: vale sia per
+  // la riga della chiave sia per quelle su cui prosegue l'array multi-riga.
+  const righe = (testoConfig ?? "").split(/\r?\n/).map(senzaCommentoToml);
   for (let i = 0; i < righe.length; i++) {
     const intestazione = /^\s*\[([^\]]+)\]/.exec(righe[i]);
     if (intestazione) {
@@ -255,6 +297,15 @@ function valoreToml(testoConfig, sezione, chiave) {
 // `public`. Prima le due cose erano indistinguibili e il gate stampava
 // «schemi esposti: public» in entrambi i casi.
 export function schemiEsposti(testoConfig) {
+  // Referto § M12: `supabase/config.toml` ASSENTE tornava `["public"]` senza
+  // errore, e il passo stampava «schemi esposti: public» come se fosse la
+  // verita' del progetto. Il file assente non e' la chiave assente: la chiave
+  // assente ha un default documentato da Supabase, il file assente vuol dire
+  // che il gate non sa che cosa PostgREST pubblichi. Il progetto di un
+  // schema-forge quel file ce l'ha sempre: e' la radice del progetto Supabase.
+  if (String(testoConfig ?? "").trim() === "") {
+    return { schemi: [], errore: "supabase/config.toml assente o vuoto: il gate non sa quali schemi PostgREST pubblica. Auditare `public` e stamparlo come se fosse la verita' del progetto e' un audit parziale travestito da audit completo (referto § M12)." };
+  }
   const valore = valoreToml(testoConfig, "api", "schemas");
   if (valore === null) return { schemi: ["public"], errore: null };
   const lista = /\[([^\]]*)\]/.exec(valore);
@@ -552,6 +603,12 @@ export function leggiAudit(stdout) {
   if (!parsed?.summary || !Array.isArray(parsed.findings)) {
     return { errore: "uscita dell'audit senza `summary`/`findings`: contratto non rispettato, l'audit non e' utilizzabile" };
   }
+  // `premesse` fa parte del contratto dal 2026-08-06 (referto § M12): senza,
+  // questo passo non puo' dire QUANTO e' stato guardato, e un audit su zero
+  // tabelle e' indistinguibile da un audit senza rilievi.
+  if (!parsed.premesse || typeof parsed.premesse.tabelle !== "number") {
+    return { errore: "uscita dell'audit senza `premesse.tabelle`: contratto non rispettato. Senza la premessa un audit su zero oggetti non si distingue da uno schema pulito (referto § M12)" };
+  }
   return { parsed };
 }
 
@@ -578,7 +635,7 @@ function registraAudit(audit, schemi, dbUrl) {
   // del database — o il database di un altro progetto — non deve poter passare
   // per un audit completo
   record(ID.auditRls, ETICHETTA_AUDIT, block === 0 ? "pass" : "fail",
-    `schemi esposti: ${schemi.join(", ")} · ${mascheraUrl(dbUrl)}\n${residuo}`
+    `schemi esposti: ${schemi.join(", ")} · ${mascheraUrl(dbUrl)}\n${rigaPremesse(parsed.premesse)}\n${residuo}`
   ).counts = { block, issue, warn };
 }
 

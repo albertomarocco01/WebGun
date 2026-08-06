@@ -41,6 +41,7 @@ import {
   regoleSpec,
   righeDaPsql,
   schemiEsposti,
+  senzaCommentoToml,
   sqlConteggioRighe,
   sqlTabelleEsposte,
   statoDaFindings,
@@ -1101,4 +1102,36 @@ test("cio' che non e' una URL e contiene una `@` non si stampa affatto", () => {
 test("mascherare due volte non cambia niente: il gate a valle puo' rifarlo", () => {
   const una = mascheraUrl("postgresql://postgres:postgres@127.0.0.1:54322/postgres");
   assert.equal(mascheraUrl(una), una);
+});
+
+// ── il `#` che apre un commento TOML, e quello che non lo apre (§ L7) ────────
+// `senzaVirgolette` toglieva il commento con una regexp che morde anche dentro
+// una stringa, ed era mitigata a meta': la cella col `#` la toglieva, la coda
+// del commento dopo la virgola no. Due difetti opposti, una causa sola.
+
+test("un frammento nell'URL dell'app non e' un commento", () => {
+  assert.equal(
+    urlAppProgetto(`[auth]\nsite_url = "http://127.0.0.1:3100/#/app"\n`),
+    "http://127.0.0.1:3100/#/app",
+  );
+});
+
+test("un commento dentro l'array multi-riga non diventa uno schema", () => {
+  assert.deepEqual(
+    schemiEsposti('[api]\nschemas = [\n  "public",\n  "shop", # esposto anche qui, vedi PROGETTO.md\n]\n'),
+    ["public", "shop"],
+  );
+});
+
+test("ma un `#` DENTRO una stringa e' parte del nome", () => {
+  assert.deepEqual(schemiEsposti('[api]\nschemas = ["public", "grafico#1"] # nota\n'), ["public", "grafico#1"]);
+  assert.deepEqual(schemiEsposti("[api]\nschemas = ['a#b']\n"), ["a#b"]);
+});
+
+test("senzaCommentoToml: dove taglia e dove no", () => {
+  assert.equal(senzaCommentoToml("port = 58322 # il banco"), "port = 58322 ");
+  assert.equal(senzaCommentoToml('url = "http://x/#/app"'), 'url = "http://x/#/app"');
+  assert.equal(senzaCommentoToml('a = "una \\" virgoletta # dentro"'), 'a = "una \\" virgoletta # dentro"');
+  assert.equal(senzaCommentoToml("# tutta la riga"), "");
+  assert.equal(senzaCommentoToml(null), "");
 });

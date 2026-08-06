@@ -402,11 +402,40 @@ export function urlDbProgetto(testoConfig) {
   return porta ? `postgresql://postgres:postgres@127.0.0.1:${porta[1]}/postgres` : null;
 }
 
+/**
+ * Il `#` che apre un commento TOML, e quello che non lo apre.
+ *
+ * Qui la chiave letta e' una sola, `[db].port`, e il `/^(\d+)/` che la
+ * interpreta reggeva gia' un `port = 54322 # il db locale`. La funzione arriva
+ * lo stesso, e per una ragione dichiarata: e' la stessa forma di `valoreToml`
+ * che nelle due skill sorelle produceva schemi fantasma (referto § M13) e mezze
+ * URL (§ L7), e la prossima chiave che qualcuno leggera' da qui non avra' un
+ * `/^(\d+)/` a proteggerla. Uno scanner immune per fortuna torna difettoso al
+ * primo riuso.
+ *
+ * LIMITE DICHIARATO: le stringhe multi-riga (`"""`, `'''`) non sono gestite.
+ */
+export function senzaCommentoToml(riga) {
+  const testo = String(riga ?? "");
+  let delimitatore = null;
+  for (let i = 0; i < testo.length; i++) {
+    const c = testo[i];
+    if (delimitatore === '"' && c === "\\") { i += 1; continue; }
+    if (delimitatore !== null) {
+      if (c === delimitatore) delimitatore = null;
+      continue;
+    }
+    if (c === '"' || c === "'") { delimitatore = c; continue; }
+    if (c === "#") return testo.slice(0, i);
+  }
+  return testo;
+}
+
 export function valoreToml(testoConfig, sezione, chiave) {
   let dentro = false;
   const cerca = new RegExp(`^\\s*${perRegExp(chiave)}\\s*=\\s*(.+)$`);
 
-  for (const riga of String(testoConfig ?? "").split(/\r?\n/)) {
+  for (const riga of String(testoConfig ?? "").split(/\r?\n/).map(senzaCommentoToml)) {
     const intestazione = /^\s*\[([^\]]+)\]/.exec(riga);
     if (intestazione) {
       dentro = intestazione[1].trim() === sezione;

@@ -722,10 +722,51 @@ export function formaEseguibile(
 // ----------------------------------------------- lettura del `config.toml`
 // Tre chiavi in tutto: nessun parser TOML fra le dipendenze di uno script che
 // deve girare ovunque con `node` e basta.
+/**
+ * Il `#` che apre un commento TOML, e quello che non lo apre.
+ *
+ * Referto § L7: qui il commento lo toglieva `senzaVirgolette`, con
+ * `replace(/\s*#.*$/, "")` — che morde anche dentro una stringa. Misurato il
+ * 2026-08-06:
+ *
+ *   site_url = "http://127.0.0.1:3000/#/app"
+ *     PRIMA  urlAppProgetto → "http://127.0.0.1:3000/"   mezza URL
+ *     DOPO   "http://127.0.0.1:3000/#/app"
+ *
+ * ed era mitigato a meta': toglieva la cella col `#` ma non la coda del
+ * commento dopo la virgola, cioe' il § M13 della skill sorella restava aperto
+ * anche qui. Un `#` dentro `[api].schemas` produceva schemi fantasma.
+ *
+ * Due difetti opposti, una causa sola: uno scanner che non sa se il carattere
+ * che sta guardando e' dentro una stringa.
+ *
+ * TOML ha due stringhe su una riga: `"…"` con le fughe e `'…'` letterale, dove
+ * il `\` non fugge niente. LIMITE DICHIARATO: le stringhe multi-riga (`"""`,
+ * `'''`) non sono gestite — il `config.toml` di Supabase non ne usa per le tre
+ * chiavi che questo gate legge.
+ */
+export function senzaCommentoToml(riga) {
+  const testo = String(riga ?? "");
+  let delimitatore = null;
+  for (let i = 0; i < testo.length; i++) {
+    const c = testo[i];
+    if (delimitatore === '"' && c === "\\") { i += 1; continue; }
+    if (delimitatore !== null) {
+      if (c === delimitatore) delimitatore = null;
+      continue;
+    }
+    if (c === '"' || c === "'") { delimitatore = c; continue; }
+    if (c === "#") return testo.slice(0, i);
+  }
+  return testo;
+}
+
 function valoreToml(testoConfig, sezione, chiave) {
   let dentro = false;
   const cerca = new RegExp(`^\\s*${chiave}\\s*=\\s*(.+)$`);
-  const linee = righe(testoConfig);
+  // Il commento si toglie PRIMA di ogni confronto, riga per riga: vale sia per
+  // la riga della chiave sia per quelle su cui prosegue l'array multi-riga.
+  const linee = righe(testoConfig).map(senzaCommentoToml);
   for (let i = 0; i < linee.length; i++) {
     const intestazione = /^\s*\[([^\]]+)\]/.exec(linee[i]);
     if (intestazione) {
@@ -753,7 +794,10 @@ function valoreToml(testoConfig, sezione, chiave) {
   return null;
 }
 
-const senzaVirgolette = (valore) => valore.trim().replace(/\s*#.*$/, "").replace(/^["']|["']$/g, "");
+// Niente `#` qui dentro: il commento se ne e' gia' andato in `valoreToml`, che
+// sa distinguerlo da un `#` dentro una stringa. Toglierlo anche qui sarebbe
+// toglierlo di nuovo, e questa volta senza sapere dove ci si trova (§ L7).
+const senzaVirgolette = (valore) => valore.trim().replace(/^["']|["']$/g, "");
 
 /**
  * Il database del PROGETTO, non uno di default.

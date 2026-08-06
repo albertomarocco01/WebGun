@@ -35,10 +35,12 @@ import {
   notaRifiuto,
   riepilogo,
   schemiEsposti,
+  senzaCommentoToml,
   soloSql,
   urlDbProgetto,
   verdettoDa,
 } from "./verify.mjs";
+import { rigaPremesse } from "./audit-lib.mjs";
 
 // Finto comando: restituisce gli esiti in coda, uno per chiamata.
 function finto(...esiti) {
@@ -150,9 +152,22 @@ test("uno schema secondario aggiunto a mano finisce nell'audit", () => {
   );
 });
 
-test("senza config leggibile si audita almeno public, mai niente", () => {
-  assert.deepEqual(schemiEsposti(null), { schemi: ["public"], errore: null });
-  assert.deepEqual(schemiEsposti(""), { schemi: ["public"], errore: null });
+// Fino al 2026-08-06 questo test asseriva l'opposto: «senza config leggibile si
+// audita almeno public, mai niente». E' il § M12 del referto — il file ASSENTE
+// non e' la chiave assente. La chiave assente ha un default che Supabase
+// documenta; il file assente vuol dire che il gate non sa cosa PostgREST
+// pubblichi, e stampare «schemi esposti: public» e' un audit parziale
+// travestito da audit completo. Il progetto di uno schema-forge quel file ce
+// l'ha sempre: e' la radice del progetto Supabase.
+test("config.toml assente: l'audit non sa quali schemi guardare, e lo dice", () => {
+  assert.deepEqual(schemiEsposti(null).schemi, []);
+  assert.match(schemiEsposti(null).errore, /config\.toml assente o vuoto/);
+  assert.match(schemiEsposti("").errore, /config\.toml assente o vuoto/);
+  assert.match(schemiEsposti("   \n  ").errore, /config\.toml assente o vuoto/);
+});
+
+test("il file c'e' ma la chiave no: e' il default documentato di Supabase", () => {
+  assert.deepEqual(schemiEsposti("[db]\nport = 54322\n"), { schemi: ["public"], errore: null });
 });
 
 test("una chiave `schemas` fuori da [api] non conta", () => {
@@ -352,9 +367,16 @@ test("JSON valido ma senza il contratto dell'audit: verifica mancante", () => {
 });
 
 test("uscita regolare: si legge e basta", () => {
-  const { parsed, errore } = leggiAudit('{"summary":{"block":1,"issue":0,"warn":2},"findings":[]}');
+  const { parsed, errore } = leggiAudit('{"summary":{"block":1,"issue":0,"warn":2},"findings":[],"premesse":{"tabelle":18}}');
   assert.equal(errore, undefined);
   assert.equal(parsed.summary.block, 1);
+});
+
+// ── la premessa non contata (referto § M12, 2026-08-06) ──────────────────────
+test("un audit senza `premesse` non rispetta il contratto, e non si usa", () => {
+  const { parsed, errore } = leggiAudit('{"summary":{"block":0,"issue":0,"warn":0},"findings":[]}');
+  assert.equal(parsed, undefined);
+  assert.match(errore, /premesse\.tabelle/);
 });
 
 // ---------------------------------------------- tipi: cosa NON e' una differenza
@@ -560,4 +582,51 @@ test("il gate parla anche invocato dalla junction: e' il canale con cui lo vede 
     rmSync(casa, { recursive: true, force: true });
     rmSync(altrove, { recursive: true, force: true });
   }
+});
+
+// ── il `#` che apre un commento TOML, e quello che non lo apre (§ M13) ───────
+// Misurato il 2026-08-06: un commento dentro l'array multi-riga produceva
+// schemi fantasma, l'audit usciva 2 e il passo diventava `skipped` accusando un
+// `config.toml` che non e' rotto. Rosso falso, che insegna a ignorare il rosso.
+
+const CONFIG_COL_COMMENTO = `[api]
+schemas = [
+  "public",
+  "shop", # esposto anche qui, vedi PROGETTO.md
+]
+`;
+
+test("un commento dentro l'array multi-riga non diventa uno schema", () => {
+  assert.deepEqual(schemiEsposti(CONFIG_COL_COMMENTO).schemi, ["public", "shop"]);
+});
+
+test("ma un `#` DENTRO una stringa e' parte del nome, non un commento", () => {
+  assert.deepEqual(
+    schemiEsposti('[api]\nschemas = ["public", "grafico#1"] # una nota\n').schemi,
+    ["public", "grafico#1"],
+  );
+  assert.deepEqual(schemiEsposti("[api]\nschemas = ['a#b']\n").schemi, ["a#b"]);
+});
+
+test("senzaCommentoToml: dove taglia e dove no", () => {
+  assert.equal(senzaCommentoToml('port = 54322 # il banco'), "port = 54322 ");
+  assert.equal(senzaCommentoToml('url = "http://x/#/app"'), 'url = "http://x/#/app"');
+  assert.equal(senzaCommentoToml('url = "http://x/#/app" # nota'), 'url = "http://x/#/app" ');
+  assert.equal(senzaCommentoToml('a = "una \\" virgoletta # dentro"'), 'a = "una \\" virgoletta # dentro"');
+  assert.equal(senzaCommentoToml("# tutta la riga"), "");
+  assert.equal(senzaCommentoToml(null), "");
+});
+
+// ── la premessa dell'audit: quanti oggetti sono stati guardati (§ M12) ───────
+
+test("rigaPremesse dice cosa e' stato guardato, test pgTAP compresi", () => {
+  const riga = rigaPremesse({ tabelle: 18, policy: 42, viste: 3, funzioniSecurityDefiner: 2, colonne: 130, testiPgtap: 5 });
+  assert.match(riga, /18 tabelle/);
+  assert.match(riga, /42 policy/);
+  assert.match(riga, /5 file di test pgTAP/);
+});
+
+test("test pgTAP NON letti si distingue da zero test pgTAP", () => {
+  assert.match(rigaPremesse({ tabelle: 1, policy: 0, viste: 0, funzioniSecurityDefiner: 0, colonne: 1, testiPgtap: null }), /NON letti/);
+  assert.match(rigaPremesse({ tabelle: 1, policy: 0, viste: 0, funzioniSecurityDefiner: 0, colonne: 1, testiPgtap: 0 }), /0 file di test pgTAP/);
 });
