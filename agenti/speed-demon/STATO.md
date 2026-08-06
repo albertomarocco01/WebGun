@@ -246,7 +246,7 @@ E la prima esecuzione vera di `plan` e `tune` su guadagni misurati: home
 
 | Cosa | Numero | Come e' stato misurato |
 |---|---|---|
-| Passi del gate | 7 | `verify.mjs --json`, `summary.passi` |
+| Passi del gate | 8 | `verify.mjs --json`, `summary.passi` |
 | Test degli script | **103 verdi** (73 al collaudo, +2 con P.0-igiene il 2026-08-03, +11 sciogliendo la `complexity 19` di `verify.mjs` — P.7c punti 1-2, `a6f6d1e`; +1 col test junction di P.0-igiene-2 il 2026-08-04, che fanno 87; **+16 con P.7d il 2026-08-06 sera**: 103/103, 0 fail) | `node --test "scripts/**/*.test.mjs"` |
 | References | 3 | `misurazione.md` · `ottimizzazioni.md` · `seo.md` |
 | Template | 2 | `performance.md` (il contratto) · `handoff-speed-demon.md` |

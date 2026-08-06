@@ -646,3 +646,42 @@ test("una quadra nella prosa della CLI non nasconde il JSON degli advisors", () 
 test("un'uscita davvero senza JSON resta grezza, come prima", () => {
   assert.match(dettaglioAdvisors("failed to connect [127.0.0.1]: connection refused"), /connection refused/);
 });
+
+// ── la seconda porta sulla premessa (concilio P.7e, 2026-08-07) ─────────────
+// `rls-audit.mjs` esce gia' 2 su zero tabelle — ma quel controllo sta nel
+// PRODUTTORE, e `leggiAudit` e' il CONSUMATORE. Se i due file divergessero, un
+// documento con `premesse.tabelle: 0` tornerebbe a valere `pass`: il § M12
+// risorto dall'altra parte del contratto.
+
+test("un audit che dichiara ZERO tabelle non si usa, nemmeno se il JSON e' ben formato", () => {
+  const { parsed, errore } = leggiAudit(JSON.stringify({
+    ok: true,
+    schemas: ["public"],
+    premesse: { tabelle: 0, policy: 0, viste: 0, funzioniSecurityDefiner: 0, colonne: 0, testiPgtap: null },
+    findings: [],
+    summary: { block: 0, issue: 0, warn: 0 },
+  }));
+  assert.equal(parsed, undefined);
+  assert.match(errore, /ZERO tabelle/);
+});
+
+test("ma una tabella sola basta a farlo passare", () => {
+  const { parsed, errore } = leggiAudit(JSON.stringify({
+    ok: true,
+    schemas: ["public"],
+    premesse: { tabelle: 1, policy: 2, viste: 0, funzioniSecurityDefiner: 0, colonne: 5, testiPgtap: 3 },
+    findings: [],
+    summary: { block: 0, issue: 0, warn: 0 },
+  }));
+  assert.equal(errore, undefined);
+  assert.equal(parsed.premesse.tabelle, 1);
+});
+
+// ── il salto delle stringhe in `chiusuraQuadra` (concilio, 2026-08-07) ──────
+// Il ramo era raggiungibile e non lo provava nessuno: la mutazione che toglie
+// `inStringa` sopravviveva alla batteria.
+
+test("una `]` spaiata dentro il messaggio di un advisor non chiude l'array", () => {
+  const uscita = 'Connecting...\n[{"name":"rls_disabled","level":"ERROR","metadata":{"name":"t","schema":"public"},"detail":"la policy usa ] qui"}]\n';
+  assert.equal(dettaglioAdvisors(uscita), "[ERROR] rls_disabled (1): public.t");
+});

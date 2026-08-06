@@ -860,3 +860,74 @@ export async function altra(){ await richiediStaff(); }`;
     }
   });
 });
+
+// ── il concilio sul pacchetto stesso (2026-08-07) ───────────────────────────
+// Quattro rilievi, e i primi due erano REGRESSIONI di P.7e: le due `replace`
+// di prima davano la risposta giusta su questi ingressi.
+
+describe("un apice che non si chiude e' testo, non un delimitatore", () => {
+  const RIGA = "  return <p>Elenco degli ordini dell'utente</p>; // TODO: qui manca richiediStaff()";
+
+  it("l'apostrofo di un testo JSX non protegge una rotta scoperta", () => {
+    const pagina = `export default function P() {\n${RIGA}\n}`;
+    const { findings } = regolaGuardieRotte(
+      [f("src/app/admin/ordini/page.tsx", pagina)],
+      { ...CONFIG, guardie: ["richiediStaff"] },
+    );
+    assert.equal(findings.length, 1, "prima erano zero: il commento sopravviveva e la guardia sembrava chiamata");
+    assert.equal(findings[0].severity, "block");
+  });
+
+  it("e la stessa riga senza l'apostrofo da' lo stesso esito", () => {
+    const pagina = `export default function P() {\n${RIGA.replace("dell'utente", "degli utenti")}\n}`;
+    assert.equal(regolaGuardieRotte([f("src/app/admin/ordini/page.tsx", pagina)], { ...CONFIG, guardie: ["richiediStaff"] }).findings.length, 1);
+  });
+
+  it("un backtick spaiato non spegne lo spogliatore fino a fine file", () => {
+    const testo = "const s = `aperto;\n" + Array.from({ length: 5 }, (_, i) => `// commento ${i}`).join("\n");
+    assert.equal((senzaCommenti(testo).match(/\/\/ commento/g) ?? []).length, 0);
+  });
+
+  it("ma una stringa vera resta una stringa, e un template vero pure", () => {
+    assert.equal(senzaCommenti('const a = "x // y"; b();'), 'const a = "x // y"; b();');
+    assert.equal(senzaCommenti("const a = `riga1\nriga2 // non commento`; b();"), "const a = `riga1\nriga2 // non commento`; b();");
+  });
+
+  it("la maschera conserva la lunghezza anche sugli apici che non chiudono", () => {
+    for (const s of ["a 'b' c", "dell'utente</p>; // x", "`t\nu`", "a \\", "const s = `aperto"]) {
+      assert.equal(stringheOscurate(s).length, s.length, JSON.stringify(s));
+    }
+  });
+});
+
+describe("la proprieta' abbreviata e' una colonna", () => {
+  it("`{ ruolo }` non e' un payload vuoto", () => {
+    assert.deepEqual(chiaviOggetto("{ ruolo }"), ["ruolo"]);
+    assert.deepEqual(chiaviOggetto("{ ruolo, nome: x }"), ["ruolo", "nome"]);
+    assert.deepEqual(chiaviOggetto("{ nome: x, ruolo }"), ["nome", "ruolo"]);
+    assert.deepEqual(chiaviOggetto("{ a, b, c }"), ["a", "b", "c"]);
+  });
+
+  it("uno spread non e' una chiave", () => {
+    assert.deepEqual(chiaviOggetto("{ ...base, ruolo }"), ["ruolo"]);
+  });
+
+  it("e la colonna di privilegio scritta in forma abbreviata si vede", () => {
+    const catalogo = catalogoDaRighe([["profili", "authenticated=arwd/postgres"]], []);
+    const { findings } = regolaScritture([f("src/modules/x.ts", 'await sb.from("profili").update({ ruolo });')], catalogo);
+    assert.ok(findings.some((x) => x.object.includes("ruolo")), "prima il payload risultava vuoto");
+  });
+});
+
+describe("il corpo di una funzione non e' il suo parametro destrutturato", () => {
+  it("un'azione server protetta con un parametro destrutturato non e' un block", () => {
+    const testo = '"use server";\nexport async function salvaOrdine({ id }: { id: string }) { await richiediStaff(); await scrivi(id); }';
+    const { findings } = regolaAzioniServer([f("src/modules/x/azioni.ts", testo)], { ...CONFIG, guardie: ["richiediStaff"] });
+    assert.deepEqual(findings, [], "prima il corpo letto era `{ id }` e l'azione protetta usciva block");
+  });
+
+  it("ma la stessa azione SENZA guardia resta un block", () => {
+    const testo = '"use server";\nexport async function salvaOrdine({ id }: { id: string }) { await scrivi(id); }';
+    assert.equal(regolaAzioniServer([f("src/modules/x/azioni.ts", testo)], { ...CONFIG, guardie: ["richiediStaff"] }).findings.length, 1);
+  });
+});

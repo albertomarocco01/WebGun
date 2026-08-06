@@ -804,6 +804,25 @@ export function dettaglioMisura({ sogliaDispersione, dichiarataNelContratto, rig
  * se sta autorizzando una soglia non raggiunta o una regressione, e «non lo so»
  * non e' «va bene» — la stessa regola del `tsconfig` senza `strict` (§ H8).
  */
+// PERCHE' SOLO `accessibility`, e non anche `best-practices` (rilievo del
+// concilio, 2026-08-07). L'obiezione è buona: `best-practices` contiene audit
+// che confinano con la sicurezza — librerie con CVE note, HTTPS, errori in
+// console — e la costituzione mette la sicurezza SOPRA l'accessibilità, quindi
+// una regressione lì peserebbe di più, non di meno.
+//
+// Resta fuori per due ragioni, e sono dichiarate perché la prossima persona non
+// debba ricostruirle: (1) il template dichiara non derogabile
+// `accessibility` **sotto la baseline** e nient'altro, e questo gate non
+// inventa clausole che nessuno ha firmato — allargarla trasformerebbe in
+// `block` deroghe già firmate su contratti esistenti, che è una rottura
+// retroattiva, non un no-op; (2) `best-practices` è un paniere misto e non un
+// controllo di sicurezza: farne un `block` irrevocabile userebbe il punteggio
+// di una CATEGORIA come misura di un audit, che è esattamente l'errore che §D21
+// e il passo `contrasto` esistono per non commettere più.
+//
+// La sicurezza delle dipendenze è di `code-maniac` e del tribunale, non di una
+// soglia Lighthouse. Se un giorno il template la dichiarerà, questa funzione
+// prenderà un secondo `if` e una riga nel verbale.
 function motivoNonDerogabile(categoria, baseline, mediana) {
   if (categoria !== "accessibility") return null;
   if (baseline === undefined) {

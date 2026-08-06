@@ -41,6 +41,7 @@ import {
   findingsCopertura,
   findingsEffettoDb,
   flussiPercorsi,
+  ambientePsql,
   credenzialiPsql,
   formaEseguibile,
   mascheraUrl,
@@ -404,7 +405,12 @@ function interrogaDb(dbUrl, sql) {
   // La password esce dalla riga di comando e passa da `PGPASSWORD` (§ L2): la
   // tabella dei processi la legge chiunque sia sulla macchina.
   const credenziali = credenzialiPsql(dbUrl);
-  const res = run("psql", [credenziali.url, "-X", "-At", "-c", sql], { env: { ...process.env, ...credenziali.env, PGCONNECT_TIMEOUT: String(Math.round(LIMITI.connessione / 1000)) } });
+  // La URL non e' utilizzabile senza che la credenziale esca da una porta che
+  // questo gate non controlla: nessuna interrogazione, e il motivo scritto.
+  if (credenziali.errore) return { errore: credenziali.errore };
+  const res = run("psql", [credenziali.url, "-X", "-At", "-c", sql], {
+    env: ambientePsql(credenziali, { PGCONNECT_TIMEOUT: String(Math.round(LIMITI.connessione / 1000)) }),
+  });
   if (scaduto(res)) return { errore: motivoScaduto("psql", LIMITI.strumento) };
   if (res.error) return { errore: res.error.message };
   if (res.status !== 0) return { errore: (res.stderr || res.stdout || "").trim().split("\n").slice(0, 5).join(" ") };

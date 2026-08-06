@@ -12,7 +12,7 @@
  * accoppia niente che fosse separato.
  */
 
-import { conBarre, dentroGraffe, perRegExp } from "./audit-lib.mjs";
+import { conBarre, dentroGraffe, perRegExp, stringheOscurate } from "./audit-lib.mjs";
 
 // ─── le tabelle vere: quelle dei tipi generati ───────────────────────────────
 // L'elenco delle entita' non lo dichiara l'agente: verrebbe da se' stesso, e un
@@ -37,11 +37,19 @@ export function tabelleDaiTipi(testo, schema = "public") {
 /** Le chiavi al primo livello di un blocco `{ ... }`. `[_ in never]: never` —
  *  la forma che Supabase genera per uno schema vuoto — non e' una tabella. */
 export function chiaviDiPrimoLivello(blocco) {
+  // Le graffe si contano sulla STRUTTURA (concilio, 2026-08-07). `tabelleDaiTipi`
+  // arriva qui passando da `dentroGraffe`, che le stringhe le sa saltare; questa,
+  // che legge DENTRO il blocco, no — e un tipo letterale con una graffa spaiata
+  // (l'etichetta di un enum, che la scrive il progetto auditato) faceva sparire
+  // in silenzio tutte le tabelle successive dall'ancoraggio. Il nome si legge dal
+  // testo vero alla stessa posizione: e' per questo che la maschera conserva la
+  // lunghezza.
+  const struttura = stringheOscurate(blocco);
   const chiavi = [];
   let livello = 0;
   const re = /[{}]|(^|[,{\s])["']?([A-Za-z_][\w]*)["']?\s*:/g;
   let m;
-  while ((m = re.exec(blocco)) !== null) {
+  while ((m = re.exec(struttura)) !== null) {
     if (m[0] === "{") livello += 1;
     else if (m[0] === "}") livello -= 1;
     else if (livello === 1 && m[2] && m[2] !== "never") chiavi.push(m[2]);

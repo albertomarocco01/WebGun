@@ -19,6 +19,7 @@ import {
   scaduto,
   contaGravita,
   motivoOstile,
+  ambientePsql,
   clausoleHelperDb,
   contrattoUscita,
   credenzialiPsql,
@@ -1237,8 +1238,60 @@ test("senza password non cambia niente: nessuna variabile, URL com'era", () => {
   assert.deepEqual(c.env, {});
 });
 
-test("cio' che non e' una URL si passa com'e': non e' compito di questa funzione", () => {
-  assert.deepEqual(credenzialiPsql("dbname=postgres host=127.0.0.1"), { url: "dbname=postgres host=127.0.0.1", env: {} });
+test("cio' che non e' una URL si passa com'e': e' una stringa a parole chiave di libpq", () => {
+  assert.deepEqual(credenzialiPsql("dbname=postgres host=127.0.0.1"),
+    { url: "dbname=postgres host=127.0.0.1", env: {}, errore: null });
+});
+
+// ── le tre porte che il tribunale ha trovato ancora aperte (2026-08-07) ──────
+// Sonde del concilio di /code-inquisition sul pacchetto P.7e stesso: la
+// correzione di M2/L2 chiudeva l'autorita' e lasciava aperte altre due strade.
+
+test("una password con un `%` mal codificato NON ricade sulla URL originale", () => {
+  // `new URL` accetta un `%` che non introduce due cifre esadecimali e lo
+  // lascia testuale; `decodeURIComponent` no. Prima il `try` avvolgeva anche
+  // quella riga, e la ricaduta rimetteva la password in chiaro dentro `argv` —
+  // e psql la rimandava nel proprio stderr, che tre gate stampano grezzo.
+  const c = credenzialiPsql("postgresql://ruolo:Segreta%Finale@db.example.com:5432/prod");
+  assert.equal(c.url, null, "non si interroga con una URL che riporta indietro la password");
+  assert.deepEqual(c.env, {});
+  assert.match(c.errore, /codifica percentuale non valida/);
+});
+
+test("una credenziale nel parametro di query si rifiuta, non si riscrive", () => {
+  // libpq accetta `?password=`, ed e' la forma che si usa proprio per evitare
+  // le fughe nell'userinfo. Riscrivere la query per toglierla vorrebbe dire
+  // riserializzarla, e `searchParams` ricodifica `%20` in `+` — che per
+  // l'`options` di libpq non e' uno spazio.
+  for (const parametro of ["password", "sslpassword"]) {
+    const c = credenzialiPsql(`postgresql://ruolo@db.example.com/prod?${parametro}=SuperSegreta123`);
+    assert.equal(c.url, null, parametro);
+    assert.match(c.errore, new RegExp(parametro));
+  }
+});
+
+test("e nemmeno si stampa: mascheraUrl la nasconde invece di mascherarla a meta'", () => {
+  assert.match(mascheraUrl("postgresql://ruolo@db.example.com/prod?password=SuperSegreta123"), /nascosta/);
+  assert.doesNotMatch(mascheraUrl("postgresql://ruolo@db.example.com/prod?password=SuperSegreta123"), /SuperSegreta/);
+});
+
+test("una URL con `options` sopravvive intatta: e' il motivo per cui non si riscrive", () => {
+  const c = credenzialiPsql("postgresql://u:p@h/d?options=-c%20statement_timeout%3D0&sslmode=require");
+  assert.equal(c.url, "postgresql://u@h/d?options=-c%20statement_timeout%3D0&sslmode=require");
+  assert.deepEqual(c.env, { PGPASSWORD: "p" });
+});
+
+test("un PGPASSWORD ereditato non autentica al posto della URL del progetto", () => {
+  const prima = process.env.PGPASSWORD;
+  try {
+    process.env.PGPASSWORD = "ereditata-da-un-altro-progetto";
+    assert.equal(ambientePsql(credenzialiPsql("postgresql://u@h/d")).PGPASSWORD, undefined,
+      "la URL non dichiara password: un residuo d'ambiente non deve autenticare per conto nostro");
+    assert.equal(ambientePsql(credenzialiPsql("postgresql://u:vera@h/d")).PGPASSWORD, "vera");
+  } finally {
+    if (prima === undefined) delete process.env.PGPASSWORD;
+    else process.env.PGPASSWORD = prima;
+  }
 });
 
 // ── sonda ostile: nemmeno una stringa configura qualcosa (P.7e, 2026-08-06) ──
@@ -1272,4 +1325,58 @@ test("l'helper del database vive dentro una stringa, e li' resta leggibile", () 
   // sparirebbe e nessuna spec risulterebbe mai importare l'helper.
   const spec = 'import { test } from "@playwright/test";\nimport { conta } from "./helpers/db";\ntest("x", async () => { await conta(); });';
   assert.deepEqual(usaHelperDb(spec), { importa: true, chiama: true, nomi: ["conta"] });
+});
+
+// ── il concilio sul pacchetto stesso (2026-08-07) ───────────────────────────
+
+test("un backtick che CHIUDE un template non apre una stringa nuova", () => {
+  // REGRESSIONE di P.7e: `delimitatore` rinasceva a ogni riga mentre `inBlocco`
+  // no, quindi la riga che chiude un template multi-riga cominciava con un
+  // backtick e spegneva il resto della riga. `.only` committato, zero rilievi.
+  const spec = "const q = `\n  select 1\n`; test.only(\"x\", async () => {});";
+  const findings = regoleSpec("a.spec.ts", spec);
+  assert.equal(findings.length, 1, "prima erano zero");
+  assert.equal(findings[0].severity, "block");
+});
+
+test("e un apostrofo a inizio riga nemmeno", () => {
+  assert.equal(regoleSpec("a.spec.ts", "'; test.only(\"x\", async () => {});").length, 1);
+});
+
+test("LIMITE DICHIARATO: l'interno di un template multi-riga si legge come codice", () => {
+  // Lo scanner delle spec analizza RIGA per riga — `inBlocco` attraversa le
+  // righe, lo stato della stringa no — quindi le righe interne di un template
+  // multi-riga sono «codice». Un `test.only(` scritto li' dentro produce un
+  // rilievo su una riga che non gira: ROSSO falso, non verde falso, cioe' il
+  // verso rumoroso. Estendere lo stato della stringa a tutto il file
+  // riaprirebbe il difetto opposto, che e' quello silenzioso. Sta scritto
+  // perche' e' una scelta, non una svista: il concilio l'ha misurata il
+  // 2026-08-07 e resta MANCANTE con la sua ragione.
+  const spec = "const q = `\n  test.only( — questo e' testo\n`;\ntest(\"x\", async () => {});";
+  const findings = regoleSpec("a.spec.ts", spec);
+  assert.equal(findings.length, 1, "il limite e' questo, e va visto");
+  assert.equal(findings[0].object, "a.spec.ts:2");
+});
+
+test("la clausola dell'helper non risale oltre la fine dell'istruzione: la rete c'e'", () => {
+  // La riga `if (FINE_ISTRUZIONE.test(clausola)) continue;` e' sopravvissuta a
+  // una mutazione del concilio: senza, il gate risale all'import di
+  // `@playwright/test`, raccoglie `test`/`expect` come nomi dell'helper e vede
+  // un `expect(...)` qualsiasi come chiamata al database.
+  const spec = [
+    'import { test, expect } from "@playwright/test";',
+    "const x = 1;",
+    'test("x", async () => { expect(1).toBe(1); });',
+    'import { q } from "./helpers/db";',
+  ].join("\n");
+  assert.deepEqual(clausoleHelperDb(spec).map((c) => c.trim()), ["{ q }"]);
+  assert.deepEqual(usaHelperDb(spec).nomi, ["q"]);
+});
+
+test("e un flusso le cui spec non guardano il database resta un block", () => {
+  const flussi = [{ id: "acquisto", tipo: "positivo" }];
+  const spec = [{ file: "e2e/acquisto.spec.ts", testo: 'import { test, expect } from "@playwright/test";\ntest("x @flusso:acquisto", async () => { expect(1).toBe(1); });' }];
+  const findings = findingsEffettoDb(flussi, spec, new Map([["acquisto", ["e2e/acquisto.spec.ts"]]]));
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].severity, "block");
 });

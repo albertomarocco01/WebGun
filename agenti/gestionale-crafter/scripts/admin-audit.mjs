@@ -18,7 +18,7 @@ import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { auditAdmin, catalogoDaRighe, conBarre } from "./audit-lib.mjs";
-import { argomentiOstiliACmd, credenzialiPsql, formaEseguibile, mascheraUrl, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
+import { ambientePsql, argomentiOstiliACmd, credenzialiPsql, formaEseguibile, mascheraUrl, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
 import { urlDbProgetto, validaConfig } from "./progetto-lib.mjs";
 
 const SEP = "\x1f";
@@ -97,6 +97,9 @@ function psqlDisponibile() {
 function interroga(dbUrl, sql) {
   // La password esce dalla riga di comando e passa da `PGPASSWORD` (§ L2).
   const credenziali = credenzialiPsql(dbUrl);
+  // La URL non e' utilizzabile senza che la credenziale esca da una porta che
+  // questo audit non controlla: i permessi restano NON LETTI, col motivo.
+  if (credenziali.errore) throw new Error(credenziali.errore);
   const argomenti = [credenziali.url, "-X", "-A", "-t", "-F", SEP, "-R", RS, "-c", sql];
   // Attraverso uno shim `.cmd` si passa da `cmd.exe /c`, che E' una shell: qui
   // gli argomenti sono l'SQL intero e i separatori di campo, e ci arriverebbero
@@ -117,7 +120,7 @@ function interroga(dbUrl, sql) {
       // uccide. `PGCONNECT_TIMEOUT` taglia prima il caso piu' comune (il
       // database che non c'e'); il `timeout` copre anche la query che non torna.
       timeout: LIMITE_PSQL, killSignal: "SIGKILL",
-      env: { ...process.env, ...credenziali.env, PGCONNECT_TIMEOUT: String(Math.round(LIMITE_CONNESSIONE / 1000)) },
+      env: ambientePsql(credenziali, { PGCONNECT_TIMEOUT: String(Math.round(LIMITE_CONNESSIONE / 1000)) }),
     },
   );
   if (scaduto(res)) throw new Error(motivoScaduto("psql (catalogo dei permessi)", LIMITE_PSQL));

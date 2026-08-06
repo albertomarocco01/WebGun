@@ -17,7 +17,7 @@ import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { argomentiOstiliACmd, formaEseguibile, mascheraUrl, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
-import { rigaPremesse } from "./audit-lib.mjs";
+import { motivoPremessaVuota, rigaPremesse } from "./audit-lib.mjs";
 
 const SKILL_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 // Le configurazioni dei linter viaggiano con la SKILL, non col progetto: il
@@ -649,6 +649,14 @@ export function leggiAudit(stdout) {
   if (!parsed.premesse || typeof parsed.premesse.tabelle !== "number") {
     return { errore: "uscita dell'audit senza `premesse.tabelle`: contratto non rispettato. Senza la premessa un audit su zero oggetti non si distingue da uno schema pulito (referto § M12)" };
   }
+  // LA SECONDA PORTA. `rls-audit.mjs` esce gia' 2 su zero tabelle — ma quel
+  // controllo sta nel PRODUTTORE, e questo e' il CONSUMATORE: se i due file
+  // divergessero, un documento con `premesse.tabelle: 0` tornerebbe a valere
+  // `pass`, cioe' il § M12 risorto dall'altra parte del contratto. La skill
+  // sorella la seconda porta ce l'ha gia' per il caso gemello di § H6
+  // (`if (misure.rotte === 0)` in gestionale-crafter/verify.mjs).
+  const vuoto = motivoPremessaVuota(parsed.premesse, parsed.schemas ?? []);
+  if (vuoto) return { errore: vuoto };
   return { parsed };
 }
 

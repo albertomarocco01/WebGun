@@ -293,6 +293,19 @@ function dentroStringa(linea, i, delimitatore, svuotaStringhe) {
   return { pezzo: svuotaStringhe ? "" : c, prossimo: i + 1, delimitatore };
 }
 
+/**
+ * Dove si chiude, SU QUESTA RIGA, la stringa aperta in `apertura` — o `-1`.
+ * Un delimitatore che non si chiude non e' un delimitatore: e' un apostrofo
+ * dentro del testo, o il backtick che chiude un template aperto piu' su.
+ */
+function chiudeLaStringa(linea, apertura, delimitatore) {
+  for (let i = apertura + 1; i < linea.length; i++) {
+    if (linea[i] === "\\") { i += 1; continue; }
+    if (linea[i] === delimitatore) return i;
+  }
+  return -1;
+}
+
 function codiceSenzaCommenti(linee, svuotaStringhe = true) {
   // `inBlocco` attraversa le righe: un commento a blocco aperto qui si chiude
   // due righe piu' giu'. Per questo lo stato sta fuori dalla funzione di riga.
@@ -323,7 +336,25 @@ function codiceSenzaCommenti(linee, svuotaStringhe = true) {
         continue;
       }
 
+      // UN APICE NON E' UNA STRINGA SE NON SI CHIUDE (concilio, 2026-08-07).
+      // Era una REGRESSIONE di questo pacchetto: prima le stringhe non si
+      // guardavano affatto. Misurato su una riga che CHIUDE un template
+      // multi-riga — quindi comincia col backtick:
+      //
+      //   `; test.only("x", async () => {});
+      //
+      //   PRIMA  il backtick apriva una stringa nuova e spegneva il resto
+      //          della riga: `.only` committato, ZERO rilievi
+      //   DOPO   1 block
+      //
+      // La riga resta l'unita' di analisi (`inBlocco` la attraversa, questo
+      // no): quindi qui la domanda e' se la stringa si chiude SU QUESTA RIGA.
       if (c === '"' || c === "'" || c === "`") {
+        if (chiudeLaStringa(linea, i, c) === -1) {
+          codice += c;
+          i += 1;
+          continue;
+        }
         delimitatore = c;
         codice += c;
         i += 1;
@@ -1135,12 +1166,28 @@ export function contrattoUscita(percorsoHandoff, testoHandoff, testoConfigPlaywr
  * testo che contiene una `@` puo' contenere una credenziale, e un mascheratore
  * che in caso di dubbio stampa tutto non e' un mascheratore.
  */
+// I parametri di query con cui libpq accetta una credenziale. `password` e'
+// quello documentato; `sslpassword` e' la passphrase della chiave del client.
+const PARAMETRI_SEGRETI = Object.freeze(["password", "sslpassword"]);
+
+/** Il nome del parametro di query che porta una credenziale, o `null`. */
+function credenzialeInQuery(analizzata) {
+  return PARAMETRI_SEGRETI.find((p) => (analizzata.searchParams.get(p) ?? "") !== "") ?? null;
+}
+
 export function mascheraUrl(url) {
   const testo = String(url ?? "");
   if (testo === "") return testo;
   const nascosta = "<url non interpretabile: nascosta perche' poteva contenere una password>";
   try {
     const analizzata = new URL(testo);
+    // La password non sta solo nell'autorita': libpq la accetta anche come
+    // parametro di query, ed e' una forma che si usa proprio per evitare le
+    // fughe dei caratteri speciali nell'userinfo. Li' non si maschera, SI
+    // NASCONDE: riscrivere una query vorrebbe dire riserializzarla, e
+    // `searchParams` ricodifica `%20` in `+` — che per l'`options` di libpq non
+    // e' uno spazio. Si legge col parser e si rifiuta, non si riscrive.
+    if (credenzialeInQuery(analizzata)) return nascosta;
     if (analizzata.password !== "") {
       analizzata.password = "***";
       return analizzata.href;
@@ -1174,15 +1221,59 @@ export function mascheraUrl(url) {
  */
 export function credenzialiPsql(dbUrl) {
   const testo = String(dbUrl ?? "");
+  let analizzata;
   try {
-    const analizzata = new URL(testo);
-    if (analizzata.password === "") return { url: testo, env: {} };
-    // `decodeURIComponent`: nella URL la password e' percent-encoded, in
-    // `PGPASSWORD` deve arrivare letterale.
-    const password = decodeURIComponent(analizzata.password);
-    analizzata.password = "";
-    return { url: analizzata.href, env: { PGPASSWORD: password } };
+    analizzata = new URL(testo);
   } catch {
-    return { url: testo, env: {} };
+    // Non e' una URL: e' una stringa di connessione a parole chiave
+    // (`host=… dbname=…`), che libpq accetta e che non ha un'autorita' da
+    // spogliare. Passa com'e'.
+    return { url: testo, env: {}, errore: null };
   }
+
+  // Una credenziale FUORI dall'autorita' non si sposta e non si maschera: si
+  // rifiuta. Riscrivere la query per toglierla vorrebbe dire riserializzarla, e
+  // `searchParams` ricodifica `%20` in `+` — che per l'`options` di libpq non e'
+  // uno spazio, quindi il gate interrogherebbe il database con un'altra
+  // configurazione. Meglio nessuna misura di una misura su un'altra cosa.
+  const inQuery = credenzialeInQuery(analizzata);
+  if (inQuery) {
+    return { url: null, env: {}, errore: `la URL del database porta la credenziale nel parametro di query \`${inQuery}\`: cosi' resta nella riga di comando e nei documenti, e questo gate non la riscrive perche' riserializzare la query cambierebbe l'\`options\` di libpq. Scrivila nell'autorita' (\`postgresql://utente:password@host/db\`) o passala da \`PGPASSWORD\`. Verifica MANCANTE.` };
+  }
+
+  if (analizzata.password === "") return { url: testo, env: {}, errore: null };
+
+  // `decodeURIComponent`: nella URL la password e' percent-encoded, in
+  // `PGPASSWORD` deve arrivare letterale. E puo' SOLLEVARE: `new URL` accetta
+  // un `%` che non introduce due cifre esadecimali e lo lascia testuale,
+  // `decodeURIComponent` no. Prima del 2026-08-07 il `try` avvolgeva anche
+  // questa riga e la ricaduta restituiva la URL ORIGINALE — password in chiaro,
+  // di nuovo in `argv`, e psql la rimandava indietro nel proprio stderr
+  // («invalid percent-encoded token: …»), che tre gate stampano grezzo. Il
+  // rimedio non e' ricadere: e' non misurare.
+  let password;
+  try {
+    password = decodeURIComponent(analizzata.password);
+  } catch {
+    return { url: null, env: {}, errore: "la password nella URL del database ha una codifica percentuale non valida: `psql` la rifiuta e la rimanda nel proprio messaggio d'errore. Correggi la URL (`%` va scritto `%25`). Verifica MANCANTE." };
+  }
+
+  analizzata.password = "";
+  return { url: analizzata.href, env: { PGPASSWORD: password }, errore: null };
+}
+
+/**
+ * L'AMBIENTE CON CUI SI CHIAMA `psql`, costruito e non ereditato a meta'.
+ *
+ * Se la URL non porta password, `credenziali.env` e' vuoto — e un `PGPASSWORD`
+ * rimasto nell'ambiente di chi ha lanciato il gate autenticherebbe al posto
+ * nostro, in silenzio, con una credenziale che la URL del progetto non dichiara.
+ * E' la stessa classe di `SUPABASE_DB_URL` rimasta da un altro progetto, che
+ * questa casa rifiuta esplicitamente (DECISIONI.md §11): la premessa «questo e'
+ * il database di QUESTO progetto» non si lascia decidere all'ambiente.
+ */
+export function ambientePsql(credenziali, aggiunte = {}) {
+  const env = { ...process.env, ...aggiunte };
+  delete env.PGPASSWORD;
+  return { ...env, ...credenziali.env };
 }

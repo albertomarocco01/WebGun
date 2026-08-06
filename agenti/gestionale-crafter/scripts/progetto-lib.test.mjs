@@ -484,3 +484,32 @@ describe("senzaCommentoToml", () => {
     assert.equal(urlDbProgetto("[db]\nport = 7622 # il banco\n"), "postgresql://postgres:postgres@127.0.0.1:7622/postgres");
   });
 });
+
+// ── le graffe dei tipi si contano sulla struttura (concilio, 2026-08-07) ─────
+// `tabelleDaiTipi` passa da `dentroGraffe`, che le stringhe le salta; questa,
+// che legge DENTRO il blocco, no — e una graffa spaiata dentro un tipo
+// letterale faceva sparire in silenzio tutte le tabelle successive.
+
+describe("chiaviDiPrimoLivello: le graffe dentro le stringhe", () => {
+  const conNota = (valore) => `export type Database = {
+  public: {
+    Tables: {
+      ordini: { Row: { nota: ${valore} } }
+      profili: { Row: { id: string } }
+    }
+  }
+}`;
+
+  it("una `{` dentro un tipo letterale non fa sparire le tabelle dopo", () => {
+    assert.deepEqual(tabelleDaiTipi(conNota('"{"')), ["ordini", "profili"]);
+  });
+
+  it("ne' una `}`, che ne fabbricava anche una fantasma", () => {
+    assert.deepEqual(tabelleDaiTipi(conNota('"}"')), ["ordini", "profili"]);
+  });
+
+  it("e il caso dritto resta quello di sempre", () => {
+    assert.deepEqual(tabelleDaiTipi(conNota("string")), ["ordini", "profili"]);
+    assert.deepEqual(chiaviDiPrimoLivello("{ a: { b: 1 }, c: 2 }"), ["a", "c"]);
+  });
+});

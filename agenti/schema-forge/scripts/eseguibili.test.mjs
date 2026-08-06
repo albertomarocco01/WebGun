@@ -27,6 +27,8 @@ import {
   comandoRicerca,
   motivoOstile,
   dentroLaRadice,
+  ambientePsql,
+  credenzialiPsql,
   formaEseguibile,
   mascheraUrl,
   scegliEseguibile,
@@ -238,4 +240,64 @@ test("cio' che non e' una URL e contiene una `@` non si stampa affatto", () => {
 test("mascherare due volte non cambia niente: il gate a valle puo' rifarlo", () => {
   const una = mascheraUrl("postgresql://postgres:postgres@127.0.0.1:54322/postgres");
   assert.equal(mascheraUrl(una), una);
+});
+
+// ── le tre porte che il tribunale ha trovato ancora aperte (2026-08-07) ──────
+// Il concilio di /code-inquisition ha mutato `credenzialiPsql` a no-op in
+// questa copia e la batteria e' rimasta VERDE: la funzione era provata in una
+// skill su tre. I test arrivano dove la funzione vive davvero.
+
+test("la password lascia la URL e passa da PGPASSWORD", () => {
+  const c = credenzialiPsql("postgresql://postgres:segreta@127.0.0.1:7622/postgres");
+  assert.equal(c.url, "postgresql://postgres@127.0.0.1:7622/postgres");
+  assert.deepEqual(c.env, { PGPASSWORD: "segreta" });
+});
+
+test("una password percent-encoded arriva letterale nell'ambiente", () => {
+  assert.deepEqual(credenzialiPsql("postgresql://u:p%40ss%3Aword@h:5432/d").env, { PGPASSWORD: "p@ss:word" });
+});
+
+test("una password con un `%` mal codificato NON ricade sulla URL originale", () => {
+  const c = credenzialiPsql("postgresql://ruolo:Segreta%Finale@db.example.com:5432/prod");
+  assert.equal(c.url, null, "non si interroga con una URL che riporta indietro la password");
+  assert.deepEqual(c.env, {});
+  assert.match(c.errore, /codifica percentuale non valida/);
+});
+
+test("una credenziale nel parametro di query si rifiuta, non si riscrive", () => {
+  for (const parametro of ["password", "sslpassword"]) {
+    const c = credenzialiPsql(`postgresql://ruolo@db.example.com/prod?${parametro}=SuperSegreta123`);
+    assert.equal(c.url, null, parametro);
+    assert.match(c.errore, new RegExp(parametro));
+  }
+});
+
+test("e nemmeno si stampa: mascheraUrl la nasconde invece di mascherarla a meta'", () => {
+  const url = "postgresql://ruolo@db.example.com/prod?password=SuperSegreta123";
+  assert.match(mascheraUrl(url), /nascosta/);
+  assert.doesNotMatch(mascheraUrl(url), /SuperSegreta/);
+});
+
+test("una URL con `options` sopravvive intatta: e' il motivo per cui non si riscrive", () => {
+  const c = credenzialiPsql("postgresql://u:p@h/d?options=-c%20statement_timeout%3D0&sslmode=require");
+  assert.equal(c.url, "postgresql://u@h/d?options=-c%20statement_timeout%3D0&sslmode=require");
+  assert.deepEqual(c.env, { PGPASSWORD: "p" });
+});
+
+test("cio' che non e' una URL si passa com'e': e' una stringa a parole chiave di libpq", () => {
+  assert.deepEqual(credenzialiPsql("dbname=postgres host=127.0.0.1"),
+    { url: "dbname=postgres host=127.0.0.1", env: {}, errore: null });
+});
+
+test("un PGPASSWORD ereditato non autentica al posto della URL del progetto", () => {
+  const prima = process.env.PGPASSWORD;
+  try {
+    process.env.PGPASSWORD = "ereditata-da-un-altro-progetto";
+    assert.equal(ambientePsql(credenzialiPsql("postgresql://u@h/d")).PGPASSWORD, undefined,
+      "la URL non dichiara password: un residuo d'ambiente non deve autenticare per conto nostro");
+    assert.equal(ambientePsql(credenzialiPsql("postgresql://u:vera@h/d")).PGPASSWORD, "vera");
+  } finally {
+    if (prima === undefined) delete process.env.PGPASSWORD;
+    else process.env.PGPASSWORD = prima;
+  }
 });

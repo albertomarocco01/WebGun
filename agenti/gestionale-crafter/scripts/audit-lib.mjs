@@ -90,6 +90,44 @@ const trova = (severity, object, message, hint) => ({ severity, object, message,
  * gia' tolto, un file troncato). Meglio riprendere il conto che portarsi dietro
  * uno stato sbagliato fino in fondo al file.
  */
+/**
+ * La graffa che apre il CORPO di una funzione dichiarata: quella che segue la
+ * parentesi che chiude la lista dei parametri. Se la parentesi non si trova, si
+ * ripiega sulla prima graffa — il vecchio comportamento, che su una firma senza
+ * parametri destrutturati e' lo stesso.
+ */
+function graffaDelCorpo(struttura, da) {
+  const apre = struttura.indexOf("(", da);
+  if (apre === -1) return struttura.indexOf("{", da);
+  let livello = 0;
+  for (let i = apre; i < struttura.length; i++) {
+    if (struttura[i] === "(") livello += 1;
+    else if (struttura[i] === ")") {
+      livello -= 1;
+      if (livello === 0) return struttura.indexOf("{", i);
+    }
+  }
+  return struttura.indexOf("{", da);
+}
+
+/**
+ * Dove si chiude la stringa aperta in `i`, o `-1` se non si chiude.
+ *
+ * `'` e `"` non attraversano la fine della riga (in JavaScript e' un errore di
+ * sintassi); il backtick si'. Un delimitatore che non si chiude non e' un
+ * delimitatore: e' un apostrofo dentro del testo.
+ */
+function chiudeLaStringa(sorgente, apertura, delimitatore) {
+  const limite = delimitatore === "`"
+    ? sorgente.length
+    : (sorgente.indexOf("\n", apertura) === -1 ? sorgente.length : sorgente.indexOf("\n", apertura));
+  for (let i = apertura + 1; i < limite; i++) {
+    if (sorgente[i] === "\\") { i += 1; continue; }
+    if (sorgente[i] === delimitatore) return i;
+  }
+  return -1;
+}
+
 function passoDentroStringa(sorgente, i, delimitatore) {
   const c = sorgente[i];
   if (c === "\\") return { pezzo: c + (sorgente[i + 1] ?? ""), prossimo: i + 2, delimitatore };
@@ -134,7 +172,33 @@ export function senzaCommenti(testo) {
       i += 2;
       continue;
     }
+    // UN APICE NON E' UNA STRINGA SE NON SI CHIUDE.
+    //
+    // Trovato dal concilio il 2026-08-07, ed era una REGRESSIONE di questo
+    // stesso pacchetto: le due `replace` di prima toglievano il commento a
+    // prescindere dagli apici, lo scanner no. Misurato su una riga di TSX in
+    // italiano — cioe' la cosa piu' comune che ci sia:
+    //
+    //   return <p>Elenco degli ordini dell'utente</p>; // qui manca richiediStaff()
+    //
+    //   PRIMA  l'apostrofo apriva una stringa fino a fine riga, il commento in
+    //          coda sopravviveva, `chiamaUnaDi` ci trovava dentro il nome della
+    //          guardia → rotta admin scoperta, ZERO findings
+    //   DOPO   1 block, come sulla stessa riga senza l'apostrofo
+    //
+    // E lo stesso con un backtick spaiato, che spegneva lo spogliatore fino a
+    // fine file: cinque commenti su cinque sopravvivevano.
+    //
+    // La regola e' quella che un lettore umano applica senza pensarci: si entra
+    // in una stringa solo se la stringa si chiude. Gli apici non attraversano
+    // la fine della riga, il backtick si'.
     if (c === '"' || c === "'" || c === "`") {
+      if (chiudeLaStringa(sorgente, i, c) === -1) {
+        // non e' un delimitatore: e' testo (l'apostrofo di «dell'utente»)
+        fuori += c;
+        i += 1;
+        continue;
+      }
       delimitatore = c;
       fuori += c;
       i += 1;
@@ -369,7 +433,12 @@ export function corpoFunzione(testo, nome) {
     `export\\s+(?:async\\s+)?function\\s+${perRegExp(nome)}\\b`,
   ).exec(struttura);
   if (dichiarata) {
-    const apertura = struttura.indexOf("{", dichiarata.index);
+    // La graffa del CORPO, non quella del parametro destrutturato (concilio,
+    // 2026-08-07): su `export async function salvaOrdine({ id }: { id: string })`
+    // la prima graffa apre la firma, il corpo letto diventava `{ id }`, e
+    // un'azione che chiama `richiediStaff()` come prima riga usciva `block`.
+    // Un rosso strutturale insegna a ignorare il rosso.
+    const apertura = graffaDelCorpo(struttura, dichiarata.index);
     return apertura === -1 ? "" : dentroGraffe(codice, apertura);
   }
   const costante = new RegExp(
@@ -418,7 +487,15 @@ export function stringheOscurate(codice) {
       i += 1;
       continue;
     }
-    if (c === '"' || c === "'" || c === "`") { delimitatore = c; fuori += c; i += 1; continue; }
+    // Stessa regola di `senzaCommenti`: un apice che non si chiude e' testo,
+    // non un delimitatore. Senza, l'apostrofo di «dell'utente» in un testo JSX
+    // spegnerebbe la struttura fino a fine riga anche qui.
+    if ((c === '"' || c === "'" || c === "`") && chiudeLaStringa(sorgente, i, c) !== -1) {
+      delimitatore = c;
+      fuori += c;
+      i += 1;
+      continue;
+    }
     fuori += c;
     i += 1;
   }
@@ -673,7 +750,12 @@ export function tabellaPrimaDi(codice, indice) {
  * colonna scritta dal modulo spariva dal confronto coi permessi del database.
  * Un verde falso sulla regola delle scritture (difetto n°52).
  */
-const CHIAVE_DI_OGGETTO = /^(?:"([A-Za-z_$][\w$]*)"|'([A-Za-z_$][\w$]*)'|([A-Za-z_$][\w$]*))\s*:/;
+// Il due punti NON e' obbligatorio: `{ ruolo }` e' la proprieta' abbreviata, ed
+// e' la forma piu' naturale che esista — la scrive l'esempio in cima a questa
+// stessa sezione (`.update({ status })`). Senza, `.update({ ruolo })` produceva
+// ZERO colonne e ne' la regola dei permessi per colonna ne' quella
+// dell'auto-promozione potevano scattare (concilio, 2026-08-07).
+const CHIAVE_DI_OGGETTO = /^(?:"([A-Za-z_$][\w$]*)"|'([A-Za-z_$][\w$]*)'|([A-Za-z_$][\w$]*))\s*(:|,|\}|$)/;
 
 export function chiaviOggetto(testo) {
   const sorgente = String(testo ?? "");
@@ -693,7 +775,10 @@ export function chiaviOggetto(testo) {
       const chiave = CHIAVE_DI_OGGETTO.exec(sorgente.slice(i));
       if (chiave) {
         chiavi.push(chiave[1] ?? chiave[2] ?? chiave[3]);
-        i += chiave[0].length;
+        // Il terminatore NON si consuma: se e' una virgola, e' quella che
+        // annuncia la chiave dopo, e mangiarla faceva sparire ogni chiave
+        // successiva alla prima abbreviata.
+        i += chiave[0].length - (chiave[4] === ":" ? 0 : chiave[4].length);
         attesa = false;
         continue;
       }
