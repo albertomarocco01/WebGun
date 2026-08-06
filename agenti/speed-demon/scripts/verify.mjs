@@ -28,12 +28,9 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  argomentiOstiliACmd,
   CATEGORIE,
-  comandoRicerca,
   contaGravita,
   contrattoUscita,
-  dentroLaRadice,
   dettaglioFindings,
   dettaglioMisura,
   DISPERSIONE_MASSIMA,
@@ -43,12 +40,12 @@ import {
   findingsBudget,
   findingsContratto,
   findingsSeo,
-  formaEseguibile,
   indiziDevServer,
   leggiContratto,
   metatagDaHtml,
   motivoNessunaMisura,
-  primoEseguibile,
+  motivoScaduto,
+  scaduto,
   statoDaFindings,
   statoMisura,
   verdettoDa,
@@ -60,6 +57,37 @@ const GATE_FLUSSI = join(AGENTI_DIR, "flow-sentinel", "scripts", "verify.mjs");
 const PROGETTO = process.cwd();
 const CONTRATTO = "docs/performance.md";
 const HANDOFF_GLOB = "docs/handoff";
+// Lighthouse VIVE NELLA SKILL, a una versione fissata dal package-lock.
+// Fino al 2026-08-06 il passo `misura` lanciava `npx --yes lighthouse`: scarica
+// ed esegue un pacchetto non fissato, a ogni giro, dalla radice del progetto
+// misurato (che ha la precedenza col suo `node_modules/.bin`). Tre cose in una
+// riga — una dipendenza che cambia sotto i piedi, una rete necessaria per
+// misurare, e un binario scelto dall'imputato (referto § H12 e § C1).
+const LIGHTHOUSE_BIN = join(SKILL_DIR, "node_modules", "lighthouse", "cli", "index.js");
+
+/**
+ * I LIMITI DI TEMPO, in un posto solo e con il perche' accanto.
+ *
+ * Misurato il 2026-08-06 (referto § H10/H11/M15): questo gate, contro un server
+ * che accetta la connessione e non risponde mai, e' rimasto appeso finche' non
+ * l'hanno ucciso — 120 secondi nella prova, ZERO righe stampate, uscita 124.
+ * Flow Sentinel sullo stesso server tornava in 18,2 s con un ROSSO leggibile, e
+ * la differenza era un solo `AbortSignal.timeout`.
+ *
+ * Un gate senza limite non e' lento: e' MUTO, e un gate muto non e' ne' verde
+ * ne' rosso — e' assente, che e' il peggiore dei tre stati. Quando un limite
+ * scatta si stampa QUALE comando, QUANTO ha aspettato, e il passo vale MANCANTE.
+ */
+export const LIMITI = Object.freeze({
+  // Una GET su una pagina: se non risponde in 20 s non e' lenta, e' ferma.
+  pagina: 20_000,
+  // Un giro di Lighthouse su una pagina pesante puo' durare: il limite e' largo
+  // apposta, e serve solo a impedire l'attesa infinita.
+  lighthouse: 180_000,
+  // Il gate dei flussi annidato ha i PROPRI limiti su ogni passo; questo e' il
+  // tetto complessivo, e non deve tagliare una batteria vera.
+  gateFlussi: 1_800_000,
+});
 
 export const ID = Object.freeze({
   contratto: "contratto-performance",
@@ -86,74 +114,20 @@ const leggiSeCe = (relativo) => {
   return existsSync(pieno) ? readFileSync(pieno, "utf8") : null;
 };
 
-// --------------------------------------- eseguibili risolti a mano su Windows
-// Le regole — comando di ricerca col percorso pieno, prefisso `$PATH:`, rifiuto
-// dei candidati dentro il progetto auditato, nome nudo mai lanciato — stanno in
-// `gate-lib.mjs` con i loro test (§ C1 del referto 2026-08-06). Qui resta il
-// ponte, e la memoria di cio' che e' stato RIFIUTATO: un passo che dice
-// «strumento assente» senza dire «l'ho trovato, ma nel tuo progetto» manda a
-// cercare la cosa sbagliata.
-const rifiuti = new Map();
+// I limiti scattati durante il passo `misura`: si raccolgono qui perche' i giri
+// di Lighthouse sono N per pagina, e il dettaglio deve dire QUALE si e' fermato.
+const scadenze = [];
 
-function dove(nome) {
-  const { file, args } = comandoRicerca(nome);
-  const res = spawnSync(file, args, { encoding: "utf8", timeout: 10_000, windowsHide: true });
-  if (res.error || res.status !== 0) return null;
-  const candidati = String(res.stdout ?? "").split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
-  const rifiutati = candidati.filter((c) => dentroLaRadice(c, PROGETTO));
-  if (rifiutati.length > 0) rifiuti.set(nome, rifiutati);
-  // `primoEseguibile`, non `[0]`: la prima riga di `where npx` e' lo script
-  // senza estensione, e Windows non sa eseguirlo. Difetto misurato il
-  // 2026-07-30 al primo giro di questo gate — vedi il commento in gate-lib.
-  return primoEseguibile(candidati.filter((c) => !dentroLaRadice(c, PROGETTO)).join("\n"));
-}
-
-export function notaRifiuto(rifiutati) {
-  if (!rifiutati || rifiutati.length === 0) return "";
-  return ` — RIFIUTATO perche' dentro il progetto auditato: ${rifiutati.join(", ")}. ` +
-    "Un progetto non sceglie il binario che lo misura: tienilo fuori dal progetto, o toglilo dal PATH.";
-}
-
-const rifiutoDi = (nome) => notaRifiuto(rifiuti.get(nome));
-
-function esegui(cmd, args, opzioni = {}) {
-  const { file, prefisso } = formaEseguibile(cmd, dove);
-  // Nome non risolto: NON si ripiega sul nome nudo, perche' lo risolverebbe la
-  // directory corrente — cioe' il progetto che questo gate sta misurando.
-  if (file === null) {
-    return {
-      error: new Error(`${cmd} non risolto nel PATH${rifiutoDi(cmd)}`),
-      status: null, stdout: "", stderr: "",
-    };
-  }
-
-  // Il controllo vale SOLO quando si passa davvero da `cmd /c`: `node` si
-  // risolve in un `.exe` e riceve gli argomenti come vettore, quindi il
-  // percorso di questa skill — che vive sotto «Web Gun», con lo spazio — non e'
-  // un problema li'. Lo diventa solo attraverso lo shim.
-  if (prefisso.length > 0) {
-    const ostili = argomentiOstiliACmd(args);
-    if (ostili.length > 0) {
-      return {
-        error: new Error(
-          "argomenti non passabili da `cmd.exe /c`, che E' una shell e li ri-analizza " +
-          "(spazi, oppure uno fra & | < > ^ ( ) \" % o un carattere di controllo): " +
-          `${ostili.map((a) => JSON.stringify(a)).join(", ")}. ` +
-          "Misurato il 2026-08-06: `/&ver` esegue `ver` con status 0, `/>x.txt` scrive un file, `%VAR%` arriva espanso.",
-        ),
-        status: null,
-        stdout: "",
-        stderr: "",
-      };
-    }
-  }
-
-  return spawnSync(file, [...prefisso, ...args], {
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-    ...opzioni,
-  });
-}
+// ------------------------------- questo gate non lancia piu' nessun nome
+// Con Lighthouse dentro la skill (§ H12) e il gate dei flussi lanciato con
+// `process.execPath` (§ C1), qui non resta un solo binario cercato per nome: si
+// eseguono due percorsi pieni, e basta. La macchina che serviva a difendersi —
+// ricerca col prefisso `$PATH:`, rifiuto dei candidati dentro il progetto,
+// filtro degli argomenti ostili a `cmd /c` — resta in `gate-lib.mjs` con i suoi
+// test, perche' e' il vocabolario della casa e perche' la lezione non va persa:
+// ma qui la classe di guasto non esiste piu' per costruzione, non per cura.
+// E' la stessa conclusione che launchpad ha scritto per il proprio gate il
+// 2026-08-06 (commit 5636373), e vale la pena che sia scritta anche qui.
 
 /**
  * Una GET che non esplode: ritorna `{ stato, corpo }` oppure `null`.
@@ -169,7 +143,15 @@ function esegui(cmd, args, opzioni = {}) {
 async function preleva(url, { tentativi = 2, segui = false } = {}) {
   for (let i = 0; i < tentativi; i++) {
     try {
-      const risposta = await fetch(url, { redirect: segui ? "follow" : "manual" });
+      // IL LIMITE. Senza, questo `fetch` e' il punto in cui il gate spariva:
+      // contro un server che accetta e non risponde restava appeso per sempre,
+      // zero righe stampate (referto § H11, misurato il 2026-08-06 — 120 s e
+      // poi ucciso). Il retry a due tentativi non protegge da questo: protegge
+      // dal `fetch` che SOLLEVA, non da quello che non torna.
+      const risposta = await fetch(url, {
+        redirect: segui ? "follow" : "manual",
+        signal: AbortSignal.timeout(LIMITI.pagina),
+      });
       return {
         stato: risposta.status,
         corpo: await risposta.text(),
@@ -230,9 +212,15 @@ const PASSI = [
       // misurato vorrebbe far eseguire. Il gate figlio decide da solo il passo
       // `rete-verde`, ed e' l'unica premessa che questo gate non rimisura
       // (referto § C1).
+      // Il tetto complessivo sul gate annidato (referto § M15): il figlio ha i
+      // propri limiti su ogni passo, ma senza questo un suo passo senza limite
+      // faceva due processi `node` fermi e nessuna riga — doppio silenzio.
       const res = spawnSync(process.execPath,
         [GATE_FLUSSI, "--json", ...(args.url ? ["--url", args.url] : [])],
-        { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+        { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: LIMITI.gateFlussi, killSignal: "SIGKILL" });
+      if (scaduto(res)) {
+        return record(this.id, this.nome, "skipped", motivoScaduto("il gate di Flow Sentinel", LIMITI.gateFlussi));
+      }
       if (res.error) {
         return record(this.id, this.nome, "skipped", `gate di Flow Sentinel non eseguibile: ${res.error.message}`);
       }
@@ -301,7 +289,7 @@ const PASSI = [
       const motivo = motivoNessunaMisura({
         contratto: ctx.contratto,
         baseUrl: ctx.baseUrl,
-        strumento: dove("lighthouse") || dove("npx"),
+        strumento: existsSync(LIGHTHOUSE_BIN) ? LIGHTHOUSE_BIN : null,
       });
       if (motivo) return record(this.id, this.nome, "skipped", motivo);
 
@@ -332,14 +320,17 @@ const PASSI = [
         if (esito.riga) righe.push(esito.riga);
         if (esito.scartata) dirotate.push(esito.scartata);
       }
+      // I limiti scattati si stampano nel dettaglio: un giro ucciso dal tempo
+      // NON e' un giro andato male, e chi legge deve poterlo distinguere.
+      const dettaglio = dettaglioMisura({
+        sogliaDispersione,
+        dichiarataNelContratto: Boolean(ctx.contratto.dispersioneMassima),
+        righe,
+        dirotate,
+        misurate: ctx.misure.size,
+      });
       return record(this.id, this.nome, statoMisura(ctx.misure.size, nonMisurate),
-        dettaglioMisura({
-          sogliaDispersione,
-          dichiarataNelContratto: Boolean(ctx.contratto.dispersioneMassima),
-          righe,
-          dirotate,
-          misurate: ctx.misure.size,
-        }));
+        scadenze.length === 0 ? dettaglio : `${dettaglio}\n${scadenze.map((s) => `  - ${s}`).join("\n")}`);
     },
   },
 
@@ -444,8 +435,7 @@ function trovaHandoff() {
  */
 function giroLighthouse(url, formFactor) {
   const args = [
-    "--yes",
-    "lighthouse",
+    LIGHTHOUSE_BIN,
     url,
     "--output=json",
     "--output-path=stdout",
@@ -458,7 +448,19 @@ function giroLighthouse(url, formFactor) {
     `--only-categories=${CATEGORIE.join(",")}`,
   ];
   if (formFactor === "desktop") args.push("--preset=desktop");
-  const res = esegui("npx", args);
+  // `process.execPath` e il Lighthouse della SKILL: niente `npx --yes`, che
+  // scaricava un pacchetto non fissato a ogni giro e lo cercava prima nel
+  // `node_modules/.bin` del progetto misurato (referto § H12).
+  const res = spawnSync(process.execPath, args, {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: LIMITI.lighthouse,
+    killSignal: "SIGKILL",
+  });
+  if (scaduto(res)) {
+    scadenze.push(motivoScaduto(`lighthouse ${url}`, LIMITI.lighthouse));
+    return null;
+  }
   if (res.error || !res.stdout) return null;
   const inizio = res.stdout.indexOf("{");
   if (inizio < 0) return null;

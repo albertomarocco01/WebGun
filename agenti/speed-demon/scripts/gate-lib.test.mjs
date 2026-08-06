@@ -37,6 +37,8 @@ import {
   metatagDaHtml,
   misuraStabile,
   motivoNessunaMisura,
+  motivoScaduto,
+  scaduto,
   primoEseguibile,
   statoDaFindings,
   statoMisura,
@@ -214,11 +216,36 @@ test("senza build di produzione riconosciuta non si misura", () => {
   );
 });
 
+// CORREZIONE del 2026-08-06 (referto § H12): lo strumento non si cerca piu' nel
+// PATH — Lighthouse vive nella skill a versione fissata, e `npx --yes` non
+// scarica piu' niente a ogni giro. Il messaggio cambia perche' cambia il gesto
+// che chiude il problema: non «installa lighthouse», ma «installa la skill».
 test("senza Lighthouse la misura e' mancante e basta, non MANCANTE per scelta", () => {
   assert.match(
     motivoNessunaMisura({ contratto: CONTRATTO_UNA_PAGINA, baseUrl: "http://x", strumento: null }),
-    /ne' `lighthouse` ne' `npx` nel PATH/,
+    /Lighthouse non installato nella skill/,
   );
+});
+
+// ------------------------ quando il limite scatta (referto § H10/H11/M15)
+// Misurato il 2026-08-06 contro un server che accetta e non risponde mai:
+// questo gate e' rimasto appeso 120 s e l'hanno ucciso, ZERO righe stampate,
+// uscita 124. Flow Sentinel sullo stesso server tornava in 18,2 s con un ROSSO
+// leggibile, e la differenza era un solo `AbortSignal.timeout`.
+test("un processo ucciso dal limite si distingue da uno che ha risposto male", () => {
+  // La forma vera di `spawnSync` col `timeout` scattato, misurata:
+  //   status: null · signal: "SIGKILL" · error.code: "ETIMEDOUT"
+  assert.equal(scaduto({ status: null, signal: "SIGKILL", error: { code: "ETIMEDOUT" } }), true);
+  assert.equal(scaduto({ status: 1, stdout: "", stderr: "boom" }), false, "uno strumento che boccia ha risposto");
+  assert.equal(scaduto({ status: null, error: { code: "ENOENT" } }), false, "e uno assente non e' uno lento");
+  assert.equal(scaduto(null), false);
+});
+
+test("il motivo dice QUALE comando, QUANTO ha aspettato, e che vale MANCANTE", () => {
+  const motivo = motivoScaduto("lighthouse http://127.0.0.1:3200/", 180_000);
+  assert.match(motivo, /`lighthouse http:\/\/127\.0\.0\.1:3200\/`/);
+  assert.match(motivo, /entro 180 s/);
+  assert.match(motivo, /verifica MANCANTE, non un successo/);
 });
 
 test("con contratto, app e strumento la misura si fa: nessun motivo per saltarla", () => {

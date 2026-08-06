@@ -18,7 +18,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { costruisciErd, righeDaPsql } from "./erd-lib.mjs";
-import { argomentiOstiliACmd, formaEseguibile, motivoOstile, risolviEseguibile } from "./eseguibili.mjs";
+import { argomentiOstiliACmd, formaEseguibile, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
 
 const SEP = "\x1f";
 const REC = "\x1e"; // vedi rls-audit.mjs: un valore puo' contenere un a capo
@@ -70,7 +70,15 @@ function query(dbUrl, sql) {
       process.exit(2);
     }
   }
-  const res = spawnSync(psql.file, [...psql.prefisso, ...argomenti], { encoding: "utf8" });
+  const res = spawnSync(psql.file, [...psql.prefisso, ...argomenti], {
+    encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
+    timeout: 60_000, killSignal: "SIGKILL",
+    env: { ...process.env, PGCONNECT_TIMEOUT: "10" },
+  });
+  if (scaduto(res)) {
+    console.error(motivoScaduto("psql (diagramma)", 60_000));
+    process.exit(2);
+  }
   if (res.error) {
     console.error("psql non disponibile nel PATH: diagramma NON generato.");
     process.exit(2);

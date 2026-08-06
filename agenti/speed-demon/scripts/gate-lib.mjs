@@ -499,7 +499,10 @@ export function misuraStabile(punteggi, sogliaDispersione = DISPERSIONE_MASSIMA)
 export function motivoNessunaMisura({ contratto, baseUrl, strumento }) {
   if (!contratto || contratto.pagine.length === 0) return "nessuna pagina dichiarata da misurare";
   if (!baseUrl) return "l'app non e' stata riconosciuta come build di produzione: misurarla direbbe altro";
-  if (!strumento) return "ne' `lighthouse` ne' `npx` nel PATH: la misura non e' MANCANTE per scelta, e' mancante e basta";
+  // Dal 2026-08-06 `strumento` e' il Lighthouse DELLA SKILL, a versione fissata
+  // (referto § H12): non si cerca piu' niente nel PATH, e non si scarica niente
+  // a ogni giro. Se manca, manca l'installazione della skill — e si dice come.
+  if (!strumento) return "Lighthouse non installato nella skill: lancia `npm install` in agenti/speed-demon. La misura non e' MANCANTE per scelta, e' mancante e basta";
   return null;
 }
 
@@ -1127,6 +1130,25 @@ export function argomentiOstiliACmd(args, piattaforma = process.platform) {
   if (piattaforma !== "win32") return [];
   return (args ?? []).filter((a) => OSTILI_A_CMD.test(String(a)));
 }
+
+// ------------------------------------------------- quando il limite scatta
+/**
+ * `spawnSync` col `timeout` uccide il figlio e mette `error.code = "ETIMEDOUT"`
+ * (misurato: `status: null`, `signal: "SIGKILL"`). Un processo ucciso NON e' un
+ * processo che ha risposto male: distinguerli e' la differenza fra «lo strumento
+ * dice che il sito e' lento» e «lo strumento non ha detto niente».
+ */
+export const scaduto = (res) => res?.error?.code === "ETIMEDOUT";
+
+/**
+ * Il messaggio di un limite scattato: QUALE comando, QUANTO ha aspettato, e che
+ * cosa vale (MANCANTE, mai un successo). Senza queste tre cose un gate che si
+ * ferma e' indistinguibile da un gate che ha misurato.
+ */
+export const motivoScaduto = (comando, ms) =>
+  `\`${comando}\` non ha risposto entro ${Math.round(ms / 1000)} s ed e' stato interrotto. ` +
+  "La misura NON e' stata fatta: verifica MANCANTE, non un successo. " +
+  "Un server che accetta la connessione e non risponde e' il guasto tipico — la porta e' aperta, il processo e' vivo, la risposta non arriva.";
 
 // --------------------------------------------------------- contratto d'uscita
 export const verdettoDa = (passi) =>

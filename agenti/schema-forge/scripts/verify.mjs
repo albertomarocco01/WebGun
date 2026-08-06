@@ -16,7 +16,7 @@ import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "n
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { argomentiOstiliACmd, formaEseguibile, motivoOstile, risolviEseguibile } from "./eseguibili.mjs";
+import { argomentiOstiliACmd, formaEseguibile, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
 
 const SKILL_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 // Le configurazioni dei linter viaggiano con la SKILL, non col progetto: il
@@ -86,9 +86,36 @@ const rifiutoDi = (nome) => notaRifiuto(rifiuti.get(nome));
 function has(cmd) {
   const { file, prefisso } = formaEseguibile(cmd, dove);
   if (file === null) return false;
-  const probe = spawnSync(file, [...prefisso, "--version"], { encoding: "utf8" });
+  const probe = spawnSync(file, [...prefisso, "--version"], {
+    encoding: "utf8", timeout: LIMITI.probe, killSignal: "SIGKILL",
+  });
   return !probe.error && probe.status === 0;
 }
+
+/**
+ * I LIMITI DI TEMPO, in un posto solo e con il perche' accanto.
+ *
+ * Misurato il 2026-08-06 (referto § H10 / § M14 / § M16): contro un socket che
+ * accetta la connessione e non parla, l'audit RLS e' rimasto appeso finche' non
+ * l'hanno ucciso — 100 secondi nella prova, UNA riga stampata, uscita 124.
+ * Nessuna chiamata a processo di questa skill aveva un limite, e su `db reset`
+ * costava doppio: `conRitentativo` ATTENDE il ritorno del primo tentativo, e su
+ * un tentativo che non torna il ritentativo non «raddoppia» l'attesa — non parte.
+ *
+ * Un gate senza limite non e' lento: e' MUTO, e un gate muto non e' ne' verde ne'
+ * rosso — e' assente, che e' il peggiore dei tre stati.
+ */
+export const LIMITI = Object.freeze({
+  // Un `--version`: se non risponde in 15 s lo strumento non c'e' davvero.
+  probe: 15_000,
+  // `db reset` applica tutte le migrazioni su un database pulito e puo' durare:
+  // largo apposta, e con esso `conRitentativo` puo' finalmente entrare in gioco.
+  reset: 600_000,
+  // Gli altri comandi della CLI e i linter: lint, advisors, gen types, sqlfluff.
+  strumento: 300_000,
+  // L'audit RLS e' un processo figlio con i suoi limiti dentro; questo e' il tetto.
+  audit: 300_000,
+});
 
 function run(cmd, cmdArgs, opts = {}) {
   const { file, prefisso } = formaEseguibile(cmd, dove);
@@ -107,7 +134,12 @@ function run(cmd, cmdArgs, opts = {}) {
       return { error: new Error(motivoOstile(ostili)), status: null, stdout: "", stderr: "" };
     }
   }
-  return spawnSync(file, [...prefisso, ...cmdArgs], { encoding: "utf8", cwd: PROJECT, ...opts });
+  // OGNI chiamata a processo ha un limite: quello passato dal passo, o il
+  // default degli strumenti. Nessuna resta senza (referto § H10).
+  return spawnSync(file, [...prefisso, ...cmdArgs], {
+    encoding: "utf8", cwd: PROJECT, maxBuffer: 64 * 1024 * 1024,
+    timeout: LIMITI.strumento, killSignal: "SIGKILL", ...opts,
+  });
 }
 
 // I file SQL di una cartella. Vale per le migrazioni e per i test pgTAP: in
@@ -411,7 +443,17 @@ function passoReset(supabaseAvailable, skipReset, quanteMigrazioni) {
   } else if (skipReset) {
     record(ID.reset, etichetta, "skipped", "saltato esplicitamente con --skip-reset");
   } else {
-    const { res, ritentato } = conRitentativo(() => run("supabase", ["db", "reset"]));
+    // `timeout: LIMITI.reset` non e' un dettaglio: senza, `conRitentativo`
+    // aspetta il ritorno di un primo tentativo che non torna, e il ritentativo
+    // NON PARTE (referto § M16). Con il limite, il primo tentativo finisce
+    // sempre — e se e' finito perche' e' scaduto, il secondo ha senso davvero.
+    const { res, ritentato } = conRitentativo(
+      () => run("supabase", ["db", "reset"], { timeout: LIMITI.reset }));
+    if (scaduto(res)) {
+      record(ID.reset, etichetta, "skipped",
+        `${motivoScaduto("supabase db reset", LIMITI.reset)}${ritentato ? " (ed era il secondo tentativo)" : ""}`);
+      return;
+    }
     record(ID.reset, etichetta, res.status === 0 ? "pass" : "fail",
       dettaglioReset(res, ritentato, quanteMigrazioni));
   }
@@ -492,7 +534,8 @@ function passoAuditRls(dbUrlEsplicito) {
     // i test pgTAP entrano nell'audit: una policy di scrittura mai attaccata da
     // un test e' un'ipotesi, e il catalogo da solo non puo' saperlo
     "--tests", join(PROJECT, "supabase", "tests"),
-  ], { encoding: "utf8", cwd: PROJECT }), schemi, dbUrl);
+  ], { encoding: "utf8", cwd: PROJECT, maxBuffer: 64 * 1024 * 1024,
+       timeout: LIMITI.audit, killSignal: "SIGKILL" }), schemi, dbUrl);
 }
 
 // L'uscita dell'audit era data in pasto a `JSON.parse` nuda: un `rls-audit.mjs`
@@ -513,6 +556,10 @@ export function leggiAudit(stdout) {
 }
 
 function registraAudit(audit, schemi, dbUrl) {
+  if (scaduto(audit)) {
+    record(ID.auditRls, ETICHETTA_AUDIT, "skipped", motivoScaduto("l'audit RLS", LIMITI.audit));
+    return;
+  }
   if (audit.status === 2 || !audit.stdout) {
     record(ID.auditRls, ETICHETTA_AUDIT, "skipped", (audit.stderr || "audit non eseguito").trim());
     return;

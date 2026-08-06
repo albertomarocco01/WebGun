@@ -32,7 +32,7 @@ import {
   verdettoDa,
 } from "./progetto-lib.mjs";
 import { conBarre } from "./audit-lib.mjs";
-import { argomentiOstiliACmd, dentroLaRadice, formaEseguibile, motivoOstile, risolviEseguibile } from "./eseguibili.mjs";
+import { argomentiOstiliACmd, dentroLaRadice, formaEseguibile, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
 
 const SKILL_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 // Le regole con cui si MISURA viaggiano con la skill, non col progetto: il gate
@@ -40,6 +40,25 @@ const SKILL_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 // permesso al progetto che sta giudicando (DECISIONI.md §8, referto § H8).
 const CONFIG_A11Y = join(SKILL_DIR, "resources", "config", "eslint-a11y.config.mjs");
 const ESLINT_BIN = join(SKILL_DIR, "node_modules", "eslint", "bin", "eslint.js");
+
+/**
+ * I LIMITI DI TEMPO, in un posto solo e con il perche' accanto.
+ *
+ * Misurato il 2026-08-06 (referto § H10 / § M14): nessuna chiamata a processo di
+ * questa skill aveva un limite, e contro un socket che accetta la connessione e
+ * non parla un audit resta appeso finche' qualcuno non lo uccide — nella prova
+ * fatta sulla skill sorella, 100 secondi e UNA riga stampata.
+ * Un gate senza limite non e' lento: e' MUTO, e un gate muto non e' ne' verde ne'
+ * rosso — e' assente, che e' il peggiore dei tre stati.
+ */
+const LIMITI = Object.freeze({
+  probe: 15_000,
+  // psql per il catalogo dei permessi, e la connessione prima di lui.
+  strumento: 300_000,
+  connessione: 10_000,
+  // L'audit del gestionale e' un processo figlio con i suoi limiti dentro.
+  audit: 300_000,
+});
 
 // La radice del progetto AUDITATO: e' li' che nessun eseguibile va cercato, e
 // `--progetto` puo' spostarla. Vale `process.cwd()` finche' `main()` non legge
@@ -89,7 +108,9 @@ const rifiutoDi = (nome) => notaRifiuto(rifiuti.get(nome));
 function has(cmd) {
   const { file, prefisso } = formaEseguibile(cmd, dove);
   if (file === null) return false;
-  const probe = spawnSync(file, [...prefisso, "--version"], { encoding: "utf8" });
+  const probe = spawnSync(file, [...prefisso, "--version"], {
+    encoding: "utf8", timeout: LIMITI.probe, killSignal: "SIGKILL",
+  });
   return !probe.error && probe.status === 0;
 }
 
@@ -157,9 +178,13 @@ function esegui(progetto, cmd, argomentiCmd) {
       return { error: new Error(motivoOstile(ostili)), status: null, stdout: "", stderr: "" };
     }
   }
+  // OGNI chiamata a processo ha un limite (referto § H10).
   return spawnSync(file, [...prefisso, ...argomentiCmd], {
     encoding: "utf8",
     cwd: progetto,
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: LIMITI.strumento,
+    killSignal: "SIGKILL",
   });
 }
 
@@ -239,8 +264,15 @@ function passoAudit(progetto, dbUrl) {
   ];
   if (dbUrl) argomentiAudit.push("--db-url", dbUrl);
 
-  const res = spawnSync(process.execPath, argomentiAudit, { encoding: "utf8" });
+  const res = spawnSync(process.execPath, argomentiAudit, {
+    encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
+    timeout: LIMITI.audit, killSignal: "SIGKILL",
+  });
 
+  if (scaduto(res)) {
+    record(ID.audit, etichetta, "skipped", motivoScaduto("l'audit del gestionale", LIMITI.audit));
+    return;
+  }
   if (res.status === 2 || !res.stdout) {
     record(ID.audit, etichetta, "skipped", (res.stderr || "audit non eseguito").trim());
     return;
@@ -407,7 +439,12 @@ function passoA11y(progetto, config) {
   // `process.execPath`, non `npx`: l'interprete che sta girando (§ C1).
   const res = spawnSync(process.execPath,
     [ESLINT_BIN, "--no-config-lookup", "--config", CONFIG_A11Y, ...bersagli],
-    { encoding: "utf8", cwd: progetto, maxBuffer: 64 * 1024 * 1024 });
+    { encoding: "utf8", cwd: progetto, maxBuffer: 64 * 1024 * 1024,
+      timeout: LIMITI.strumento, killSignal: "SIGKILL" });
+  if (scaduto(res)) {
+    record(ID.a11y, etichetta, "skipped", motivoScaduto("ESLint jsx-a11y", LIMITI.strumento));
+    return;
+  }
   if (res.error) {
     record(ID.a11y, etichetta, "skipped", `ESLint non eseguibile: ${res.error.message}`);
     return;

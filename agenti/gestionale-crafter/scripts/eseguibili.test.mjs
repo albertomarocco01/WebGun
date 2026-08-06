@@ -22,6 +22,8 @@ import { test } from "node:test";
 
 import {
   argomentiOstiliACmd,
+  motivoScaduto,
+  scaduto,
   comandoRicerca,
   motivoOstile,
   dentroLaRadice,
@@ -169,4 +171,27 @@ test("il motivo nomina i caratteri colpevoli, non dice solo `errore`", () => {
   const motivo = motivoOstile(["/&ver"]);
   assert.match(motivo, /E' una shell/);
   assert.ok(motivo.includes('"/&ver"'));
+});
+
+// ---------------- quando il limite scatta (referto § H10 / § M14 / § M16)
+// Misurato il 2026-08-06 contro un socket che accetta la connessione e non
+// parla: l'audit RLS e' rimasto appeso finche' non l'hanno ucciso — 100 secondi
+// nella prova, UNA riga stampata, uscita 124. Dopo: 10,3 secondi e il motivo
+// scritto. Nessuna chiamata a processo di questa skill aveva un limite.
+
+test("un processo ucciso dal limite si distingue da uno che ha risposto male", () => {
+  // La forma vera di `spawnSync` col `timeout` scattato, misurata:
+  //   status: null · signal: "SIGKILL" · error.code: "ETIMEDOUT"
+  assert.equal(scaduto({ status: null, signal: "SIGKILL", error: { code: "ETIMEDOUT" } }), true);
+  assert.equal(scaduto({ status: 1, stdout: "", stderr: "boom" }), false, "uno strumento che boccia ha risposto");
+  assert.equal(scaduto({ status: null, error: { code: "ENOENT" } }), false, "e uno assente non e' uno lento");
+  assert.equal(scaduto(null), false);
+  assert.equal(scaduto(undefined), false);
+});
+
+test("il motivo dice QUALE comando, QUANTO ha aspettato, e che vale MANCANTE", () => {
+  const motivo = motivoScaduto("supabase db reset", 600_000);
+  assert.match(motivo, /`supabase db reset`/);
+  assert.match(motivo, /entro 600 s/);
+  assert.match(motivo, /MANCANTE, non un successo/);
 });

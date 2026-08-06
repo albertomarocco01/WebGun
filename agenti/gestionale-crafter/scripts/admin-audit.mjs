@@ -18,11 +18,15 @@ import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { auditAdmin, catalogoDaRighe, conBarre } from "./audit-lib.mjs";
-import { argomentiOstiliACmd, formaEseguibile, motivoOstile, risolviEseguibile } from "./eseguibili.mjs";
+import { argomentiOstiliACmd, formaEseguibile, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
 import { urlDbProgetto, validaConfig } from "./progetto-lib.mjs";
 
 const SEP = "\x1f";
 const RS = "\x1e";
+// I limiti: una query sul catalogo dei permessi non dura minuti, e un database
+// che non risponde non e' lento — e' assente (referto § M14).
+const LIMITE_PSQL = 60_000;
+const LIMITE_CONNESSIONE = 10_000;
 const ESTENSIONI = /\.(tsx?|jsx?|mjs)$/;
 // Si salta solo cio' che non e' codice del progetto. `supabase` NON e' in
 // elenco, e c'era: la cartella delle migrazioni sta nella radice e la scansione
@@ -80,7 +84,9 @@ function risolviPsql(radiceAuditata) {
 
 function psqlDisponibile() {
   if (psql.file === null) return false;
-  const p = spawnSync(psql.file, [...psql.prefisso, "--version"], { encoding: "utf8" });
+  const p = spawnSync(psql.file, [...psql.prefisso, "--version"], {
+    encoding: "utf8", timeout: 15_000, killSignal: "SIGKILL",
+  });
   return !p.error && p.status === 0;
 }
 
@@ -98,8 +104,17 @@ function interroga(dbUrl, sql) {
   const res = spawnSync(
     psql.file,
     [...psql.prefisso, ...argomenti],
-    { encoding: "utf8" },
+    {
+      encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
+      // IL LIMITE (referto § M14): contro un socket che accetta la connessione e
+      // non parla, un audit senza limite resta appeso finche' qualcuno non lo
+      // uccide. `PGCONNECT_TIMEOUT` taglia prima il caso piu' comune (il
+      // database che non c'e'); il `timeout` copre anche la query che non torna.
+      timeout: LIMITE_PSQL, killSignal: "SIGKILL",
+      env: { ...process.env, PGCONNECT_TIMEOUT: String(Math.round(LIMITE_CONNESSIONE / 1000)) },
+    },
   );
+  if (scaduto(res)) throw new Error(motivoScaduto("psql (catalogo dei permessi)", LIMITE_PSQL));
   if (res.status !== 0) {
     throw new Error((res.stderr || "psql non ha risposto").trim());
   }

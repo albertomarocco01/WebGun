@@ -839,6 +839,27 @@ export function sqlConteggioRighe(tabelle) {
 export const righeDaPsql = (stdout) =>
   righe(stdout).map((r) => r.trim()).filter(Boolean);
 
+// ------------------------------------------------- quando il limite scatta
+/**
+ * `spawnSync` col `timeout` uccide il figlio e mette `error.code = "ETIMEDOUT"`
+ * (misurato: `status: null`, `signal: "SIGKILL"`). Un processo ucciso NON e' un
+ * processo che ha risposto male: distinguerli e' la differenza fra «lo strumento
+ * dice che c'e' un problema» e «lo strumento non ha detto niente».
+ *
+ * Questo gate era l'UNICO della casa ad avere un limite (`AbortSignal.timeout`
+ * sulla sonda dell'app), e si vedeva: contro un server che accetta e non
+ * risponde tornava in 18,2 s con un ROSSO leggibile, dove speed-demon restava
+ * appeso finche' non lo uccidevano (referto § H10, misurato il 2026-08-06).
+ * Ma psql e Playwright, qui dentro, un limite non ce l'avevano (§ M14, § L10).
+ */
+export const scaduto = (res) => res?.error?.code === "ETIMEDOUT";
+
+/** QUALE comando, QUANTO ha aspettato, e che cosa vale: MANCANTE, mai successo. */
+export const motivoScaduto = (comando, ms) =>
+  `\`${comando}\` non ha risposto entro ${Math.round(ms / 1000)} s ed e' stato interrotto. ` +
+  "La verifica NON e' stata eseguita: MANCANTE, non un successo. " +
+  "Un servizio che accetta la connessione e non risponde e' il guasto tipico — la porta e' aperta, il processo e' vivo, la risposta non arriva.";
+
 // --------------------------------------------------------- contratto d'uscita
 // Il verdetto dei passi GIA' eseguiti: l'handoff deve dichiarare lo stesso che
 // il gate sta chiudendo.

@@ -15,6 +15,8 @@ import { test } from "node:test";
 
 import {
   argomentiOstiliACmd,
+  motivoScaduto,
+  scaduto,
   contaGravita,
   motivoOstile,
   contrattoUscita,
@@ -1032,4 +1034,27 @@ test("il motivo nomina i caratteri colpevoli, non dice solo `errore`", () => {
   assert.match(motivo, /E' una shell/);
   assert.match(motivo, /& \| < > \^ \( \) " %/);
   assert.ok(motivo.includes('"/&ver"'));
+});
+
+// ---------------- quando il limite scatta (referto § H10 / § M14 / § L10)
+// Questo gate era l'UNICO della casa ad avere un limite — `AbortSignal.timeout`
+// sulla sonda dell'app — e si e' visto: il 2026-08-06, contro un server che
+// accetta e non risponde, e' tornato in 18,2 s con un ROSSO leggibile, dove
+// speed-demon restava appeso finche' non lo uccidevano (120 s, zero righe).
+// Ma psql e Playwright, qui dentro, un limite non ce l'avevano.
+
+test("un processo ucciso dal limite si distingue da uno che ha risposto male", () => {
+  // La forma vera di `spawnSync` col `timeout` scattato, misurata:
+  //   status: null · signal: "SIGKILL" · error.code: "ETIMEDOUT"
+  assert.equal(scaduto({ status: null, signal: "SIGKILL", error: { code: "ETIMEDOUT" } }), true);
+  assert.equal(scaduto({ status: 1, stdout: "", stderr: "boom" }), false, "uno strumento che boccia ha risposto");
+  assert.equal(scaduto({ status: null, error: { code: "ENOENT" } }), false, "e uno assente non e' uno lento");
+  assert.equal(scaduto(null), false);
+});
+
+test("il motivo dice QUALE comando, QUANTO ha aspettato, e che vale MANCANTE", () => {
+  const motivo = motivoScaduto("npx playwright test", 1_800_000);
+  assert.match(motivo, /`npx playwright test`/);
+  assert.match(motivo, /entro 1800 s/);
+  assert.match(motivo, /MANCANTE, non un successo/);
 });

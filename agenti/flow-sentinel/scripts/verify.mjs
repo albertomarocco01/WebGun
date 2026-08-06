@@ -26,6 +26,8 @@ import {
   argomentiOstiliACmd,
   batteriaHaEseguito,
   comandoRicerca,
+  motivoScaduto,
+  scaduto,
   motivoOstile,
   contaGravita,
   contrattoUscita,
@@ -69,6 +71,28 @@ const DIR_SPEC = join(PROGETTO, "e2e");
 const FLUSSI_CRITICI = "docs/flussi-critici.md";
 const HANDOFF = "docs/handoff/12-flow-sentinel.md";
 const CONFIG_PLAYWRIGHT = "playwright.config.ts";
+
+/**
+ * I LIMITI DI TEMPO, in un posto solo e con il perche' accanto.
+ *
+ * Questo gate era l'unico della casa ad averne uno — l'`AbortSignal.timeout`
+ * sulla sonda dell'app — ed e' quello che il 2026-08-06 lo ha fatto tornare in
+ * 18,2 s con un ROSSO leggibile dove speed-demon restava appeso (referto § H10).
+ * Le altre due chiamate a processo, psql e Playwright, non ne avevano.
+ */
+const LIMITI = Object.freeze({
+  // La sonda dell'app: quella che gia' c'era, e che ha fatto la differenza.
+  app: 15_000,
+  probe: 15_000,
+  // psql: una query di premessa non dura minuti, e un database che non risponde
+  // non e' lento — e' assente (referto § M14).
+  strumento: 60_000,
+  connessione: 10_000,
+  // La batteria vera puo' durare: largo apposta, e serve solo a impedire
+  // l'attesa infinita. Il template della skill non dichiarava nessun limite
+  // (§ L10), quindi il gate non poteva fare affidamento su quello di Playwright.
+  playwright: 1_800_000,
+});
 
 // ------------------------------------------------- identificatori di passo
 // L'etichetta e' per gli umani e resta libera di cambiare; l'`id` e' il
@@ -129,7 +153,9 @@ const rifiutoDi = (nome) => notaRifiuto(rifiuti.get(nome));
 function has(cmd) {
   const { file, prefisso } = formaEseguibile(cmd, dove);
   if (file === null) return false;
-  const probe = spawnSync(file, [...prefisso, "--version"], { encoding: "utf8" });
+  const probe = spawnSync(file, [...prefisso, "--version"], {
+    encoding: "utf8", timeout: LIMITI.probe, killSignal: "SIGKILL",
+  });
   return !probe.error && probe.status === 0;
 }
 
@@ -148,8 +174,13 @@ function run(cmd, cmdArgs, opts = {}) {
       return { error: new Error(motivoOstile(ostili)), status: null, stdout: "", stderr: "" };
     }
   }
+  // OGNI chiamata a processo ha un limite (referto § H10/§ M14): il default
+  // vale per psql, e i passi che durano di piu' lo alzano dichiarandolo.
   return spawnSync(file, [...prefisso, ...cmdArgs], {
-    encoding: "utf8", cwd: PROGETTO, maxBuffer: 64 * 1024 * 1024, ...opts,
+    encoding: "utf8", cwd: PROGETTO, maxBuffer: 64 * 1024 * 1024,
+    timeout: LIMITI.strumento, killSignal: "SIGKILL",
+    env: { ...process.env, PGCONNECT_TIMEOUT: String(Math.round(LIMITI.connessione / 1000)) },
+    ...opts,
   });
 }
 
@@ -335,7 +366,7 @@ function risolviAmbiente(ctx, args) {
 
 async function interrogaApp(url) {
   try {
-    const risposta = await fetch(url, { signal: AbortSignal.timeout(15_000), redirect: "manual" });
+    const risposta = await fetch(url, { signal: AbortSignal.timeout(LIMITI.app), redirect: "manual" });
     if (risposta.status >= 500) {
       return { errore: `l'app risponde ${risposta.status} su ${url}: e' accesa ma rotta, la batteria misurerebbe l'errore invece del flusso` };
     }
@@ -366,7 +397,10 @@ function misuraDatabase(ctx) {
 }
 
 function interrogaDb(dbUrl, sql) {
-  const res = run("psql", [dbUrl, "-At", "-c", sql]);
+  // `-X`: un `~/.psqlrc` cambia la forma dell'uscita, e un'uscita vuota qui si
+  // legge come «zero tabelle» invece che come «non ho letto» (referto § M1).
+  const res = run("psql", [dbUrl, "-X", "-At", "-c", sql]);
+  if (scaduto(res)) return { errore: motivoScaduto("psql", LIMITI.strumento) };
   if (res.error) return { errore: res.error.message };
   if (res.status !== 0) return { errore: (res.stderr || res.stdout || "").trim().split("\n").slice(0, 5).join(" ") };
   return { righe: righeDaPsql(res.stdout) };
@@ -392,7 +426,12 @@ function passoPlaywright(ctx) {
   // una che risolve per conto suo: l'URL si impone (vedi `ambienteBatteria`).
   const res = run("npx", ["playwright", "test", "--reporter=json"], {
     env: ambienteBatteria(ctx.urlApp, process.env),
+    timeout: LIMITI.playwright,
   });
+  if (scaduto(res)) {
+    record(ID.playwright, etichetta, "skipped", motivoScaduto("npx playwright test", LIMITI.playwright));
+    return;
+  }
   // il guasto va nella direzione sicura (MANCANTE), ma la diagnosi deve dire
   // COSA e' andato storto: «report non interpretabile» su un errore di
   // esecuzione incolpa Playwright di un problema che sta altrove

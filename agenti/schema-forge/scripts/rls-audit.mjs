@@ -30,10 +30,15 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { auditAll, motivoAritaSbagliata, recordDiAritaSbagliata, righeDaPsql } from "./audit-lib.mjs";
-import { argomentiOstiliACmd, formaEseguibile, motivoOstile, risolviEseguibile } from "./eseguibili.mjs";
+import { argomentiOstiliACmd, formaEseguibile, motivoOstile, motivoScaduto, risolviEseguibile, scaduto } from "./eseguibili.mjs";
 
 const SEP = "\x1f"; // unit separator: non compare mai nei nomi degli oggetti
 const REC = "\x1e"; // record separator: l'espressione di una policy va a capo
+// I limiti: una query del catalogo non dura minuti, e un database che non
+// risponde non e' un database lento — e' un database assente (referto § M14).
+const LIMITE_PSQL = 60_000;
+const LIMITE_CONNESSIONE = 10_000;
+
 const DEFAULT_DB_URL =
   process.env.SUPABASE_DB_URL ??
   "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
@@ -92,7 +97,21 @@ function query(dbUrl, sql, arita, nomeQuery) {
   }
   const res = spawnSync(psql.file, [...psql.prefisso, ...argomenti], {
     encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+    // IL LIMITE. Misurato il 2026-08-06 (referto § M14): contro un socket che
+    // accetta la connessione e non parla, questo audit e' rimasto appeso finche'
+    // non l'hanno ucciso — 100 secondi nella prova, UNA riga stampata, uscita
+    // 124. `PGCONNECT_TIMEOUT` taglia prima il caso piu' comune (il database che
+    // non c'e'); il `timeout` copre anche la query che non torna, che
+    // `connect_timeout` non vede.
+    timeout: LIMITE_PSQL,
+    killSignal: "SIGKILL",
+    env: { ...process.env, PGCONNECT_TIMEOUT: String(Math.round(LIMITE_CONNESSIONE / 1000)) },
   });
+  if (scaduto(res)) {
+    console.error(motivoScaduto(`psql (${nomeQuery})`, LIMITE_PSQL));
+    process.exit(2);
+  }
   if (res.error) {
     console.error("psql non disponibile nel PATH: verifica RLS NON eseguita.");
     process.exit(2);

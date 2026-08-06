@@ -12,5 +12,9 @@
 
   // eslint e jscpd non si importano: li ESEGUE `code-maniac scan` come binari.
   // Toglierli dal package.json spegnerebbe due passi della batteria.
-  "ignoreDependencies": ["eslint", "jscpd"]
+  // `lighthouse` arriva il 2026-08-06 (referto § H12): il gate lo lancia per
+  // PERCORSO (`node <skill>/node_modules/lighthouse/cli/index.js`), non con un
+  // import — ed e' esattamente il punto, perche' prima lo scaricava `npx --yes`
+  // a ogni giro, non fissato, dalla radice del progetto misurato.
+  "ignoreDependencies": ["eslint", "jscpd", "lighthouse"]
 }

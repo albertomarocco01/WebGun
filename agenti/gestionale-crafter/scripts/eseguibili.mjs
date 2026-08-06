@@ -199,3 +199,28 @@ export function risolviEseguibile(nome, radiceProgetto, attesaMs = 10_000) {
   const ammessi = candidati.filter((c) => !dentroLaRadice(c, radiceProgetto));
   return { percorso: scegliEseguibile(ammessi), rifiutati };
 }
+
+/**
+ * IL LIMITE E' SCATTATO?
+ *
+ * `spawnSync` col `timeout` uccide il figlio e mette `error.code = "ETIMEDOUT"`
+ * (misurato: `status: null`, `signal: "SIGKILL"`). Un processo ucciso NON e' un
+ * processo che ha risposto male: distinguerli e' la differenza fra «lo strumento
+ * dice che c'e' un problema» e «lo strumento non ha detto niente».
+ *
+ * Misurato il 2026-08-06 (referto § H10 e § M14): contro un socket che accetta
+ * la connessione e non parla, l'audit RLS e' rimasto appeso finche' non l'hanno
+ * ucciso — 100 secondi nella prova, UNA riga stampata, uscita 124. Nessuna
+ * chiamata a processo di questa skill aveva un limite.
+ */
+export const scaduto = (res) => res?.error?.code === "ETIMEDOUT";
+
+/**
+ * Il messaggio di un limite scattato: QUALE comando, QUANTO ha aspettato, e che
+ * cosa vale (MANCANTE, mai un successo). Senza queste tre cose un gate che si
+ * ferma e' indistinguibile da un gate che ha misurato.
+ */
+export const motivoScaduto = (comando, ms) =>
+  `\`${comando}\` non ha risposto entro ${Math.round(ms / 1000)} s ed e' stato interrotto. ` +
+  "La verifica NON e' stata eseguita: MANCANTE, non un successo. " +
+  "Un servizio che accetta la connessione e non risponde e' il guasto tipico — la porta e' aperta, il processo e' vivo, la risposta non arriva.";
