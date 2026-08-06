@@ -216,6 +216,26 @@ describe("informativa privacy", () => {
     assert.deepEqual(c.map((x) => x.percorso), ["/privacy"]);
   });
 
+  // Collaudo P2: la prova di invisibilita' guardava un livello solo — gli
+  // attributi dell'`<a>`. Nel piè di pagina il collegamento lo si nasconde sul
+  // CONTENITORE, e quella forma passava: «collegata da 10 pagine su 10» su un
+  // sito dove l'informativa non la raggiungeva nessuno.
+  it("un collegamento nascosto DAL CONTENITORE non e' un collegamento", () => {
+    for (const involucro of [
+      '<li style="display:none"><a href="/privacy">Informativa privacy</a></li>',
+      '<div hidden><a href="/privacy">Informativa privacy</a></div>',
+      '<ul aria-hidden="true"><li><a href="/privacy">Informativa privacy</a></li></ul>',
+      '<div style="visibility: hidden"><span><a href="/privacy">Informativa privacy</a></span></div>',
+    ]) {
+      assert.deepEqual(candidatiInformativa(pagina(involucro), BASE), [], involucro);
+    }
+  });
+
+  it("un contenitore nascosto NON zittisce quello che viene dopo di lui", () => {
+    const html = pagina('<div hidden><a href="/vecchia">Informativa privacy</a></div><footer><a href="/privacy">Informativa privacy</a></footer>');
+    assert.deepEqual(candidatiInformativa(html, BASE).map((x) => x.percorso), ["/privacy"]);
+  });
+
   it("nessun collegamento su nessuna pagina e' un bloccante", () => {
     const f = findingsInformativa({ pagine: [{ percorso: "/", candidati: [] }], informativa: null, htmlInformativa: null, dichiarata: null });
     assert.equal(blocchi(f).length, 1);

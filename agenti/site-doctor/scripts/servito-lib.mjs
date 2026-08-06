@@ -486,20 +486,78 @@ const RE_INFORMATIVA_PERCORSO = /(^|\/)(privacy|privacy-policy|cookie|cookie-pol
  * visita e' il collegamento che la pagina gli mette davanti, ed e' quello che
  * si misura.
  */
+const VUOTI = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"]);
+
+/** L'HTML dichiara nascosto questo tag di apertura? */
+export function tagNascosto(tag) {
+  const attr = attributi(tag);
+  if ("hidden" in attr || (attr["aria-hidden"] ?? "").toLowerCase() === "true") return true;
+  return /display\s*:\s*none|visibility\s*:\s*hidden/i.test(attr.style ?? "");
+}
+
+/** Dove si chiude l'elemento `nome` aperto appena prima di `da`, contando l'annidamento. */
+function fineElemento(html, nome, da) {
+  const re = new RegExp(`<(\\/?)${perRegexp(nome)}\\b[^>]*>`, "gi");
+  re.lastIndex = da;
+  let profondita = 1;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    profondita += m[1] ? -1 : 1;
+    if (profondita === 0) return re.lastIndex;
+  }
+  return html.length;
+}
+
+/**
+ * Gli intervalli del documento che l'HTML stesso dichiara nascosti, **contenitori
+ * compresi**.
+ *
+ * Il controllo c'era e guardava un livello solo: gli attributi dell'`<a>`. Ma
+ * un collegamento nel piè di pagina non lo si nasconde sull'ancora, lo si
+ * nasconde sul suo contenitore — ed e' la forma che ha ceduto al collaudo P2:
+ * `<li style="display:none"><a href="/privacy">Informativa privacy</a></li>` su
+ * dieci pagine su dieci, e il passo `informativa-privacy` chiudeva
+ * **«collegata da 10 pagine su 10»** su un sito in cui l'informativa non la
+ * raggiungeva nessuno. E' peggio del collegamento a un 404, perche' li' almeno
+ * chi lo segue se ne accorge.
+ *
+ * Il limite resta quello dichiarato: si vede solo cio' che l'**HTML** dichiara
+ * nascosto. Una classe CSS che nasconde da un foglio di stile esterno questo
+ * gate non la risolve, e sta scritto nel perimetro.
+ */
+export function regioniNascoste(htmlPulito) {
+  const regioni = [];
+  const re = /<([a-zA-Z][\w:-]*)\b([^>]*)>/g;
+  let m;
+  while ((m = re.exec(htmlPulito)) !== null) {
+    if (!tagNascosto(m[0])) continue;
+    const nome = m[1].toLowerCase();
+    const fine = m[0].endsWith("/>") || VUOTI.has(nome) ? re.lastIndex : fineElemento(htmlPulito, nome, re.lastIndex);
+    regioni.push([m.index, fine]);
+  }
+  return regioni;
+}
+
+const dentroRegioni = (regioni, i) => regioni.some(([a, b]) => i >= a && i < b);
+
 export function candidatiInformativa(html, base) {
   const pulito = senzaScript(html);
+  const nascoste = regioniNascoste(pulito);
   const trovati = new Map();
-  for (const { tag, dentro } of elementiDi(pulito, "a")) {
+  const re = /<(a)\b([^>]*)>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = re.exec(pulito)) !== null) {
+    const tag = `<a${m[2]}>`;
+    const dentro = m[3];
     const attr = attributi(tag);
     const percorso = percorsoInterno(attr.href, base);
     if (!percorso) continue;
     // Un collegamento NASCOSTO non e' un collegamento che chi visita puo'
     // seguire: `<a hidden>privacy</a>` valeva quanto quello nel piè di pagina, e
-    // bastava a piazzare un'esca (SD-VERDE-04). Si vede solo cio' che l'HTML
-    // dichiara nascosto: il CSS esterno resta invisibile a questo gate, ed e'
-    // scritto nel perimetro.
-    if ("hidden" in attr || (attr["aria-hidden"] ?? "").toLowerCase() === "true") continue;
-    if (/display\s*:\s*none|visibility\s*:\s*hidden/i.test(attr.style ?? "")) continue;
+    // bastava a piazzare un'esca (SD-VERDE-04). Si guarda l'ancora **e i suoi
+    // contenitori**: nascondere il `<li>` intorno era il modo naturale di farlo,
+    // e passava (collaudo P2).
+    if (tagNascosto(tag) || dentroRegioni(nascoste, m.index)) continue;
     const testo = `${testoVisibile(dentro)} ${attr["aria-label"] ?? ""} ${attr.title ?? ""}`.trim();
     const daTesto = RE_INFORMATIVA_TESTO.test(testo);
     if (daTesto || RE_INFORMATIVA_PERCORSO.test(percorso)) {
