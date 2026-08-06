@@ -11,6 +11,7 @@ import { describe, it } from "node:test";
 
 import {
   apiArchiviazioneIn,
+  archiviazioneIncertaIn,
   assetDaProvare,
   attributi,
   campiAvvolti,
@@ -1038,5 +1039,134 @@ describe("tribunale P.6-P3 — lo scanner che non guardava dove si trovava", () 
     assert.ok(cronometra(() => testoVisibile(doc, { soloVisibile: true })) < 3000);
     // un apice mai chiuso: la forma che fa esplodere una regexp ambigua
     assert.ok(cronometra(() => regioniNascoste(`<a href="${"x".repeat(200000)}`)) < 3000);
+  });
+});
+
+describe("tribunale P.6-P3 — i moduli, i campi, i terzi", () => {
+  const BASE2 = "http://sito.test/";
+
+  describe("SD-TRIB-05: un modulo esiste anche senza il tag di chiusura", () => {
+    it("falso verde: senza </form> i due bloccanti non scattavano piu'", () => {
+      const d = destinazioniModuli('<main><form action="https://raccolta.esempio.com/x" method="post"><input type="email" name="email" autocomplete="email"><input type="tel" name="telefono" autocomplete="tel"></main>', BASE2);
+      assert.equal(d.length, 1);
+      assert.equal(d[0].altraOrigine, true);
+      assert.equal(d[0].campi.length, 2);
+    });
+
+    it('falso verde: un campo legato con form="id" vive fuori dal tag ed e\' del modulo', () => {
+      const d = destinazioniModuli('<form id="f" action="http://raccolta.terzo.example/x"></form><input form="f" type="email" name="email" autocomplete="email">', BASE2);
+      assert.equal(d.length, 1);
+      assert.equal(d[0].campi.length, 1);
+      assert.equal(classificaCampo(d[0].campi[0]).personale, true);
+    });
+
+    it("due moduli restano due, e il secondo non si porta via i campi del primo", () => {
+      const d = destinazioniModuli('<form action="/a"><input name="uno" type="email"></form><form action="/b"><input name="due" type="tel"></form>', BASE2);
+      assert.deepEqual(d.map((x) => x.campi.length), [1, 1]);
+    });
+  });
+
+  describe("SD-TRIB-07: i riferimenti di carattere in un valore di attributo si sciolgono", () => {
+    it("falso verde: type e autocomplete scritti con le entita'", () => {
+      const c = campiDiPagina('<input type="e&#109;ail" name="a"><input autocomplete="&#101;mail" name="b">');
+      assert.equal(c[0].tipo, "email");
+      assert.equal(classificaCampo(c[0]).prova, "forte");
+      assert.equal(classificaCampo(c[1]).prova, "forte");
+    });
+
+    it("un valore senza entita' resta identico", () => {
+      assert.equal(attributi('<a href="/a?x=1&y=2">').href, "/a?x=1&y=2");
+    });
+  });
+
+  describe("SD-TRIB-08: autocomplete e' una LISTA di token, non una stringa", () => {
+    const personale = (a) => classificaCampo(campiDiPagina(`<input type="text" name="campo1" autocomplete="${a}">`)[0]).personale;
+
+    it("falso verde: i token della grammatica dell'autofill spegnevano la prova forte", () => {
+      assert.equal(personale("shipping email"), true);
+      assert.equal(personale("section-blu billing street-address"), true);
+      assert.equal(personale("email "), true);
+      assert.equal(personale(" email"), true);
+    });
+
+    it("off e un valore inventato restano fuori", () => {
+      assert.equal(personale("off"), false);
+      assert.equal(personale("colore-preferito"), false);
+    });
+  });
+
+  describe("SD-TRIB-09: un terzo entra anche dall'attributo style e da poster", () => {
+    it("falso verde: background-image in linea non era censito", () => {
+      assert.deepEqual(terziDi('<main><div style="background-image:url(https://cdn.terzo.example/s.jpg)">x</div></main>', BASE2).map((t) => t.origine), ["https://cdn.terzo.example"]);
+    });
+
+    it("falso verde: il poster di un video", () => {
+      assert.deepEqual(terziDi('<video poster="https://cdn.terzo.example/p.jpg"></video>', BASE2).map((t) => t.origine), ["https://cdn.terzo.example"]);
+    });
+
+    it("un url() della stessa origine non e' un terzo", () => {
+      assert.deepEqual(terziDi('<div style="background-image:url(/sfondo.jpg)">x</div>', BASE2), []);
+    });
+  });
+
+  describe("SD-TRIB-10: i nomi di servizio sono nomi INTERI", () => {
+    it("falso verde: __email spariva prima della classificazione", () => {
+      assert.equal(campiDiPagina('<input type="text" name="__email" autocomplete="email">').length, 1);
+      assert.equal(campiDiPagina('<input type="text" name="csrf_telefono" autocomplete="tel">').length, 1);
+    });
+
+    it("i campi di servizio veri restano fuori", () => {
+      assert.deepEqual(campiDiPagina('<input type="hidden" name="csrf" value="x"><input type="hidden" name="$ACTION_REF_1" value="y">'), []);
+    });
+  });
+
+  describe("SD-TRIB-13: il <base href> decide cosa significa un collegamento relativo", () => {
+    it("falso rosso e superficie sbagliata: senza <base> si scaricava la pagina che non esiste", () => {
+      assert.deepEqual(collegamentiInterni('<head><base href="/it/"></head><body><a href="contatti">c</a></body>', BASE2), ["/it/contatti"]);
+    });
+
+    it("un <base> verso un'altra origine non rende interno niente", () => {
+      assert.deepEqual(collegamentiInterni('<head><base href="https://cdn.altro.example/"></head><body><a href="contatti">c</a><a href="privacy">p</a></body>', BASE2), []);
+    });
+
+    it("senza <base> non cambia niente", () => {
+      assert.deepEqual(collegamentiInterni('<a href="/contatti">c</a>', BASE2), ["/contatti"]);
+    });
+  });
+
+  describe("SD-TRIB-14: un indizio di archiviazione non e' un'assenza di archiviazione", () => {
+    it("falso verde: l'accesso per indice non nomina l'API", () => {
+      assert.deepEqual(apiArchiviazioneIn('var k="local"+"Storage";window[k].setItem("a",1);'), []);
+      assert.equal(archiviazioneIncertaIn('var k="local"+"Storage";window[k].setItem("a",1);'), true);
+    });
+
+    it("il nome pieno resta una misura, non un indizio", () => {
+      assert.equal(archiviazioneIncertaIn('localStorage.setItem("a",1)'), false);
+      assert.deepEqual(apiArchiviazioneIn('localStorage.setItem("a",1)'), ["localStorage"]);
+    });
+
+    it("un bundle che non archivia non produce indizi", () => {
+      assert.equal(archiviazioneIncertaIn("export function somma(a,b){return a+b}"), false);
+    });
+  });
+
+  describe("SD-TRIB-16: la seconda via dell'identita' e l'impronta corta", () => {
+    it("un asset con gli apici singoli si trova", () => {
+      assert.equal(assetDaProvare("<script src='/_next/static/chunks/a.js'></script>", BASE2), "/_next/static/chunks/a.js");
+    });
+
+    it("un percorso _next dentro il carico RSC non e' un asset referenziato", () => {
+      assert.equal(assetDaProvare('<script>self.__next_f.push([1,"/_next/static/chunks/finto.js"])</script><p>x</p>', BASE2), null);
+    });
+
+    it("falso verde: un BUILD_ID di un carattere non e' un'impronta", () => {
+      assert.equal(eLaMiaBuild("<html><title>Sito di un altro progetto</title></html>", "a"), false);
+      assert.equal(eLaMiaBuild("<html>versione 1.0</html>", "1"), false);
+      assert.equal(eLaMiaBuild("<html>aaaaaaaaaa</html>", "aaaaaaaa"), false);
+    });
+
+    it("un BUILD_ID vero resta un'impronta", () => {
+      assert.equal(eLaMiaBuild("<html>x SLbertaniCollaudo1 y</html>", "SLbertaniCollaudo1"), true);
+    });
   });
 });

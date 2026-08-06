@@ -344,9 +344,30 @@ export function attributi(tag) {
   while ((m = RE_ATTRIBUTO.exec(dentro)) !== null) {
     const nome = m[1].toLowerCase();
     if (nome in mappa) continue;
-    mappa[nome] = m[2] ?? m[3] ?? m[4] ?? "";
+    mappa[nome] = sciogliEntita(m[2] ?? m[3] ?? m[4] ?? "");
   }
   return mappa;
+}
+
+/**
+ * I riferimenti di carattere dentro un valore di attributo.
+ *
+ * Nel tokenizer HTML lo stato «attribute value» **decodifica** i riferimenti:
+ * `type="e&#109;ail"` E' un campo email, per il browser e per chi lo compila. Qui
+ * non lo era, e il tribunale ci ha spento tutte e due le prove forti della §17
+ * — `type` e `autocomplete` — con una sostituzione che non cambia una virgola di
+ * cio' che il sito fa. Un modulo con `type="&#101;mail"` e `autocomplete="t&#101;l"`
+ * usciva da `dati-raccolti` senza un solo bloccante.
+ *
+ * Vale anche per `href` (il percorso dell'informativa), `alt`, `lang`, `srcset`.
+ */
+function sciogliEntita(valore) {
+  if (!valore.includes("&")) return valore;
+  const nominate = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+  return valore
+    .replace(/&#x([0-9a-f]{1,6});?/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d{1,7});?/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&([a-z]+);/gi, (tutto, n) => nominate[n.toLowerCase()] ?? tutto);
 }
 
 /**
@@ -423,12 +444,41 @@ export function percorsoInterno(href, base) {
   return percorso;
 }
 
-/** I percorsi interni raggiungibili dai collegamenti di una pagina. */
+/**
+ * I percorsi interni raggiungibili dai collegamenti di una pagina.
+ *
+ * Il `<base href>` si legge, e non e' pedanteria: la superficie e' la premessa di
+ * tutti i passi a valle. Con `<base href="/it/">` e un `<a href="contatti">`, la
+ * camminata scaricava `/contatti` — che risponde 404 e finisce fra i rimandi —
+ * mentre `/it/contatti`, la pagina col modulo, non entrava mai in `ctx.pagine`:
+ * nessun passo la guardava e nessun rilievo diceva che era successo. Il rosso
+ * arrivava con la diagnosi sbagliata, che e' il modo in cui un gate si fa
+ * ignorare.
+ */
 export function collegamentiInterni(html, base) {
   const pulito = senzaScript(html);
   const percorsi = new Set();
+  const dichiarata = attributi(tagDi(pulito, "base")[0] ?? "<base>").href;
+  let radice = base;
+  if (dichiarata) {
+    try {
+      radice = new URL(dichiarata, base).toString();
+    } catch {
+      radice = base;
+    }
+  }
   for (const tag of tagDi(pulito, "a")) {
-    const p = percorsoInterno(attributi(tag).href, base);
+    const href = (attributi(tag).href ?? "").trim();
+    if (!href || href.startsWith("#") || /^(mailto:|tel:|javascript:|data:)/i.test(href)) continue;
+    let assoluto;
+    try {
+      // Si RISOLVE contro il `<base>`, ma si CONFRONTA con l'origine vera del
+      // sito: un `<base>` che punta a un CDN non rende interno quel CDN.
+      assoluto = new URL(href, radice).toString();
+    } catch {
+      continue;
+    }
+    const p = percorsoInterno(assoluto, base);
     if (p) percorsi.add(p);
   }
   return [...percorsi].sort();
@@ -454,16 +504,35 @@ export function percorsiDaSitemap(xml, base) {
  * 2026-07-30, su questa macchina, la porta che un contratto firmato dichiarava
  * serviva il sito di un'altra azienda. Un certificato di idoneita' emesso
  * misurando l'applicazione di qualcun altro e' peggio di nessun certificato.
+ *
+ * **Un'impronta corta non e' un'impronta.** L'unica guardia era `length > 0`, e
+ * con un `BUILD_ID` di un carattere la domanda diventava «questo HTML contiene
+ * la lettera `a`?» — vera su qualunque documento, compreso quello di un'altra
+ * applicazione. Un `next build` di serie emette 21 caratteri casuali, quindi la
+ * soglia non tocca nessun progetto vero; tocca i `.next` seminati a mano, i file
+ * troncati e le build personalizzate — dove oggi si prendeva un `pass` e da qui
+ * in avanti si prende un `skipped`, che e' l'esito onesto.
  */
+export const LUNGHEZZA_MINIMA_BUILD_ID = 8;
+
 export const eLaMiaBuild = (html, buildId) =>
-  typeof html === "string" && typeof buildId === "string" && buildId.length > 0 && html.includes(buildId);
+  typeof html === "string" && typeof buildId === "string"
+  && buildId.trim().length >= LUNGHEZZA_MINIMA_BUILD_ID && !/^(.)\1*$/.test(buildId.trim())
+  && html.includes(buildId);
 
 /** Il primo asset statico della stessa origine referenziato dall'HTML servito. */
 export function assetDaProvare(html, base) {
-  const re = /(?:src|href)\s*=\s*"([^"]*\/_next\/static\/[^"?]+)/gi;
+  // Anche gli apici singoli, e sul documento RIPULITO: un minificatore o un
+  // proxy che riscrive con `'` faceva sparire la seconda via dell'identita', e
+  // il gate stampava «sta rispondendo un'altra applicazione» — additando
+  // l'imputato sbagliato, che e' proprio la diagnosi che questa via esiste per
+  // evitare. Sul ripulito, perche' un percorso `_next/static` dentro il carico
+  // RSC o dentro un commento non e' un asset referenziato dalla pagina.
+  const re = /(?:src|href)\s*=\s*(?:"([^"]*\/_next\/static\/[^"?]+)|'([^']*\/_next\/static\/[^'?]+))/gi;
+  const testo = senzaScript(html ?? "");
   let m;
-  while ((m = re.exec(html ?? "")) !== null) {
-    const p = percorsoInterno(m[1], base);
+  while ((m = re.exec(testo)) !== null) {
+    const p = percorsoInterno(m[1] ?? m[2], base);
     if (p) return p;
   }
   return null;
@@ -853,8 +922,17 @@ const TIPI_NON_DATO = new Set(["submit", "button", "reset", "image"]);
  * che `<input type="hidden" name="email" autocomplete="email">` spariva prima
  * di arrivare alla classificazione, e con lui spariva anche il bloccante
  * sull'informativa al punto di raccolta.
+ *
+ * Il tribunale del 2026-08-06 ha trovato la stessa assunzione sopravvissuta nel
+ * filtro per NOME: il prefisso non era ancorato, quindi `name="__email"` e
+ * `name="csrf_telefono"` sparivano PRIMA della classificazione, e con loro sia
+ * il bloccante di `dati-raccolti` sia il controllo dell'etichetta. Ora sono nomi
+ * INTERI (solo `$ACTION`/`_next` restano prefissi, perche' li' il framework
+ * concatena davvero), e un campo che dichiara di raccogliere — un `autocomplete`
+ * dell'elenco personale, un `type` email/tel — non si scarta comunque: se il
+ * modulo stesso dice che raccoglie, non e' un campo di servizio.
  */
-const NOMI_DI_SERVIZIO = /^(\$ACTION|_next|__|csrf|xsrf|authenticity_token|utf8|_method)/i;
+const NOMI_DI_SERVIZIO = /^(\$ACTION[\w-]*|_next\w*|_?csrf|xsrf|authenticity_token|utf8|_method)$/i;
 
 /**
  * I campi dei moduli di una pagina, dall'HTML servito.
@@ -871,14 +949,25 @@ export function campiDiPagina(html) {
   const raccogli = (tag, elemento) => {
     const a = attributi(tag);
     const tipo = (a.type ?? (elemento === "input" ? "text" : elemento)).toLowerCase();
+    // La grammatica dell'autofill ammette i token opzionali `section-*`,
+    // `shipping`/`billing` e `home`/`work`/`mobile` PRIMA del nome del campo:
+    // `autocomplete="billing postal-code"` e' markup a regola d'arte, e il
+    // confronto sulla stringa intera lo mancava. Anche uno spazio in coda
+    // bastava a spegnere la prova che questo file chiama forte.
+    const auto = (a.autocomplete ?? "").toLowerCase().trim().replace(/\s+/g, " ");
+    const ultimoToken = auto.split(" ").at(-1) ?? "";
     if (elemento === "input" && TIPI_NON_DATO.has(tipo)) return;
-    if (NOMI_DI_SERVIZIO.test(a.name ?? "")) return;
+    // Un campo che DICHIARA di raccogliere non e' un campo di servizio, anche se
+    // il suo nome somiglia a uno.
+    const dichiaraDiRaccogliere = AUTOCOMPLETE_PERSONALI.has(ultimoToken) || tipo === "email" || tipo === "tel";
+    if (!dichiaraDiRaccogliere && NOMI_DI_SERVIZIO.test(a.name ?? "")) return;
     campi.push({
       elemento,
       tipo,
       nome: a.name ?? a.id ?? "",
       id: a.id ?? "",
-      autocomplete: (a.autocomplete ?? "").toLowerCase(),
+      form: a.form ?? "",
+      autocomplete: ultimoToken,
       ariaLabel: a["aria-label"] ?? "",
       obbligatorio: "required" in a,
     });
@@ -920,8 +1009,9 @@ export function destinazioniModuli(html, base) {
   const pulito = senzaScript(html);
   const mia = new URL(base);
   const fuori = [];
-  for (const { tag, dentro } of elementiDi(pulito, "form")) {
-    const azione = (attributi(tag).action ?? "").trim();
+  for (const { tag, dentro } of moduliConContenuto(pulito)) {
+    const attr = attributi(tag);
+    const azione = (attr.action ?? "").trim();
     if (!azione) continue;
     let url;
     try {
@@ -937,10 +1027,47 @@ export function destinazioniModuli(html, base) {
       altraOrigine: url.host !== mia.host,
       destinazione: percorsoInterno(azione, base),
       inChiaro: url.protocol === "http:" && !locale,
-      campi: campiDiPagina(dentro),
+      campi: [...campiDiPagina(dentro), ...campiLegatiPerId(pulito, attr.id)],
     });
   }
   return fuori;
+}
+
+/**
+ * I `<form>` con il loro contenuto, **anche quando il tag di chiusura non c'e'**.
+ *
+ * `elementiDi` pretende il `</form>`, e il browser no: un modulo senza chiusura
+ * invia lo stesso. Il tribunale l'ha misurato — togliendo un tag di chiusura,
+ * `destinazioniModuli` tornava `[]` mentre i campi c'erano tutti, e i due
+ * bloccanti introdotti dal collaudo P2 («li invia a un'ALTRA ORIGINE», «li invia
+ * IN CHIARO») non scattavano piu'. Un modulo non chiuso arriva fino al prossimo
+ * `<form` o alla fine del documento, che e' esattamente cio' che fa il parser.
+ */
+function moduliConContenuto(pulito) {
+  const apre = new RegExp(`<form\\b${DENTRO_TAG}>`, "gi");
+  const trovati = [];
+  const aperture = [];
+  let m;
+  while ((m = apre.exec(pulito)) !== null) aperture.push({ tag: m[0], da: m.index, dopo: apre.lastIndex });
+  for (let i = 0; i < aperture.length; i += 1) {
+    const limite = i + 1 < aperture.length ? aperture[i + 1].da : pulito.length;
+    const resto = pulito.slice(aperture[i].dopo, limite);
+    const chiude = /<\/form\s*>/i.exec(resto);
+    trovati.push({ tag: aperture[i].tag, dentro: chiude ? resto.slice(0, chiude.index) : resto });
+  }
+  return trovati;
+}
+
+/**
+ * I campi legati a un modulo con `form="<id>"`, che vivono FUORI dal suo tag.
+ *
+ * E' HTML5 ordinario nei layout a griglia, e senza questo il modulo risultava
+ * senza campi personali — quindi `findingsDatiRaccolti` faceva `continue` prima
+ * di guardare dove finivano i dati.
+ */
+function campiLegatiPerId(pulito, id) {
+  if (!id) return [];
+  return campiDiPagina(pulito).filter((c) => c.form === id);
 }
 
 /** Le etichette `<label for=…>` presenti nella pagina. */
@@ -1151,10 +1278,38 @@ export function findingsDatiRaccolti({ pagineConModuli, basiDichiarate, informat
 // ------------------------------------------------------- archiviazione e terzi
 const API_ARCHIVIAZIONE = Object.freeze(["localStorage", "sessionStorage", "document.cookie", "indexedDB"]);
 
-/** Quali API di archiviazione compaiono nel testo di un bundle servito. */
+/**
+ * Gli indizi di archiviazione che NON nominano l'API per intero.
+ *
+ * `window["local"+"Storage"]`, `document["coo"+"kie"]`, un `setItem` su un
+ * riferimento tenuto in una variabile: sono forme che alcuni offuscatori e certi
+ * widget di terze parti («analitiche senza cookie») usano di mestiere. Il
+ * confronto per sottostringa non le vede, e con zero cookie e zero terzi il
+ * passo chiudeva `n/a` — «il sito non mette niente nel browser di chi passa» —
+ * mentre lo script scriveva.
+ *
+ * Un indizio NON e' una misura, e infatti non produce un elenco di API: produce
+ * `incerto`, e il passo che lo riceve va **MANCANTE**, non `n/a`. La §18 vieta
+ * il falso verde; non ammette la misura incerta travestita da non applicabile.
+ */
+const INDIZI_ARCHIVIAZIONE = /\.setItem\s*\(|\bsetItem\b|["']local["']\s*\+|["']session["']\s*\+|\+\s*["']Storage["']|\[\s*["']coo["']|["']kie["']\s*\]|\bopenDatabase\b/;
+
+/**
+ * Quali API di archiviazione compaiono nel testo di un bundle servito.
+ *
+ * `{ api, incerto }`: `api` sono i nomi pieni trovati, `incerto` dice che c'e'
+ * un indizio senza nome pieno — cioe' che questo scanner NON sa rispondere.
+ */
 export function apiArchiviazioneIn(testo) {
   if (typeof testo !== "string") return [];
   return API_ARCHIVIAZIONE.filter((api) => testo.includes(api));
+}
+
+/** Un indizio di archiviazione senza il nome pieno dell'API: «non lo so», non «no». */
+export function archiviazioneIncertaIn(testo) {
+  if (typeof testo !== "string") return false;
+  if (apiArchiviazioneIn(testo).length > 0) return false;
+  return INDIZI_ARCHIVIAZIONE.test(testo);
 }
 
 /** Le origini di terzi referenziate da una pagina: script, iframe, link, img. */
@@ -1181,8 +1336,20 @@ export function terziDi(html, base) {
   // di questi fa partire una richiesta al dominio di qualcun altro, che e'
   // esattamente cio' che questo passo esiste per censire.
   for (const [nome, attributo] of [["script", "src"], ["iframe", "src"], ["link", "href"], ["img", "src"],
-    ["video", "src"], ["audio", "src"], ["source", "src"], ["embed", "src"], ["track", "src"], ["object", "data"]]) {
+    ["video", "src"], ["audio", "src"], ["source", "src"], ["embed", "src"], ["track", "src"], ["object", "data"],
+    // Il tribunale ne ha nominato un quinto dopo i quattro del primo giro:
+    // `poster` fa la stessa richiesta al dominio di qualcun altro.
+    ["video", "poster"]]) {
     for (const t of tagDi(pulito, nome)) guarda(t, attributo, nome);
+  }
+  // L'attributo `style` in linea: `<div style="background-image:url(https://…)">`
+  // scarica dal dominio di un terzo esattamente come un `<style>` — indirizzo IP
+  // e User-Agent di chi visita compresi, che e' cio' che rende un terzo un
+  // destinatario. Guardavamo l'ELEMENTO `<style>` e non l'ATTRIBUTO.
+  for (const t of pulito.match(new RegExp(`<[a-zA-Z][a-zA-Z0-9-]*\\b${DENTRO_TAG}>`, "g")) ?? []) {
+    const stile = attributi(t).style;
+    if (!stile || !stile.includes("url(")) continue;
+    for (const m of stile.matchAll(/url\(\s*['"]?([^'")]+)['"]?\s*\)/gi)) aggiungi(m[1], "style");
   }
   for (const t of [...tagDi(pulito, "img"), ...tagDi(pulito, "source")]) {
     for (const pezzo of (attributi(t).srcset ?? "").split(",")) aggiungi(pezzo.trim().split(/\s+/)[0], "srcset");
