@@ -1,8 +1,10 @@
 # Stato — Launchpad
 
 - **Stato attuale:** **costruito e non collaudato** (P.5, 2026-08-06). SKILL.md
-  completo, gate a **nove passi** con `--json`, 87 test sugli script, 36 classi
-  di sabotaggio tutte rosse, quattro reference e due template.
+  completo, gate a **nove passi** con `--json`, **105 test** sugli script, 36 classi
+  di sabotaggio tutte rosse, quattro reference e due template. Il collaudo
+  avversario in chat vergine (P2) **non e' stato fatto**; un tribunale a tre
+  periti si', ed e' costato 32 rilievi (§6 del verbale).
   **Nessun deploy è mai stato eseguito da questa skill.** Vedi §Cosa non è mai
   stato provato.
 - **Proprietario:** Alberto
@@ -47,7 +49,7 @@ La tabella completa — cosa resta indimostrato passo per passo — è in
 |---|---|---|
 | **P0** — progettazione | il gate scritto **prima** del flusso: nove passi, premessa e MANCANTE, contratto `--json`, otto falsi verdi possibili, passi scartati col perché | **fatta** — `references/verifica-deterministica.md`, 2026-08-06 |
 | **P0b** — la sosta di metà pacchetto | rilettura della progettazione con una domanda sola: *quale passo potrebbe essere verde su un deploy che non si deve fare?* | **fatta** — sei risposte, tutte diventate regole (§8 della reference). Una era un difetto che sarebbe stato spedito |
-| **P1** — costruzione | `verify.mjs` + due librerie pure + due gusci; 87 test; 4 reference; 2 template | **fatta** — 2026-08-06 |
+| **P1** — costruzione | `verify.mjs` + tre librerie pure + due gusci; 105 test; 4 reference; 2 template | **fatta** — 2026-08-06 |
 | **P1b** — sabotaggio | un difetto per classe, e il rosso misurato | **fatta** — gemello pulito VERDE 9/9, **36 classi, 36 rosse, 0 non prese** |
 | **P2** — collaudo avversario, in chat vergine | il gate è il contratto sotto esame; il verbale di costruzione è un'affermazione da verificare | **da fare** |
 | **P3** — il primo deploy vero | **lo autorizza Alberto di persona.** È l'unica cosa che questa skill non ha potuto provare, ed è il suo mestiere | **da fare** |
