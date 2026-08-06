@@ -478,5 +478,3 @@ catena di P.4 ha misurato quattro volte su cinque anelli — *cause attribuite
 male a fatti giusti*. Il fatto («l'impronta deve derivare dal commit») era
 giusto; la conclusione («allora scrivo il commit nel file») era sbagliata, e
 sembrava la stessa cosa.
-</content>
-</invoke>
