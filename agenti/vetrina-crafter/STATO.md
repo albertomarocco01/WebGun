@@ -23,9 +23,19 @@
   sabotaggio: una diagnosi bugiarda sulla dev server di Turbopack, un falso verde
   su una pagina non scaricata, e un `block` che cercava in pagina l'**UUID di una
   riga**.
-- **Non ancora usabile su un progetto cliente**, e il motivo non è più un
-  difetto della skill: sul banco **il contratto l'ha firmato chi costruiva**, e
-  il gate legge la firma, non la sua verità. Si chiude in P3, con un committente.
+- **Il motivo «il contratto l'ha firmato chi costruiva» è CHIUSO** (2026-08-05,
+  P.4b sul pilota `fornodoro`): `docs/vetrina.md` porta
+  `Confermato da: Alberto Marocco (committente) il 2026-08-05` — una persona
+  vera, che non ha costruito niente, sul documento che dichiara *cosa diventa
+  visibile a uno sconosciuto*. Gate **VERDE 10/10** su build di produzione
+  rilanciato dal direttore. È la prima e (al 2026-08-06) l'unica delle tre
+  skill a chiuderlo: flow-sentinel e speed-demon hanno contratti firmati **per
+  delega** (D14), che non chiude il motivo.
+  **Resta aperto**, e non è la firma: il gate pretende una colonna di
+  pubblicazione anche dove il dominio non ha bozze, e al contratto manca un
+  gettone `funzione:` per le pagine che leggono da una RPC (P.4b, attriti 2 e
+  3). Nessuno dei due impedisce l'uso su un progetto vero; entrambi vanno
+  chiusi nella minuteria della skill.
 - **Proprietario:** Alberto
 - **Dipendenze:**
   - **A monte:** **schema-forge** (tabelle, viste, policy di lettura per il ruolo
