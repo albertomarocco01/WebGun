@@ -117,9 +117,18 @@ export function ripulisciDocumento(html) {
   const stili = [];
   let i = 0;
   const n = html.length;
+  // Un tag ha bisogno di un `>`. Dopo l'ultimo `>` del documento nessun `<`
+  // puo' aprire un tag, e provarci significa rileggere tutta la coda a ogni
+  // `<`: **quadratico**. Misurato al collaudo P2 su `<div a="` ripetuto —
+  // 24 KB 153 ms · 49 KB 532 ms · 98 KB 1,8 s · 195 KB **7,3 s**, cioe' il
+  // raddoppio che quadruplica. E' `SD-REDOS-01` riaperto in una forma che il
+  // tribunale non aveva provato: un gate che si appende non dice mai ROSSO, e
+  // appenderlo non chiede nessun privilegio — basta scrivere il sito.
+  const ultimoMaggiore = html.lastIndexOf(">");
   while (i < n) {
     const c = html[i];
     if (c !== "<") { fuori.push(c); i += 1; continue; }
+    if (i > ultimoMaggiore) { fuori.push(c); i += 1; continue; }
 
     // Commento: `<!--` … `-->`, piu' le due forme brusche legali `<!-->` e
     // `<!--->` che lo standard chiude subito (e che una regexp golosa userebbe
@@ -495,19 +504,6 @@ export function tagNascosto(tag) {
   return /display\s*:\s*none|visibility\s*:\s*hidden/i.test(attr.style ?? "");
 }
 
-/** Dove si chiude l'elemento `nome` aperto appena prima di `da`, contando l'annidamento. */
-function fineElemento(html, nome, da) {
-  const re = new RegExp(`<(\\/?)${perRegexp(nome)}\\b[^>]*>`, "gi");
-  re.lastIndex = da;
-  let profondita = 1;
-  let m;
-  while ((m = re.exec(html)) !== null) {
-    profondita += m[1] ? -1 : 1;
-    if (profondita === 0) return re.lastIndex;
-  }
-  return html.length;
-}
-
 /**
  * Gli intervalli del documento che l'HTML stesso dichiara nascosti, **contenitori
  * compresi**.
@@ -526,15 +522,44 @@ function fineElemento(html, nome, da) {
  * gate non la risolve, e sta scritto nel perimetro.
  */
 export function regioniNascoste(htmlPulito) {
+  // UNA scansione sola, con una pila e un contatore di profondita' nascosta.
+  // La prima stesura, scritta in questo stesso collaudo, cercava la chiusura di
+  // ogni contenitore nascosto ripartendo da capo: **quadratica**, e misurata
+  // subito — 20 000 `<div hidden>` costavano 13 SECONDI. E' lo stesso difetto
+  // che il tribunale aveva chiuso sul ripulitore (`SD-REDOS-01`), rifatto da chi
+  // quel verbale l'aveva appena letto: un gate che si puo' appendere non dice
+  // mai ROSSO, e appenderlo non richiede nessun privilegio.
   const regioni = [];
-  const re = /<([a-zA-Z][\w:-]*)\b([^>]*)>/g;
+  const pila = [];
+  let profondita = 0;
+  let inizio = null;
+  const re = /<(\/?)([a-zA-Z][\w:-]*)\b([^>]*)>/g;
   let m;
   while ((m = re.exec(htmlPulito)) !== null) {
-    if (!tagNascosto(m[0])) continue;
-    const nome = m[1].toLowerCase();
-    const fine = m[0].endsWith("/>") || VUOTI.has(nome) ? re.lastIndex : fineElemento(htmlPulito, nome, re.lastIndex);
-    regioni.push([m.index, fine]);
+    const nome = m[2].toLowerCase();
+    if (m[1]) {
+      let i = pila.length - 1;
+      while (i >= 0 && pila[i].nome !== nome) i -= 1;
+      if (i < 0) continue;
+      for (let k = pila.length - 1; k >= i; k -= 1) if (pila[k].nascosto) profondita -= 1;
+      pila.length = i;
+      if (profondita === 0 && inizio !== null) {
+        regioni.push([inizio, re.lastIndex]);
+        inizio = null;
+      }
+      continue;
+    }
+    const nascosto = tagNascosto(m[0]);
+    if (m[0].endsWith("/>") || VUOTI.has(nome)) {
+      if (nascosto) regioni.push([m.index, re.lastIndex]);
+      continue;
+    }
+    if (nascosto && profondita === 0) inizio = m.index;
+    if (nascosto) profondita += 1;
+    pila.push({ nome, nascosto });
   }
+  // Contenitori nascosti mai chiusi: nascondono fino alla fine del documento.
+  if (profondita > 0 && inizio !== null) regioni.push([inizio, htmlPulito.length]);
   return regioni;
 }
 

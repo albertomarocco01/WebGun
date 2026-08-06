@@ -40,6 +40,7 @@ import {
   percorsoInterno,
   perStampa,
   raggiungibiliDaCollegamenti,
+  regioniNascoste,
   ripulisciDocumento,
   senzaScript,
   statoDaFindings,
@@ -707,6 +708,30 @@ describe("i reperti del tribunale, uno per uno", () => {
     const inizio = Date.now();
     senzaScript("<".repeat(200000));
     assert.ok(Date.now() - inizio < 2000, "200 KB di `<` devono costare millisecondi, non secondi");
+  });
+
+  // Collaudo P2: SD-REDOS-01 era chiuso per i `<` ripetuti e RIAPERTO da una
+  // forma che il tribunale non aveva provato — un `<` che apre un tag che
+  // nessun `>` chiude. Ogni `<` rileggeva la coda: 24 KB 153 ms · 49 KB 532 ms
+  // · 98 KB 1,8 s · 195 KB 7,3 s, il raddoppio che quadruplica.
+  it("SD-REDOS-01 (P2): un tag che nessun `>` chiude non fa rileggere la coda", () => {
+    for (const [etichetta, testo] of [
+      ["virgoletta aperta, nessun >", '<div a="'.repeat(50 * 1024)],
+      ["virgoletta aperta, con >", '<div a=">'.repeat(25 * 1024)],
+      ["commento mai chiuso", "<!--x".repeat(40 * 1024)],
+    ]) {
+      const inizio = Date.now();
+      ripulisciDocumento(testo);
+      assert.ok(Date.now() - inizio < 2000, `${etichetta}: millisecondi, non secondi`);
+    }
+  });
+
+  it("`regioniNascoste` e' lineare: una scansione sola, non una per contenitore", () => {
+    // Scritta quadratica in questo stesso collaudo e misurata subito:
+    // 20 000 `<div hidden>` costavano 13 secondi.
+    const inizio = Date.now();
+    regioniNascoste("<div hidden>".repeat(20 * 1024));
+    assert.ok(Date.now() - inizio < 2000, "20k contenitori nascosti: millisecondi, non secondi");
   });
 
   it("`ripulisciDocumento` restituisce i corpi inline e gli stili, senza rileggere il documento", () => {
