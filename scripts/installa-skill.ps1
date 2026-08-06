@@ -53,7 +53,14 @@ $ErrorActionPreference = "Stop"
 # prodotto eseguendo schema-forge. Costruita e sabotata lo stesso giorno: 122 test,
 # 7 comandi su 7 esercitati, 22 classi di sabotaggio, tre difetti del gate trovati
 # e chiusi. Verbale: agenti/vetrina-crafter/COSTRUZIONE-2026-08-03.md.
-$skill = @("schema-forge", "gestionale-crafter", "vetrina-crafter", "flow-sentinel", "speed-demon", "code-inquisition")
+# `launchpad` e' entrato il 2026-08-06, quando il suo gate a nove passi ha chiuso
+# VERDE 9/9 sul gemello pulito e ROSSO — coi motivi giusti — sul pilota
+# `fornodoro`, che non si deve pubblicare. 87 test, 36 classi di sabotaggio
+# tutte rosse. Verbale: agenti/launchpad/COSTRUZIONE-2026-08-06.md.
+# Attenzione a cosa questo NON dice: nessun deploy e' mai stato eseguito da
+# questa skill, e il collaudo avversario non e' stato fatto. Si installa perche'
+# il gate gira e rifiuta; non perche' abbia gia' pubblicato qualcosa.
+$skill = @("schema-forge", "gestionale-crafter", "vetrina-crafter", "flow-sentinel", "speed-demon", "launchpad", "code-inquisition")
 
 # code-maniac NON e' in elenco di proposito: il README lo dichiara uno SNAPSHOT
 # del repo di finzidev, quindi la fonte di verita' non e' questa cartella. Va
