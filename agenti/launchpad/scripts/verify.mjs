@@ -64,6 +64,8 @@ const DEBITO = "docs/DEBITO-TECNICO.md";
 const HANDOFF_DIR = "docs/handoff";
 /** Le radici che finiscono nel pacchetto, quando il runbook non le dichiara. */
 const RADICI_PREDEFINITE = ["src", "next.config.ts", "next.config.mjs", "next.config.js"];
+/** Cio' che Next spedisce e che sta alla radice, non sotto `src/`. */
+const FILE_SPEDITI_ALLA_RADICE = ["middleware.ts", "middleware.js", "middleware.mjs", "instrumentation.ts", "instrumentation.js"];
 
 export const ID = Object.freeze({
   radice: "radice-pulita",
@@ -424,7 +426,7 @@ const PASSI = [
         ...(gitRighe(["ls-files", "--others", "--exclude-standard"]) ?? []).filter((p) => !FUORI_DAL_PACCHETTO.test(p)),
       ];
       const spediti = tracciati.filter((p) =>
-        /\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(p) &&
+        /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/i.test(p) &&
         radici.some((r) => p === r.replace(/\/$/, "") || p.startsWith(r.replace(/\/$/, "") + "/")));
       // La radice sorgente vera del progetto DEVE essere fra quelle dichiarate
       // (rilievo VER-6): restringendo `Radici spedite:` a `next.config.ts` il
@@ -437,6 +439,22 @@ const PASSI = [
           `il runbook dichiara \`Radici spedite: ${radici.join(", ")}\` e sul disco esiste \`${radiceVera}/\`, che non e' in elenco.\n` +
           "Restringere le radici restringe cio' che il gate confronta: e' il modo piu' economico di far passare una variabile non dichiarata",
           { block: 1, issue: 0, warn: 0 });
+      }
+      // I file che Next SPEDISCE e che stanno alla RADICE, non sotto `src/`.
+      // Trovato dal collaudo del 2026-08-06: un `middleware.ts` alla radice —
+      // posizione documentata da Next e usata da meta' dei progetti — che legge
+      // `process.env.SEGRETO_MIDDLEWARE` non dichiarata faceva chiudere il
+      // passo `pass`. Quel file gira su OGNI richiesta: e' l'ultimo posto in cui
+      // una variabile mancante puo' passare inosservata.
+      const scoperti = FILE_SPEDITI_ALLA_RADICE
+        .filter((f) => existsSync(join(PROGETTO, f)))
+        .filter((f) => !radici.some((x) => x.replace(/\/$/, "") === f));
+      if (scoperti.length > 0) {
+        return record(this.id, this.nome, "fail",
+          `sul disco esistono ${scoperti.map((f) => "`" + f + "`").join(" · ")}, che Next SPEDISCE e che il runbook non elenca fra le \`Radici spedite:\` (${radici.join(", ")}).
+` +
+          "Un file che gira a ogni richiesta e che il gate non guarda e' il posto piu' comodo per una variabile non dichiarata",
+          { block: scoperti.length, issue: 0, warn: 0 });
       }
       if (spediti.length === 0) {
         return record(this.id, this.nome, "skipped",
@@ -498,6 +516,7 @@ const PASSI = [
         richieste,
         lockfile,
         runbook: ctx.runbook,
+        packageManager: pkg.packageManager ?? null,
       });
       const max = richieste.reduce((a, r) => (r.minimo !== null && (a === null || r.minimo > a.minimo) ? r : a), null);
       const testa = [

@@ -767,6 +767,20 @@ export function variabiliLette(testo) {
 }
 
 const INDIRIZZO_LOCALE = /(127\.0\.0\.1|localhost|0\.0\.0\.0|\[::1\])/i;
+/**
+ * `http://` in produzione: la riga che la specifica prometteva e il codice non
+ * misurava.
+ *
+ * `references/verifica-deterministica.md` §3.5 elencava, fra i `block`, «una
+ * variabile `NEXT_PUBLIC_*` di indirizzo vale `localhost`/`127.0.0.1`/
+ * **`http://`** in produzione», e il controllo guardava i soli indirizzi
+ * locali. Misurato dal collaudo del 2026-08-06: `http://staging.esempio.it`
+ * come valore di produzione chiudeva il passo `pass`. È la stessa classe del
+ * rilievo VER-14 — *una specifica che promette una misura inesistente è una
+ * firma in bianco su carta intestata* — e da qui discendono `canonical`, Open
+ * Graph, `sitemap.xml` e `robots.txt`, prerenderizzati una volta sola.
+ */
+const INDIRIZZO_IN_CHIARO = /\bhttp:\/\//i;
 
 /**
  * Le fonti del commit che il frammento dell'impronta legge in `next.config`.
@@ -812,6 +826,13 @@ export function findingsAmbiente({ lette = new Map(), destrutturano = [], runboo
         object: nome,
         message: `il valore di produzione dichiarato e' un indirizzo locale: \`${v.note}\``,
         hint: "da qui discendono `canonical`, Open Graph, `sitemap.xml` e `robots.txt`. Sbagliata al deploy, resta sbagliata finche' qualcuno non ricostruisce",
+      });
+    } else if (ePubblicaPerCostruzione(nome) && INDIRIZZO_IN_CHIARO.test(v.note)) {
+      findings.push({
+        severity: "block",
+        object: nome,
+        message: `il valore di produzione dichiarato non e' \`https://\`: \`${v.note}\``,
+        hint: "un indirizzo in chiaro finisce dentro `canonical`, Open Graph, `sitemap.xml` e `robots.txt`, che sono prerenderizzati una volta sola: il sito dichiarerebbe ai motori di ricerca un indirizzo che il certificato non copre. Era gia' scritto nella specifica e non era mai stato misurato",
       });
     }
     if (!ePubblicaPerCostruzione(nome) && nomeSospetto(nome) && v.note && !eSegnaposto(v.note) && v.note.length > 8) {
@@ -895,7 +916,7 @@ export function leggiRuntimeProvider(riga) {
   return numeri[0];
 }
 
-export function findingsRuntime({ engines = null, richieste = [], lockfile = [], runbook = null } = {}) {
+export function findingsRuntime({ engines = null, richieste = [], lockfile = [], runbook = null, packageManager = null } = {}) {
   const findings = [];
   const mio = minimoNode(engines);
   const massimoRichiesto = richieste.reduce(
@@ -925,6 +946,29 @@ export function findingsRuntime({ engines = null, richieste = [], lockfile = [],
       object: "package.json → engines.node",
       message: `dichiara \`${engines}\` (minimo ${mio}) ma \`${massimoRichiesto.nome}\` pretende \`${massimoRichiesto.range}\` (minimo ${massimoRichiesto.minimo})`,
       hint: "e' lo stesso guasto di un runtime non dichiarato, scritto male invece che non scritto",
+    });
+  }
+
+  /**
+   * `packageManager` che contraddice il lockfile.
+   *
+   * Trovato dal collaudo del 2026-08-06: `"packageManager": "pnpm@9.12.0"` con
+   * il solo `package-lock.json` sul disco chiudeva il passo **`pass`**. Sul
+   * provider quella riga **decide il gestore** (corepack la legge), e il
+   * gestore scelto non trova il proprio lockfile: risolve le versioni il giorno
+   * in cui gira — cioè esattamente la cosa che questo passo esiste per
+   * impedire, con l'aggravante che `packageManager` sembra la riga che toglie
+   * l'ambiguita'.
+   */
+  const LOCKFILE_DI = { npm: "package-lock.json", pnpm: "pnpm-lock.yaml", yarn: "yarn.lock", bun: "bun.lockb" };
+  const gestore = String(packageManager ?? "").trim().split("@")[0].toLowerCase();
+  const atteso = LOCKFILE_DI[gestore];
+  if (atteso && lockfile.length > 0 && !lockfile.some((l) => l.nome === atteso)) {
+    findings.push({
+      severity: "block",
+      object: "package.json → packageManager",
+      message: `dichiara \`${packageManager}\` e nel progetto c'e' ${lockfile.map((l) => `\`${l.nome}\``).join(" · ")}, non \`${atteso}\``,
+      hint: "il provider legge questa riga per scegliere il gestore, e quel gestore non trovera' il proprio lockfile: installera' risolvendo le versioni il giorno in cui gira. O si cambia la riga, o si genera il lockfile di quel gestore",
     });
   }
 

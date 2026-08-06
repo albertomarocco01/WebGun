@@ -703,3 +703,33 @@ test("una sezione obbligatoria presente come titolo e vuota e' un `issue`", () =
   assert.ok(f.some((x) => x.severity === "issue" && /vuota di contenuto/.test(x.message)),
     "chi firma trova la domanda e non la risposta");
 });
+
+// ====== collaudo 2026-08-06: l'indirizzo in chiaro e il gestore contraddetto
+test("un indirizzo `http://` come valore di produzione blocca — la riga che la specifica prometteva", () => {
+  const runbook = leggiRunbook(RUNBOOK.replace(
+    "| NEXT_PUBLIC_SITO_URL | prima della build | https://fornodoro.it |",
+    "| NEXT_PUBLIC_SITO_URL | prima della build | http://staging.fornodoro.it |",
+  ));
+  const f = findingsAmbiente({ lette: new Map([["NEXT_PUBLIC_SITO_URL", "src/lib/seo.ts"]]), runbook });
+  const block = f.filter((x) => x.severity === "block");
+  assert.equal(block.length, 1);
+  assert.match(block[0].message, /non e' `https:\/\/`/);
+});
+
+test("un indirizzo `https://` non produce niente: il caso normale resta muto", () => {
+  const f = findingsAmbiente({ lette: new Map([["NEXT_PUBLIC_SITO_URL", "src/lib/seo.ts"]]), runbook: leggiRunbook(RUNBOOK) });
+  assert.equal(f.filter((x) => x.severity === "block").length, 0);
+});
+
+test("`packageManager` che contraddice il lockfile blocca: il provider sceglie da li'", () => {
+  const richieste = [{ nome: "next", range: ">=20", minimo: 20 }];
+  const lockfile = [{ nome: "package-lock.json", tracciato: true }];
+  const runbook = leggiRunbook("Runtime del provider: Node 24");
+  const f = findingsRuntime({ engines: ">=22", richieste, lockfile, runbook, packageManager: "pnpm@9.12.0" });
+  const block = f.filter((x) => x.severity === "block");
+  assert.equal(block.length, 1);
+  assert.match(block[0].message, /pnpm-lock\.yaml/);
+  assert.equal(
+    findingsRuntime({ engines: ">=22", richieste, lockfile, runbook, packageManager: "npm@10.5.0" }).filter((x) => x.severity === "block").length,
+    0, "il gestore coerente col lockfile non produce niente");
+});
