@@ -17,7 +17,7 @@
   modifica e' del 2026-07-30, quando il collaudo di `evolve` ha scoperto che quella procedura
   copriva un caso su quattro (`COLLAUDO-EVOLVE-2026-07-30.md` §4); esistono le
   **4 references**, il gate `verify.mjs` a **7 passi** con id stabili, le regole pure in
-  `scripts/gate-lib.mjs` con **103 test verdi allora** (**111 oggi**, rimisurati il 2026-08-06 — questa riga diceva 110 mentre §Cosa esiste diceva 111), i **3 template** e la configurazione
+  `scripts/gate-lib.mjs` con **103 test verdi allora** (**158 oggi**, con P.7e il 2026-08-07; **131** con P.7d, **111** rimisurati il 2026-08-06 — questa riga diceva 110 mentre §Cosa esiste diceva 111), i **3 template** e la configurazione
   ESLint delle spec. Il gate e' stato **eseguito davvero** su due banchi Next.js + Supabase locale,
   scritti da due mani diverse: `banco-prova-flow/` (P1, e-commerce) e `banco-prova-collaudo-fs/`
   (P2, palestra) — **VERDE 7 su 7 su entrambi**, e rosso ogni volta che qualcosa e' stato rotto apposta.
@@ -85,7 +85,7 @@
   - **H2 + L1 (condivisi) — CHIUSI**: questo gate non aveva **nessun** filtro sugli argomenti che passano da `cmd /c`, e ci passano l'SQL intero e l'URL del database. Il commento «non si abilita `shell: true`» dice ora anche che `cmd.exe /c` una shell lo è.
   - **M14 + L10 — CHIUSI**: `timeout` più `PGCONNECT_TIMEOUT` su psql, e un tetto di 30 minuti su `npx playwright test` — il gate non fa più affidamento su un limite che il template della skill non dichiara. L'`AbortSignal.timeout` che questa skill aveva già è quello che il 2026-08-06 l'ha fatta tornare in **18,2 s con un ROSSO leggibile** dove speed-demon restava appeso: ora quel pattern vale su tutte e tre le chiamate.
   - **M1 — CHIUSO** nella funzione riscritta: `-X` è arrivato con `interrogaDb`.
-  - **Restano aperti** (prossimo pacchetto): M5 (ReDoS su `IMPORT_HELPER_DB` — meno urgente ora che il gate ha limiti e si ferma con un messaggio), L11 (`motivato()` legge `//` dentro una stringa), L3 (ricorsione sul report), L7 (commento TOML), L8 (`righeDaPsql` ai delimitatori di default), L6 (inerte).
+  - **Restano aperti** → **M5, L11, L3, L7 chiusi da P.7e** il 2026-08-06/07; **L8 resta MANCANTE con la sua ragione**; L6 resta dichiarato inerte dal referto stesso. Vedi la voce qui sotto.
   - **MANCANTE, con il suo nome**: il gate **non è stato rilanciato contro un'app viva e un database seedato** (D17: l'unico stack acceso è del pilota, di P.4h). C2 è stato provato su un report JSON nella forma vera del reporter, non su una batteria vera; il giro completo è l'atto di chiusura del prossimo pacchetto.
 - **2026-08-06 — `gitleaks` installato e puntato: il MANCANTE storico e' chiuso (P.7c punto 5).**
   `gitleaks` 8.30.1 (scoop, bucket `main`). Su questi `scripts/`: **nessun rilievo**. Sul repo
@@ -346,3 +346,15 @@ dei quattro casi in cui la difesa sono io»). Su `fornodoro` la difesa **non** e
 anello che scrive sia il contratto sia le spec non puo' essere il proprio revisore — le sue due meta'
 si confermano a vicenda per costruzione. Le due verifiche non si sostituiscono, e la Regola dei
 guardiani fa bene a chiederle entrambe.
+
+- **2026-08-06/07 — P.7e: M5, L11, L3, L7, L2 e un difetto nuovo. Verbale: `../../PROCESSO-GATE-2-2026-08-06.md`.** Batteria **131 → 158**. ESLint 0, knip 0, semgrep 0, gitleaks 0.
+  - **M5 — CHIUSO, e non è sceso di priorità.** `([^;"']*?)\s+from` ha due quantificatori che si contendono lo stesso spazio bianco. Misurato su questa macchina: **1 000 caratteri → 1,6 s · 2 000 → 15,0 s · 4 000 → non finito in due minuti**, e il costo si paga **una volta per flusso**. Il limite arrivato con H10 lo trasformava in un gate che si ferma con un messaggio invece che in uno muto, e va bene — ma un gate che impiega venti secondi per flusso su un ingresso ostile è un gate che qualcuno lancerà con un timeout più corto. La correzione non è un quantificatore più stretto: si cerca prima il `from "…helpers/db…"`, che ha un solo quantificatore, e poi si risale all'`import` più vicino. **40 000 caratteri → meno di 1 ms.** E non riapre il difetto del 2026-07-28: fra `import` e `from` non ci può stare la fine di un'altra istruzione.
+  - **L11 — CHIUSO.** `motivato()` chiedeva `linea.includes("//")`: un `test.skip("apre https://esempio.test//home", …)` risultava motivato, zero rilievi su uno skip che non spiega niente. Lo scanner delle spec ora tiene lo stato del delimitatore. Di rimbalzo, un `.only` **nominato** dentro una stringa non è più un `.only` committato.
+  - **L3 — CHIUSO.** La visita all'albero del report Playwright era ricorsiva: profondità 20 000 → `RangeError`, processo morto **senza JSON**, cioè un gate rosso indistinguibile da un gate che non ha risposto. Ora è iterativa, e il test costruisce l'albero. Il report lo scrive Playwright, ma il gate legge un file che sta nel progetto **auditato**.
+  - **L7 — CHIUSO**, e con esso il suo gemello inverso: `senzaVirgolette` toglieva il commento con una regexp che morde anche dentro una stringa (`site_url = "http://127.0.0.1:3000/#/app"` → mezza URL) e non toglieva la coda del commento dentro l'array multi-riga. Ora il `#` lo taglia `senzaCommentoToml`, riga per riga, sapendo dove si trova.
+  - **Un difetto che il referto non aveva** (n°53): `senzaCommentiJs` dichiarava «le stringhe restano: un `//` dentro un URL non apre un commento, ed è il solo caso che si incontra in un file di configurazione» — la frase del n°50 parola per parola. Misurato: `export default { use: { nota: "retries: 1" } };` faceva chiudere `pass` una configurazione che `retries` **non lo dichiara affatto**. La correzione mostra la regola: **due domande diverse, due spogliatori** — la configurazione si legge con le stringhe svuotate, la spec con le stringhe intatte, perché il percorso dell'helper del database dentro una stringa ci vive.
+  - **M2 + L2 — CHIUSI**: la URL del database esce mascherata da tutte e cinque le righe che la stampavano, e la password lascia `argv` per `PGPASSWORD`.
+  - **Resta aperto, MANCANTE con la sua ragione — L8.** La sonda è rossa e misurata: `righeDaPsql("public.brutta
+tabella
+public.ok")` dà **tre righe invece di due**. Oggi è innocuo (le due query di questa skill hanno **una colonna sola**) e pericoloso al primo riuso; neutralizzare i separatori in SQL vuole un Postgres vivo per essere provato, e applicarlo alla cieca renderebbe **silenzioso** un guasto che oggi è **rumoroso**. Va nel pacchetto che ha un banco.
+

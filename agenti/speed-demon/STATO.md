@@ -4,7 +4,9 @@
   avversario lo stesso giorno da una sessione indipendente**, su un secondo
   banco costruito apposta con pagine davvero lente
   (`banco-prova-immobiliare`, Case di Langa). Gli script hanno test propri
-  (`node --test`, **87 verdi**), il gate `verify` ha **7 passi** con id stabili.
+  (`node --test`, **144 verdi** dal 2026-08-07 con P.7e; **103** con P.7d, **87**
+  alla costruzione), il gate `verify` ha **8 passi** con id stabili — l'ottavo,
+  `contrasto`, e' nato con P.7e ed e' la delega §D21 che nessuno onorava.
   Il gate corretto e' stato **rilanciato sul banco vecchio**, `banco-prova-negozio`,
   e chiude **VERDE 7/7**: nessuna regressione, e `rete-verde` — la seconda legge
   della skill — ha finalmente girato dentro questo gate, verde sull'app giusta e
@@ -175,11 +177,8 @@
     con i suoi test — la classe di guasto qui non esiste più per costruzione, non
     per cura. È la stessa conclusione che launchpad ha scritto per il proprio gate
     il 2026-08-06 (`5636373`).
-  - **Restano aperti** (prossimo pacchetto, ordine proposto nel verbale): M4
-    (recinti `~~~`: un esempio recintato firma il contratto), M9 (`## Deroghe` è
-    qualunque intestazione che contenga «deroghe»), M10 (la deroga declassa
-    `accessibility` senza firma, e il gate non legge la baseline), M11 (l'unico
-    contratto d'uscita dei quattro che non rifiuta i `{{…}}`), M6, M7, L5, L13.
+  - **Restano aperti** → **tutti chiusi da P.7e** il 2026-08-06/07: M4, M9, M10,
+    M11, M6, M7, L5, L13. Vedi la voce in fondo.
   - **MANCANTE, con il suo nome**: il gate **non è stato rimisurato su un'app
     viva** (D17: l'unico stack acceso è del pilota, di P.4h) — le prove sono su
     funzioni pure, su un progetto finto e sui due server costruiti apposta. Il
@@ -411,3 +410,14 @@ E la prima esecuzione vera di `plan` e `tune` su guadagni misurati: home
   `banco-prova-negozio`, che infatti misura 96: e' lavoro di **site-doctor**, non
   di questa skill, ed e' il primo posto dove guardare quando quella categoria si
   ferma appena sotto il massimo.
+
+- **2026-08-06/07 — P.7e: la delega §D21, gli otto residui del referto, e il gate passa a otto passi. Verbale: `../../PROCESSO-GATE-2-2026-08-06.md`.** Batteria **103 → 144**. ESLint 0, knip 0, semgrep 0, gitleaks 0.
+  - **§D21 `contrasti` — ONORATA, ed era una delega che non esisteva nel codice.** Al 2026-08-06 la parola `contrast` compariva in **zero file** di questa skill: il gate leggeva `report.categories.accessibility.score` e non apriva mai l'audit. Lighthouse pesa `color-contrast` insieme ad altri venti audit dentro `accessibility`, quindi un sito con contrasto insufficiente perde qualche punto su cento e supera qualunque soglia. Misurato sulla forma vera di un report: **categoria 98 contro soglia 95 → nessun rilievo, passo verde; lo stesso report con `color-contrast` a 0 → block con i tre selettori**. La fixture è quella e il punto è quello: una in cui falliscono entrambi non prova niente. Passo nuovo `contrasto`, quattro stati (`notApplicable` non è un successo, un audit non prodotto è MANCANTE), `SKILL.md` aggiornata perché **il numero dei passi è un contratto**.
+  - **M10 — CHIUSO, in due metà.** La prima: il template ha sei colonne e la sesta è `Confermata da`, e il gate leggeva la riga con quella cella **vuota** — bastava aggiungere una riga a una tabella per togliere una soglia. Ora una deroga senza firma non è una deroga, e non si scarta in silenzio. La seconda: **la baseline stava nella stessa riga che il gate già analizzava** — terza colonna — e nessuno la leggeva, quindi «non ci si arriva» e «si è peggiorato» erano lo stesso caso. Misurato su `accessibility` 61 contro soglia 95 con deroga firmata: **baseline 96 → BLOCK «è una regressione» · baseline 40 → WARN, la deroga vale · baseline non dichiarata → BLOCK**, perché senza la baseline il gate non sa quale dei due casi sta autorizzando e «non lo so» non è «va bene».
+  - **M4 — CHIUSO.** Markdown ha due recinti e il gate ne conosceva uno: lo stesso esempio con ``` dava `pagine = []` e con `~~~` dava `pagine = ["esempio"]`, firma d'esempio compresa. Arriva la funzione di flow-sentinel, non una nuova.
+  - **M9 — CHIUSO.** `## Deroghe` era qualunque intestazione che contenesse la parola, e un `###` non la chiudeva: **quattro forme su quattro** raccoglievano una deroga morta come viva («Deroghe RESPINTE», «Storico delle deroghe scadute», un `### Archivio`). Ora 1 su 4.
+  - **M11 — CHIUSO.** Era l'unico dei quattro gate della casa a non rifiutare i `{{…}}`, e il suo template di handoff ne ha **131** (il referto ne contava 53: è cresciuto). Si contano **dopo** `senzaZoneCitate`, perché uno snippet CI dentro un recinto non è un segnaposto rimasto.
+  - **M7 + M6 — CHIUSI insieme, e si misurano insieme.** Una pagina con un'icona SVG di sfondo in un data-URI dentro `<style>` — cioè una cosa che scrive Tailwind da solo — più un `<meta data-name="viewport" name="robots" content="noindex">`: **PRIMA title, description, canonical e robots tutti `null`; DOPO i quattro valori veri.** Tre `block` sull'imputato sbagliato e, nel verso peggiore, un `noindex` cancellato. `senzaSvg` è ora uno scanner che sa dove si trova, e ciò per cui esiste regge: il `<title>` di un'icona accessibile continua a non passare per il titolo della pagina.
+  - **L5 — CHIUSO** (`.toUpperCase()`, come nelle tre sorelle: `Gate: verde` non fa più chiudere rosso un handoff giusto). **L13 — CHIUSO**: il difetto ERA l'assenza di rete sul confine di `misuraStabile`, e ora ci sono tre test. **L15 — CHIUSO**: `trovaHandoff` confronta il numero come numero.
+  - **MANCANTE, con il suo nome**: il gate **non è stato rilanciato dopo queste correzioni**. La direzione lo ha rilanciato contro il pilota vivo il 2026-08-06 sera, a regia `d147f52`, e chiudeva **VERDE 7/7** su cinque pagine con tre giri — ma quella misura è **prima** dell'ottavo passo. Il rilancio di chiusura è della direzione: il pilota e il suo stack sono di un'altra chat in questa ondata.
+
