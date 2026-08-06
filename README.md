@@ -60,8 +60,8 @@ Ci lavora un team: ogni agente ha un proprietario che lo sviluppa e lo mantiene.
 
 14. 🔵 **Cyber Shield**
     Specializzato in cybersecurity: verifica vulnerabilità, permessi, esposizione di dati e configurazioni pericolose prima della messa online.
-15. 🔵 **Site Doctor**
-    Scanner pre-produzione di conformità: cookie/GDPR e privacy, accessibilità (alt, contrasti, HTML semantico), Open Graph per le anteprime social, hreflang multilingua, favicon, robots.txt e sitemap. In pratica: il certificato di idoneità del sito prima del lancio.
+15. 🟢\*\*\*\*\*\* **Site Doctor**
+    Emette il **certificato di idoneità** del sito prima del lancio: la conformità che nessun altro agente guarda — informativa privacy raggiungibile da ogni pagina, basi giuridiche dei dati raccolti dai moduli pubblici, cosa il sito mette davvero nel browser di chi passa (cookie, `localStorage`, terzi), accessibilità dell'**HTML servito** di ogni pagina raggiungibile, lingua e hreflang. Tre leggi: **una voce di conformità ha un proprietario solo, e si scrive** (nasce dall'Open Graph assegnato due volte con la favicon a `404` per tre anelli); dove un vicino misura non si rimisura ma si **verifica dichiarato**, citando il file che lo dice; la superficie **si cammina**, non si dichiara, e si giudica l'HTML servito. Quattro stati invece di tre: `NON APPLICABILE` esiste e costa una premessa misurata. Launchpad non pubblica senza il suo certificato. Manuale: `agenti/site-doctor/SKILL.md`.
 
 ### FASE 6 — Lancio e vendita
 
@@ -92,7 +92,7 @@ Ci lavora un team: ogni agente ha un proprietario che lo sviluppa e lo mantiene.
 | code-maniac | Skill Claude Code | 🟢 | finzidev | https://github.com/finzidev/code-maniac |
 | code-inquisition | Skill Claude Code | 🟢 | finzidev | esterno (finzidev, URL non noto) |
 | schema-forge | Skill Claude Code | 🟢\* | Alberto | questo repo |
-| site-doctor | Skill Claude Code | 🔵 | — | questo repo |
+| site-doctor | Skill Claude Code | 🟢\*\*\*\*\*\* | Alberto | questo repo |
 | brief-smith | Skill Claude Code | 🔵 | — | questo repo |
 | preventivo-smith | Skill Claude Code | 🔵 | — | questo repo |
 | gestionale-crafter | Skill Claude Code | 🟢\*\* | Alberto | questo repo |
@@ -122,7 +122,9 @@ Il proprietario è chi sviluppa e mantiene l'agente; `—` significa non ancora 
 
 \*\*\*\*\*\* **launchpad è 🟢 come strumento, e non ha mai pubblicato niente.** Progettato e costruito il 2026-08-06 in un solo pacchetto (P.5), col gate scritto **prima** del flusso: nove passi, 87 test sugli script, quattro reference, due template. Il gemello pulito chiude **VERDE 9/9**; **36 classi di sabotaggio, 36 rosse, zero non prese**. Sul pilota `fornodoro` — un sito completo con cinque gate verdi che **non si deve pubblicare** — esce **ROSSO**, e i motivi che stampa li ha trovati lui nel registro del debito: n°4, n°12, n°17, n°27, n°32, di cui il n°12 non era nemmeno nell'elenco che il mandato gli aveva dato. Due di quei motivi li **rimisura da solo** invece di leggerli, ed è la prova che il verbale esisteva per produrre: quando P.4g ha chiuso il n°32, il passo `runtime-riproducibile` è passato da **1 bloccante a 0** senza che una riga di questa skill cambiasse. La sosta di metà pacchetto ha trovato **sei** passi che potevano essere verdi su un deploy da non fare, e uno era un difetto già scritto: `generateBuildId` con lo SHA come **letterale**, che al commit successivo avrebbe dichiarato con sicurezza il commit sbagliato. Resta **non usabile su un progetto cliente** per due motivi separati: **nessun deploy è mai stato eseguito** — non un account, non un dominio, non un centesimo, ed era una condizione esplicita del mandato — e il collaudo avversario (P2) non è stato fatto. Verbale: `agenti/launchpad/COSTRUZIONE-2026-08-06.md`; l'elenco di ciò che solo un umano potrà provare è in `agenti/launchpad/STATO.md` §Cosa non è mai stato provato.
 
-I **cinque** agenti 🔵 sono **scaffold**: `SKILL.md` di una trentina di righe (34–35, misurate con `wc -l`) con il gate di chiusura scritto e le sezioni operative a `TODO`, `references/` e `scripts/` con dentro il solo `.gitkeep`. Hanno il contratto d'uscita, non il come. Erano sette fino al 2026-07-30, quando speed-demon ha smesso di esserlo, e sei fino al 2026-08-06, quando ha smesso launchpad.
+\*\*\*\*\*\* **site-doctor è 🟢 come strumento, non come agente pronto alla consegna.** Progettata e costruita il 2026-08-06 in **un solo pacchetto** (P0+P1 uniti, decisione D17 del cantiere: il prezzo dichiarato è che un errore di progettazione non incontra un revisore prima di diventare codice). Il gate ha **nove passi** e **quattro stati** — `NON APPLICABILE` esiste e costa una premessa misurata e stampata — e chiude **VERDE 8/8 + 1 N.A.** sul banco conforme, **ROSSO su 25 classi di sabotaggio su 25**. Sul pilota `fornodoro` — sito vero, completo, cinque gate verdi sopra — esce **ROSSO per cinque motivi veri che nessuno dei cinque gate esistenti vede**: nessun collegamento a un'informativa privacy su 5 pagine su 5; `/ordina` raccoglie nome e telefono (prova forte, `autocomplete`) senza nessuna base giuridica dichiarata; `/ordina` raccoglie dati personali e non rimanda a nessuna informativa; `localStorage` posto dal codice servito e non dichiarato; nessun certificato di idoneità, quindi nessuna tabella di proprietà delle voci. Lo **STOP di metà pacchetto** ha cambiato otto punti della progettazione prima che diventasse codice, e il sabotaggio ne ha trovati **tre nel gate** — fra cui la premessa di `NON APPLICABILE` sugli hreflang, che nella prima stesura era **circolare** (un sito multilingua senza hreflang sarebbe uscito «non applicabile»). Resta **non usabile su un progetto cliente**, e il motivo è dichiarato: il **collaudo avversario indipendente (P2) non è stato fatto**, e questa è la prima skill della casa a nascere senza revisione del direttore in mezzo. Verbale: `agenti/site-doctor/COSTRUZIONE-2026-08-06.md`.
+
+I **quattro** agenti 🔵 sono **scaffold**: `SKILL.md` di una trentina di righe (34–35, misurate con `wc -l`) con il gate di chiusura scritto e le sezioni operative a `TODO`, `references/` e `scripts/` con dentro il solo `.gitkeep`. Hanno il contratto d'uscita, non il come. Erano sette fino al 2026-07-30, quando speed-demon ha smesso di esserlo; sei e poi cinque il 2026-08-06, quando hanno smesso launchpad e site-doctor.
 
 ## I banchi di prova
 
@@ -140,7 +142,7 @@ Claude Code carica le skill da `.claude/skills/`, che è una cartella di junctio
 powershell -ExecutionPolicy Bypass -File scripts/installa-skill.ps1
 ```
 
-Installa **schema-forge**, **gestionale-crafter**, **vetrina-crafter**, **flow-sentinel**, **speed-demon**, **launchpad** e **code-inquisition** — le sole di questo repo che sono skill vere. `code-maniac` e `bugbay` si installano dai repo di origine (vedi [Fonte di verità](#fonte-di-verità)); gli scaffold non si installano finché sono scaffold, perché una skill che non fa niente in mezzo a quelle che funzionano è rumore.
+Installa **schema-forge**, **gestionale-crafter**, **vetrina-crafter**, **flow-sentinel**, **speed-demon**, **launchpad**, **site-doctor** e **code-inquisition** — le sole di questo repo che sono skill vere. `code-maniac` e `bugbay` si installano dai repo di origine (vedi [Fonte di verità](#fonte-di-verità)); gli scaffold non si installano finché sono scaffold, perché una skill che non fa niente in mezzo a quelle che funzionano è rumore.
 
 **Chi ha già installato prima del 2026-08-03 rilanci lo script:** `vetrina-crafter` è entrato in elenco quel giorno, quando il suo gate ha chiuso VERDE 10/10 su un progetto vero. Lo script salta i link che esistono già, quindi non tocca nulla di quanto c'è.
 

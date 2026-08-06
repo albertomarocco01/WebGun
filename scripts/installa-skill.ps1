@@ -29,8 +29,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Solo le skill VERE. I sei agenti scaffold (brief-smith, preventivo-smith,
-# site-doctor, ai-specialist, cyber-shield, launchpad) non si installano finche'
+# Solo le skill VERE. I quattro agenti scaffold (brief-smith, preventivo-smith,
+# ai-specialist, cyber-shield) non si installano finche'
 # sono scheletri: una skill con quattro sezioni `TODO` nell'elenco di Claude Code
 # e' rumore che si somiglia tutto, e la prima volta che ne invochi una scopri che
 # non fa niente. Erano sette fino al 2026-07-30, quando speed-demon ha smesso di
@@ -60,7 +60,7 @@ $ErrorActionPreference = "Stop"
 # Attenzione a cosa questo NON dice: nessun deploy e' mai stato eseguito da
 # questa skill, e il collaudo avversario non e' stato fatto. Si installa perche'
 # il gate gira e rifiuta; non perche' abbia gia' pubblicato qualcosa.
-$skill = @("schema-forge", "gestionale-crafter", "vetrina-crafter", "flow-sentinel", "speed-demon", "launchpad", "code-inquisition")
+$skill = @("schema-forge", "gestionale-crafter", "vetrina-crafter", "flow-sentinel", "speed-demon", "launchpad", "site-doctor", "code-inquisition")
 
 # code-maniac NON e' in elenco di proposito: il README lo dichiara uno SNAPSHOT
 # del repo di finzidev, quindi la fonte di verita' non e' questa cartella. Va
