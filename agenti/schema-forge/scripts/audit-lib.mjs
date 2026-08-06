@@ -31,6 +31,20 @@ const vero = (v) => {
 
 const riga = (r) => r.map(pulisci);
 
+// Un identificatore Postgres CITATO puo' contenere qualunque cosa: `create
+// table t ("piano(a" text)` e' SQL valido. Interpolato grezzo in una RegExp
+// quel nome fa due danni, e sono di specie diversa:
+//   - `piano(a`  → `new RegExp("\\bpiano(a\\b")` SOLLEVA, e siccome nessuno qui
+//     cattura, l'audit RLS muore con uno stack trace: la verifica «che non puo'
+//     mancare» diventa un passo rosso per un motivo che non parla dello schema;
+//   - `a+b`      → `\ba+b\b` MATCHA `aaab`, cioe' una colonna che non esiste.
+//     Nessun errore, un verdetto sbagliato in silenzio — il caso peggiore per
+//     un auditor.
+// Sta in cima perche' vale per ogni nome che arriva dal catalogo, non solo per
+// l'ultima regola che ne aveva bisogno (trovato da semgrep il 2026-08-06,
+// `detect-non-literal-regexp`).
+const perRegex = (s) => String(s ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 // ─── parsing dell'uscita di psql ─────────────────────────────────────────────
 // Si divide sul SEPARATORE DI RECORD (`psql -R`), non sui newline. Motivo: una
 // policy con una sottoquery viene deparsata da `pg_policies.qual` su piu' righe.
@@ -313,7 +327,7 @@ export function regolaColonneDiPolicy({ policy, colonne, indicizzate }) {
       // "per sicurezza" — semmai un indice PARZIALE, che qui non sappiamo
       // proporre senza conoscere la query. Nessun finding: sarebbe rumore.
       if (booleano(tipo)) continue;
-      const usata = new RegExp(`\\b${nome}\\b`).test(espressione);
+      const usata = new RegExp(`\\b${perRegex(nome)}\\b`).test(espressione);
       const dedupe = `${chiave}.${nome}`;
       if (usata && !indice.has(dedupe) && !viste.has(dedupe)) {
         viste.add(dedupe);
@@ -616,8 +630,6 @@ export function regolaStatoIniziale({ policy, trigger, vincoli }) {
 // visita e' RIMASTA `prenotata` (conteggio 1, non 0) e non usa `throws_ok` —
 // pretendere `throws_ok` o «righe = 0» avrebbe segnalato come mancante un test
 // negativo corretto, cioe' il falso positivo peggiore possibile.
-const perRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
 const tentaScrittura = (testo, schema, tabella) => {
   const rif = `(?:${perRegex(schema)}\\.)?${perRegex(tabella)}\\b`;
   return new RegExp(

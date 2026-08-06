@@ -24,8 +24,10 @@
 - **Guardiani:** ESLint **0 errori 0 warning** e `knip` **0 rilievi** sugli
   script (P.7c punti 1-2, commit `a6f6d1e`, 2026-08-03); nello stesso giro la
   `complexity 19` di `verify.mjs` è stata sciolta in funzioni pure, batteria
-  75 → **86**, rilanciata dal direttore il 2026-08-04 (86/86, 0 fail). Il resto
-  resta mai visto — semgrep, `jscpd`, code-inquisition: punto 5.
+  75 → **86**, rilanciata dal direttore il 2026-08-04 (86/86, 0 fail). `semgrep`
+  **3 rilievi dichiarati, 0 veri** (2026-08-06, P.7c punto 3 — ma su
+  `gate-lib.mjs` ha letto il 99,7% delle righe, non il 100%). Restano mai visti
+  `jscpd` e, fino a P.7c punto 4, code-inquisition: punto 5.
 - **2026-08-03 — il gate non partiva sul Node di sistema, e usciva `0` muto.** *Il
   difetto:* l'epilogo era `if (import.meta.main) await main();`, e `import.meta.main`
   e' arrivato in **Node 24**; su Node 20.12.2 — l'unico Node di sistema di questa
@@ -45,6 +47,27 @@
   classe «l'epilogo non parte», ma su Node 24 non vede *questo* difetto) e uno
   **statico** (il sorgente non contiene `import.meta.main` — l'unico dei due che lo
   impedisce su qualunque Node). Pacchetto P.0-igiene.
+
+- **2026-08-06 — semgrep sugli script, la prima volta: 3 rilievi, 0 veri, e un
+  guardiano che non legge tutto il file (P.7c punto 3).** Configurazione
+  dichiarata: `semgrep scan --config auto` (1.172.0, il profilo della casa —
+  `references/motore-deterministico.md` di code-maniac), **200 regole su 6
+  file**. Esiti: **un `detect-child-process`** (`verify.mjs`:124, ERROR) →
+  **falso positivo provato**: `spawnSync` senza `shell: true`, argomenti come
+  vettore, e questo gate ha in più `argomentiOstiliACmd`, che rifiuta gli
+  argomenti che `cmd.exe` non saprebbe passare interi. **Due
+  `detect-non-literal-regexp`** (`gate-lib.mjs`:134 e :696) → **falsi positivi**:
+  `derogheDaTabella` cerca l'intestazione con tre parole letterali
+  (`pagina`, `categoria`, `motivo`) e `attributo(tag, nome)` è chiamato solo con
+  `name`, `content`, `rel`, `href`. Nessuna correzione, nessun `nosemgrep`:
+  tre rilievi **dichiarati**. **La cosa che conta non è nei rilievi**: su
+  `gate-lib.mjs` semgrep si ferma a **~99,7% di righe analizzate**
+  (`PartialParsing`) — cioè su questo file il guardiano **non ha letto tutto**,
+  e la posizione che dichiara (riga 29) **non è dove sta il problema**: le
+  stesse righe estratte in un file a parte, con lo stesso ruleset, parsano al
+  100%, e gli offset dello span (`0` e `40`) non sono quelli del file. È un
+  limite dello strumento, non una proprietà del codice — e vale come
+  **MANCANTE parziale**, non come `PASS`: quello 0,3% nessuno l'ha guardato.
 
 ## Cosa fa, in una riga
 
@@ -160,11 +183,11 @@ E la prima esecuzione vera di `plan` e `tune` su guadagni misurati: home
    guardia reindirizza prima.
 4. **Nessun passo su `sitemap.ts` e `robots.ts`.** Il gate controlla i metatag di
    pagina e ignora i due file che dicono a un motore di ricerca cosa esiste.
-5. **`code-inquisition` non e' mai stato lanciato sugli script di questa skill**,
-   e `gitleaks` non e' installato: MANCANTI, non PASS. `semgrep` invece **c'e'**
-   (`semgrep --version` → `1.171.0`) e non e' mai stato puntato su questi file:
-   e' una verifica disponibile e non fatta, che e' peggio di una mancante perche'
-   non costa niente. La riga precedente dichiarava mancante anche semgrep, ed era
+5. **`gitleaks` non e' installato: MANCANTE, non PASS.** `semgrep` e'
+   stato puntato su questi file il **2026-08-06** (3 rilievi, 0 veri — §2026-08-06),
+   e su `gate-lib.mjs` si e' fermato al **99,7% delle righe**: quel residuo resta
+   MANCANTE. `code-inquisition`: P.7c punto 4.
+   La riga precedente dichiarava mancante anche semgrep, ed era
    falsa gia' quando e' stata scritta — `schema-forge/STATO.md` l'aveva misurato
    presente due giorni prima. Il collaudo avversario ha fatto crescere
    `gate-lib.mjs` e `verify.mjs`, quindi c'e' piu' codice mai passato ai guardiani

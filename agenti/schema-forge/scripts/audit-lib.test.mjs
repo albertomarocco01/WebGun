@@ -935,3 +935,45 @@ test("uscita vuota: zero righe, non un crash", () => {
   assert.deepEqual(righeDaPsql("", US, RS), []);
   assert.deepEqual(righeDaPsql(null, US, RS), []);
 });
+
+// ─── nomi del catalogo dentro una RegExp (semgrep, 2026-08-06) ───────────────
+// `detect-non-literal-regexp` sulla regola 6: il nome della colonna arriva dal
+// catalogo e finisce grezzo in `new RegExp`. Un identificatore citato puo'
+// contenere qualunque carattere, e i due danni sono di specie diversa — uno
+// uccide l'audit, l'altro lo fa mentire. Nessuno dei due era coperto.
+
+test("regola 6: un nome di colonna che sarebbe una regex non valida non uccide l'audit", () => {
+  const catalogo = {
+    policy: [
+      ["public", "documenti", "proprietario legge", "SELECT", "{authenticated}",
+        '((select auth.uid()) = "piano(a")', ""],
+    ],
+    colonne: [
+      ["public", "documenti", "id", "uuid"],
+      ["public", "documenti", "piano(a", "text"],
+    ],
+    indicizzate: [],
+  };
+  // prima della correzione: SyntaxError da `new RegExp("\\bpiano(a\\b")`, e
+  // `rls-audit.mjs` non cattura niente — il passo «audit RLS» moriva col trace
+  const findings = regolaColonneDiPolicy(catalogo);
+  assert.deepEqual(gravita(findings), ["warn"]);
+  assert.equal(findings[0].object, "public.documenti.piano(a");
+});
+
+test("regola 6: i metacaratteri di un nome non fanno matchare una colonna che non c'e'", () => {
+  const catalogo = {
+    policy: [
+      ["public", "documenti", "proprietario legge", "SELECT", "{authenticated}",
+        "((select auth.uid()) = aaab)", ""],
+    ],
+    colonne: [
+      ["public", "documenti", "id", "uuid"],
+      ["public", "documenti", "a+b", "text"],
+    ],
+    indicizzate: [],
+  };
+  // prima della correzione: `\ba+b\b` matcha `aaab` → un warn su una colonna
+  // che la policy non nomina affatto
+  assert.deepEqual(regolaColonneDiPolicy(catalogo), []);
+});

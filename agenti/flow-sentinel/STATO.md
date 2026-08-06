@@ -53,6 +53,18 @@
   su Node 24 non vede *questo* difetto) e uno **statico** (il sorgente non contiene `import.meta.main` —
   l'unico dei due che lo impedisce su qualunque Node). Pacchetto P.0-igiene.
 
+- **2026-08-06 — semgrep sugli script, la prima volta: 4 rilievi, 0 veri (P.7c punto 3).**
+  Configurazione dichiarata: `semgrep scan --config auto` (1.172.0, il profilo della casa —
+  `references/motore-deterministico.md` di code-maniac), **200 regole su 5 file, 100% di righe
+  analizzate**. Esiti: **due `detect-child-process`** (`verify.mjs`:109 e :115, ERROR) → **falsi
+  positivi provati**: nessuno dei due passa da `shell: true` — la scelta e' scritta e motivata nel
+  commento sopra `dove` (CVE-2024-27980, «prezzo gia' pagato da Schema Forge») — e gli argomenti
+  viaggiano come vettore. **Due `detect-non-literal-regexp`**: `gate-lib.mjs`:376, dove il nome
+  interpolato ha appena passato `/^[A-Za-z_$][\w$]*$/` **tre righe sopra** (nessun metacarattere
+  possibile), e `gate-lib.mjs`:550, dove `valoreToml` riceve tre chiavi letterali (`port`,
+  `site_url`, `schemas`). Nessuna correzione, nessun `nosemgrep`: quattro rilievi **dichiarati**.
+  Nessuno script toccato, quindi **batteria non ripetuta** (nulla da misurare prima e dopo).
+
 ## Piano di costruzione (deciso in P0)
 
 | Fase | Cosa | Dove | Stato |
@@ -216,9 +228,9 @@ silenzio, tre crash su report malformati, e tre rossi sbagliati su codice commen
 7. **`code-inquisition` non e' mai stato lanciato sugli script di questa skill.** La Regola dei
    guardiani lo chiede sui punti critici; qui il punto critico e' la chiave amministrativa negli helper
    del progetto generato, e su quello il gate non ha nessun controllo automatico — solo la prosa di
-   `references/playwright.md`. `gitleaks` non e' installato: MANCANTE, non PASS. `semgrep` **c'e'**
-   (`semgrep --version` → `1.171.0`) e su questi script non e' mai stato puntato: disponibile e non
-   usato, che e' un residuo diverso e peggiore di uno strumento che manca.
+   `references/playwright.md`. `gitleaks` non e' installato: MANCANTE, non PASS. `semgrep` **e' stato
+   puntato su questi script il 2026-08-06** (1.172.0, `--config auto`): **4 rilievi, 0 veri**,
+   tutti dichiarati con la prova a fianco (§2026-08-06). Restano `code-inquisition` e `gitleaks`.
 8. **Il gate non ha nessun passo che usi la chiave di servizio.** *(Numero in coda per non
    spostare le citazioni degli altri punti; per gravita' starebbe subito dopo il n°2.)*
    Il 2026-07-30, sul banco
