@@ -174,7 +174,19 @@ export function ripulisciDocumento(html) {
     // Il CORPO di `<script>` e `<style>` non entra nel documento ripulito: su
     // Next il carico RSC porta l'albero serializzato della pagina, e contarlo
     // vorrebbe dire leggere due volte lo stesso documento.
-    if ((nome === "script" || nome === "style") && !/\/>$/.test(tag.testo)) {
+    // `<textarea>` sta qui insieme a `<script>` e `<style>` per una ragione
+    // diversa e misurata: il suo contenuto e' TESTO, non markup. Un'area di
+    // testo che mostra un esempio di markup — o un campo di un CMS in cui
+    // qualcuno ha incollato una pagina — faceva contare al gate elementi che
+    // il browser non rende: al collaudo P2 un `<img>` dentro una `<textarea>`
+    // produceva «immagine senza alt», cioe' un ROSSO su una pagina corretta,
+    // e i campi si contavano due volte.
+    //
+    // `<title>` NON entra in questo elenco, ed e' deliberato: il suo corpo
+    // serve a `nomeAccessibile` per le icone SVG (`<svg><title>…</title>`, il
+    // rimedio SD-ROSSO-01 del tribunale). Il doppio conteggio di un `<img>`
+    // dentro un `<title>` resta, ed e' scritto fra i residui.
+    if ((nome === "script" || nome === "style" || nome === "textarea") && !/\/>$/.test(tag.testo)) {
       const chiusura = new RegExp(`</\\s*${nome}\\s*>`, "i");
       const resto = html.slice(i);
       const m = chiusura.exec(resto);

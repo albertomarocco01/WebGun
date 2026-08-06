@@ -749,6 +749,18 @@ describe("i reperti del tribunale, uno per uno", () => {
     }
   });
 
+  // Collaudo P2: rosso su markup corretto. Il contenuto di una `<textarea>` e'
+  // TESTO, non markup — un'area che mostra un esempio, o un campo di CMS in cui
+  // qualcuno ha incollato una pagina, faceva contare al gate elementi che il
+  // browser non rende.
+  it("il contenuto di una <textarea> e' testo: non produce elementi ne' campi in piu'", () => {
+    const doc = '<html lang="it"><head><title>t</title></head><body><main><h1>x</h1>'
+      + '<label for="e">Esempio</label><textarea id="e"><img src="/x.png"><input name="telefono" autocomplete="tel"></textarea>'
+      + "</main></body></html>";
+    assert.equal(campiDiPagina(doc).length, 1, "la textarea, e nient'altro");
+    assert.deepEqual(findingsAccessibilitaPagina("/x", doc), [], "nessuna immagine senza alt: quell'immagine non esiste");
+  });
+
   it("`ripulisciDocumento` restituisce i corpi inline e gli stili, senza rileggere il documento", () => {
     const r = ripulisciDocumento('<script>localStorage.x=1</script><style>@import url("https://f.test/a.css");</style><p>x</p>');
     assert.equal(r.inline.length, 1);
