@@ -17,7 +17,7 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { CLASSI } from "./banco.mjs";
-import { ATTESA_MS, CONTRATTO_JSON, ID, MAX_PAGINE, riepilogo } from "./verify.mjs";
+import { ATTESA_MS, CONTRATTO_JSON, ID, MAX_PAGINE, riepilogo, STATI } from "./verify.mjs";
 
 describe("gli id dei passi e il loro ordine", () => {
   const ATTESI = [
@@ -66,7 +66,20 @@ describe("gli id dei passi e il loro ordine", () => {
 describe("riepilogo e verdetto a quattro stati", () => {
   it("conta i quattro stati", () => {
     const passi = [{ status: "pass" }, { status: "pass" }, { status: "fail" }, { status: "skipped" }, { status: "n/a" }];
-    assert.deepEqual(riepilogo(passi), { passi: 5, pass: 2, fail: 1, skipped: 1, na: 1 });
+    assert.deepEqual(riepilogo(passi), { passi: 5, pass: 2, fail: 1, skipped: 1, na: 1, ignoti: 0 });
+  });
+
+  it("gli stati ammessi sono quattro, e sono questi", () => {
+    assert.deepEqual([...STATI], ["pass", "fail", "skipped", "n/a"]);
+  });
+
+  it("falso verde: uno stato scritto male non sparisce dal conteggio", () => {
+    // Senza `ignoti`, un `record(..., "skip", ...)` non sarebbe contato ne' fra
+    // i falliti ne' fra i mancanti, e il gate uscirebbe VERDE: un refuso di un
+    // carattere trasformava questo gate in un timbro.
+    const r = riepilogo([...Array(8).fill({ status: "pass" }), { status: "skip" }]);
+    assert.equal(r.ignoti, 1);
+    assert.equal(r.fail === 0 && r.skipped === 0 && r.ignoti === 0, false);
   });
 
   it("otto `pass` e uno `skipped` NON sono un verde", () => {

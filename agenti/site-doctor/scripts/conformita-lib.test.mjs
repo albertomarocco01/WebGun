@@ -13,6 +13,7 @@ import { describe, it } from "node:test";
 
 import {
   contrattoUscita,
+  ESITI_AMMESSI,
   findingsCertificato,
   findingsPerimetro,
   leggiCertificato,
@@ -199,6 +200,27 @@ describe("il perimetro — la Legge n°1, resa falsificabile", () => {
     stati.set("lingua-e-hreflang", "n/a");
     const righe = RIGHE_BUONE.replace("| lingua-hreflang | site-doctor | — | conforme |", "| lingua-hreflang | site-doctor | — | non applicabile |");
     assert.deepEqual(blocchi(perimetro(righe, stati)), []);
+  });
+
+  it("tribunale SD-05: una cella `esito` VUOTA non disattiva il confronto §19", () => {
+    const righe = RIGHE_BUONE.replace("| informativa-privacy | site-doctor | — | conforme |", "| informativa-privacy | site-doctor | — |  |");
+    assert.ok(blocchi(perimetro(righe)).some((x) => x.object === "informativa-privacy" && /senza esito/.test(x.message)));
+  });
+
+  it("tribunale SD-05: un esito fuori dai quattro ammessi e' un bloccante", () => {
+    const righe = RIGHE_BUONE.replace("| informativa-privacy | site-doctor | — | conforme |", "| informativa-privacy | site-doctor | — | va benissimo |");
+    assert.ok(blocchi(perimetro(righe)).some((x) => /non riconosciuto/.test(x.message)));
+    assert.deepEqual([...ESITI_AMMESSI], ["conforme", "non conforme", "non verificato", "non applicabile"]);
+  });
+
+  it("tribunale SD-PATH-01: una delega che esce dal progetto diventa un bloccante", () => {
+    const righe = RIGHE_BUONE.replace("| canonical | speed-demon | docs/handoff/13.md |", "| canonical | speed-demon | ../../WebGun/agenti/speed-demon/SKILL.md |");
+    const f = findingsPerimetro({
+      tabella: leggiCertificato(CERT(righe)).voci,
+      leggiFile: (percorso) => (percorso.includes("..") ? null : leggiFinto(percorso)),
+      statiPassi: STATI_VERDI,
+    });
+    assert.ok(blocchi(f).some((x) => x.object === "canonical" && /non esiste/.test(x.message)));
   });
 
   it("una riga fuori elenco e' un avviso: il gate non la controlla", () => {

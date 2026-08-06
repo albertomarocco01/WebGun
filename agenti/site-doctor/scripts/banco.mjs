@@ -26,7 +26,7 @@
  */
 
 import { createServer } from "node:http";
-import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -270,7 +270,40 @@ function scrivi(dir, relativo, contenuto) {
   writeFileSync(pieno, contenuto, "utf8");
 }
 
+const MARCATORE = ".banco-site-doctor";
+
+/**
+ * Il banco si rifiuta di scrivere in una cartella che non ha dichiarato di
+ * essere un banco.
+ *
+ * `--dir .` lanciato dalla radice di un progetto vero sovrascriveva senza una
+ * parola `docs/conformita.md` — il certificato che launchpad legge per decidere
+ * se pubblicare — e tre file di handoff, con contenuti fabbricati. Nessuna
+ * conferma, nessun controllo: la contaminazione silenziosa di un artefatto che
+ * altri trattano come fonte di verita'.
+ *
+ * La cartella e' buona se e' vuota (e allora si marca) o se porta gia' il
+ * marcatore. Non rompe l'uso dichiarato — un banco nasce in una cartella
+ * scratch, che alla prima esecuzione e' vuota.
+ */
+function preparaCartella(dir) {
+  mkdirSync(dir, { recursive: true });
+  const marcatore = join(dir, MARCATORE);
+  if (existsSync(marcatore)) return;
+  const dentro = readdirSync(dir);
+  if (dentro.length > 0) {
+    console.error(
+      `${dir} non e' vuota e non porta il marcatore \`${MARCATORE}\`: il banco NON ci scrive.\n` +
+      "Questo banco sovrascrive `docs/conformita.md` e `docs/handoff/*`: dentro un progetto vero cancellerebbe il certificato che launchpad legge per decidere se pubblicare.\n" +
+      `Usa una cartella vuota, oppure crea il file \`${MARCATORE}\` se sei sicuro che sia un banco.`,
+    );
+    process.exit(2);
+  }
+  writeFileSync(marcatore, "Cartella di banco di site-doctor. Il banco sovrascrive docs/ e .next/ qui dentro.\n", "utf8");
+}
+
 function materializza(dir, sab, base, { handoffVerde = false } = {}) {
+  preparaCartella(dir);
   // Classe Y: su disco c'e' un ALTRO progetto — build id diverso *e* asset
   // diverso. Le due cose insieme, perche' il solo build id diverso e' l'altro
   // caso (stesso sito, processo indietro) e il gate deve saperli distinguere.

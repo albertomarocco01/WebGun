@@ -13,6 +13,7 @@ import {
   apiArchiviazioneIn,
   assetDaProvare,
   attributi,
+  campiAvvolti,
   campiDiPagina,
   candidatiInformativa,
   classificaCampo,
@@ -36,12 +37,15 @@ import {
   nomeAccessibile,
   percorsiDaSitemap,
   percorsoInterno,
+  perStampa,
   raggiungibiliDaCollegamenti,
+  ripulisciDocumento,
   senzaScript,
   statoDaFindings,
   statoNonApplicabile,
   tagDi,
   terziDi,
+  testoDellId,
   testoVisibile,
   VOCI_INFORMATIVA,
 } from "./servito-lib.mjs";
@@ -147,10 +151,19 @@ describe("percorsi e superficie", () => {
     assert.match(blocchi(f)[0].message, /la camminata non ha camminato/);
   });
 
-  it("senza sitemap la sorgente e' una sola, e si dice", () => {
-    const f = findingsSuperficie({ daCollegamenti: ["/"], daSitemap: [], dichiarate: [], sitemapLetta: false });
+  it("senza sitemap ma con la camminata viva: la sorgente e' una sola, e si dice", () => {
+    const f = findingsSuperficie({ daCollegamenti: ["/", "/a", "/b"], daSitemap: [], dichiarate: [], sitemapLetta: false });
     assert.equal(f[0].severity, "issue");
     assert.match(f[0].message, /una sola sorgente/);
+  });
+
+  it("falso verde (tribunale): senza sitemap E senza camminata non c'e' NESSUNA sorgente", () => {
+    // Il sabotaggio provava «home senza collegamenti + sitemap intera»; «home
+    // senza collegamenti + sitemap ASSENTE» restava verde, cioe' il primo
+    // testimone poteva mentire da solo purche' il secondo sparisse.
+    const f = findingsSuperficie({ daCollegamenti: ["/"], daSitemap: [], dichiarate: [], sitemapLetta: false });
+    assert.equal(blocchi(f).length, 1);
+    assert.match(blocchi(f)[0].message, /NESSUNA sorgente indipendente/);
   });
 
   it("una pagina dichiarata e non raggiungibile e' un bloccante", () => {
@@ -495,6 +508,119 @@ describe("lingua e hreflang", () => {
     const e = esitoLingua({ pagine: [p("/", "it", [{ hreflang: "it", percorso: "/" }])], lingueDichiarate: ["it"], percorsi: ["/"] });
     assert.equal(e.stato, "n/a");
     assert.equal(e.findings[0].severity, "issue");
+  });
+});
+
+// ------------------------------------------------- i reperti del tribunale
+describe("i reperti del tribunale, uno per uno", () => {
+  it("SD-VERDE-01: `<!--` dentro un valore di attributo NON apre un commento", () => {
+    // Era la chiave universale: due `<div>` invisibili facevano sparire dal
+    // documento che il gate giudica tutto quello che stava in mezzo.
+    const trappola = '<div data-nota="<!--"></div><img src="/h.jpg"><script src="https://gtm.test/j"></script><div data-nota="-->"></div>';
+    assert.equal(tagDi(senzaScript(trappola), "img").length, 1);
+    assert.deepEqual(terziDi(trappola, BASE), [{ origine: "https://gtm.test", elementi: ["script"] }]);
+  });
+
+  it("SD-VERDE-01: le forme brusche `<!-->` e `<!--->` chiudono subito, non divorano la pagina", () => {
+    for (const brusco of ["<!-->", "<!--->"]) {
+      const html = `${brusco}<main><h1>t</h1><input type="email" name="e"></main>`;
+      assert.equal(campiDiPagina(html).length, 1, `divorato da ${brusco}`);
+    }
+  });
+
+  it("SD-REDOS-01: il ripulitore e' lineare, non quadratico", () => {
+    // La catena di `replace` costava 24,6 s su 200 KB di `<` ripetuti, ×4 a ogni
+    // raddoppio: un modo per appendere il gate senza fargli dire ROSSO.
+    const inizio = Date.now();
+    senzaScript("<".repeat(200000));
+    assert.ok(Date.now() - inizio < 2000, "200 KB di `<` devono costare millisecondi, non secondi");
+  });
+
+  it("`ripulisciDocumento` restituisce i corpi inline e gli stili, senza rileggere il documento", () => {
+    const r = ripulisciDocumento('<script>localStorage.x=1</script><style>@import url("https://f.test/a.css");</style><p>x</p>');
+    assert.equal(r.inline.length, 1);
+    assert.match(r.inline[0].corpo, /localStorage/);
+    assert.equal(r.stili.length, 1);
+  });
+
+  it("SD-VERDE-03: un terzo entra anche da `@import` in uno stile, da un video e da un srcset", () => {
+    const html = '<style>@import url("https://font.test/a.css");</style><video src="https://v.test/x.mp4"></video><img srcset="https://i.test/a.png 1x">';
+    assert.deepEqual(terziDi(html, BASE).map((t) => t.origine).sort(), ["https://font.test", "https://i.test", "https://v.test"]);
+  });
+
+  it("SD-VERDE-05: un campo nascosto con `autocomplete` personale NON sparisce dal censimento", () => {
+    const campi = campiDiPagina('<form><input type="hidden" name="email" autocomplete="email"><input type="hidden" name="$ACTION_KEY" value="x"></form>');
+    assert.deepEqual(campi.map((c) => c.nome), ["email"], "i campi di servizio si scartano per NOME, non per tipo");
+    assert.equal(classificaCampo(campi[0]).prova, "forte");
+  });
+
+  it("SD-VERDE-05: ma un campo nascosto non ha bisogno di un'etichetta", () => {
+    const f = findingsAccessibilitaPagina("/x", '<html lang="it"><head><title>t</title></head><body><main><h1>a</h1><form><input type="hidden" name="tok"></form></main></body></html>');
+    assert.deepEqual(f, []);
+  });
+
+  it("SD-VERDE-06: `aria-labelledby` verso un id inesistente NON e' un nome accessibile", () => {
+    const doc = '<a href="/" aria-labelledby="manca"></a>';
+    assert.equal(nomeAccessibile('<a href="/" aria-labelledby="manca">', "", doc), "");
+    const doc2 = '<h2 id="c">Vai alla home</h2><a href="/" aria-labelledby="c"></a>';
+    assert.equal(nomeAccessibile('<a href="/" aria-labelledby="c">', "", doc2), "Vai alla home");
+    assert.equal(testoDellId(doc2, "c"), "Vai alla home");
+  });
+
+  it("SD-VERDE-06: una `<label for>` VUOTA non etichetta niente", () => {
+    assert.equal(etichettePerId('<label for="e"></label>').has("e"), false);
+  });
+
+  it("SD-ROSSO-01: una `<label>` che AVVOLGE il campo lo etichetta", () => {
+    const html = '<html lang="it"><head><title>t</title></head><body><main><h1>a</h1><form><label>Email <input type="email" name="email"></label></form></main></body></html>';
+    assert.deepEqual(findingsAccessibilitaPagina("/x", html), []);
+    assert.ok(campiAvvolti(html).has("@email"));
+  });
+
+  it("SD-ROSSO-01: un'icona SVG con `aria-label` E' un nome accessibile", () => {
+    const html = '<html lang="it"><head><title>t</title></head><body><main><h1>a</h1><a href="/f"><svg role="img" aria-label="Facebook"></svg></a></main></body></html>';
+    assert.deepEqual(findingsAccessibilitaPagina("/x", html), []);
+  });
+
+  it("SD-ROSSO-02: `/prodotti/cookie-al-cioccolato` non e' un'informativa", () => {
+    // Su un sito di pasticceria quel collegamento sta in ogni pagina, esattamente
+    // come «Privacy» nel piè di pagina: veniva eletto informativa e il passo
+    // usciva ROSSO su una pagina di prodotto.
+    assert.deepEqual(candidatiInformativa('<a href="/prodotti/cookie-al-cioccolato">Biscotti</a>', BASE), []);
+    assert.equal(candidatiInformativa('<a href="/cookie-policy">Leggi</a>', BASE).length, 1);
+  });
+
+  it("SD-VERDE-04: un collegamento NASCOSTO non e' un candidato", () => {
+    assert.deepEqual(candidatiInformativa('<a href="/esca" hidden>privacy</a>', BASE), []);
+    assert.deepEqual(candidatiInformativa('<a href="/esca" style="display:none">privacy</a>', BASE), []);
+  });
+
+  it("SD-VERDE-04: il testo del collegamento pesa piu' del percorso", () => {
+    const c = candidatiInformativa('<a href="/privacy">Informativa privacy</a><a href="/legal">x</a>', BASE);
+    assert.equal(c.find((x) => x.percorso === "/privacy").peso, 2);
+    assert.equal(c.find((x) => x.percorso === "/legal").peso, 1);
+  });
+
+  it("SD-NET-01: i caratteri di controllo del testo scaricato non arrivano al terminale", () => {
+    // L'uscita del gate si incolla nei verbali: una sequenza ANSI dentro un
+    // attributo poteva riscrivere «GATE CONFORMITA': VERDE» sopra l'output vero.
+    const ostile = `/a${String.fromCharCode(27)}[2J${String.fromCharCode(7)}b`;
+    const stampato = perStampa(ostile);
+    const controlli = [...stampato].filter((c) => {
+      const punto = c.codePointAt(0);
+      return punto < 32 || (punto >= 127 && punto <= 159);
+    });
+    assert.deepEqual(controlli, [], "un carattere di controllo non deve arrivare al terminale");
+    assert.equal(perStampa("x".repeat(400), 50).length, 51, "e si tronca");
+  });
+
+  it("SD-06: una superficie dichiarata VUOTA non disattiva il confronto in silenzio", () => {
+    const f = findingsSuperficie({
+      daCollegamenti: ["/", "/a"], daSitemap: ["/", "/a"], dichiarate: [], sitemapLetta: true,
+      superficieDichiarata: { sezionePresente: true, righe: [] },
+    });
+    assert.equal(blocchi(f).length, 1);
+    assert.match(blocchi(f)[0].message, /c'e' ed e' vuota/);
   });
 });
 

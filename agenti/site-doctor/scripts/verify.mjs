@@ -31,8 +31,8 @@
  * test: qui c'e' solo il guscio di I/O, e l'ORDINE della lista `PASSI` e' il gate.
  */
 
-import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -63,6 +63,8 @@ import {
   langDi,
   moduliDiPagina,
   percorsiDaSitemap,
+  perStampa,
+  percorsoInterno,
   raggiungibiliDaCollegamenti,
   statoDaFindings,
   statoNonApplicabile,
@@ -105,7 +107,41 @@ const record = (id, name, status, detail = "") => {
 
 const leggiSeCe = (relativo) => {
   const pieno = join(PROGETTO, relativo);
-  return existsSync(pieno) ? readFileSync(pieno, "utf8") : null;
+  if (!existsSync(pieno)) return null;
+  try {
+    return readFileSync(pieno, "utf8");
+  } catch {
+    // Un percorso che esiste ma non si legge (una cartella, `EACCES`) non deve
+    // far esplodere il gate: `EISDIR` su una cella scritta male del certificato
+    // lo faceva uscire **1 con stdout vuoto**, che chi guarda il codice
+    // d'uscita legge come «gate rosso».
+    return null;
+  }
+};
+
+/**
+ * Come `leggiSeCe`, ma **solo dentro il progetto**.
+ *
+ * La colonna «dove è dichiarato» del certificato e' testo scritto da chi compila
+ * il documento, e finiva dritta in `join(PROGETTO, …)`: con `../../…` si usciva
+ * dalla radice. Misurato dal tribunale: una riga
+ * `| sitemap | speed-demon | ../../WebGun/agenti/speed-demon/SKILL.md |`
+ * superava sia «il file esiste» sia «nomina la voce», perche' quel documento la
+ * nomina davvero — e con un solo file di regia scelto bene si facevano passare
+ * TUTTE le voci delegate senza che il progetto contenesse una riga a riguardo.
+ * Il passo che questa skill esiste per produrre si soddisfaceva col file di un
+ * altro repo.
+ */
+const leggiDentroIlProgetto = (relativo) => {
+  const pieno = resolve(PROGETTO, String(relativo ?? ""));
+  const radice = resolve(PROGETTO);
+  if (pieno !== radice && !pieno.startsWith(radice + sep)) return null;
+  if (!existsSync(pieno) || !statSync(pieno).isFile()) return null;
+  try {
+    return readFileSync(pieno, "utf8");
+  } catch {
+    return null;
+  }
 };
 
 /**
@@ -121,7 +157,7 @@ async function preleva(url, { tentativi = 2, segui = false, attesa = ATTESA_MS }
       const cookie = typeof r.headers.getSetCookie === "function"
         ? r.headers.getSetCookie()
         : (r.headers.get("set-cookie") ? [r.headers.get("set-cookie")] : []);
-      return { stato: r.status, corpo, intestazioni: r.headers, cookie };
+      return { stato: r.status, corpo, intestazioni: r.headers, cookie, url: r.url || url };
     } catch {
       if (i === tentativi - 1) return null;
       await new Promise((ok) => setTimeout(ok, 500));
@@ -134,6 +170,22 @@ const unisci = (base, percorso) => new URL(percorso, base).toString();
 
 /** Il nome di un cookie da una riga `Set-Cookie`. */
 const nomeCookie = (riga) => String(riga).split("=")[0].trim();
+
+/**
+ * La superficie e' utilizzabile? E se no, perche'?
+ *
+ * `if (!ctx.pagine)` NON basta, ed era un difetto vero: `![]` e' `false`, quindi
+ * una superficie **vuota** superava la guardia e tre passi chiudevano su zero
+ * pagine — `accessibilita-servita` `pass` («nessun rilievo» su niente),
+ * `dati-raccolti` e `lingua-e-hreflang` `n/a` con una premessa che stampava «di
+ * 0 pagine ()». Tre verdi su una misura che non c'era, e poi usati come verita'
+ * nel confronto §19 del `perimetro`.
+ */
+const superficieUsabile = (ctx) => Array.isArray(ctx.pagine) && ctx.pagine.length > 0;
+const motivoSuperficie = (ctx) =>
+  ctx.pagine === null
+    ? "superficie non stabilita: il passo `superficie-pubblica` non ha potuto identificare l'app, e leggere l'HTML di un'altra applicazione sarebbe il falso verde piu' costoso di tutti"
+    : "superficie VUOTA: zero pagine lette. Non e' «un sito senza pagine», e' una camminata che non ha camminato — e un `pass` qui direbbe qualcosa su un sito che il gate non ha guardato";
 
 // ----------------------------------------------------------------- i passi
 const PASSI = [
@@ -192,17 +244,31 @@ const PASSI = [
       // registra il rimando e non ci si entra (precedente di speed-demon, e la
       // ragione per cui l'area amministrativa non finisce nella superficie
       // pubblica senza che nessuno debba elencarla).
-      const daVedere = ["/", ...daSitemap];
+      // La RADICE puo' rimandare, ed e' normale: un middleware multilingua manda
+      // `/` a `/it`, e cosi' fanno le regole www/barra-finale. Se la si trattasse
+      // come tutte le altre — rimando registrato, non ci si entra — il grafo non
+      // avrebbe la chiave `/`, la camminata partirebbe da un nodo che non c'e' e
+      // la sorgente «collegamenti» uscirebbe VUOTA su un sito perfettamente
+      // collegato: con la sitemap, un `block` con la diagnosi sbagliata; senza,
+      // zero pagine e tre passi verdi sul nulla. Il rimando della sola radice si
+      // segue, e la camminata parte da dove si e' arrivati.
+      const radicePercorso = percorsoInterno(radice.url ?? args.url, args.url) ?? "/";
+      const daVedere = [radicePercorso, ...daSitemap];
       const viste = new Map();
       const rimandi = new Map();
       const grafo = new Map();
       let troncata = false;
+      const cookieVisti = [];
       while (daVedere.length > 0) {
         if (viste.size >= args.maxPagine) { troncata = true; break; }
         const percorso = daVedere.shift();
         if (viste.has(percorso) || rimandi.has(percorso)) continue;
         const r = await preleva(unisci(args.url, percorso));
         if (!r) { viste.set(percorso, null); continue; }
+        // Le intestazioni `Set-Cookie` sono un fatto misurato anche quando non si
+        // entra nella pagina: un cookie posto SUL RIMANDO (di sessione, di
+        // lingua) sparirebbe del tutto se lo si buttasse insieme alla risposta.
+        for (const riga of r.cookie) cookieVisti.push({ riga, percorso });
         if (r.stato >= 300 && r.stato < 400) { rimandi.set(percorso, r.intestazioni.get("location")); continue; }
         if (r.stato >= 400) { rimandi.set(percorso, `HTTP ${r.stato}`); continue; }
         viste.set(percorso, r);
@@ -210,20 +276,28 @@ const PASSI = [
         grafo.set(percorso, uscenti);
         for (const p of uscenti) if (!viste.has(p) && !rimandi.has(p)) daVedere.push(p);
       }
-      // La sorgente «collegamenti» si calcola SUL GRAFO, partendo da `/`: la
-      // sitemap ha fatto da seme allo scarico, non deve fare da seme alla
+      // La sorgente «collegamenti» si calcola SUL GRAFO, partendo dalla radice:
+      // la sitemap ha fatto da seme allo scarico, non deve fare da seme alla
       // scoperta. Vedi `raggiungibiliDaCollegamenti`.
-      const daCollegamenti = raggiungibiliDaCollegamenti(grafo, "/");
+      const daCollegamenti = raggiungibiliDaCollegamenti(grafo, radicePercorso);
 
       ctx.baseUrl = args.url;
+      ctx.buildId = buildId;
       ctx.pagine = [...viste].filter(([, r]) => r !== null).map(([percorso, r]) => ({ percorso, ...r }));
       ctx.nonLette = [...viste].filter(([, r]) => r === null).map(([p]) => p);
       ctx.rimandi = rimandi;
+      ctx.cookie = cookieVisti;
 
       const findings = findingsSuperficie({
         daCollegamenti: daCollegamenti.filter((p) => viste.has(p)),
         daSitemap,
-        dichiarate: ctx.certificato?.superficie ?? [],
+        // La superficie dichiarata arriva grezza dalla cella di una tabella; il
+        // misurato e' passato da `percorsoInterno`. Senza normalizzare, una
+        // barra finale produce DUE rilievi sulla stessa pagina — «dichiarata e
+        // non raggiungibile» e «raggiungibile e non dichiarata» — cioe' un
+        // bloccante nato da un dettaglio di formattazione.
+        dichiarate: (ctx.certificato?.superficie ?? []).map((p) => percorsoInterno(p, args.url) ?? p),
+        superficieDichiarata: ctx.certificato ? ctx.certificato.superficieDichiarata : null,
         sitemapLetta,
       });
       if (identita.stato !== "pass") {
@@ -235,11 +309,15 @@ const PASSI = [
       if (ctx.nonLette.length > 0) {
         findings.push({ severity: "block", object: "superficie", message: `${ctx.nonLette.length} pagine non scaricate: ${ctx.nonLette.join(", ")}` });
       }
+      if (ctx.pagine.length === 0) {
+        findings.push({ severity: "block", object: "superficie", message: "zero pagine lette: non c'e' nessuna superficie da certificare, e tutti i passi che la consumano restano MANCANTI" });
+      }
       const dettaglio = [
         `identita': ${identita.stato === "pass" ? identita.diagnosi : "NON confermata dal build id (vedi sotto)"} · ${ctx.pagine.length} pagine lette · ${rimandi.size} rimandi o errori non seguiti`,
-        `sorgenti: collegamenti da / (${daCollegamenti.length}) · sitemap.xml ${sitemapLetta ? `(${daSitemap.length})` : "NON LETTA"}`,
+        `radice: ${radicePercorso}${radicePercorso === "/" ? "" : " (la radice rimanda, e il rimando e' stato seguito)"}`,
+        `sorgenti: collegamenti da ${radicePercorso} (${daCollegamenti.length}) · sitemap.xml ${sitemapLetta ? `(${daSitemap.length})` : "NON LETTA"}`,
         `superficie: ${ctx.pagine.map((p) => p.percorso).join(" ")}`,
-        rimandi.size > 0 ? `non entrate: ${[...rimandi].map(([p, d]) => `${p} → ${d}`).join(" · ")}` : "",
+        rimandi.size > 0 ? `non entrate: ${[...rimandi].map(([p, d]) => `${p} → ${perStampa(d, 120)}`).join(" · ")}` : "",
         dettaglioFindings(findings),
       ].filter(Boolean).join("\n");
       return record(this.id, this.nome, statoDaFindings(findings), dettaglio);
@@ -250,38 +328,50 @@ const PASSI = [
     id: ID.informativa,
     nome: "informativa privacy raggiungibile",
     async esegui(ctx) {
-      if (!ctx.pagine) return record(this.id, this.nome, "skipped", "superficie non stabilita: non c'e' niente su cui cercare un'informativa");
+      if (!superficieUsabile(ctx)) return record(this.id, this.nome, "skipped", motivoSuperficie(ctx));
       const conCandidati = ctx.pagine.map((p) => ({ percorso: p.percorso, candidati: candidatiInformativa(p.corpo, ctx.baseUrl) }));
-      const conteggio = new Map();
-      for (const p of conCandidati) for (const c of p.candidati) conteggio.set(c.percorso, (conteggio.get(c.percorso) ?? 0) + 1);
-      // Il candidato piu' collegato: se le pagine rimandano a due posti diversi,
-      // vince quello che vede piu' gente, e la discrepanza esce come rilievo.
-      const scelto = [...conteggio].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-
-      let informativa = null;
-      let htmlInformativa = null;
-      if (scelto) {
-        const gia = ctx.pagine.find((p) => p.percorso === scelto);
-        const r = gia ?? (await preleva(unisci(ctx.baseUrl, scelto)));
-        if (!r) {
-          return record(this.id, this.nome, "skipped", `le pagine rimandano a ${scelto} e non si e' riusciti a scaricarlo: la verifica non e' stata fatta, non e' fallita`);
-        }
-        informativa = { percorso: scelto, stato: r.stato };
-        htmlInformativa = r.corpo;
-        ctx.informativaRaggiungibile = new Set(conCandidati.filter((p) => p.candidati.some((c) => c.percorso === scelto)).map((p) => p.percorso));
-      } else {
-        ctx.informativaRaggiungibile = new Set();
+      const peso = new Map();
+      for (const p of conCandidati) {
+        for (const c of p.candidati) peso.set(c.percorso, (peso.get(c.percorso) ?? 0) + c.peso);
       }
+      // SI SCARICANO TUTTI I CANDIDATI, non solo il piu' collegato. Con un solo
+      // scarico bastava un'esca — un collegamento in piu' verso una pagina che
+      // contiene le sette voci — per rendere verde un sito il cui collegamento
+      // VISIBILE porta a un 404: quello nessuno lo scaricava (SD-VERDE-04).
+      const esiti = [];
+      for (const [percorso] of [...peso].sort((a, b) => b[1] - a[1])) {
+        const gia = ctx.pagine.find((p) => p.percorso === percorso);
+        const r = gia ?? (await preleva(unisci(ctx.baseUrl, percorso)));
+        if (!r) {
+          return record(this.id, this.nome, "skipped", `le pagine rimandano a ${percorso} e non si e' riusciti a scaricarlo: la verifica non e' stata fatta, non e' fallita`);
+        }
+        esiti.push({ percorso, stato: r.stato, corpo: r.corpo, peso: peso.get(percorso) });
+      }
+      const scelto = esiti[0] ?? null;
+      ctx.informativaRaggiungibile = new Set(
+        conCandidati.filter((p) => p.candidati.length > 0).map((p) => p.percorso),
+      );
 
       const findings = findingsInformativa({
         pagine: conCandidati,
-        informativa,
-        htmlInformativa,
+        informativa: scelto ? { percorso: scelto.percorso, stato: scelto.stato } : null,
+        htmlInformativa: scelto?.corpo ?? null,
         dichiarata: ctx.certificato?.informativa ?? null,
       });
+      // Ogni ALTRO candidato che non risponde e' un bloccante a se': un
+      // collegamento che una persona clicca e trova un 404 non e' un dettaglio,
+      // ed e' proprio il caso che l'esca sfruttava.
+      for (const altro of esiti.slice(1)) {
+        if (altro.stato >= 400) {
+          findings.push({ severity: "block", object: altro.percorso, message: `collegamento a un'informativa che risponde HTTP ${altro.stato}: chi lo segue crede di aver letto qualcosa` });
+        }
+      }
+      if (esiti.length > 1) {
+        findings.push({ severity: "issue", object: "informativa", message: `${esiti.length} collegamenti diversi sembrano portare a un'informativa (${esiti.map((e) => `${e.percorso} HTTP ${e.stato}`).join(" · ")}): quale sia quella buona lo dice una persona` });
+      }
       const dettaglio = [
-        informativa
-          ? `informativa: ${informativa.percorso} (HTTP ${informativa.stato}) · collegata da ${ctx.informativaRaggiungibile.size} pagine su ${conCandidati.length}`
+        scelto
+          ? `informativa: ${scelto.percorso} (HTTP ${scelto.stato}) · ${esiti.length} candidati scaricati · collegata da ${ctx.informativaRaggiungibile.size} pagine su ${conCandidati.length}`
           : `nessun collegamento a un'informativa su ${conCandidati.length} pagine`,
         dettaglioFindings(findings),
       ].filter(Boolean).join("\n");
@@ -293,7 +383,16 @@ const PASSI = [
     id: ID.dati,
     nome: "dati raccolti dai moduli pubblici",
     async esegui(ctx) {
-      if (!ctx.pagine) return record(this.id, this.nome, "skipped", "superficie non stabilita: nessun modulo da guardare");
+      if (!superficieUsabile(ctx)) return record(this.id, this.nome, "skipped", motivoSuperficie(ctx));
+      // `null` vuol dire «il passo precedente non ha potuto misurare», e non e'
+      // la stessa cosa di «misurato: nessuna pagina rimanda». Con un `?? new Set()`
+      // un intoppo di rete su una richiesta produceva il bloccante piu' grave di
+      // questo gate — «raccoglie dati personali e non rimanda a nessuna
+      // informativa» — su un sito che rimanda correttamente.
+      if (ctx.informativaRaggiungibile === null) {
+        return record(this.id, this.nome, "skipped",
+          "il passo `informativa-privacy` non ha potuto stabilire quali pagine rimandano all'informativa: senza, «non rimanda» e «non ho guardato» sarebbero la stessa frase");
+      }
       const pagineConModuli = ctx.pagine
         .map((p) => ({ percorso: p.percorso, moduli: moduliDiPagina(p.corpo), campi: campiDiPagina(p.corpo) }))
         .filter((p) => p.moduli > 0 || p.campi.length > 0);
@@ -307,7 +406,7 @@ const PASSI = [
       const findings = findingsDatiRaccolti({
         pagineConModuli,
         basiDichiarate: ctx.certificato?.datiRaccolti ?? [],
-        informativaRaggiungibile: ctx.informativaRaggiungibile ?? new Set(),
+        informativaRaggiungibile: ctx.informativaRaggiungibile,
       });
       const g = contaGravita(findings);
       const dettaglio = [
@@ -323,18 +422,34 @@ const PASSI = [
     id: ID.archiviazione,
     nome: "cosa il sito archivia nel browser",
     async esegui(ctx) {
-      if (!ctx.pagine) return record(this.id, this.nome, "skipped", "superficie non stabilita: non c'e' niente da leggere");
-      const cookie = [];
+      if (!superficieUsabile(ctx)) return record(this.id, this.nome, "skipped", motivoSuperficie(ctx));
+      // I cookie vengono dalla camminata, non dalle sole pagine entrate: un
+      // `Set-Cookie` posto su un RIMANDO e' un cookie posto (vedi passo 2).
+      const cookie = (ctx.cookie ?? []).map((c) => ({ nome: nomeCookie(c.riga), percorso: c.percorso, riga: c.riga }));
       const archiviazioni = [];
       const terziMappa = new Map();
       const bundleVisti = new Map();
       const bundleFalliti = [];
       let bundleLetti = 0;
+      let inlineLetti = 0;
 
       for (const pagina of ctx.pagine) {
-        for (const riga of pagina.cookie) cookie.push({ nome: nomeCookie(riga), percorso: pagina.percorso, riga });
         for (const t of terziDi(pagina.corpo, ctx.baseUrl)) {
           if (!terziMappa.has(t.origine)) terziMappa.set(t.origine, t);
+        }
+        // GLI SCRIPT INLINE. Erano il buco piu' grosso di questo passo, e non era
+        // dichiarato da nessuna parte: si scaricavano solo i `<script src=…>`,
+        // quindi un sito che archivia da uno script scritto dentro la pagina —
+        // il tema, il consenso, il carrello, uno snippet di analitica — chiudeva
+        // `NON APPLICABILE` con la frase «il sito non mette niente nel browser di
+        // chi passa». Il corpo era gia' in memoria: bastava guardarlo.
+        for (const corpo of corpiInline(pagina.corpo)) {
+          inlineLetti++;
+          for (const api of apiArchiviazioneIn(corpo)) {
+            if (!archiviazioni.some((a) => a.api === api && a.percorso === pagina.percorso)) {
+              archiviazioni.push({ api, percorso: pagina.percorso, bundle: "script inline" });
+            }
+          }
         }
         for (const src of sorgentiInterne(pagina.corpo, ctx.baseUrl)) {
           if (!bundleVisti.has(src)) {
@@ -365,7 +480,7 @@ const PASSI = [
 
       const terzi = [...terziMappa.values()];
       if (cookie.length === 0 && archiviazioni.length === 0 && terzi.length === 0) {
-        const premessa = `zero \`Set-Cookie\`, zero API di archiviazione e zero terzi su ${ctx.pagine.length} pagine e ${bundleLetti} script serviti letti per intero`;
+        const premessa = `zero \`Set-Cookie\`, zero API di archiviazione e zero terzi su ${ctx.pagine.length} pagine, ${bundleLetti} script esterni e ${inlineLetti} script inline letti per intero`;
         const findings = ctx.certificato?.banner
           ? [{ severity: "issue", object: "consenso", message: "banner dichiarato e nessuna archiviazione misurata" }]
           : [];
@@ -382,7 +497,7 @@ const PASSI = [
       });
       const g = contaGravita(findings);
       const dettaglio = [
-        `${cookie.length} cookie · ${archiviazioni.length} usi di API di archiviazione · ${terzi.length} origini di terzi · ${bundleLetti} script letti per intero`,
+        `${cookie.length} cookie · ${archiviazioni.length} usi di API di archiviazione · ${terzi.length} origini di terzi · ${bundleLetti} script esterni e ${inlineLetti} inline letti per intero`,
         archiviazioni.length > 0 ? `archiviazione: ${archiviazioni.map((a) => `${a.api} in ${a.percorso}`).join(" · ")}` : "",
         terzi.length > 0 ? `terzi: ${terzi.map((t) => `${t.origine} (${t.elementi.join(",")})`).join(" · ")}` : "",
         findings.length === 0 ? "tutto quello che il sito archivia e' dichiarato nel certificato" : `${g.block} bloccanti, ${g.issue} da guardare`,
@@ -396,7 +511,7 @@ const PASSI = [
     id: ID.a11y,
     nome: "accessibilita' dell'HTML servito",
     async esegui(ctx) {
-      if (!ctx.pagine) return record(this.id, this.nome, "skipped", "superficie non stabilita: nessuna pagina da leggere");
+      if (!superficieUsabile(ctx)) return record(this.id, this.nome, "skipped", motivoSuperficie(ctx));
       const findings = ctx.pagine.flatMap((p) => findingsAccessibilitaPagina(p.percorso, p.corpo));
       const g = contaGravita(findings);
       const dettaglio = [
@@ -415,7 +530,7 @@ const PASSI = [
     id: ID.lingua,
     nome: "lingua dichiarata e hreflang",
     async esegui(ctx) {
-      if (!ctx.pagine) return record(this.id, this.nome, "skipped", "superficie non stabilita");
+      if (!superficieUsabile(ctx)) return record(this.id, this.nome, "skipped", motivoSuperficie(ctx));
       if (!ctx.certificato || ctx.certificato.lingue.length === 0) {
         return record(this.id, this.nome, "skipped",
           "il certificato non dichiara nessuna lingua: senza, non c'e' niente contro cui confrontare i `lang` misurati, e un `NON APPLICABILE` qui sarebbe una risposta senza domanda");
@@ -450,7 +565,7 @@ const PASSI = [
       const statiPassi = new Map(steps.map((s) => [s.id, s.status]));
       const findings = findingsPerimetro({
         tabella: ctx.certificato.voci,
-        leggiFile: (percorso) => leggiSeCe(percorso),
+        leggiFile: (percorso) => leggiDentroIlProgetto(percorso),
         statiPassi,
       });
       const g = contaGravita(findings);
@@ -515,6 +630,28 @@ function sorgentiInterne(html, base) {
   return [...percorsi];
 }
 
+/**
+ * I corpi degli script scritti DENTRO la pagina, senza `src`.
+ *
+ * Si scarta il carico RSC di Next (`self.__next_f.push(...)`): e' l'albero
+ * serializzato della pagina, quindi contiene il TESTO del sito. Una pagina che
+ * parla di `localStorage` in un articolo produrrebbe un bloccante su un sito che
+ * non archivia niente — cioe' un rosso falso sulla stessa riga su cui abbiamo
+ * appena chiuso un verde falso.
+ */
+function corpiInline(html) {
+  const corpi = [];
+  const re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    if (/\bsrc\s*=/i.test(m[1])) continue;
+    const corpo = m[2];
+    if (/self\.__next_f/.test(corpo)) continue;
+    if (corpo.trim()) corpi.push(corpo);
+  }
+  return corpi;
+}
+
 /** Come `percorsoInterno`, ma tiene la query: un bundle e' il suo indirizzo intero. */
 function percorsoInternoConQuery(href, base) {
   if (!href) return null;
@@ -537,22 +674,44 @@ function trovaHandoff() {
 }
 
 // ------------------------------------------------------------------- verdetto
+export const STATI = Object.freeze(["pass", "fail", "skipped", "n/a"]);
+
+/**
+ * Il conteggio, e il suo invariante.
+ *
+ * `ignoti` esiste perche' senza di lui uno stato scritto male — `"skip"`,
+ * `"Fail"`, `"n/a "` con lo spazio — non sarebbe contato ne' fra i falliti ne'
+ * fra i mancanti, e il gate uscirebbe **verde**. Un refuso di un carattere
+ * trasformava questo gate in un timbro: la stampa lo vedeva (`"????"`), il
+ * codice d'uscita no.
+ */
 export function riepilogo(passi) {
   const per = (stato) => passi.filter((s) => s.status === stato).length;
-  return { passi: passi.length, pass: per("pass"), fail: per("fail"), skipped: per("skipped"), na: per("n/a") };
+  const conosciuti = passi.filter((s) => STATI.includes(s.status)).length;
+  return {
+    passi: passi.length, pass: per("pass"), fail: per("fail"), skipped: per("skipped"), na: per("n/a"),
+    ignoti: passi.length - conosciuti,
+  };
 }
 
-function verdetto(json) {
+function verdetto(json, args = {}, extra = {}) {
   const riassunto = riepilogo(steps);
-  const verde = riassunto.fail === 0 && riassunto.skipped === 0;
+  const verde = riassunto.fail === 0 && riassunto.skipped === 0 && riassunto.ignoti === 0;
+  const intestazione = `GATE CONFORMITA': ${verde ? "VERDE" : "ROSSO"} ` +
+    `(${riassunto.fail} falliti, ${riassunto.skipped} verifiche mancanti, ${riassunto.na} non applicabili su ${riassunto.passi} passi)` +
+    (riassunto.ignoti > 0 ? ` · ${riassunto.ignoti} PASSI CON UNO STATO SCONOSCIUTO` : "");
 
   if (json) {
-    console.log(JSON.stringify({ contract: CONTRATTO_JSON, ok: verde, summary: riassunto, steps }, null, 2));
+    // `url`, `buildId` e `maxPagine` nel documento: senza, chi archivia il JSON
+    // come prova d'idoneita' non puo' ricostruire COSA e' stato misurato.
+    console.log(JSON.stringify({
+      contract: CONTRATTO_JSON, ok: verde, url: args.url ?? null, buildId: extra.buildId ?? null,
+      maxPagine: args.maxPagine ?? null, summary: riassunto, steps, ...(extra.error ? { error: extra.error } : {}),
+    }, null, 2));
     return verde ? 0 : 1;
   }
 
-  console.log(`GATE CONFORMITA': ${verde ? "VERDE" : "ROSSO"} ` +
-    `(${riassunto.fail} falliti, ${riassunto.skipped} verifiche mancanti, ${riassunto.na} non applicabili su ${riassunto.passi} passi)\n`);
+  console.log(`${intestazione}\n`);
   for (const s of steps) {
     const marchio = { pass: "OK  ", fail: "FAIL", skipped: "MANC", "n/a": "N.A." }[s.status] ?? "????";
     console.log(`${marchio}  ${s.name}`);
@@ -560,15 +719,24 @@ function verdetto(json) {
   }
   if (riassunto.skipped > 0) console.log("\nUna verifica mancante non e' una verifica superata: il gate resta rosso.");
   if (riassunto.na > 0) console.log("Un NON APPLICABILE ha la sua premessa misurata stampata qui sopra: se la premessa e' falsa, lo e' anche la risposta.");
+  if (riassunto.ignoti > 0) console.log("Un passo con uno stato sconosciuto NON e' un passo superato: e' un difetto di questo gate, e tiene il verdetto rosso.");
+  // Il verdetto si ristampa in fondo: chi legge la coda di un output lungo —
+  // una console che scorre, un log di CI — trovava per ultima la prosa di un
+  // passo, non il verdetto.
+  console.log(`\n${intestazione}`);
   return verde ? 0 : 1;
 }
 
 function parseArgs(argv) {
-  const args = { url: null, json: false, maxPagine: MAX_PAGINE };
+  const args = { url: null, json: false, maxPagine: MAX_PAGINE, ignoti: [] };
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === "--url") args.url = argv[++i];
-    else if (argv[i] === "--max-pagine") args.maxPagine = Number(argv[++i]);
-    else if (argv[i] === "--json") args.json = true;
+    const a = argv[i];
+    if (a === "--url") args.url = argv[++i] ?? "";
+    else if (a.startsWith("--url=")) args.url = a.slice(6);
+    else if (a === "--max-pagine") args.maxPagine = Number(argv[++i]);
+    else if (a.startsWith("--max-pagine=")) args.maxPagine = Number(a.slice(13));
+    else if (a === "--json") args.json = true;
+    else args.ignoti.push(a);
   }
   return args;
 }
@@ -579,11 +747,25 @@ async function main() {
     console.error(`Ne' docs/ ne' src/app/ in ${PROGETTO}: qui non c'e' un progetto Web Gun, e un ROSSO direbbe qualcosa su un progetto che il gate non ha guardato.`);
     process.exit(2);
   }
+  if (args.ignoti.length > 0) {
+    console.error(`Argomenti non riconosciuti: ${args.ignoti.join(" ")}. Il gate non li ignora: un flag scritto male non deve poter cambiare in silenzio cosa viene misurato.`);
+    process.exit(2);
+  }
+  // `--url --json` faceva diventare `--json` l'indirizzo, e il passo 2 accusava
+  // un server spento («avvia la build…») su un argomento malformato: l'operatore
+  // riavviava il server per niente. `--max-pagine` era protetto bene, `--url` —
+  // il parametro che sceglie QUALE app viene certificata — no.
+  if (args.url !== null && (args.url === "" || args.url.startsWith("--"))) {
+    console.error(`--url ha ricevuto "${args.url}", che non e' un indirizzo. Il parametro che sceglie quale applicazione viene certificata non si indovina.`);
+    process.exit(2);
+  }
+  let daCertificato = false;
   if (!args.url) {
     const testo = leggiSeCe(CERTIFICATO);
     const dichiarato = testo ? leggiCertificato(testo).urlDichiarato : null;
     if (dichiarato) {
       args.url = dichiarato;
+      daCertificato = true;
       console.error(`--url assente: uso l'indirizzo dichiarato in ${CERTIFICATO} → ${dichiarato}`);
     }
   }
@@ -594,13 +776,37 @@ async function main() {
     );
     process.exit(2);
   }
+  try {
+    const u = new URL(args.url);
+    if (!/^https?:$/.test(u.protocol)) throw new Error("schema non http/https");
+  } catch (errore) {
+    console.error(`--url "${args.url}" non e' un indirizzo http(s) valido: ${errore.message}`);
+    process.exit(2);
+  }
   if (!Number.isInteger(args.maxPagine) || args.maxPagine < 1) {
     console.error("--max-pagine deve essere un intero >= 1.");
     process.exit(2);
   }
-  const ctx = { certificato: null, baseUrl: null, pagine: null, informativaRaggiungibile: null };
-  for (const passo of PASSI) await passo.esegui(ctx, args);
-  process.exit(verdetto(args.json));
+  const ctx = { certificato: null, baseUrl: null, pagine: null, informativaRaggiungibile: null, buildId: null, daCertificato };
+  try {
+    for (const passo of PASSI) await passo.esegui(ctx, args);
+  } catch (errore) {
+    // Un gate che va in crash NON e' ne' verde ne' rosso: e' assente, e questo e'
+    // peggio di entrambi. Senza questo `catch` un `EISDIR` su un percorso scritto
+    // male nel certificato usciva **1 con stdout vuoto** — cioe' «gate rosso» per
+    // chi guarda il codice d'uscita, e nessun documento per chi legge `--json`.
+    // Il contratto dichiarato promette `2` per l'errore di esecuzione: adesso
+    // arriva, e con il riepilogo di quello che si era gia' misurato.
+    for (const passo of PASSI) {
+      if (!steps.some((s) => s.id === passo.id)) {
+        record(passo.id, passo.nome, "skipped", `non eseguito: il gate si e' interrotto prima — ${errore.message}`);
+      }
+    }
+    console.error(`\nERRORE DI ESECUZIONE del gate: ${errore.stack ?? errore.message}`);
+    verdetto(args.json, args, { buildId: ctx.buildId, error: String(errore.message ?? errore) });
+    process.exit(2);
+  }
+  process.exit(verdetto(args.json, args, { buildId: ctx.buildId }));
 }
 
 // eseguito come comando, non quando i test importano ID/PASSI/riepilogo.

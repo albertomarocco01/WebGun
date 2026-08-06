@@ -57,6 +57,7 @@ const RE_SEGNAPOSTO = /\{\{[^}]*\}\}|<da compilare>|lorem ipsum/i;
  */
 const senzaCommenti = (testo) => String(testo ?? "").replace(/<!--[\s\S]*?-->/g, " ");
 const SCOPERTO = /^(—|-{1,2}|scoperto|nessuno|—\s*\(scoperto\))$/i;
+export const ESITI_AMMESSI = Object.freeze(["conforme", "non conforme", "non verificato", "non applicabile"]);
 
 const ripulisci = (s) =>
   String(s ?? "")
@@ -146,6 +147,7 @@ export function leggiCertificato(testo) {
     // — e `Banner di consenso: sì` si leggeva come «no».
     banner: banner !== null && /^(s[iì]|yes|presente)/i.test(banner),
     superficie: superficie.righe.map((r) => r.percorso ?? r.pagina ?? "").filter(Boolean),
+    superficieDichiarata: superficie,
     archiviazioni: tabellaSotto(testo, /archiviazione dichiarata/i).righe,
     datiRaccolti: tabellaSotto(testo, /dati raccolti/i).righe,
     voci: tabellaSotto(testo, /voci di conformit/i),
@@ -244,6 +246,25 @@ export function findingsPerimetro({ tabella, leggiFile, statiPassi }) {
       }
       const statoVero = statiPassi.get(voce.mio);
       const dichiarato = riga.esito;
+      // Una cella `esito` VUOTA disattivava il confronto §19: la voce passava
+      // avendo confrontato niente. Chiudere il falso verde n°12 lasciando aperta
+      // la porta «non dichiarare» sarebbe stato chiuderlo a meta'.
+      if (!dichiarato) {
+        findings.push({
+          severity: "block",
+          object: voce.id,
+          message: "dichiarata mia e senza esito: il certificato deve riportare l'esito di QUESTA esecuzione (conforme · non conforme · non verificato · non applicabile), altrimenti non c'e' niente da confrontare",
+        });
+        continue;
+      }
+      if (!ESITI_AMMESSI.includes(dichiarato)) {
+        findings.push({
+          severity: "block",
+          object: voce.id,
+          message: `esito «${dichiarato}» non riconosciuto: gli esiti ammessi sono ${ESITI_AMMESSI.join(" · ")}`,
+        });
+        continue;
+      }
       const atteso = { pass: "conforme", fail: "non conforme", skipped: "non verificato", "n/a": "non applicabile" }[statoVero];
       if (statoVero && dichiarato && dichiarato !== atteso) {
         findings.push({

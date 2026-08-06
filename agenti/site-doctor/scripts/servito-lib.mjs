@@ -12,6 +12,32 @@
  */
 
 // --------------------------------------------------------------- findings
+/**
+ * I caratteri di controllo tolti dal testo che finisce in un messaggio.
+ *
+ * Nei rilievi si citano pezzi di documento **scaricato**: un `src`, un `href`,
+ * un `Location`. Quel testo lo scrive chi ha fatto il sito, e finisce su un
+ * terminale — e in questa casa l'uscita del gate si **incolla nei verbali**. Con
+ * una sequenza ANSI dentro un attributo si puo' cancellare lo schermo e
+ * riscriverci sopra `GATE CONFORMITA': VERDE`: il verdetto e il codice d'uscita
+ * restano quelli veri, ma la trascrizione che una persona legge no. Il modo
+ * `--json` non era toccato (`JSON.stringify` fa l'escape), quello testuale si.
+ */
+export const perStampa = (testo, massimo = 300) => {
+  // Si filtra per PUNTO DI CODICE invece che con una classe di caratteri: una
+  // regexp con dentro caratteri di controllo veri e' illeggibile nel sorgente e
+  // fragile a ogni passaggio di strumento.
+  const pulito = [...String(testo ?? "")]
+    .map((c) => {
+      const p = c.codePointAt(0);
+      if (p === 9 || p === 10 || p === 13) return " ";
+      return (p < 32 || (p >= 127 && p <= 159)) ? "?" : c;
+    })
+    .join("")
+    .replace(/\s+/g, " ");
+  return pulito.length > massimo ? `${pulito.slice(0, massimo)}…` : pulito;
+};
+
 export const dettaglioFindings = (findings) =>
   findings.map((f) => `  [${f.severity}] ${f.object}: ${f.message}`).join("\n");
 
@@ -57,10 +83,98 @@ export function statoNonApplicabile(premessa) {
  */
 export function senzaScript(html) {
   if (typeof html !== "string") return "";
-  return html
-    .replace(/<script\b([^>]*)>[\s\S]*?<\/script>/gi, "<script$1></script>")
-    .replace(/<style\b([^>]*)>[\s\S]*?<\/style>/gi, "<style$1></style>")
-    .replace(/<!--[\s\S]*?-->/g, " ");
+  return ripulisciDocumento(html).pulito;
+}
+
+/**
+ * Il ripulitore, a UNA SCANSIONE, e perche' non e' piu' una catena di `replace`.
+ *
+ * La versione a `replace` aveva una **chiave universale**, trovata dal tribunale
+ * (`SD-VERDE-01`): in HTML un `<!--` dentro il VALORE DI UN ATTRIBUTO e' testo,
+ * non l'apertura di un commento — ma una regexp non lo sa. Bastava
+ *
+ *     <div data-nota="<!--"></div>  …contenuto vero…  <div data-nota="-->"></div>
+ *
+ * per far sparire dal documento che il gate giudica ogni cosa che stava in
+ * mezzo: immagini senza `alt`, campi che raccolgono dati personali, terzi non
+ * dichiarati, collegamenti. Il browser rendeva tutto; il gate non vedeva niente
+ * e firmava. Non era un passo aggirabile: erano **tutti**, con due `<div>`
+ * invisibili.
+ *
+ * Questa scansione conosce quattro stati (testo · dentro un tag · dentro un
+ * valore quotato · dentro un commento) e per questo non si fa ingannare. In piu'
+ * e' **lineare**: la catena di `replace` aveva un costo quadratico misurato
+ * (200 KB di `<` ripetuti → 24,6 s, ×4 a ogni raddoppio), cioe' un modo per
+ * appendere il gate senza mai fargli dire ROSSO.
+ *
+ * Ritorna anche i **corpi degli script inline**, perche' chi li vuole non deve
+ * riscansionare il documento: il passo sull'archiviazione li legge da qui.
+ */
+export function ripulisciDocumento(html) {
+  if (typeof html !== "string") return { pulito: "", inline: [], stili: [] };
+  const fuori = [];
+  const inline = [];
+  const stili = [];
+  let i = 0;
+  const n = html.length;
+  while (i < n) {
+    const c = html[i];
+    if (c !== "<") { fuori.push(c); i += 1; continue; }
+
+    // Commento: `<!--` … `-->`, piu' le due forme brusche legali `<!-->` e
+    // `<!--->` che lo standard chiude subito (e che una regexp golosa userebbe
+    // per divorare il resto della pagina).
+    if (html.startsWith("<!--", i)) {
+      if (html.startsWith("<!-->", i)) { fuori.push(" "); i += 5; continue; }
+      if (html.startsWith("<!--->", i)) { fuori.push(" "); i += 6; continue; }
+      const fine = html.indexOf("-->", i + 4);
+      fuori.push(" ");
+      i = fine < 0 ? n : fine + 3;
+      continue;
+    }
+
+    // Tag: si copia per intero, tenendo conto dei valori quotati — che sono il
+    // punto: li' dentro `<`, `>` e `<!--` sono testo.
+    const tag = leggiTag(html, i);
+    if (!tag) { fuori.push(c); i += 1; continue; }
+    const nome = (/^<\/?\s*([a-zA-Z][a-zA-Z0-9-]*)/.exec(tag.testo)?.[1] ?? "").toLowerCase();
+    fuori.push(tag.testo);
+    i = tag.fine;
+
+    // Il CORPO di `<script>` e `<style>` non entra nel documento ripulito: su
+    // Next il carico RSC porta l'albero serializzato della pagina, e contarlo
+    // vorrebbe dire leggere due volte lo stesso documento.
+    if ((nome === "script" || nome === "style") && !/\/>$/.test(tag.testo)) {
+      const chiusura = new RegExp(`</\\s*${nome}\\s*>`, "i");
+      const resto = html.slice(i);
+      const m = chiusura.exec(resto);
+      const corpo = m ? resto.slice(0, m.index) : resto;
+      if (nome === "script") { if (corpo.trim()) inline.push({ tag: tag.testo, corpo }); }
+      else if (corpo.trim()) stili.push({ tag: tag.testo, corpo });
+      fuori.push(m ? m[0] : `</${nome}>`);
+      i = m ? i + m.index + m[0].length : n;
+    }
+  }
+  return { pulito: fuori.join(""), inline, stili };
+}
+
+/** Un tag dalla posizione `i`: `{ testo, fine }`, oppure `null` se non lo e'. */
+function leggiTag(html, i) {
+  if (!/^<\/?[a-zA-Z!?]/.test(html.slice(i, i + 3))) return null;
+  let j = i + 1;
+  let apice = null;
+  while (j < html.length) {
+    const c = html[j];
+    if (apice) {
+      if (c === apice) apice = null;
+    } else if (c === '"' || c === "'") {
+      apice = c;
+    } else if (c === ">") {
+      return { testo: html.slice(i, j + 1), fine: j + 1 };
+    }
+    j += 1;
+  }
+  return null; // tag non chiuso: si tratta il `<` come testo
 }
 
 /**
@@ -277,17 +391,23 @@ export function esitoIdentita({ buildIdCombacia, assetProvato, assetIdentico, bu
  * avrebbero lo stesso aspetto. La `sitemap.xml` non e' una verifica del sito:
  * e' un secondo testimone, e serve solo a impedire che il primo menta da solo.
  */
-export function findingsSuperficie({ daCollegamenti, daSitemap, dichiarate, sitemapLetta }) {
+export function findingsSuperficie({ daCollegamenti, daSitemap, dichiarate, sitemapLetta, superficieDichiarata }) {
   const findings = [];
   const collegate = new Set(daCollegamenti);
   const inSitemap = new Set(daSitemap);
 
   if (!sitemapLetta) {
+    // `issue` se i collegamenti hanno camminato; `block` se non hanno camminato,
+    // perche' allora NON C'E' NESSUNA sorgente. Il sabotaggio di classe X
+    // provava «home senza collegamenti + sitemap intera»; «home senza
+    // collegamenti + sitemap assente» restava verde, cioe' il primo testimone
+    // poteva mentire da solo purche' il secondo sparisse.
     findings.push({
-      severity: "issue",
+      severity: collegate.size <= 1 ? "block" : "issue",
       object: "sitemap.xml",
-      message:
-        "nessuna sitemap leggibile: la superficie ha una sola sorgente (i collegamenti). Una scansione che non trova niente e una che ha trovato tutto qui si assomigliano",
+      message: collegate.size <= 1
+        ? `nessuna sitemap leggibile E la camminata dai collegamenti ha trovato ${collegate.size} pagina: non c'e' NESSUNA sorgente indipendente, e la superficie non e' stata stabilita`
+        : "nessuna sitemap leggibile: la superficie ha una sola sorgente (i collegamenti). Una scansione che non trova niente e una che ha trovato tutto qui si assomigliano",
     });
   } else {
     for (const p of inSitemap) {
@@ -308,6 +428,20 @@ export function findingsSuperficie({ daCollegamenti, daSitemap, dichiarate, site
     }
   }
 
+  // Una superficie dichiarata VUOTA disattivava in silenzio tutto il confronto
+  // dichiarato/raggiungibile: chi dichiarava tre pagine rischiava rilievi, chi
+  // non dichiarava niente era verde. E' la stessa classe che l'elenco `VOCI`
+  // chiude per le voci — un elenco che si accorcia riscrivendo un documento —
+  // riaperta per la superficie.
+  if (superficieDichiarata && (!superficieDichiarata.sezionePresente || superficieDichiarata.righe.length === 0)) {
+    findings.push({
+      severity: "block",
+      object: "docs/conformita.md",
+      message: superficieDichiarata.sezionePresente
+        ? "la sezione «Superficie pubblica dichiarata» c'e' ed e' vuota: senza righe, il confronto fra il dichiarato e il raggiungibile non si fa, e nessuno se ne accorge"
+        : "nessuna sezione «Superficie pubblica dichiarata»: il confronto fra il dichiarato e il raggiungibile non si fa",
+    });
+  }
   if (Array.isArray(dichiarate) && dichiarate.length > 0) {
     const dette = new Set(dichiarate);
     for (const p of [...collegate, ...inSitemap]) {
@@ -330,7 +464,18 @@ export function findingsSuperficie({ daCollegamenti, daSitemap, dichiarate, site
 
 // -------------------------------------------------------------- informativa
 /** Un collegamento sembra puntare a un'informativa? Si guarda testo E indirizzo. */
-const RE_INFORMATIVA = /(privacy|informativ|cookie|trattamento dei dati|protezione dei dati)/i;
+const RE_INFORMATIVA_TESTO = /(privacy|informativ|cookie|trattamento dei dati|protezione dei dati|note legali)/i;
+/**
+ * Sul PERCORSO si pretende un segmento intero, non una sottostringa.
+ *
+ * `/prodotti/cookie-al-cioccolato` contiene «cookie», e su un sito di
+ * pasticceria — cliente perfettamente plausibile per questa pipeline — quel
+ * collegamento sta nella navigazione di ogni pagina, esattamente come «Privacy»
+ * nel piè di pagina. Il tribunale l'ha misurato: veniva eletto informativa, e il
+ * passo chiudeva ROSSO su una pagina di prodotto mentre il sito aveva
+ * un'informativa perfetta (SD-ROSSO-02).
+ */
+const RE_INFORMATIVA_PERCORSO = /(^|\/)(privacy|privacy-policy|cookie|cookie-policy|informativa|informativa-privacy|note-legali|legal)(\/|$)/i;
 
 /**
  * I candidati a «pagina dell'informativa», ricavati dai COLLEGAMENTI.
@@ -348,12 +493,23 @@ export function candidatiInformativa(html, base) {
     const attr = attributi(tag);
     const percorso = percorsoInterno(attr.href, base);
     if (!percorso) continue;
+    // Un collegamento NASCOSTO non e' un collegamento che chi visita puo'
+    // seguire: `<a hidden>privacy</a>` valeva quanto quello nel piè di pagina, e
+    // bastava a piazzare un'esca (SD-VERDE-04). Si vede solo cio' che l'HTML
+    // dichiara nascosto: il CSS esterno resta invisibile a questo gate, ed e'
+    // scritto nel perimetro.
+    if ("hidden" in attr || (attr["aria-hidden"] ?? "").toLowerCase() === "true") continue;
+    if (/display\s*:\s*none|visibility\s*:\s*hidden/i.test(attr.style ?? "")) continue;
     const testo = `${testoVisibile(dentro)} ${attr["aria-label"] ?? ""} ${attr.title ?? ""}`.trim();
-    if (RE_INFORMATIVA.test(testo) || RE_INFORMATIVA.test(percorso)) {
-      if (!trovati.has(percorso)) trovati.set(percorso, testo);
+    const daTesto = RE_INFORMATIVA_TESTO.test(testo);
+    if (daTesto || RE_INFORMATIVA_PERCORSO.test(percorso)) {
+      // Il testo del collegamento pesa piu' del percorso: e' quello che una
+      // persona legge prima di cliccare.
+      const peso = daTesto ? 2 : 1;
+      if (!trovati.has(percorso) || trovati.get(percorso).peso < peso) trovati.set(percorso, { testo, peso });
     }
   }
-  return [...trovati].map(([percorso, testo]) => ({ percorso, testo }));
+  return [...trovati].map(([percorso, { testo, peso }]) => ({ percorso, testo, peso }));
 }
 
 /** Le voci che l'art. 13 pretende, e come si riconoscono in un testo italiano. */
@@ -436,7 +592,20 @@ export function findingsInformativa({ pagine, informativa, htmlInformativa, dich
 }
 
 // ------------------------------------------------------------- moduli e dati
-const TIPI_NON_DATO = new Set(["hidden", "submit", "button", "reset", "image", "checkbox", "radio"]);
+const TIPI_NON_DATO = new Set(["submit", "button", "reset", "image"]);
+
+/**
+ * I campi di SERVIZIO, riconosciuti per NOME e non per tipo.
+ *
+ * La prima versione scartava tutti gli `hidden`, con la motivazione — vera —
+ * che su App Router ogni `<form>` con Server Action ne porta quattro. Ma la
+ * motivazione era «i campi nascosti non raccolgono niente», che e'
+ * un'assunzione, e chi scrive il modulo la controlla: il tribunale ha misurato
+ * che `<input type="hidden" name="email" autocomplete="email">` spariva prima
+ * di arrivare alla classificazione, e con lui spariva anche il bloccante
+ * sull'informativa al punto di raccolta.
+ */
+const NOMI_DI_SERVIZIO = /^(\$ACTION|_next|__|csrf|xsrf|authenticity_token|utf8|_method)/i;
 
 /**
  * I campi dei moduli di una pagina, dall'HTML servito.
@@ -454,6 +623,7 @@ export function campiDiPagina(html) {
     const a = attributi(tag);
     const tipo = (a.type ?? (elemento === "input" ? "text" : elemento)).toLowerCase();
     if (elemento === "input" && TIPI_NON_DATO.has(tipo)) return;
+    if (NOMI_DI_SERVIZIO.test(a.name ?? "")) return;
     campi.push({
       elemento,
       tipo,
@@ -477,9 +647,36 @@ export function etichettePerId(html) {
   const mappa = new Map();
   for (const { tag, dentro } of elementiDi(senzaScript(html), "label")) {
     const a = attributi(tag);
-    if (a.for) mappa.set(a.for, testoVisibile(dentro));
+    // Un'etichetta VUOTA non etichetta niente: `<label for="e"></label>` faceva
+    // passare il campo con `etichette.has("e")` vero e un nome accessibile
+    // inesistente (tribunale, SD-VERDE-06).
+    const testo = testoVisibile(dentro);
+    if (a.for && testo) mappa.set(a.for, testo);
   }
   return mappa;
+}
+
+/**
+ * I campi ETICHETTATI DALL'AVVOLGIMENTO: `<label>Email <input …></label>`.
+ *
+ * E' una forma valida e accessibile, molto usata, e la prima versione la
+ * bocciava — `campo "email" senza etichetta e senza aria-label` su markup
+ * corretto. Un rosso su un sito conforme e' la via piu' rapida perche' il gate
+ * venga scavalcato per abitudine (§8).
+ */
+export function campiAvvolti(html) {
+  const nomi = new Set();
+  for (const { dentro } of elementiDi(senzaScript(html), "label")) {
+    if (!testoVisibile(dentro)) continue;
+    for (const nome of ["input", "textarea", "select"]) {
+      for (const tag of tagDi(dentro, nome)) {
+        const a = attributi(tag);
+        if (a.id) nomi.add(`#${a.id}`);
+        if (a.name) nomi.add(`@${a.name}`);
+      }
+    }
+  }
+  return nomi;
 }
 
 /**
@@ -569,15 +766,14 @@ export function apiArchiviazioneIn(testo) {
 
 /** Le origini di terzi referenziate da una pagina: script, iframe, link, img. */
 export function terziDi(html, base) {
-  const pulito = senzaScript(html);
+  const { pulito, stili } = ripulisciDocumento(html);
   const mia = new URL(base).host;
   const origini = new Map();
-  const guarda = (tag, attributo, elemento) => {
-    const valore = attributi(tag)[attributo];
-    if (!valore || /^(data:|javascript:|#)/i.test(valore.trim())) return;
+  const aggiungi = (valore, elemento) => {
+    if (!valore || /^(data:|javascript:|#|blob:|about:)/i.test(valore.trim())) return;
     let url;
     try {
-      url = new URL(valore, base);
+      url = new URL(valore.trim(), base);
     } catch {
       return;
     }
@@ -585,10 +781,22 @@ export function terziDi(html, base) {
     if (!origini.has(url.origin)) origini.set(url.origin, new Set());
     origini.get(url.origin).add(elemento);
   };
-  for (const t of tagDi(pulito, "script")) guarda(t, "src", "script");
-  for (const t of tagDi(pulito, "iframe")) guarda(t, "src", "iframe");
-  for (const t of tagDi(pulito, "link")) guarda(t, "href", "link");
-  for (const t of tagDi(pulito, "img")) guarda(t, "src", "img");
+  const guarda = (tag, attributo, elemento) => aggiungi(attributi(tag)[attributo], elemento);
+  // L'elenco degli elementi e' lungo perche' un terzo entra da dove capita, e il
+  // tribunale ne ha nominati quattro che mancavano: un font caricato con
+  // `@import` dentro `<style>`, un video, una `<source>`, un `<object>`. Ognuno
+  // di questi fa partire una richiesta al dominio di qualcun altro, che e'
+  // esattamente cio' che questo passo esiste per censire.
+  for (const [nome, attributo] of [["script", "src"], ["iframe", "src"], ["link", "href"], ["img", "src"],
+    ["video", "src"], ["audio", "src"], ["source", "src"], ["embed", "src"], ["track", "src"], ["object", "data"]]) {
+    for (const t of tagDi(pulito, nome)) guarda(t, attributo, nome);
+  }
+  for (const t of [...tagDi(pulito, "img"), ...tagDi(pulito, "source")]) {
+    for (const pezzo of (attributi(t).srcset ?? "").split(",")) aggiungi(pezzo.trim().split(/\s+/)[0], "srcset");
+  }
+  for (const { corpo } of stili) {
+    for (const m of corpo.matchAll(/url\(\s*['"]?([^'")]+)['"]?\s*\)/gi)) aggiungi(m[1], "css");
+  }
   return [...origini].map(([origine, elementi]) => ({ origine, elementi: [...elementi].sort() }));
 }
 
@@ -657,18 +865,48 @@ export function findingsArchiviazione({ cookie, archiviazioni, terzi, dichiarate
 
 // ---------------------------------------------------------- accessibilita'
 /** Il nome accessibile di un elemento: contenuto, `aria-label`, `title`, `alt` interno. */
-export function nomeAccessibile(tag, dentro) {
+export function nomeAccessibile(tag, dentro, documento = "") {
   const a = attributi(tag);
   const daContenuto = testoVisibile(dentro ?? "");
   if (daContenuto) return daContenuto;
   if (a["aria-label"]?.trim()) return a["aria-label"].trim();
-  if (a["aria-labelledby"]?.trim()) return `(aria-labelledby ${a["aria-labelledby"]})`;
+  // `aria-labelledby` si RISOLVE. Prima si accettava come nome il puntatore
+  // stesso: `<a aria-labelledby="id-che-non-esiste"></a>` passava, e per una
+  // tecnologia assistiva il nome restava vuoto. L'id sta nello stesso documento
+  // che abbiamo in mano — non serve un browser per cercarlo (SD-VERDE-06).
+  const puntatore = a["aria-labelledby"]?.trim();
+  if (puntatore) {
+    const testi = puntatore.split(/\s+/).map((id) => testoDellId(documento, id)).filter(Boolean);
+    if (testi.length > 0) return testi.join(" ");
+  }
   if (a.title?.trim()) return a.title.trim();
   for (const img of tagDi(dentro ?? "", "img")) {
     const alt = attributi(img).alt;
     if (alt?.trim()) return alt.trim();
   }
+  // Un'icona SVG con `aria-label` o `<title>` E' un nome accessibile: e' il
+  // pattern standard dei collegamenti social in un pie' di pagina, e prima
+  // produceva un bloccante su markup corretto (SD-ROSSO-01).
+  for (const svg of tagDi(dentro ?? "", "svg")) {
+    const etichetta = attributi(svg)["aria-label"];
+    if (etichetta?.trim()) return etichetta.trim();
+  }
+  for (const { dentro: titolo } of elementiDi(dentro ?? "", "title")) {
+    if (testoVisibile(titolo)) return testoVisibile(titolo);
+  }
+  for (const qualsiasi of (dentro ?? "").match(/<[a-zA-Z][^>]*\baria-label\s*=\s*("[^"]*"|'[^']*')/gi) ?? []) {
+    const etichetta = attributi(`${qualsiasi}>`)["aria-label"];
+    if (etichetta?.trim()) return etichetta.trim();
+  }
   return "";
+}
+
+/** Il testo visibile dell'elemento con quell'`id`, oppure `""` se non esiste. */
+export function testoDellId(documento, id) {
+  if (!documento || !id) return "";
+  const re = new RegExp(`<([a-zA-Z][a-zA-Z0-9-]*)\\b[^>]*\\bid\\s*=\\s*["']${perRegexp(id)}["'][^>]*>([\\s\\S]*?)<\\/\\1>`, "i");
+  const m = re.exec(documento);
+  return m ? testoVisibile(m[2]) : "";
 }
 
 /** I livelli dei titoli, in ordine di documento. */
@@ -730,19 +968,27 @@ function regoleTitoli(html, dove) {
 function regoleNomi(html, pulito, dove) {
   for (const tag of tagDi(pulito, "img")) {
     const a = attributi(tag);
-    if (!("alt" in a)) dove(`<img src="${a.src ?? "?"}"> senza attributo alt`);
-    else if (a.alt.trim() === "") dove(`<img src="${a.src ?? "?"}"> con alt vuoto: legittimo solo se l'immagine e' decorativa, e questo lo dice una persona`, "issue");
+    if (!("alt" in a)) dove(`<img src="${perStampa(a.src ?? "?", 120)}"> senza attributo alt`);
+    else if (a.alt.trim() === "") dove(`<img src="${perStampa(a.src ?? "?", 120)}"> con alt vuoto: legittimo solo se l'immagine e' decorativa, e questo lo dice una persona`, "issue");
   }
   for (const { tag, dentro } of elementiDi(pulito, "a")) {
-    if (!nomeAccessibile(tag, dentro)) dove(`collegamento senza nome accessibile: href="${attributi(tag).href ?? "?"}"`);
+    if (!nomeAccessibile(tag, dentro, pulito)) dove(`collegamento senza nome accessibile: href="${perStampa(attributi(tag).href ?? "?", 120)}"`);
   }
   for (const { tag, dentro } of elementiDi(pulito, "button")) {
-    if (!nomeAccessibile(tag, dentro)) dove("bottone senza nome accessibile");
+    if (!nomeAccessibile(tag, dentro, pulito)) dove("bottone senza nome accessibile");
   }
   const etichette = etichettePerId(html);
+  const avvolti = campiAvvolti(html);
   for (const campo of campiDiPagina(html)) {
-    const haEtichetta = (campo.id && etichette.has(campo.id)) || campo.ariaLabel.trim().length > 0;
-    if (!haEtichetta) dove(`campo "${campo.nome || campo.id || campo.tipo}" senza etichetta e senza aria-label`);
+    // Un campo nascosto non si mostra a nessuno: non gli serve un'etichetta.
+    // Entra comunque nel censimento dei DATI (`dati-raccolti`), che e' un'altra
+    // domanda — la distinzione e' la correzione di SD-VERDE-05.
+    if (campo.tipo === "hidden") continue;
+    const haEtichetta = (campo.id && etichette.has(campo.id))
+      || campo.ariaLabel.trim().length > 0
+      || (campo.id && avvolti.has(`#${campo.id}`))
+      || (campo.nome && avvolti.has(`@${campo.nome}`));
+    if (!haEtichetta) dove(`campo "${perStampa(campo.nome || campo.id || campo.tipo, 80)}" senza etichetta e senza aria-label`);
   }
 }
 
