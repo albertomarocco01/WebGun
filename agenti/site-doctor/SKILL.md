@@ -90,7 +90,7 @@ I passi 3-7 leggono l'app **solo** attraverso la superficie che il passo 2 ha st
 |---|---|---|
 | `perimetro` | Legge gli handoff dei vicini e compila la **tabella di proprietà** del certificato: chi guarda cosa, dove l'ha scritto, cosa resta scoperto. **STOP** se una voce resta senza proprietario e senza `scoperto` | `references/perimetro.md` |
 | `scansiona` | La misura: cammina la superficie pubblica, legge cookie e archiviazione, i moduli e i loro campi, l'accessibilità servita, la lingua. **Non scrive nel progetto**: riporta | `references/gdpr-e-cookie.md` · `references/accessibilita-servita.md` |
-| `certifica` | Scrive `docs/conformita.md` dal template — voce per voce, esito, deroghe motivate — e, se la misura le ha trovate mancanti e sono **nostre**, la pagina dell'informativa **in bozza** e il collegamento che la rende raggiungibile. **STOP alla firma** | `resources/templates/conformita.md` |
+| `certifica` | Scrive `docs/conformita.md` dal template — voce per voce, esito, deroghe motivate — e, se la misura le ha trovate mancanti e sono **nostre**, la pagina dell'informativa **in bozza** e il collegamento che la rende raggiungibile. **STOP alla firma** | `resources/templates/conformita.md` · `resources/templates/informativa-bozza.md` |
 | `verify` | **Il gate**: nove passi con id stabili, quattro stati, `--json` | `scripts/verify.mjs` |
 | `handoff` | Scrive `docs/handoff/<n>-site-doctor.md` col contratto del `CLAUDE.md` e la riga `Gate: VERDE/ROSSO` | `resources/templates/handoff-site-doctor.md` |
 
@@ -179,10 +179,10 @@ docs/DEBITO-TECNICO.md                 aggiornato con le voci scoperte e le dero
 | `scripts/verify.mjs` | il gate — nove passi, `id` stabili, quattro stati, uscite 0/1/2 |
 | `scripts/conformita-lib.mjs` | **le regole** sui documenti: certificato, tabella di proprietà, basi giuridiche, verdetto dell'handoff. Funzioni pure |
 | `scripts/servito-lib.mjs` | **le regole** sull'app servita: superficie, informativa, moduli, archiviazione, accessibilità, lingua. Funzioni pure |
-| `scripts/banco.mjs` | il banco: serve un sito statico di prova, senza dipendenze, per il sabotaggio |
-| `resources/banco/` | il sito di prova **conforme** e le sue varianti sabotate — tracciato, perché un clone pulito lo sa rilanciare (`DECISIONI.md` §25) |
+| `scripts/banco.mjs` | il banco: **genera e serve** un sito statico di prova conforme e le sue varianti sabotate, senza dipendenze. È **il file** a essere tracciato, non un albero di pagine: un clone pulito rilancia ogni classe con un comando (`DECISIONI.md` §25) |
 | `scripts/*.test.mjs` | test degli script — `npm test` dalla cartella della skill |
 | `resources/templates/conformita.md` | modello del certificato di idoneità |
+| `resources/templates/informativa-bozza.md` | modello dell'informativa **in bozza** che `certifica` genera quando manca: le sette voci dell'art. 13, i segnaposto dove va ciò che solo il titolare sa, e il guscio `src/app/privacy/page.tsx`. Su un sito multilingua se ne genera **una per lingua** |
 | `resources/templates/handoff-site-doctor.md` | modello del file di handoff |
 
 Le regole stanno nelle `*-lib.mjs` e non nel guscio per lo stesso motivo delle altre skill: una regola che si può eseguire solo con un sito costruito e servito davanti è una regola che può restare spenta per mesi senza che nessuno lo sappia. **Una regola nuova nasce nella lib, col suo test.**
