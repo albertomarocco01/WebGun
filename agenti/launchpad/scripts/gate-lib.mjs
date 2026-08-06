@@ -324,7 +324,14 @@ const BLOCCA_DEPLOY = [
   // quattro e taceva sul quarto — cioe' faceva esattamente quello che il
   // criterio di accettazione di P.5 esiste per scoprire.
   /il\s+deploy\b[^\n]{0,40}non\s+pu[oò]\s+partire/i,
-  /prerequisit\w*\s+(?:di|per|del)\s+(?:deploy|P\.5|pubblicazione)/i,
+  /prerequisit\w*\s+(?:di|per|del|alla|della)\s+(?:deploy|P\.5|pubblicazione|messa\s+online)/i,
+  // Aggiunte dal collaudo del 2026-08-06: sono le forme che una persona scrive
+  // senza pensarci, e ognuna faceva passare un bloccante vero. L'elenco resta
+  // per costruzione APERTO — vedi la nota in `references/verifica-deterministica.md`
+  // §3.3: la difesa che regge non e' questo elenco, e' che il registro nasca da
+  // un template con una riga di forma fissa.
+  /non\s+si\s+pubblica\b/i,
+  /blocca(?:no)?\s+la\s+messa\s+online/i,
 ];
 
 /**
@@ -519,6 +526,15 @@ const SEZIONI_RICHIESTE = Object.freeze([
   { chiave: "prescrizioni", r: /^#{2,3}\s.*prescrizioni/im, che: "Prescrizioni lasciate dagli altri" },
 ]);
 
+/** Il corpo di una sezione: dal suo titolo al titolo successivo. */
+function corpoSezione(testo, regexTitolo) {
+  const m = testo.match(regexTitolo);
+  if (!m) return "";
+  const dopo = testo.slice(m.index + m[0].length);
+  const prossimo = dopo.search(/^#{1,3}\s/m);
+  return prossimo === -1 ? dopo : dopo.slice(0, prossimo);
+}
+
 export function leggiRunbook(testo) {
   const pulito = senzaZoneCitate(testo ?? "");
   const variabili = [];
@@ -531,8 +547,22 @@ export function leggiRunbook(testo) {
       note: m[3].replace(/\*\*/g, "").trim(),
     });
   }
+  /**
+   * Le risposte ai bloccanti si leggono SOLO dentro §Prescrizioni.
+   *
+   * Trovato dal collaudo del 2026-08-06: il ciclo girava su tutto il runbook,
+   * quindi **qualunque** riga di tabella che cominciasse per un numero valeva
+   * come risposta a quel debito. Misurato: tolta la risposta al bloccante n°1 e
+   * aggiunta in §Costi una tabella di procedura `| 1 | apertura del progetto |
+   * si fa una volta sola, dal pannello |`, il passo tornava **pass**. Un
+   * bloccante dichiarato risultava risposto da una riga che parlava d'altro.
+   *
+   * La sezione e' gia' obbligatoria (`SEZIONI_RICHIESTE`), quindi restringere
+   * qui non apre nessuna strada: se manca, il passo 8 blocca comunque.
+   */
+  const prescrizioni = corpoSezione(pulito, /^#{2,3}\s.*prescrizioni.*$/im);
   const risposte = new Map();
-  for (const riga of righe(pulito)) {
+  for (const riga of righe(prescrizioni)) {
     const m = riga.match(/^\s*\|\s*(?:n[°.º]\s*)?(\d{1,3})\s*\|(.*)\|\s*$/);
     if (!m) continue;
     const celle = m[2].split("|").map((c) => c.trim());
@@ -551,6 +581,14 @@ export function leggiRunbook(testo) {
     variabili,
     risposte,
     sezioni: new Set(SEZIONI_RICHIESTE.filter((s) => s.r.test(pulito)).map((s) => s.chiave)),
+    // Una sezione obbligatoria puo' esserci come TITOLO e non come contenuto.
+    // Trovato dal collaudo del 2026-08-06: svuotata §Cosa diventa pubblico e
+    // lasciata l'intestazione, il passo chiudeva `pass` — cioe' chi firma
+    // trovava il titolo della domanda e nessuna risposta, che e' esattamente
+    // «far firmare un comando invece di un contenuto».
+    sezioniVuote: SEZIONI_RICHIESTE
+      .filter((s) => s.r.test(pulito) && corpoSezione(pulito, s.r).replace(/\s/g, "").length < 20)
+      .map((s) => s.che),
     segnaposto: [...pulito.matchAll(/\{\{[^}]{0,60}\}\}/g)].map((m) => m[0]),
   };
 }
@@ -566,8 +604,14 @@ export function esitoFirma(confermatoDa) {
   if (!confermatoDa) return { valida: false, motivo: "riga `Confermato da:` assente" };
   const f = confermatoDa.trim();
   if (/\{\{|<[A-Z ]+>|\.{3,}/.test(f) || eSegnaposto(f)) return { valida: false, motivo: "segnaposto del template, non una firma" };
-  if (/\b(launchpad|agente|claude|assistente|automatic)\b/i.test(f)) {
-    return { valida: false, motivo: "firmata dall'agente: la §6 esiste perche' una macchina non autorizza un'azione irreversibile" };
+  // `orchestratore` e `prompt smith` sono stati aggiunti dal collaudo del
+  // 2026-08-06, e non sono un dettaglio: lo `SKILL.md` §Modalita' dichiara che
+  // in pipeline la colonna «chi conferma» e' **vuota** — «l'orchestratore puo'
+  // preparare, non pubblicare». Misurato: `Confermato da: Orchestratore
+  // (pipeline Web Gun) — 2026-08-06` chiudeva il passo **pass**, cioe' il gate
+  // accettava proprio la firma che il documento dichiara impossibile.
+  if (/\b(launchpad|agente|claude|assistente|automatic|orchestratore|prompt[- ]?smith|pipeline|bot)\b/i.test(f)) {
+    return { valida: false, motivo: "firmata da chi non puo' autorizzare: la §6 esiste perche' una macchina non autorizza un'azione irreversibile, e lo SKILL.md §Modalita' dice che in pipeline la colonna «chi conferma» e' vuota" };
   }
   if (/\bUMANO\b.*\|.*\bORCHESTRATORE\b|\bORCHESTRATORE\b.*\|.*\bUMANO\b/i.test(f)) {
     return { valida: false, motivo: "nomina entrambe le possibilita': non ha scelto niente" };
@@ -652,7 +696,39 @@ export function findingsRunbook({ runbook, ultimoCommitCodice = null, adesso = n
     });
   }
 
+  for (const che of runbook.sezioniVuote ?? []) {
+    findings.push({
+      severity: "issue",
+      object: `§${che}`,
+      message: "sezione presente come titolo e vuota di contenuto",
+      hint: "chi firma trova la domanda e non la risposta. Un titolo non e' una dichiarazione: «la conferma e' sul contenuto, non sul comando»",
+    });
+  }
+
   const firma = esitoFirma(runbook.confermatoDa);
+  /**
+   * LA FIRMA PER DELEGA — una tensione dichiarata, non una decisione presa qui.
+   *
+   * La D14 del `CANTIERE.md` ha introdotto la forma
+   * `Direzione lavori (per delega del committente <nome>)`, e la limita per
+   * iscritto a **due contratti di collaudo** (`docs/flussi-critici.md`,
+   * `docs/performance.md`). La §6 di `DECISIONI.md` vieta di delegare la
+   * conferma di cio' che e' irreversibile, e questo runbook e' l'unico
+   * documento della pipeline che autorizza esattamente quello.
+   *
+   * Il gate NON la rifiuta — rifiutarla sarebbe cambiare il contratto dello
+   * `SKILL.md` da qui, e non e' un lavoro del collaudo. La NOMINA, con un
+   * `warn`, nel punto e nel momento in cui la tensione conta: davanti a chi
+   * legge il verdetto prima di `pubblica`. Un `warn` non cambia il verdetto.
+   */
+  if (firma.valida && /per\s+delega/i.test(runbook.confermatoDa ?? "")) {
+    findings.push({
+      severity: "warn",
+      object: "Confermato da",
+      message: "firma PER DELEGA su un'azione irreversibile",
+      hint: "la D14 ammette la delega per i due contratti di collaudo; la §6 vieta di delegare cio' che non si annulla, e pubblicare non si annulla. Il gate non la rifiuta: la dichiara. Prima di `pubblica` serve la controfirma di chi possiede la decisione",
+    });
+  }
   if (!firma.valida) {
     findings.push({
       severity: "block",

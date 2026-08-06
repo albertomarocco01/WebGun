@@ -661,3 +661,45 @@ test("un handoff datato nel FUTURO blocca: un certificato che non scade mai non 
   assert.equal(findingsCatena({ handoff: h, ultimoCommitCodice: "2026-08-05T10:00:00Z" }).length, 0,
     "senza `adesso` la libreria resta pura e non accusa nessuno");
 });
+
+// ====== collaudo 2026-08-06: la risposta al bloccante, la firma, la sezione vuota
+test("una tabella numerica fuori da §Prescrizioni non risponde a nessun bloccante", () => {
+  const conEstranea = RUNBOOK.replace(
+    "| 27 | password nel seed | il seed di produzione non porta account |",
+    "| 99 | voce inesistente | chiusa a monte |",
+  ) + "\n\n## Costi\n\n| # | Passo | Nota |\n|---|---|---|\n| 27 | apertura del progetto | si fa una volta sola, dal pannello |\n";
+  const r = leggiRunbook(conEstranea);
+  assert.equal(r.risposte.has(27), false,
+    "una riga di procedura che comincia per un numero non e' una risposta a un debito");
+  const voci = leggiDebito("| # | A | G | C |\n|---|---|---|---|\n| 27 | schema-forge | alto | password nel seed: **blocca il deploy** |\n");
+  const f = findingsDebito({ voci, runbookEsiste: true, risposte: r.risposte });
+  assert.equal(f.filter((x) => x.severity === "block").length, 1);
+});
+
+test("«non si pubblica finche'» e' una dichiarazione di bloccare il deploy", () => {
+  const voci = leggiDebito("| # | A | G | C |\n|---|---|---|---|\n| 1 | flow-sentinel | alto | nessun tetto ai tentativi, e **non si pubblica** finche' non e' mitigato |\n");
+  assert.equal(voci[0].bloccaDeploy, true);
+});
+
+test("la firma dell'orchestratore e' rifiutata: in pipeline la colonna «chi conferma» e' vuota", () => {
+  assert.equal(esitoFirma("Orchestratore (pipeline Web Gun) — 2026-08-06").valida, false);
+  assert.equal(esitoFirma("Prompt Smith — 2026-08-06").valida, false);
+  assert.equal(esitoFirma("Alberto Marocco (committente) — 2026-08-06").valida, true);
+});
+
+test("la firma PER DELEGA e' accettata e DICHIARATA: e' una tensione, non una decisione del gate", () => {
+  const delegato = RUNBOOK.replace("Confermato da: Alberto Marocco (committente) — 2026-08-06",
+    "Confermato da: Direzione lavori (per delega del committente Alberto Marocco) — 2026-08-06");
+  const f = findingsRunbook({ runbook: leggiRunbook(delegato), ultimoCommitCodice: "2026-08-06T09:00:00Z", adesso: "2026-08-07T00:00:00Z" });
+  assert.equal(f.filter((x) => x.severity === "block").length, 0, "il gate non cambia il contratto dello SKILL.md da solo");
+  assert.equal(f.filter((x) => x.severity === "warn" && /PER DELEGA/.test(x.message)).length, 1,
+    "ma la nomina nel punto in cui conta: la §6 vieta di delegare cio' che non si annulla");
+});
+
+test("una sezione obbligatoria presente come titolo e vuota e' un `issue`", () => {
+  const svuotato = RUNBOOK.replace("Il menu e le pagine informative.", "");
+  const f = findingsRunbook({ runbook: leggiRunbook(svuotato), ultimoCommitCodice: "2026-08-06T09:00:00Z", adesso: "2026-08-07T00:00:00Z" });
+  assert.equal(f.filter((x) => x.severity === "block").length, 0, "il titolo c'e': non e' una sezione mancante");
+  assert.ok(f.some((x) => x.severity === "issue" && /vuota di contenuto/.test(x.message)),
+    "chi firma trova la domanda e non la risposta");
+});
