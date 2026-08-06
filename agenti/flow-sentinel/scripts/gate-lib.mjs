@@ -356,7 +356,45 @@ function motivato(linee, indice) {
 // all'helper del database. Cioe' la regola verificava l'import e NON la
 // chiamata, proprio sul passo che esiste per pretendere la chiamata.
 // Riprodotto e chiuso il 2026-07-28, con i due test che lo bloccano.
-const IMPORT_HELPER_DB = /import\s+(?:type\s+)?([^;"']*?)\s+from\s+["'][^"']*helpers\/db(?:\.[cm]?[jt]s)?["']/g;
+//
+// RISCRITTA il 2026-08-06 (referto § M5). La forma precedente
+// (`([^;"']*?)\s+from`) aveva due quantificatori che si contendono lo stesso
+// spazio bianco, ed e' un ReDoS vero. Misurato su questa macchina, con una
+// spec fatta di soli spazi fra `import` e `from`:
+//
+//   1 000 caratteri →     1,6 s
+//   2 000 caratteri →    15,0 s
+//   4 000 caratteri →  non finito in due minuti
+//
+// e il costo si paga UNA VOLTA PER FLUSSO (`findingsEffettoDb` chiama questa
+// per ogni spec di ogni flusso). Il limite arrivato con § H10 lo trasforma in
+// un gate che si ferma con un messaggio invece che in uno muto, e va bene —
+// ma un gate che impiega venti secondi per flusso su un ingresso ostile e' un
+// gate che qualcuno lancera' con un timeout piu' corto.
+//
+// La correzione non e' un quantificatore piu' stretto: e' togliere
+// l'ambiguita'. Si cerca PRIMA il `from "…helpers/db…"`, che ha un solo
+// quantificatore e nessuna alternanza annidata, e POI si risale all'`import`
+// piu' vicino. Nessun punto del testo puo' essere consumato in due modi.
+const DA_HELPER_DB = /\bfrom\s*["'][^"'\n]*helpers\/db(?:\.[cm]?[jt]s)?["']/g;
+const PAROLA_IMPORT = /\bimport\b/g;
+// Fra `import` e `from` non ci puo' stare la fine di un'altra istruzione: se
+// c'e', quell'`import` non e' l'inizio di QUESTO import.
+const FINE_ISTRUZIONE = /[;"'`]/;
+
+/** Le clausole `import <clausola> from "…helpers/db…"`, cercate al contrario. */
+export function clausoleHelperDb(testo) {
+  const clausole = [];
+  for (const trovato of testo.matchAll(DA_HELPER_DB)) {
+    const prima = testo.slice(0, trovato.index);
+    const importi = [...prima.matchAll(PAROLA_IMPORT)];
+    if (importi.length === 0) continue;
+    const clausola = prima.slice(importi[importi.length - 1].index + "import".length);
+    if (FINE_ISTRUZIONE.test(clausola)) continue;
+    clausole.push(clausola.replace(/^\s*type\b/, ""));
+  }
+  return clausole;
+}
 
 export function usaHelperDb(testo) {
   // Un'asserzione commentata via non guarda niente, e nemmeno il suo import.
@@ -369,7 +407,7 @@ export function usaHelperDb(testo) {
   // asserzione che guarda il database.
   const pulito = senzaCommentiJs(senzaBom(testo));
   const nomi = [];
-  for (const [, clausola] of pulito.matchAll(IMPORT_HELPER_DB)) {
+  for (const clausola of clausoleHelperDb(pulito)) {
     for (const pezzo of clausola.replace(/[{}]/g, ",").split(",")) {
       // `import * as db`, `import db`, `{ a, b as c }`: interessa il nome con
       // cui la spec lo chiama, cioe' l'ultimo identificatore della clausola

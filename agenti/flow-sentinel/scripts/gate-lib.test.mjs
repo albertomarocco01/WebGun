@@ -19,6 +19,7 @@ import {
   scaduto,
   contaGravita,
   motivoOstile,
+  clausoleHelperDb,
   contrattoUscita,
   copertura,
   dettaglioPlaywright,
@@ -1134,4 +1135,49 @@ test("senzaCommentoToml: dove taglia e dove no", () => {
   assert.equal(senzaCommentoToml('a = "una \\" virgoletta # dentro"'), 'a = "una \\" virgoletta # dentro"');
   assert.equal(senzaCommentoToml("# tutta la riga"), "");
   assert.equal(senzaCommentoToml(null), "");
+});
+
+// ── M5 — ReDoS vero su `IMPORT_HELPER_DB` (referto § M5, 2026-08-06) ─────────
+// Misurato su questa macchina, con una spec fatta di soli spazi fra `import` e
+// `from`:  1 000 -> 1,6 s · 2 000 -> 15,0 s · 4 000 -> non finito in due minuti.
+// E il costo si paga UNA VOLTA PER FLUSSO.
+
+test("un ingresso ostile non fa piu' impiegare secondi al gate", () => {
+  const ostile = `import ${" ".repeat(40_000)} from "./x";`;
+  const inizio = process.hrtime.bigint();
+  usaHelperDb(ostile);
+  const ms = Number(process.hrtime.bigint() - inizio) / 1e6;
+  assert.ok(ms < 500, `40 000 caratteri in ${ms.toFixed(1)} ms (prima: 2 000 caratteri in 15 000 ms)`);
+});
+
+test("la clausola si legge ancora, e solo quella dell'helper giusto", () => {
+  const spec = [
+    'import { test, expect } from "@playwright/test";',
+    'import { contaProdotti } from "./helpers/db";',
+    "",
+    'test("x", async () => { await contaProdotti(); });',
+  ].join("\n");
+  assert.deepEqual(usaHelperDb(spec), { importa: true, chiama: true, nomi: ["contaProdotti"] });
+});
+
+test("l'import c'e' ma la chiamata no: la regola scatta ancora", () => {
+  const spec = [
+    'import { test, expect } from "@playwright/test";',
+    'import { contaProdotti } from "./helpers/db";',
+    'test("x", async () => { expect(1).toBe(1); });',
+  ].join("\n");
+  assert.equal(usaHelperDb(spec).chiama, false);
+});
+
+test("clausoleHelperDb non risale oltre la fine dell'istruzione precedente", () => {
+  // Il `;` fra i due: senza il controllo, la clausola sarebbe tutta la riga
+  // precedente e i nomi raccolti sarebbero `test` ed `expect` — cioe' il
+  // difetto chiuso il 2026-07-28, che questa riscrittura non deve riaprire.
+  const spec = 'import { test, expect } from "@playwright/test";\nconst x = 1;\nimport { q } from "./helpers/db";';
+  assert.deepEqual(usaHelperDb(spec).nomi, ["q"]);
+  assert.deepEqual(clausoleHelperDb(spec).map((c) => c.trim()), ["{ q }"]);
+});
+
+test("un `from \"…helpers/db\"` senza import davanti non produce niente", () => {
+  assert.deepEqual(clausoleHelperDb('const s = 1;\nexport * from "./helpers/db";'), []);
 });
