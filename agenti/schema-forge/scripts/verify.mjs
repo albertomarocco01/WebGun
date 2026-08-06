@@ -16,6 +16,8 @@ import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "n
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { formaEseguibile, risolviEseguibile } from "./eseguibili.mjs";
+
 const SKILL_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 // Le configurazioni dei linter viaggiano con la SKILL, non col progetto: il
 // gate deve dare lo stesso esito ovunque giri, anche se il progetto non le ha
@@ -57,42 +59,45 @@ const record = (id, name, status, detail = "") => {
 };
 
 // --------------------------------------- eseguibili risolti a mano su Windows
-// `spawnSync(cmd, args)` senza shell non consulta PATHEXT: uno shim `.cmd`
-// (quello che si ottiene installando la CLI Supabase da npm) risulta ENOENT, e
-// col percorso pieno risulta EINVAL — Node rifiuta di eseguire .cmd/.bat senza
-// shell dalla mitigazione della CVE-2024-27980. Risultato misurato il
-// 2026-07-27: quattro passi `skipped` con scritto «Supabase CLI assente» su una
-// macchina dove la CLI c'e' e funziona. Il guasto va nella direzione sicura, la
-// diagnosi no.
-// NON si abilita `shell: true`: li' gli argomenti vengono concatenati invece
-// che passati come vettore, e questo gate passa percorsi con spazi. Si passa da
-// `cmd.exe /c <percorso pieno>`, che riceve gli argomenti uno per uno — provato
-// con un percorso contenente uno spazio.
-export function formaEseguibile(nome, cercaPercorso, piattaforma = process.platform) {
-  if (piattaforma !== "win32") return { file: nome, prefisso: [] };
-  const trovato = cercaPercorso(nome);
-  if (!trovato) return { file: nome, prefisso: [] };
-  return /\.(cmd|bat)$/i.test(trovato)
-    ? { file: "cmd.exe", prefisso: ["/c", trovato] }
-    : { file: trovato, prefisso: [] };
-}
+// Le regole di risoluzione — e il perche' NON si cerca nella directory corrente,
+// che qui e' la radice del progetto auditato — stanno in `eseguibili.mjs` con i
+// loro test. Qui resta il ponte: si cerca una volta per nome, e i candidati
+// RIFIUTATI perche' stavano dentro il progetto si conservano. Un passo che dice
+// «strumento assente» senza dire «l'ho trovato, ma nel tuo progetto» manda a
+// cercare la cosa sbagliata.
+const rifiuti = new Map();
 
-// `where` elenca in ordine di PATH e poi di PATHEXT: la prima riga e' cio' che
-// verrebbe eseguito davvero.
 function dove(nome) {
-  const res = spawnSync("where", [nome], { encoding: "utf8" });
-  if (res.error || res.status !== 0) return null;
-  return (res.stdout ?? "").split(/\r?\n/).map((r) => r.trim()).find(Boolean) ?? null;
+  const { percorso, rifiutati } = risolviEseguibile(nome, PROJECT);
+  if (rifiutati.length > 0) rifiuti.set(nome, rifiutati);
+  return percorso;
 }
 
+export function notaRifiuto(rifiutati) {
+  if (!rifiutati || rifiutati.length === 0) return "";
+  return `\nRIFIUTATO perche' dentro il progetto auditato: ${rifiutati.join(", ")}. ` +
+    "Un progetto non sceglie il binario che lo giudica: tieni lo strumento fuori dal progetto, o toglilo dal PATH.";
+}
+
+const rifiutoDi = (nome) => notaRifiuto(rifiuti.get(nome));
+
+// `file === null` = nome non risolto. NON si ripiega sul nome nudo: lo
+// risolverebbe la directory corrente, cioe' di nuovo il progetto auditato.
 function has(cmd) {
   const { file, prefisso } = formaEseguibile(cmd, dove);
+  if (file === null) return false;
   const probe = spawnSync(file, [...prefisso, "--version"], { encoding: "utf8" });
   return !probe.error && probe.status === 0;
 }
 
 function run(cmd, cmdArgs, opts = {}) {
   const { file, prefisso } = formaEseguibile(cmd, dove);
+  if (file === null) {
+    return {
+      error: new Error(`${cmd} non risolto nel PATH${rifiutoDi(cmd)}`),
+      status: null, stdout: "", stderr: "",
+    };
+  }
   return spawnSync(file, [...prefisso, ...cmdArgs], { encoding: "utf8", cwd: PROJECT, ...opts });
 }
 
@@ -353,7 +358,7 @@ function migrazioniDaVerificare() {
 function passoSqlfluff(migrations) {
   const etichetta = "sqlfluff (formato SQL)";
   if (!has("sqlfluff")) {
-    record(ID.sqlfluff, etichetta, "skipped", "sqlfluff non installato: pipx install sqlfluff");
+    record(ID.sqlfluff, etichetta, "skipped", `sqlfluff non installato: pipx install sqlfluff${rifiutoDi("sqlfluff")}`);
     return;
   }
   const config = join(CONFIG_DIR, ".sqlfluff");
@@ -384,7 +389,7 @@ function passoSquawk(migrations) {
     record(ID.squawk, "squawk (operazioni pericolose)", res.status === 0 ? "pass" : "fail",
       res.status === 0 ? "" : (res.stdout || res.stderr || "").trim().split("\n").slice(0, 30).join("\n"));
   } else {
-    record(ID.squawk, "squawk (operazioni pericolose)", "skipped", "squawk non installato: pipx install squawk-cli");
+    record(ID.squawk, "squawk (operazioni pericolose)", "skipped", `squawk non installato: pipx install squawk-cli${rifiutoDi("squawk")}`);
   }
 }
 
@@ -393,7 +398,7 @@ function passoReset(supabaseAvailable, skipReset, quanteMigrazioni) {
   const etichetta = "supabase db reset (applicazione reale)";
   if (!supabaseAvailable) {
     record(ID.reset, etichetta, "skipped",
-      "Supabase CLI assente: lo schema NON e' stato applicato. Il gate non puo' essere verde.");
+      `Supabase CLI assente: lo schema NON e' stato applicato. Il gate non puo' essere verde.${rifiutoDi("supabase")}`);
   } else if (skipReset) {
     record(ID.reset, etichetta, "skipped", "saltato esplicitamente con --skip-reset");
   } else {
@@ -410,7 +415,7 @@ function passoDbLint(supabaseAvailable) {
     record(ID.dbLint, "supabase db lint", res.status === 0 ? "pass" : "fail",
       res.status === 0 ? "" : (res.stdout || res.stderr || "").trim().split("\n").slice(0, 20).join("\n"));
   } else {
-    record(ID.dbLint, "supabase db lint", "skipped", "Supabase CLI assente");
+    record(ID.dbLint, "supabase db lint", "skipped", `Supabase CLI assente${rifiutoDi("supabase")}`);
   }
 }
 
@@ -429,7 +434,7 @@ function passoDbLint(supabaseAvailable) {
 // dettaglio, che si stampa anche sui passi verdi.
 function passoAdvisors(supabaseAvailable) {
   if (!supabaseAvailable) {
-    record(ID.advisors, "supabase db advisors", "skipped", "Supabase CLI assente");
+    record(ID.advisors, "supabase db advisors", "skipped", `Supabase CLI assente${rifiutoDi("supabase")}`);
   } else if (run("supabase", ["db", "advisors", "--help"]).status !== 0) {
     // sottocomando sconosciuto: verifica MANCANTE, mai `fail`. Un gate rosso
     // perche' la CLI e' vecchia non parla dello schema (come sqlfluff/squawk).
@@ -466,7 +471,11 @@ function passoAuditRls(dbUrlEsplicito) {
       "database del progetto non risolvibile: manca `[db].port` in supabase/config.toml e non e' stato passato --db-url. L'audit NON e' stato eseguito: senza, ripiegherebbe sulla porta 54322, che con due stack Supabase accesi e' un altro progetto.");
     return;
   }
-  registraAudit(run("node", [
+  // `process.execPath`, non `run("node", …)`: l'interprete che sta girando, non
+  // quello che un `node.cmd` nella radice del progetto auditato vorrebbe farci
+  // eseguire. Un finto `node` che stampi `{"summary":{"block":0,…}}` portava a
+  // casa da solo «il controllo che non puo' mancare» (referto § C1).
+  registraAudit(spawnSync(process.execPath, [
     join(SKILL_DIR, "scripts", "rls-audit.mjs"),
     "--json",
     "--schemas", schemi.join(","),
@@ -474,7 +483,7 @@ function passoAuditRls(dbUrlEsplicito) {
     // i test pgTAP entrano nell'audit: una policy di scrittura mai attaccata da
     // un test e' un'ipotesi, e il catalogo da solo non puo' saperlo
     "--tests", join(PROJECT, "supabase", "tests"),
-  ]), schemi, dbUrl);
+  ], { encoding: "utf8", cwd: PROJECT }), schemi, dbUrl);
 }
 
 // L'uscita dell'audit era data in pasto a `JSON.parse` nuda: un `rls-audit.mjs`
@@ -534,7 +543,7 @@ function passoPgtap(supabaseAvailable) {
       "nessun file .sql al primo livello di supabase/tests/: le policy sono un'ipotesi non verificata" +
       (annidati > 0 ? ` (${annidati} in sottocartelle, non contati)` : ""));
   } else if (!supabaseAvailable) {
-    record(ID.pgtap, etichetta, "skipped", "Supabase CLI assente");
+    record(ID.pgtap, etichetta, "skipped", `Supabase CLI assente${rifiutoDi("supabase")}`);
   } else {
     const res = run("supabase", ["test", "db"]);
     record(ID.pgtap, etichetta, res.status === 0 ? "pass" : "fail",
@@ -569,7 +578,7 @@ function passoTipi(supabaseAvailable) {
         current === fresh ? "" : "tipi disallineati dallo schema: rigenerali con `types`");
     }
   } else {
-    record(ID.tipi, "tipi TypeScript", "skipped", "Supabase CLI assente");
+    record(ID.tipi, "tipi TypeScript", "skipped", `Supabase CLI assente${rifiutoDi("supabase")}`);
   }
 }
 

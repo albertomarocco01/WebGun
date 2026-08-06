@@ -14,6 +14,9 @@ import { test } from "node:test";
 import {
   argomentiOstiliACmd,
   CATEGORIE,
+  comandoRicerca,
+  dentroLaRadice,
+  shellDiSistema,
   contaGravita,
   contrattoUscita,
   dettaglioMisura,
@@ -481,8 +484,8 @@ test("uno shim .cmd passa da cmd.exe, e il percorso NON si virgoletta a mano", (
   // Contro l'istinto, ed e' per questo che c'e' un test: Node quota gia'
   // l'argomento, e aggiungendo virgolette si ottiene un doppio virgolettato
   // che `cmd` non sa aprire (provate entrambe le forme il 2026-07-30).
-  const forma = formaEseguibile("npx", () => "C:\\Program Files\\nodejs\\npx.cmd", "win32");
-  assert.deepEqual(forma, { file: "cmd.exe", prefisso: ["/c", "C:\\Program Files\\nodejs\\npx.cmd"] });
+  const forma = formaEseguibile("npx", () => "C:\\Program Files\\nodejs\\npx.cmd", "win32", "C:\\Windows\\System32\\cmd.exe");
+  assert.deepEqual(forma, { file: "C:\\Windows\\System32\\cmd.exe", prefisso: ["/c", "C:\\Program Files\\nodejs\\npx.cmd"] });
 });
 
 test("un argomento con spazi e' ostile a cmd, e va riconosciuto prima di lanciarlo", () => {
@@ -498,14 +501,52 @@ test("fuori da Windows gli spazi negli argomenti non sono un problema", () => {
   assert.deepEqual(argomentiOstiliACmd(["--flags=a b c"], "linux"), []);
 });
 
-test("fuori da Windows non si passa da nessuna shell", () => {
+// CORREZIONE del 2026-08-06. Prima: «fuori da Windows non si passa da nessuna
+// shell» asseriva `{ file: "lighthouse" }`, cioe' il NOME NUDO — che e' proprio
+// cio' che `spawnSync` risolve dalla directory corrente (§ C1 del referto).
+// La shell continua a non entrarci: cambia solo che si lancia il percorso.
+test("fuori da Windows non si passa da nessuna shell, ma si lancia il percorso", () => {
   assert.deepEqual(formaEseguibile("lighthouse", () => "/usr/bin/lighthouse", "linux"),
-    { file: "lighthouse", prefisso: [] });
+    { file: "/usr/bin/lighthouse", prefisso: [] });
 });
 
 test("un eseguibile vero non passa da cmd.exe nemmeno su Windows", () => {
   assert.deepEqual(formaEseguibile("node", () => "C:\\Program Files\\nodejs\\node.exe", "win32"),
     { file: "C:\\Program Files\\nodejs\\node.exe", prefisso: [] });
+});
+
+// ------------------------- chi cerca, e dove NON cerca (§ C1, 2026-08-06)
+// Il gate si lancia dalla radice del progetto MISURATO e `where` guarda li'
+// prima che nel PATH: un `npx.cmd` piantato nella radice sceglieva quale
+// binario produce i numeri del verdetto.
+
+test("su Windows si cerca col percorso pieno di where.exe e col prefisso $PATH:", () => {
+  assert.deepEqual(comandoRicerca("npx", "win32", { SystemRoot: "C:\\Windows" }),
+    { file: "C:\\Windows\\System32\\where.exe", args: ["$PATH:npx"] });
+});
+
+test("fuori da Windows si cerca con which, che legge il PATH e non la cartella corrente", () => {
+  assert.deepEqual(comandoRicerca("lighthouse", "linux", {}), { file: "which", args: ["lighthouse"] });
+});
+
+test("la shell degli shim viene da ComSpec, col percorso pieno", () => {
+  assert.equal(shellDiSistema({ ComSpec: "C:\\Windows\\System32\\cmd.exe" }), "C:\\Windows\\System32\\cmd.exe");
+  assert.equal(shellDiSistema({ SystemRoot: "D:\\Win" }), "D:\\Win\\System32\\cmd.exe");
+});
+
+test("un eseguibile dentro il progetto misurato si riconosce, uno fuori no", () => {
+  assert.equal(dentroLaRadice("C:\\prog\\node_modules\\.bin\\lighthouse.cmd", "C:\\prog"), true);
+  assert.equal(dentroLaRadice("C:\\PROG\\npx.cmd", "C:\\prog"), true);
+  assert.equal(dentroLaRadice("C:\\Program Files\\nodejs\\npx.cmd", "C:\\prog"), false);
+  // `C:\prog-altro` comincia per `C:\prog`: un confronto di prefissi sbaglierebbe
+  assert.equal(dentroLaRadice("C:\\prog-altro\\npx.cmd", "C:\\prog"), false);
+  assert.equal(dentroLaRadice("C:\\prog", "C:\\prog"), false);
+  assert.equal(dentroLaRadice(null, "C:\\prog"), false);
+});
+
+test("nome non risolto: file null, e chi lancia deve dire MANCANTE (mai il nome nudo)", () => {
+  assert.deepEqual(formaEseguibile("lighthouse", () => null, "win32"), { file: null, prefisso: [] });
+  assert.deepEqual(formaEseguibile("lighthouse", () => null, "linux"), { file: null, prefisso: [] });
 });
 
 // ------------------------------------------------------- contratto d'uscita

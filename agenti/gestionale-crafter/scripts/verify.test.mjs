@@ -10,10 +10,9 @@ import {
   CONTRATTO_JSON,
   ID,
   dettaglioEsecuzione,
-  formaEseguibile,
   leggiAudit,
+  notaRifiuto,
   riepilogo,
-  scegliEseguibile,
 } from "./verify.mjs";
 
 // Gli `id` sono il CONTRATTO con l'orchestratore: l'etichetta italiana e' per
@@ -75,52 +74,21 @@ describe("leggiAudit", () => {
   });
 });
 
-// Il guasto misurato il 2026-07-28: `where npx` risponde PRIMA con lo script sh
-// senza estensione, che `spawnSync` senza shell non esegue. Prendendo la prima
-// riga, i passi `tsc` e `a11y` fallivano col dettaglio vuoto su una macchina
-// dove entrambi funzionano.
-describe("scegliEseguibile", () => {
-  it("preferisce .exe", () => {
-    assert.equal(scegliEseguibile(["C:/x/tool", "C:/x/tool.exe"]), "C:/x/tool.exe");
+// Le regole di risoluzione — `scegliEseguibile`, `formaEseguibile`, e il
+// rifiuto dei candidati dentro il progetto auditato — stanno ora in
+// `eseguibili.test.mjs`, dove sono arrivate col modulo. Qui resta cio' che il
+// GATE deve dire quando un candidato viene rifiutato: senza il percorso e senza
+// il motivo, «strumento assente» manda a cercare la cosa sbagliata (§ C1).
+describe("notaRifiuto", () => {
+  it("il candidato rifiutato finisce nel dettaglio, col suo percorso", () => {
+    const nota = notaRifiuto(["C:/prog/node_modules/.bin/supabase.cmd"]);
+    assert.match(nota, /RIFIUTATO perche' dentro il progetto auditato/);
+    assert.ok(nota.includes("C:/prog/node_modules/.bin/supabase.cmd"));
   });
 
-  it("in mancanza di .exe prende lo shim .cmd, non lo script senza estensione", () => {
-    assert.equal(scegliEseguibile(["C:/nodejs/npx", "C:/nodejs/npx.cmd"]), "C:/nodejs/npx.cmd");
-  });
-
-  it("se c'e' solo un candidato, quello e'", () => {
-    assert.equal(scegliEseguibile(["/usr/bin/npx"]), "/usr/bin/npx");
-  });
-
-  it("nessun candidato: null, non una stringa vuota", () => {
-    assert.equal(scegliEseguibile(["", "  "]), null);
-  });
-});
-
-describe("formaEseguibile", () => {
-  it("fuori da Windows non tocca niente", () => {
-    assert.deepEqual(formaEseguibile("npx", () => "C:/x/npx.cmd", "linux"), {
-      file: "npx",
-      prefisso: [],
-    });
-  });
-
-  it("su Windows uno shim .cmd si lancia con cmd.exe /c", () => {
-    assert.deepEqual(formaEseguibile("npx", () => "C:/x/npx.cmd", "win32"), {
-      file: "cmd.exe",
-      prefisso: ["/c", "C:/x/npx.cmd"],
-    });
-  });
-
-  it("un .exe si lancia direttamente", () => {
-    assert.deepEqual(formaEseguibile("psql", () => "C:/x/psql.exe", "win32"), {
-      file: "C:/x/psql.exe",
-      prefisso: [],
-    });
-  });
-
-  it("se `where` non trova niente si prova col nome nudo", () => {
-    assert.deepEqual(formaEseguibile("tool", () => null, "win32"), { file: "tool", prefisso: [] });
+  it("nessun rifiuto: nessuna riga in piu' nel dettaglio", () => {
+    assert.equal(notaRifiuto([]), "");
+    assert.equal(notaRifiuto(undefined), "");
   });
 });
 

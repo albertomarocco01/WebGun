@@ -31,8 +31,14 @@ import {
   verdettoDa,
 } from "./progetto-lib.mjs";
 import { conBarre } from "./audit-lib.mjs";
+import { formaEseguibile, risolviEseguibile } from "./eseguibili.mjs";
 
 const SKILL_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
+
+// La radice del progetto AUDITATO: e' li' che nessun eseguibile va cercato, e
+// `--progetto` puo' spostarla. Vale `process.cwd()` finche' `main()` non legge
+// gli argomenti — che e' anche il default di `--progetto`.
+let RADICE_RICERCA = process.cwd();
 
 // ------------------------------------------------- identificatori di passo
 // L'etichetta e' per gli umani e resta libera di cambiare; l'`id` e' il
@@ -50,49 +56,33 @@ export const ID = Object.freeze({
 export const CONTRATTO_JSON = 1;
 
 // --------------------------------------- eseguibili risolti a mano su Windows
-// `spawnSync(cmd, args)` senza shell non consulta PATHEXT: uno shim `.cmd`
-// (npx, supabase da npm) risulta ENOENT sul nome e EINVAL sul percorso pieno —
-// Node rifiuta di eseguire .cmd/.bat senza shell dalla mitigazione della
-// CVE-2024-27980. Senza questa funzione il gate direbbe «strumento assente» su
-// una macchina dove lo strumento c'e' e funziona.
-// NON si usa `shell: true`: li' gli argomenti vengono concatenati invece che
-// passati come vettore, e questo gate passa percorsi con spazi.
-export function formaEseguibile(nome, cercaPercorso, piattaforma = process.platform) {
-  if (piattaforma !== "win32") return { file: nome, prefisso: [] };
-  const trovato = cercaPercorso(nome);
-  if (!trovato) return { file: nome, prefisso: [] };
-  return /\.(cmd|bat)$/i.test(trovato)
-    ? { file: "cmd.exe", prefisso: ["/c", trovato] }
-    : { file: trovato, prefisso: [] };
-}
-
-/**
- * `where` elenca TUTTI i candidati, e il primo non e' quello giusto: per `npx`
- * risponde prima `C:\...\nodejs\npx` — lo script sh senza estensione, che
- * `spawnSync` senza shell non sa eseguire — e poi `npx.cmd`, che invece si
- * esegue via `cmd.exe /c`. Misurato il 2026-07-28: prendendo la prima riga, i
- * passi `tsc` e `a11y` fallivano con il DETTAGLIO VUOTO su una macchina dove
- * entrambi gli strumenti funzionano.
- * Si sceglie il primo candidato ESEGUIBILE (.exe, poi .cmd/.bat).
- */
-export function scegliEseguibile(righe) {
-  const candidati = (righe ?? []).map((r) => r.trim()).filter(Boolean);
-  return (
-    candidati.find((c) => /\.exe$/i.test(c)) ??
-    candidati.find((c) => /\.(cmd|bat)$/i.test(c)) ??
-    candidati[0] ??
-    null
-  );
-}
+// Le regole di risoluzione — e il perche' NON si cerca nella directory corrente,
+// che qui e' la radice del progetto auditato — stanno in `eseguibili.mjs` con i
+// loro test. Qui resta il ponte: si cerca una volta per nome, e i candidati
+// RIFIUTATI perche' stavano dentro il progetto si conservano. Un passo che dice
+// «strumento assente» senza dire «l'ho trovato, ma nel tuo progetto» manda a
+// cercare la cosa sbagliata (referto § C1, 2026-08-06).
+const rifiuti = new Map();
 
 function dove(nome) {
-  const res = spawnSync("where", [nome], { encoding: "utf8" });
-  if (res.error || res.status !== 0) return null;
-  return scegliEseguibile((res.stdout ?? "").split(/\r?\n/));
+  const { percorso, rifiutati } = risolviEseguibile(nome, RADICE_RICERCA);
+  if (rifiutati.length > 0) rifiuti.set(nome, rifiutati);
+  return percorso;
 }
 
+export function notaRifiuto(rifiutati) {
+  if (!rifiutati || rifiutati.length === 0) return "";
+  return `\nRIFIUTATO perche' dentro il progetto auditato: ${rifiutati.join(", ")}. ` +
+    "Un progetto non sceglie il binario che lo giudica: tieni lo strumento fuori dal progetto, o toglilo dal PATH.";
+}
+
+const rifiutoDi = (nome) => notaRifiuto(rifiuti.get(nome));
+
+// `file === null` = nome non risolto. NON si ripiega sul nome nudo: lo
+// risolverebbe la directory corrente, cioe' di nuovo il progetto auditato.
 function has(cmd) {
   const { file, prefisso } = formaEseguibile(cmd, dove);
+  if (file === null) return false;
   const probe = spawnSync(file, [...prefisso, "--version"], { encoding: "utf8" });
   return !probe.error && probe.status === 0;
 }
@@ -130,6 +120,9 @@ export function dettaglioEsecuzione(res, righe = 20) {
 
 function esegui(progetto, cmd, argomentiCmd) {
   const { file, prefisso } = formaEseguibile(cmd, dove);
+  if (file === null) {
+    return { error: new Error(`${cmd} non risolto nel PATH${rifiutoDi(cmd)}`), status: null, stdout: "", stderr: "" };
+  }
   return spawnSync(file, [...prefisso, ...argomentiCmd], {
     encoding: "utf8",
     cwd: progetto,
@@ -289,7 +282,7 @@ function passoTipi(progetto, supabaseCliPresente) {
     return;
   }
   if (!supabaseCliPresente) {
-    record(ID.tipi, etichetta, "skipped", "Supabase CLI assente: allineamento non verificato");
+    record(ID.tipi, etichetta, "skipped", `Supabase CLI assente: allineamento non verificato${rifiutoDi("supabase")}`);
     return;
   }
 
@@ -405,6 +398,9 @@ function verdetto(json) {
 // L'ordine di queste chiamate E' il gate. Niente altro qui dentro.
 function main() {
   const args = argomenti(process.argv.slice(2));
+  // Prima di qualunque `has`/`esegui`: da qui in poi nessun eseguibile si cerca
+  // dentro il progetto che si sta giudicando.
+  RADICE_RICERCA = resolve(args.progetto);
 
   if (!existsSync(dentroProgetto(args.progetto, "src"))) {
     console.error(`Nessuna cartella src/ in ${args.progetto}: non c'e' gestionale da verificare.`);

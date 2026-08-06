@@ -30,6 +30,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { auditAll, righeDaPsql } from "./audit-lib.mjs";
+import { formaEseguibile, risolviEseguibile } from "./eseguibili.mjs";
 
 const SEP = "\x1f"; // unit separator: non compare mai nei nomi degli oggetti
 const REC = "\x1e"; // record separator: l'espressione di una policy va a capo
@@ -57,8 +58,25 @@ function parseArgs(argv) {
 }
 
 // ------------------------------------------------------------------- query
+// `psql` si risolve UNA volta e col percorso pieno. Col nome nudo lo
+// risolverebbe la directory corrente — che quando l'audit e' lanciato dal gate
+// e' la radice del progetto auditato — e un `psql.exe` piantato li' deciderebbe
+// cosa questo audit legge dal catalogo di Postgres (referto § C1, misurato il
+// 2026-08-06 con `hostname.exe` rinominato).
+const psql = (() => {
+  const { percorso, rifiutati } = risolviEseguibile("psql", process.cwd());
+  if (rifiutati.length > 0) {
+    console.error(`psql trovato DENTRO il progetto auditato (${rifiutati.join(", ")}): rifiutato. Un progetto non sceglie il binario che lo giudica.`);
+  }
+  return formaEseguibile("psql", () => percorso);
+})();
+
 function query(dbUrl, sql) {
-  const res = spawnSync("psql", [dbUrl, "-At", "-F", SEP, "-R", REC, "-c", sql], {
+  if (psql.file === null) {
+    console.error("psql non disponibile nel PATH: verifica RLS NON eseguita.");
+    process.exit(2);
+  }
+  const res = spawnSync(psql.file, [...psql.prefisso, dbUrl, "-X", "-At", "-F", SEP, "-R", REC, "-c", sql], {
     encoding: "utf8",
   });
   if (res.error) {

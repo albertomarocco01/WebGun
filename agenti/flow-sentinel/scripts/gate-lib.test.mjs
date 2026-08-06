@@ -25,6 +25,9 @@ import {
   estraiOggettoJson,
   findingsCopertura,
   findingsEffettoDb,
+  comandoRicerca,
+  dentroLaRadice,
+  shellDiSistema,
   formaEseguibile,
   leggiFlussi,
   primoEseguibile,
@@ -686,8 +689,9 @@ test("uscita vuota di `where`: nessun percorso, non una stringa vuota", () => {
 });
 
 test("su Windows uno shim .cmd si lancia con cmd.exe /c, non con shell:true", () => {
-  assert.deepEqual(formaEseguibile("npx", () => "C:\\Program Files\\nodejs\\npx.cmd", "win32"),
-    { file: "cmd.exe", prefisso: ["/c", "C:\\Program Files\\nodejs\\npx.cmd"] });
+  assert.deepEqual(
+    formaEseguibile("npx", () => "C:\\Program Files\\nodejs\\npx.cmd", "win32", "C:\\Windows\\System32\\cmd.exe"),
+    { file: "C:\\Windows\\System32\\cmd.exe", prefisso: ["/c", "C:\\Program Files\\nodejs\\npx.cmd"] });
 });
 
 test("su Windows un .exe si lancia col percorso pieno", () => {
@@ -695,9 +699,44 @@ test("su Windows un .exe si lancia col percorso pieno", () => {
     { file: "C:\\scoop\\psql.exe", prefisso: [] });
 });
 
-test("fuori da Windows il nome nudo basta", () => {
-  assert.deepEqual(formaEseguibile("psql", () => { throw new Error("non si cerca"); }, "linux"),
-    { file: "psql", prefisso: [] });
+// ------------------------------------- chi cerca, e dove NON cerca (§ C1)
+// Referto del 2026-08-06: il gate si lancia dalla radice del progetto AUDITATO
+// e `where` guarda li' prima che nel PATH. Le tre righe qui sotto CORREGGONO il
+// test «fuori da Windows il nome nudo basta»: il nome nudo non basta piu', ed
+// era proprio lui a farsi risolvere dalla cartella corrente.
+
+test("su Windows si cerca col percorso pieno di where.exe e col prefisso $PATH:", () => {
+  assert.deepEqual(comandoRicerca("psql", "win32", { SystemRoot: "C:\\Windows" }),
+    { file: "C:\\Windows\\System32\\where.exe", args: ["$PATH:psql"] });
+});
+
+test("fuori da Windows si cerca con which, che legge il PATH e non la cartella corrente", () => {
+  assert.deepEqual(comandoRicerca("psql", "linux", {}), { file: "which", args: ["psql"] });
+});
+
+test("la shell degli shim viene da ComSpec, col percorso pieno", () => {
+  assert.equal(shellDiSistema({ ComSpec: "C:\\Windows\\System32\\cmd.exe" }), "C:\\Windows\\System32\\cmd.exe");
+  assert.equal(shellDiSistema({ SystemRoot: "D:\\Win" }), "D:\\Win\\System32\\cmd.exe");
+});
+
+test("un eseguibile dentro il progetto auditato si riconosce, uno fuori no", () => {
+  assert.equal(dentroLaRadice("C:\\prog\\node_modules\\.bin\\npx.cmd", "C:\\prog"), true);
+  assert.equal(dentroLaRadice("C:\\scoop\\shims\\psql.exe", "C:\\prog"), false);
+  // `C:\prog-altro` comincia per `C:\prog`: un confronto di prefissi sbaglierebbe
+  assert.equal(dentroLaRadice("C:\\prog-altro\\psql.exe", "C:\\prog"), false);
+  assert.equal(dentroLaRadice("C:\\prog", "C:\\prog"), false);
+});
+
+test("nome non risolto: file null, e chi lancia deve dire MANCANTE (mai il nome nudo)", () => {
+  assert.deepEqual(formaEseguibile("psql", () => null, "win32"), { file: null, prefisso: [] });
+  assert.deepEqual(formaEseguibile("psql", () => null, "linux"), { file: null, prefisso: [] });
+});
+
+test("fuori da Windows si cerca lo stesso, e si lancia il percorso trovato", () => {
+  let cercato = false;
+  const forma = formaEseguibile("psql", () => { cercato = true; return "/usr/bin/psql"; }, "linux");
+  assert.deepEqual(forma, { file: "/usr/bin/psql", prefisso: [] });
+  assert.equal(cercato, true);
 });
 
 // ------------------------------------------------------- gravita' e verdetto

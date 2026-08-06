@@ -24,8 +24,10 @@ import { fileURLToPath } from "node:url";
 
 import {
   batteriaHaEseguito,
+  comandoRicerca,
   contaGravita,
   contrattoUscita,
+  dentroLaRadice,
   dettaglioFindings,
   dettaglioPlaywright,
   eSpec,
@@ -92,26 +94,46 @@ const leggiSeCe = (relativo) => {
 };
 
 // --------------------------------------- eseguibili risolti a mano su Windows
-// `spawnSync(cmd, args)` senza shell non consulta PATHEXT: uno shim `.cmd`
-// (npx, eslint, supabase installati da npm) risulta ENOENT sul nome e EINVAL
-// col percorso pieno — Node rifiuta .cmd/.bat senza shell dalla mitigazione
-// della CVE-2024-27980. NON si abilita `shell: true`: li' gli argomenti
-// vengono concatenati invece che passati come vettore, e questo gate passa
-// percorsi con spazi. Prezzo gia' pagato da Schema Forge, non si ripaga.
+// Le regole — comando di ricerca col percorso pieno, prefisso `$PATH:`, rifiuto
+// dei candidati dentro il progetto auditato, nome nudo mai lanciato — stanno in
+// `gate-lib.mjs` con i loro test (§ C1 del referto 2026-08-06). Qui resta il
+// ponte, e la memoria di cio' che e' stato RIFIUTATO: un passo che dice
+// «strumento assente» senza dire «l'ho trovato, ma nel tuo progetto» manda a
+// cercare la cosa sbagliata.
+const rifiuti = new Map();
+
 function dove(nome) {
-  const res = spawnSync(process.platform === "win32" ? "where" : "which", [nome], { encoding: "utf8" });
+  const { file, args } = comandoRicerca(nome);
+  const res = spawnSync(file, args, { encoding: "utf8", timeout: 10_000, windowsHide: true });
   if (res.error || res.status !== 0) return null;
-  return primoEseguibile(res.stdout);
+  const candidati = String(res.stdout ?? "").split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
+  const rifiutati = candidati.filter((c) => dentroLaRadice(c, PROGETTO));
+  if (rifiutati.length > 0) rifiuti.set(nome, rifiutati);
+  return primoEseguibile(candidati.filter((c) => !dentroLaRadice(c, PROGETTO)).join("\n"));
 }
 
+export function notaRifiuto(rifiutati) {
+  if (!rifiutati || rifiutati.length === 0) return "";
+  return ` — RIFIUTATO perche' dentro il progetto auditato: ${rifiutati.join(", ")}. ` +
+    "Un progetto non sceglie il binario che lo giudica: tienilo fuori dal progetto, o toglilo dal PATH.";
+}
+
+const rifiutoDi = (nome) => notaRifiuto(rifiuti.get(nome));
+
+// `file === null` = nome non risolto. NON si ripiega sul nome nudo: lo
+// risolverebbe la directory corrente, cioe' di nuovo il progetto auditato.
 function has(cmd) {
   const { file, prefisso } = formaEseguibile(cmd, dove);
+  if (file === null) return false;
   const probe = spawnSync(file, [...prefisso, "--version"], { encoding: "utf8" });
   return !probe.error && probe.status === 0;
 }
 
 function run(cmd, cmdArgs, opts = {}) {
   const { file, prefisso } = formaEseguibile(cmd, dove);
+  if (file === null) {
+    return { error: new Error(`${cmd} non risolto nel PATH${rifiutoDi(cmd)}`), status: null, stdout: "", stderr: "" };
+  }
   return spawnSync(file, [...prefisso, ...cmdArgs], {
     encoding: "utf8", cwd: PROGETTO, maxBuffer: 64 * 1024 * 1024, ...opts,
   });
@@ -221,7 +243,12 @@ function esitoEslint() {
   if (!existsSync(ESLINT_BIN)) {
     return { stato: "skipped", dettaglio: `ESLint non installato nella skill (${ESLINT_BIN}): lancia \`npm install\` in agenti/flow-sentinel. Le spec NON sono state lintate` };
   }
-  const res = run("node", [ESLINT_BIN, "--no-config-lookup", "--config", CONFIG_SPEC, "e2e"]);
+  // `process.execPath`, non `run("node", …)`: l'interprete che sta girando, non
+  // quello che un `node.cmd` piantato nella radice del progetto auditato
+  // vorrebbe far eseguire — deciderebbe da solo l'esito del lint (§ C1).
+  const res = spawnSync(process.execPath, [ESLINT_BIN, "--no-config-lookup", "--config", CONFIG_SPEC, "e2e"], {
+    encoding: "utf8", cwd: PROGETTO, maxBuffer: 64 * 1024 * 1024,
+  });
   if (res.status === 0) return { stato: "pass", dettaglio: "" };
   return {
     stato: "fail",
@@ -308,7 +335,7 @@ async function interrogaApp(url) {
 // mancanza di dati, e i suoi rossi somigliano a difetti dell'app.
 function misuraDatabase(ctx) {
   if (!has("psql")) {
-    return { errore: "psql non disponibile nel PATH: il database del progetto NON e' stato interrogato (su Windows sta in %USERPROFILE%\\scoop\\apps\\postgresql\\current\\bin)" };
+    return { errore: `psql non disponibile nel PATH: il database del progetto NON e' stato interrogato (su Windows sta in %USERPROFILE%\\scoop\\apps\\postgresql\\current\\bin)${rifiutoDi("psql")}` };
   }
   const tabelle = interrogaDb(ctx.dbUrl, sqlTabelleEsposte(ctx.schemi));
   if (tabelle.errore) return { errore: `database non raggiungibile su ${ctx.dbUrl}: ${tabelle.errore}` };

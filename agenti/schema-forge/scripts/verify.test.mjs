@@ -29,10 +29,10 @@ import {
   dettaglioAdvisors,
   dettaglioReset,
   fileNonLintati,
-  formaEseguibile,
   leggiAudit,
   limiteSqlfluff,
   normalizzaTipi,
+  notaRifiuto,
   riepilogo,
   schemiEsposti,
   soloSql,
@@ -414,36 +414,21 @@ test("i file .sql si contano tutti", () => {
   assert.deepEqual(soloSql(["a.sql", "note.md", "b.test.sql"]), ["a.sql", "b.test.sql"]);
 });
 
-// ----------------------------------------------- shim .cmd di Windows (npm)
-// `spawnSync(cmd, args)` senza shell non consulta PATHEXT (ENOENT sullo shim) e
-// col percorso pieno Node rifiuta .cmd/.bat (EINVAL, mitigazione della
-// CVE-2024-27980): quattro passi risultavano `skipped` con scritto «Supabase
-// CLI assente» su una macchina dove la CLI c'era. Entrambe le rese misurate il
-// 2026-07-27.
+// --------------------------------- lo strumento trovato dentro il progetto
+// Un passo che dice «strumento assente» dopo aver RIFIUTATO un candidato
+// piantato nel progetto auditato manda a cercare la cosa sbagliata: il motivo
+// vero — e il percorso — devono stare nel dettaglio (referto § C1).
+// Le regole di risoluzione stanno in `eseguibili.test.mjs`.
 
-test("shim .cmd su Windows: si passa da cmd.exe, non da shell:true", () => {
-  assert.deepEqual(
-    formaEseguibile("supabase", () => "C:\\Users\\x\\AppData\\Roaming\\npm\\supabase.cmd", "win32"),
-    { file: "cmd.exe", prefisso: ["/c", "C:\\Users\\x\\AppData\\Roaming\\npm\\supabase.cmd"] }
-  );
+test("il candidato rifiutato finisce nel dettaglio, col suo percorso", () => {
+  const nota = notaRifiuto(["C:\\prog\\supabase.cmd"]);
+  assert.match(nota, /RIFIUTATO perche' dentro il progetto auditato/);
+  assert.ok(nota.includes("C:\\prog\\supabase.cmd"));
 });
 
-test("un .exe su Windows si esegue diretto: nessun cmd.exe di mezzo", () => {
-  assert.deepEqual(
-    formaEseguibile("supabase", () => "C:\\Users\\x\\scoop\\shims\\supabase.exe", "win32"),
-    { file: "C:\\Users\\x\\scoop\\shims\\supabase.exe", prefisso: [] }
-  );
-});
-
-test("fuori da Windows non si cerca niente: il nome basta", () => {
-  let cercato = false;
-  const forma = formaEseguibile("supabase", () => { cercato = true; return "/x"; }, "linux");
-  assert.deepEqual(forma, { file: "supabase", prefisso: [] });
-  assert.equal(cercato, false);
-});
-
-test("comando davvero assente: si torna al nome, e il probe fallira' come prima", () => {
-  assert.deepEqual(formaEseguibile("squawk", () => null, "win32"), { file: "squawk", prefisso: [] });
+test("nessun rifiuto: nessuna riga in piu' nel dettaglio", () => {
+  assert.equal(notaRifiuto([]), "");
+  assert.equal(notaRifiuto(undefined), "");
 });
 
 // ------------------------------------------------------- contratto --json

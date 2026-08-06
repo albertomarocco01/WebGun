@@ -30,8 +30,10 @@ import { fileURLToPath } from "node:url";
 import {
   argomentiOstiliACmd,
   CATEGORIE,
+  comandoRicerca,
   contaGravita,
   contrattoUscita,
+  dentroLaRadice,
   dettaglioFindings,
   dettaglioMisura,
   DISPERSIONE_MASSIMA,
@@ -84,24 +86,45 @@ const leggiSeCe = (relativo) => {
 };
 
 // --------------------------------------- eseguibili risolti a mano su Windows
-// `spawnSync(cmd, args)` senza shell non consulta PATHEXT: uno shim `.cmd`
-// (npx, lighthouse installati da npm) risulta ENOENT sul nome. NON si abilita
-// `shell: true`: li' gli argomenti vengono concatenati invece che passati come
-// vettore, e questo gate passa URL con `&`. Prezzo gia' pagato da Schema Forge
-// e da Flow Sentinel, non si ripaga.
+// Le regole — comando di ricerca col percorso pieno, prefisso `$PATH:`, rifiuto
+// dei candidati dentro il progetto auditato, nome nudo mai lanciato — stanno in
+// `gate-lib.mjs` con i loro test (§ C1 del referto 2026-08-06). Qui resta il
+// ponte, e la memoria di cio' che e' stato RIFIUTATO: un passo che dice
+// «strumento assente» senza dire «l'ho trovato, ma nel tuo progetto» manda a
+// cercare la cosa sbagliata.
+const rifiuti = new Map();
+
 function dove(nome) {
-  const res = spawnSync(process.platform === "win32" ? "where" : "which", [nome], {
-    encoding: "utf8",
-  });
+  const { file, args } = comandoRicerca(nome);
+  const res = spawnSync(file, args, { encoding: "utf8", timeout: 10_000, windowsHide: true });
   if (res.error || res.status !== 0) return null;
+  const candidati = String(res.stdout ?? "").split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
+  const rifiutati = candidati.filter((c) => dentroLaRadice(c, PROGETTO));
+  if (rifiutati.length > 0) rifiuti.set(nome, rifiutati);
   // `primoEseguibile`, non `[0]`: la prima riga di `where npx` e' lo script
   // senza estensione, e Windows non sa eseguirlo. Difetto misurato il
   // 2026-07-30 al primo giro di questo gate — vedi il commento in gate-lib.
-  return primoEseguibile(res.stdout);
+  return primoEseguibile(candidati.filter((c) => !dentroLaRadice(c, PROGETTO)).join("\n"));
 }
+
+export function notaRifiuto(rifiutati) {
+  if (!rifiutati || rifiutati.length === 0) return "";
+  return ` — RIFIUTATO perche' dentro il progetto auditato: ${rifiutati.join(", ")}. ` +
+    "Un progetto non sceglie il binario che lo misura: tienilo fuori dal progetto, o toglilo dal PATH.";
+}
+
+const rifiutoDi = (nome) => notaRifiuto(rifiuti.get(nome));
 
 function esegui(cmd, args, opzioni = {}) {
   const { file, prefisso } = formaEseguibile(cmd, dove);
+  // Nome non risolto: NON si ripiega sul nome nudo, perche' lo risolverebbe la
+  // directory corrente — cioe' il progetto che questo gate sta misurando.
+  if (file === null) {
+    return {
+      error: new Error(`${cmd} non risolto nel PATH${rifiutoDi(cmd)}`),
+      status: null, stdout: "", stderr: "",
+    };
+  }
 
   // Il controllo vale SOLO quando si passa davvero da `cmd /c`: `node` si
   // risolve in un `.exe` e riceve gli argomenti come vettore, quindi il
@@ -198,7 +221,14 @@ const PASSI = [
         return record(this.id, this.nome, "skipped",
           `gate di Flow Sentinel non raggiungibile in ${GATE_FLUSSI}`);
       }
-      const res = esegui("node", [GATE_FLUSSI, "--json", ...(args.url ? ["--url", args.url] : [])]);
+      // `process.execPath`, non `esegui("node", …)`: l'interprete che sta
+      // girando, non quello che un `node.cmd` nella radice del progetto
+      // misurato vorrebbe far eseguire. Il gate figlio decide da solo il passo
+      // `rete-verde`, ed e' l'unica premessa che questo gate non rimisura
+      // (referto § C1).
+      const res = spawnSync(process.execPath,
+        [GATE_FLUSSI, "--json", ...(args.url ? ["--url", args.url] : [])],
+        { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
       if (res.error) {
         return record(this.id, this.nome, "skipped", `gate di Flow Sentinel non eseguibile: ${res.error.message}`);
       }

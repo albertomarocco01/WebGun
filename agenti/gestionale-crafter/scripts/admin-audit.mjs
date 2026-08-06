@@ -18,6 +18,7 @@ import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { auditAdmin, catalogoDaRighe, conBarre } from "./audit-lib.mjs";
+import { formaEseguibile, risolviEseguibile } from "./eseguibili.mjs";
 import { urlDbProgetto, validaConfig } from "./progetto-lib.mjs";
 
 const SEP = "\x1f";
@@ -62,15 +63,31 @@ export function fileSorgente(radice, cartella, raccolti = []) {
   return raccolti;
 }
 
+// `psql` si risolve UNA volta, col percorso pieno e senza guardare la directory
+// corrente — che quando l'audit e' lanciato dal gate e' la radice del progetto
+// AUDITATO. Col nome nudo, un `psql.exe` piantato li' deciderebbe cosa questo
+// audit legge dal catalogo dei permessi (referto § C1, misurato il 2026-08-06
+// copiando `hostname.exe` in `psql.exe`: `spawnSync("psql", …)` eseguiva la
+// copia). La radice auditata e' `--progetto`, non la CWD: si passa da fuori.
+let psql = { file: null, prefisso: [] };
+let psqlRifiutati = [];
+
+function risolviPsql(radiceAuditata) {
+  const { percorso, rifiutati } = risolviEseguibile("psql", radiceAuditata);
+  psqlRifiutati = rifiutati;
+  psql = formaEseguibile("psql", () => percorso);
+}
+
 function psqlDisponibile() {
-  const p = spawnSync("psql", ["--version"], { encoding: "utf8" });
+  if (psql.file === null) return false;
+  const p = spawnSync(psql.file, [...psql.prefisso, "--version"], { encoding: "utf8" });
   return !p.error && p.status === 0;
 }
 
 function interroga(dbUrl, sql) {
   const res = spawnSync(
-    "psql",
-    [dbUrl, "-X", "-A", "-t", "-F", SEP, "-R", RS, "-c", sql],
+    psql.file,
+    [...psql.prefisso, dbUrl, "-X", "-A", "-t", "-F", SEP, "-R", RS, "-c", sql],
     { encoding: "utf8" },
   );
   if (res.status !== 0) {
@@ -102,7 +119,9 @@ function leggiCatalogo(progetto, dbUrlEsplicito) {
   }
 
   if (!psqlDisponibile()) {
-    return { catalogo: null, dbUrl, motivo: "psql non disponibile nel PATH: permessi non verificati" };
+    const rifiutato = psqlRifiutati.length === 0 ? "" :
+      ` — trovato DENTRO il progetto auditato (${psqlRifiutati.join(", ")}) e rifiutato: un progetto non sceglie il binario che lo giudica`;
+    return { catalogo: null, dbUrl, motivo: `psql non disponibile nel PATH: permessi non verificati${rifiutato}` };
   }
 
   try {
@@ -151,6 +170,7 @@ function main() {
   }
 
   const files = fileSorgente(args.progetto, join(args.progetto, "src"));
+  risolviPsql(resolve(args.progetto));
   const { catalogo, dbUrl, motivo } = leggiCatalogo(args.progetto, args.dbUrl);
   const esito = auditAdmin({ files, config, catalogo });
 

@@ -14,6 +14,11 @@
  * Forma dei rilievi: `{ severity, object, message }` — le stesse chiavi inglesi
  * di `rls-audit.mjs` di Schema Forge (DECISIONI.md §15: il formato di scambio
  * resta com'e' nato, le etichette per gli umani restano italiane).
+ *
+ * Zero import, anche dopo l'arrivo delle regole su QUALE eseguibile si lancia
+ * (§ C1 del referto 2026-08-06): il confronto fra percorsi si fa a segmenti,
+ * non con `node:path`, cosi' la regola vale uguale su ogni piattaforma e il suo
+ * test pure. Il `spawnSync` resta fuori di qui.
  */
 
 // ---------------------------------------------------------------- fondamenta
@@ -533,12 +538,67 @@ export function primoEseguibile(uscitaWhere) {
   return trovate.find((r) => ESTENSIONE_ESEGUIBILE.test(r)) ?? trovate[0] ?? null;
 }
 
-export function formaEseguibile(nome, cercaPercorso, piattaforma = process.platform) {
-  if (piattaforma !== "win32") return { file: nome, prefisso: [] };
+/**
+ * CHI CERCA, e dove NON cerca. Referto del 2026-08-06, § C1 (`executed-confirmed`).
+ *
+ * Il gate si lancia dalla radice del progetto AUDITATO — lo prescrive il
+ * `CLAUDE.md` — e `where` cerca nella directory corrente PRIMA che nel PATH: un
+ * `psql.cmd` o un `npx.cmd` piantato nella radice sceglieva quale binario
+ * esegue il gate che giudica quel progetto. Misurato dal finto progetto:
+ * `where supabase` elencava per primo lo shim piantato, `where "$PATH:supabase"`
+ * no. E `spawnSync` col nome nudo fa lo stesso di suo (misurato copiando
+ * `hostname.exe` in `psql.exe`), per questo anche `where.exe` e `cmd.exe`
+ * vogliono il percorso pieno: chi cerca e chi lancia sarebbero i primi due
+ * binari sostituibili, e non li guarda nessuno.
+ *
+ * Il `spawnSync` resta di la', in `verify.mjs`: qui c'e' solo la decisione.
+ */
+export function comandoRicerca(nome, piattaforma = process.platform, env = process.env) {
+  // Su POSIX `which` legge il PATH e basta; alla directory corrente dentro il
+  // PATH (`.`) risponde `dentroLaRadice`.
+  if (piattaforma !== "win32") return { file: "which", args: [nome] };
+  const sistema = env.SystemRoot || env.windir || "C:\\Windows";
+  return { file: `${sistema}\\System32\\where.exe`, args: [`$PATH:${nome}`] };
+}
+
+/** La shell che lancia gli shim `.cmd`, col percorso pieno e mai come nome nudo. */
+export const shellDiSistema = (env = process.env) =>
+  env.ComSpec || `${env.SystemRoot || env.windir || "C:\\Windows"}\\System32\\cmd.exe`;
+
+/**
+ * Un candidato cade dentro il progetto auditato? Il PATH puo' contenerlo
+ * davvero — `node_modules/.bin` ce lo mette npm — e allora il prefisso `$PATH:`
+ * non basta piu'. Il confronto NON e' per prefisso di stringa: `C:\prog-altro`
+ * comincia per `C:\prog` e non e' dentro. Si normalizzano le barre e si
+ * confrontano i SEGMENTI.
+ */
+export function dentroLaRadice(percorso, radice) {
+  if (!percorso || !radice) return false;
+  const segmenti = (p) => String(p).replace(/\\/g, "/").replace(/\/+$/, "").split("/");
+  const r = segmenti(radice);
+  const c = segmenti(percorso);
+  if (c.length <= r.length) return false;
+  // Windows non distingue maiuscole e minuscole nei percorsi: `C:\PROG` e
+  // `C:\prog` sono lo stesso posto.
+  return r.every((pezzo, i) => pezzo.toLowerCase() === c[i].toLowerCase());
+}
+
+/**
+ * `file: null` quando il nome non si risolve: il nome nudo NON si lancia,
+ * perche' lo risolverebbe la directory corrente. Strumento assente = verifica
+ * MANCANTE, che e' la regola della casa, mai un `pass`.
+ * Si cerca anche fuori da Windows, per la stessa ragione.
+ */
+export function formaEseguibile(
+  nome,
+  cercaPercorso,
+  piattaforma = process.platform,
+  comSpec = shellDiSistema(),
+) {
   const trovato = cercaPercorso(nome);
-  if (!trovato) return { file: nome, prefisso: [] };
-  return /\.(cmd|bat)$/i.test(trovato)
-    ? { file: "cmd.exe", prefisso: ["/c", trovato] }
+  if (!trovato) return { file: null, prefisso: [] };
+  return piattaforma === "win32" && /\.(cmd|bat)$/i.test(trovato)
+    ? { file: comSpec, prefisso: ["/c", trovato] }
     : { file: trovato, prefisso: [] };
 }
 

@@ -18,6 +18,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { costruisciErd, righeDaPsql } from "./erd-lib.mjs";
+import { formaEseguibile, risolviEseguibile } from "./eseguibili.mjs";
 
 const SEP = "\x1f";
 const REC = "\x1e"; // vedi rls-audit.mjs: un valore puo' contenere un a capo
@@ -41,8 +42,24 @@ function parseArgs(argv) {
   return args;
 }
 
+// Stessa risoluzione dell'audit RLS, e per lo stesso motivo: col nome nudo
+// `psql` lo sceglie la directory corrente, che qui e' il progetto auditato
+// (referto § C1). `-X` viene con essa: un `~/.psqlrc` che cambi la forma
+// dell'uscita produrrebbe un diagramma vuoto senza che nessuno lo dica.
+const psql = (() => {
+  const { percorso, rifiutati } = risolviEseguibile("psql", process.cwd());
+  if (rifiutati.length > 0) {
+    console.error(`psql trovato DENTRO il progetto auditato (${rifiutati.join(", ")}): rifiutato.`);
+  }
+  return formaEseguibile("psql", () => percorso);
+})();
+
 function query(dbUrl, sql) {
-  const res = spawnSync("psql", [dbUrl, "-At", "-F", SEP, "-R", REC, "-c", sql], { encoding: "utf8" });
+  if (psql.file === null) {
+    console.error("psql non disponibile nel PATH: diagramma NON generato.");
+    process.exit(2);
+  }
+  const res = spawnSync(psql.file, [...psql.prefisso, dbUrl, "-X", "-At", "-F", SEP, "-R", REC, "-c", sql], { encoding: "utf8" });
   if (res.error) {
     console.error("psql non disponibile nel PATH: diagramma NON generato.");
     process.exit(2);
