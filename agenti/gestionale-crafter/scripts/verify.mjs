@@ -262,6 +262,17 @@ function registraAudit(etichetta, doc) {
     return;
   }
 
+  // Un file `"use server"` di cui l'audit non ha letto nessun nome esportato non
+  // e' un file pulito: e' un file che nessuno ha guardato, e prima il dettaglio
+  // lo contava come «azioni server: 1» (referto § H6). Terza premessa, stessa
+  // forma delle due qui sopra.
+  const nonLette = misure.azioniNonLette ?? [];
+  if (nonLette.length > 0) {
+    record(ID.audit, etichetta, "skipped",
+      `azioni server non lette in ${nonLette.length} file: le regole sulle guardie NON sono state eseguite su di loro\n${nonLette.map((r) => `  - ${r}`).join("\n")}`);
+    return;
+  }
+
   if (!doc.catalogo?.letto) {
     record(ID.audit, etichetta, "skipped",
       `permessi non letti — ${doc.catalogo?.motivo ?? "motivo non riportato"}. Le regole sulle colonne scrivibili non sono state eseguite`);
@@ -275,7 +286,7 @@ function registraAudit(etichetta, doc) {
       .join("\n") || `nessun bloccante (${issue} issue, ${warn} warn)`;
 
   record(ID.audit, etichetta, block === 0 ? "pass" : "fail",
-    `rotte: ${misure.rotte} · azioni server: ${misure.azioni} · scritture: ${misure.scritture} · ${doc.dbUrl}\n${residuo}`,
+    `rotte: ${misure.rotte} · azioni server: ${misure.azioni} riconosciute in ${misure.fileAzioni ?? "?"} file · scritture: ${misure.scritture} · ${doc.dbUrl}\n${residuo}`,
   ).counts = { block, issue, warn };
 }
 

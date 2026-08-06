@@ -67,9 +67,37 @@ export function senzaCommenti(testo) {
  *  regola costruita da una lista di nomi non puo' essere una regex letterale.) */
 export const perRegExp = (v) => String(v ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** Una chiamata, non una menzione: il nome seguito da parentesi aperta. */
+/**
+ * Le stringhe non sono codice.
+ *
+ * `senzaCommenti` toglieva i commenti e lasciava le stringhe, e una chiamata non
+ * si distingue da un nome scritto dentro un messaggio. Misurato il 2026-08-06
+ * (referto § H7):
+ *
+ *   throw new Error("richiediStaff() non e ancora agganciata");
+ *     → rotta admin scoperta, ZERO findings
+ *   la stessa riga senza quella stringa
+ *     → 1 block
+ *
+ * La frase che innescava il difetto e' esattamente quella che si scrive prendendo
+ * nota del buco: il codice che ammette di non essere protetto convinceva il gate
+ * di esserlo.
+ *
+ * I template si spengono interi, `${…}` compreso: una guardia chiamata dentro
+ * un'interpolazione non conta piu'. E' il verso sicuro — un rilievo in piu' su
+ * una forma che nessuno usa per autenticare, non uno in meno.
+ */
+export function senzaStringhe(codice) {
+  return String(codice ?? "")
+    .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
+    .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+    .replace(/`(?:[^`\\]|\\.)*`/g, "``");
+}
+
+/** Una chiamata, non una menzione: il nome seguito da parentesi aperta —
+ *  e ne' dentro un commento ne' dentro una stringa. */
 export function chiamaUnaDi(testo, nomi) {
-  const codice = senzaCommenti(testo);
+  const codice = senzaStringhe(senzaCommenti(testo));
   return (nomi ?? []).some((n) => new RegExp(`\\b${perRegExp(n)}\\s*\\(`).test(codice));
 }
 
@@ -130,12 +158,27 @@ export function regolaAzioniServer(files, config) {
   const findings = [];
 
   const azioni = files.filter((f) => /^\s*["']use server["']/m.test(f.testo));
+  let riconosciute = 0;
+  const nonLette = [];
 
   for (const file of azioni) {
     const percorso = conBarre(file.percorso);
     if (esenti.includes(percorso)) continue;
 
-    for (const nome of funzioniEsportate(file.testo)) {
+    // LA PREMESSA SI CONTA PRIMA DELL'ESITO. Un file `"use server"` di cui non
+    // si e' letto nessun nome esportato non e' un file pulito: e' un file che
+    // nessuno ha guardato, e il vecchio dettaglio lo contava come «azioni
+    // server: 1» (referto § H6).
+    const nomi = funzioniEsportate(file.testo);
+    riconosciute += nomi.length;
+    const quanteIgnote = esportazioniNonLette(file.testo, nomi);
+    if (nomi.length === 0 || quanteIgnote > 0) {
+      nonLette.push(nomi.length === 0
+        ? `${percorso}: nessun nome esportato riconosciuto`
+        : `${percorso}: ${quanteIgnote} \`export\` che il gate non sa leggere`);
+    }
+
+    for (const nome of nomi) {
       if (chiamaUnaDi(corpoFunzione(file.testo, nome), guardie)) continue;
       findings.push(
         trova(
@@ -148,31 +191,103 @@ export function regolaAzioniServer(files, config) {
     }
   }
 
-  return { findings, azioni: azioni.length };
+  // `azioni` conta ora le AZIONI RICONOSCIUTE, non i file: era il numero che si
+  // leggeva come copertura avvenuta mentre nessuna azione era stata guardata.
+  // `fileAzioni` e `nonLette` restano accanto, perche' la differenza fra i due
+  // e' esattamente cio' che il gate non ha misurato.
+  return { findings, azioni: riconosciute, fileAzioni: azioni.length, nonLette };
 }
 
-/** I nomi delle funzioni esportate: `export async function nome(`. */
+/**
+ * I nomi ESPORTATI di un file. In un file `"use server"` sono tutti azioni:
+ * Next pretende che ogni export di quel file sia una funzione asincrona, quindi
+ * la domanda «e' una funzione?» non si pone — si pone «chi esce da qui?».
+ *
+ * FINO AL 2026-08-06 SI CERCAVA UNA SOLA FORMA, `export async function`.
+ * Misurato (referto § H6):
+ *
+ *   export const salvaOrdine = async (dati) => { … }
+ *     → funzioniEsportate = [], findings = 0, e il gate stampava «azioni server: 1»
+ *   export async function salvaOrdine(dati) { … }
+ *     → 1 block
+ *
+ * La stessa azione, scritta nell'altro modo che tutti scrivono, non la
+ * controllava nessuno — e il dettaglio del passo diceva un numero che si legge
+ * come copertura avvenuta.
+ */
+const FUNZIONE_ESPORTATA = /export\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g;
+const COSTANTE_ESPORTATA = /export\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g;
+const RIESPORTAZIONE = /export\s*\{([^}]*)\}/g;
+const ESPORTA_DEFAULT = /export\s+default\b/;
+
 export function funzioniEsportate(testo) {
   const codice = senzaCommenti(testo);
   const nomi = [];
-  const re = /export\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g;
-  let m;
-  while ((m = re.exec(codice)) !== null) nomi.push(m[1]);
-  return nomi;
+  for (const re of [FUNZIONE_ESPORTATA, COSTANTE_ESPORTATA]) {
+    for (const m of codice.matchAll(re)) nomi.push(m[1]);
+  }
+  // `export { salva, aggiorna as modifica }`: il nome con cui la cosa ESCE e'
+  // l'ultimo identificatore della clausola, ed e' quello che un client invoca.
+  for (const m of codice.matchAll(RIESPORTAZIONE)) {
+    for (const pezzo of m[1].split(",")) {
+      const nome = pezzo.trim().split(/\s+/).pop();
+      if (nome && /^[A-Za-z_$][\w$]*$/.test(nome) && nome !== "type") nomi.push(nome);
+    }
+  }
+  if (ESPORTA_DEFAULT.test(codice)) nomi.push("default");
+  return [...new Set(nomi)];
+}
+
+/**
+ * Quanti `export` questo file ha, e quanti nomi il gate e' riuscito a leggerne.
+ *
+ * E' la premessa del passo, ed e' la lezione del referto: «azioni server: 1» su
+ * zero funzioni riconosciute si legge come copertura avvenuta. Un file
+ * `"use server"` di cui non si e' letto nessun nome non e' un file pulito: e'
+ * un file che nessuno ha guardato, e vale MANCANTE.
+ *
+ * I `export type` e `export interface` non contano: sono dichiarazioni di tipo,
+ * non cose che escono a runtime.
+ */
+export function esportazioniNonLette(testo, nomiLetti) {
+  const codice = senzaCommenti(testo)
+    .replace(/export\s+(?:type|interface)\b/g, " ");
+  const quanti = (codice.match(/\bexport\b/g) ?? []).length;
+  return Math.max(0, quanti - nomiLetti.length);
 }
 
 /** Il corpo di una funzione, dalla graffa aperta alla sua chiusa. Serve perche'
  *  una guardia chiamata in un'ALTRA funzione dello stesso file non protegge
- *  questa: il file intero come unita' di misura assolverebbe troppo. */
+ *  questa: il file intero come unita' di misura assolverebbe troppo.
+ *
+ *  Dal 2026-08-06 riconosce anche la costante (referto § H6): un'azione scritta
+ *  `export const salva = async (…) => { … }` aveva corpo vuoto, e un corpo vuoto
+ *  non chiama nessuna guardia — ma nemmeno produceva un rilievo, perche' il suo
+ *  nome non entrava mai nell'elenco. Ci sono due forme di corpo, e la seconda
+ *  non ha graffe: `=> await scrivi()` finisce col punto e virgola. */
 export function corpoFunzione(testo, nome) {
   const codice = senzaCommenti(testo);
-  const inizio = new RegExp(
+  const dichiarata = new RegExp(
     `export\\s+(?:async\\s+)?function\\s+${perRegExp(nome)}\\b`,
   ).exec(codice);
-  if (!inizio) return "";
-  const apertura = codice.indexOf("{", inizio.index);
-  if (apertura === -1) return "";
-  return dentroGraffe(codice, apertura);
+  if (dichiarata) {
+    const apertura = codice.indexOf("{", dichiarata.index);
+    return apertura === -1 ? "" : dentroGraffe(codice, apertura);
+  }
+  const costante = new RegExp(
+    `export\\s+(?:const|let|var)\\s+${perRegExp(nome)}\\b`,
+  ).exec(codice);
+  if (!costante) return "";
+  const uguale = codice.indexOf("=", costante.index);
+  if (uguale === -1) return "";
+  const graffa = codice.indexOf("{", uguale);
+  const puntoEVirgola = codice.indexOf(";", uguale);
+  // corpo a graffe se la graffa arriva PRIMA della fine dell'istruzione;
+  // altrimenti e' una freccia concisa, e il corpo e' cio' che resta fino al `;`
+  if (graffa !== -1 && (puntoEVirgola === -1 || graffa < puntoEVirgola)) {
+    return dentroGraffe(codice, graffa);
+  }
+  return codice.slice(uguale, puntoEVirgola === -1 ? codice.length : puntoEVirgola);
 }
 
 /** Dal `{` alla sua graffa di chiusura, contando i livelli. */
@@ -554,7 +669,12 @@ export function auditAdmin({ files, config, catalogo = null }) {
     misure: {
       file: files.length,
       rotte: guardie.rotte,
+      // `azioni` = azioni RICONOSCIUTE; `fileAzioni` = file `"use server"`.
+      // Quando i due numeri non coincidono, `azioniNonLette` dice per quali file
+      // — ed e' la premessa che rende il passo MANCANTE invece che verde.
       azioni: azioni.azioni,
+      fileAzioni: azioni.fileAzioni,
+      azioniNonLette: azioni.nonLette,
       scritture: scritture.scritture,
       catalogo: catalogo === null ? "assente" : "letto",
     },

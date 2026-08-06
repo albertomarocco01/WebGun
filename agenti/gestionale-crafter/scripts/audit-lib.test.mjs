@@ -7,6 +7,8 @@ import {
   chiamaUnaDi,
   chiaviOggetto,
   conBarre,
+  esportazioniNonLette,
+  senzaStringhe,
   corpoFunzione,
   eColonnaDiPrivilegio,
   funzioniEsportate,
@@ -195,6 +197,105 @@ describe("regolaAzioniServer", () => {
     );
     assert.equal(azioni, 0);
     assert.deepEqual(findings, []);
+  });
+
+  // ── l'azione scritta come arrow (referto § H6, misurato il 2026-08-06)
+  //   export const salvaOrdine = async (dati) => { … }
+  //     → funzioniEsportate = [], findings = 0, e il gate stampava «azioni server: 1»
+  //   export async function salvaOrdine(dati) { … }
+  //     → 1 block
+  // La stessa azione, scritta nell'altro dei due modi che tutti scrivono.
+  const useServer = (corpo) => `"use server";\n${corpo}\n`;
+
+  it("un'azione scritta come arrow function e' un'azione", () => {
+    const testo = useServer("export const salvaOrdine = async (dati) => { await scrivi(dati); };");
+    const { findings, azioni } = regolaAzioniServer([f("src/modules/ordini/azioni.ts", testo)], CONFIG);
+    assert.equal(azioni, 1, "e il numero conta le azioni riconosciute, non i file");
+    assert.equal(findings.length, 1);
+    assert.match(findings[0].object, /salvaOrdine$/);
+  });
+
+  it("un'arrow che chiama la guardia non e' un rilievo", () => {
+    const testo = useServer("export const salvaOrdine = async (dati) => { await richiediStaff(); await scrivi(dati); };");
+    assert.deepEqual(regolaAzioniServer([f("src/modules/x/azioni.ts", testo)], CONFIG).findings, []);
+  });
+
+  it("anche la freccia concisa, senza graffe, ha un corpo da guardare", () => {
+    const scoperta = useServer("export const salva = async (d) => scrivi(d);");
+    const protetta = useServer("export const salva = async (d) => richiediStaff().then(() => scrivi(d));");
+    assert.equal(regolaAzioniServer([f("src/modules/x/a.ts", scoperta)], CONFIG).findings.length, 1);
+    assert.deepEqual(regolaAzioniServer([f("src/modules/x/a.ts", protetta)], CONFIG).findings, []);
+  });
+
+  it("`export { salva }` fa uscire un'azione quanto `export const`", () => {
+    const testo = useServer("async function salva(d){ await scrivi(d); }\nexport { salva };");
+    const { findings, azioni } = regolaAzioniServer([f("src/modules/x/a.ts", testo)], CONFIG);
+    assert.equal(azioni, 1);
+    assert.equal(findings.length, 1);
+  });
+
+  // ── la premessa che nessuno contava: «azioni server: 1» su zero azioni lette
+  it("`export default` esce col nome `default`, e si guarda come le altre", () => {
+    const testo = useServer("export default async function salva(d) { await scrivi(d); }");
+    const { azioni, fileAzioni, nonLette } = regolaAzioniServer([f("src/modules/x/a.ts", testo)], CONFIG);
+    assert.equal(fileAzioni, 1);
+    assert.ok(azioni >= 1);
+    assert.deepEqual(nonLette, [], "questa forma il gate la legge");
+  });
+
+  it("un `export type` non e' una cosa che esce a runtime, e non gonfia il conto", () => {
+    const testo = useServer("export type Dati = { id: number };\nexport const a = async () => { await richiediStaff(); };");
+    assert.deepEqual(regolaAzioniServer([f("src/modules/x/b.ts", testo)], CONFIG).nonLette, []);
+  });
+
+  it("un file `use server` di cui non si legge nessun nome e' MANCANTE, non pulito", () => {
+    const testo = useServer('export * from "./altre-azioni";');
+    const { nonLette, azioni, fileAzioni } = regolaAzioniServer([f("src/modules/x/c.ts", testo)], CONFIG);
+    assert.equal(azioni, 0);
+    assert.equal(fileAzioni, 1, "e prima il dettaglio stampava proprio questo numero, che si legge come copertura");
+    assert.equal(nonLette.length, 1);
+    assert.match(nonLette[0], /nessun nome esportato riconosciuto/);
+  });
+
+  it("le esportazioni non lette si contano, e i tipi non entrano nel conto", () => {
+    assert.equal(esportazioniNonLette("export const a = 1;", ["a"]), 0);
+    assert.equal(esportazioniNonLette("export type T = 1;\nexport const a = 1;", ["a"]), 0);
+    assert.equal(esportazioniNonLette('export * from "./x";', []), 1);
+  });
+});
+
+// ── il nome di una guardia dentro una STRINGA (referto § H7, 2026-08-06)
+// La frase che innescava il difetto e' esattamente quella che si scrive
+// prendendo nota del buco: il codice che ammette di non essere protetto
+// convinceva il gate di esserlo.
+//   throw new Error("richiediStaff() non e ancora agganciata")  → 0 findings
+//   la stessa riga senza quella stringa                         → 1 block
+describe("una menzione dentro una stringa non e' una chiamata", () => {
+  it("la rotta che DICHIARA di non essere protetta resta scoperta", () => {
+    const testo = 'export default function Pagina() {\n  throw new Error("richiediStaff() non e ancora agganciata");\n}\n';
+    const { findings, rotte } = regolaGuardieRotte([f("src/app/admin/ordini/page.tsx", testo)], CONFIG);
+    assert.equal(rotte, 1);
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].severity, "block");
+  });
+
+  it("vale per tutti e tre i modi di scrivere una stringa", () => {
+    for (const riga of ['"richiediStaff()"', "'richiediStaff()'", "`richiediStaff()`"]) {
+      const testo = `export default function P() { console.log(${riga}); }`;
+      assert.equal(regolaGuardieRotte([f("src/app/admin/x/page.tsx", testo)], CONFIG).findings.length, 1,
+        `passava con ${riga}`);
+    }
+  });
+
+  it("la chiamata vera continua a proteggere, stringhe o no", () => {
+    const testo = 'export default async function P() {\n  await richiediStaff();\n  return null;\n}\n';
+    assert.deepEqual(regolaGuardieRotte([f("src/app/admin/x/page.tsx", testo)], CONFIG).findings, []);
+  });
+
+  it("senzaStringhe spegne il contenuto e lascia il codice attorno", () => {
+    assert.equal(senzaStringhe('const a = "x"; b();'), 'const a = ""; b();');
+    assert.equal(senzaStringhe("const a = 'x\\'y'; b();"), "const a = ''; b();");
+    assert.equal(senzaStringhe("const a = `x${c()}`; b();"), "const a = ``; b();");
   });
 });
 
