@@ -95,6 +95,33 @@ describe("tabelle markdown", () => {
     const t = tabellaSotto("## A\n\n| voce |\n|---|\n| **`canonical`** |", /^##\s*A/i);
     assert.deepEqual(t.righe, [{ voce: "canonical" }]);
   });
+
+  // Collaudo P2. Il `_` veniva tolto insieme a `*` e `` ` ``, e nei nomi che
+  // questo documento esiste per dichiarare il `_` e' un carattere, non un
+  // marcatore: `sl_sessione` diventava `slsessione` e non combaciava piu' col
+  // cookie misurato. Rosso su un certificato corretto, nelle due meta' del gate.
+  it("tiene l'underscore dentro un nome: e' un carattere, non un'enfasi", () => {
+    const t = tabellaSotto(
+      "## A\n\n| chiave | campo |\n|---|---|\n| sl_sessione | pec_studio |\n| _ga | codice_fiscale |\n| __Host-sess | data_di_nascita |",
+      /^##\s*A/i,
+    );
+    assert.deepEqual(t.righe, [
+      { chiave: "sl_sessione", campo: "pec_studio" },
+      { chiave: "_ga", campo: "codice_fiscale" },
+      { chiave: "__Host-sess", campo: "data_di_nascita" },
+    ]);
+  });
+
+  it("toglie ancora l'enfasi vera, con l'underscore fuori parola", () => {
+    const t = tabellaSotto(
+      "## A\n\n| voce | nota |\n|---|---|\n| _canonical_ | __obbligatorio__ |\n| *favicon* | **alto** |",
+      /^##\s*A/i,
+    );
+    assert.deepEqual(t.righe, [
+      { voce: "canonical", nota: "obbligatorio" },
+      { voce: "favicon", nota: "alto" },
+    ]);
+  });
 });
 
 describe("il certificato", () => {

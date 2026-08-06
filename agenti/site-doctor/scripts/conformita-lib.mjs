@@ -59,9 +59,40 @@ const senzaCommenti = (testo) => String(testo ?? "").replace(/<!--[\s\S]*?-->/g,
 const SCOPERTO = /^(—|-{1,2}|scoperto|nessuno|—\s*\(scoperto\))$/i;
 export const ESITI_AMMESSI = Object.freeze(["conforme", "non conforme", "non verificato", "non applicabile"]);
 
-const ripulisci = (s) =>
+/**
+ * Toglie i marcatori di enfasi markdown SENZA toccare i nomi.
+ *
+ * La prima stesura toglieva `` ` ``, `*` e `_` con una classe di caratteri, e
+ * il `_` era il difetto: **in markdown un `_` in mezzo a una parola non e' un
+ * marcatore di enfasi** (CommonMark vieta l'enfasi intraparola con
+ * l'underscore), mentre in un nome di cookie, di campo o di chiave e' un
+ * carattere come gli altri.
+ *
+ * Misurato al collaudo P2 sul banco «studio legale», in tutte e due le meta'
+ * del gate, e in tutte e due era un ROSSO SU UN DOCUMENTO CORRETTO:
+ *
+ *   - certificato: `| sl_sessione | cookie | si | ... |` veniva letto
+ *     `slsessione`, non combaciava col `Set-Cookie` misurato, e il passo
+ *     `archiviazione-client` dichiarava «posto dal sito e non dichiarato nel
+ *     certificato» su un cookie dichiarato riga per riga;
+ *   - certificato: `| /contatti | pec_studio | art. 6.1.b | 12 mesi |` veniva
+ *     letto `pecstudio` e il passo `dati-raccolti` bloccava con «nessuna riga
+ *     del certificato ne dichiara la base giuridica» su un campo dichiarato.
+ *
+ * L'unico modo di far passare il gate era scrivere il nome sbagliato nel
+ * documento che quel nome deve dichiarare. Un rosso su un documento corretto e'
+ * un rosso che si impara a scavalcare (`DECISIONI.md` §8), e questo colpiva la
+ * forma piu' comune che esista: `_ga`, `csrf_token`, `codice_fiscale`.
+ */
+const senzaEnfasi = (s) =>
   String(s ?? "")
-    .replace(/[`*_]/g, "")
+    .replace(/[`*]/g, "")
+    // `__forte__` e `_corsivo_` solo con i delimitatori FUORI parola.
+    .replace(/(^|[^\p{L}\p{N}])__([^_]+)__(?=[^\p{L}\p{N}]|$)/gu, "$1$2")
+    .replace(/(^|[^\p{L}\p{N}])_([^_]+)_(?=[^\p{L}\p{N}]|$)/gu, "$1$2");
+
+const ripulisci = (s) =>
+  senzaEnfasi(s)
     .replace(/\s+/g, " ")
     .trim();
 
