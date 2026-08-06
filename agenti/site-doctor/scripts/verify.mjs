@@ -44,6 +44,7 @@ import {
 } from "./conformita-lib.mjs";
 import {
   apiArchiviazioneIn,
+  archiviazioneIncertaIn,
   assetDaProvare,
   attributi,
   campiDiPagina,
@@ -102,6 +103,22 @@ export const MAX_PAGINE = 60;
  */
 export const ATTESA_MS = 15000;
 
+/**
+ * Il tetto sui byte di una singola risposta.
+ *
+ * `MAX_PAGINE` limitava quante pagine si camminano e niente limitava **quanto
+ * grande** fosse una pagina: il tribunale l'ha chiamato «il moltiplicatore di
+ * ogni altra misura», ed e' esatto — ogni costo per carattere di questo gate si
+ * moltiplica per una dimensione che decide chi viene misurato. Il collaudo P2
+ * aveva gia' misurato un corpo da 900 MB: 31 secondi e un `block` onesto, ma 31
+ * secondi comprati con la banda di chi si difende.
+ *
+ * 8 MB e' molto piu' di qualunque pagina o bundle vero (il pilota sta sotto i
+ * 300 KB per pagina). Un corpo piu' grande non e' un errore di rete: e' un
+ * fatto misurato, e produce un rilievo, non un silenzio.
+ */
+export const MAX_CORPO = 8 * 1024 * 1024;
+
 const steps = [];
 const record = (id, name, status, detail = "") => {
   const passo = { id, name, status, detail };
@@ -141,6 +158,26 @@ const leggiDentroIlProgetto = (relativo) => {
   const radice = resolve(PROGETTO);
   if (pieno !== radice && !pieno.startsWith(radice + sep)) return null;
   if (!existsSync(pieno) || !statSync(pieno).isFile()) return null;
+  // Il confine era sulla STRINGA, e una stringa non e' un filesystem. Il
+  // tribunale del 2026-08-06 l'ha aperto con una **junction NTFS** — che su
+  // Windows si crea senza privilegi — dentro `docs/`: la riga
+  // `| canonical | speed-demon | docs/out/canonical.md | delegato |` non
+  // contiene nessun `..`, non e' assoluta, non ha niente di sospetto, e un
+  // revisore umano la approva a colpo d'occhio. Il file letto stava fuori dal
+  // progetto, ed era di nuovo «un file di regia scelto bene fa passare tutte le
+  // voci delegate»: il difetto che questa funzione esiste per chiudere, in una
+  // forma che nessuna ispezione del certificato puo' vedere.
+  //
+  // `realpathSync` scioglie la junction — e' lo stesso rimedio che questo file
+  // usa gia' per riconoscere se stesso quando lo si invoca dalla junction della
+  // regia.
+  try {
+    const vero = realpathSync(pieno);
+    const radiceVera = realpathSync(radice);
+    if (vero !== radiceVera && !vero.startsWith(radiceVera + sep)) return null;
+  } catch {
+    return null;
+  }
   try {
     return readFileSync(pieno, "utf8");
   } catch {
@@ -157,11 +194,49 @@ async function preleva(url, { tentativi = 2, segui = false, attesa = ATTESA_MS }
   for (let i = 0; i < tentativi; i++) {
     try {
       const r = await fetch(url, { redirect: segui ? "follow" : "manual", signal: AbortSignal.timeout(attesa) });
-      const corpo = await r.text();
-      const cookie = typeof r.headers.getSetCookie === "function"
-        ? r.headers.getSetCookie()
-        : (r.headers.get("set-cookie") ? [r.headers.get("set-cookie")] : []);
-      return { stato: r.status, corpo, intestazioni: r.headers, cookie, url: r.url || url };
+      // Si legge a pezzi e si conta: `r.text()` bufferizza tutto quello che il
+      // server vuole mandare, e con 900 MB il gate paga banda e memoria di chi
+      // sta misurando. Un corpo oltre il tetto NON diventa un corpo troncato che
+      // si analizza lo stesso — sarebbe un documento amputato, cioe' la classe
+      // di falso verde piu' costosa di questa skill: si dichiara `troppoGrande`
+      // e chi lo consuma lo tratta come non letto.
+      let corpo = "";
+      let troppoGrande = false;
+      if (r.body) {
+        const decodificatore = new TextDecoder();
+        let byte = 0;
+        for await (const pezzo of r.body) {
+          byte += pezzo.byteLength ?? pezzo.length ?? 0;
+          if (byte > MAX_CORPO) { troppoGrande = true; break; }
+          corpo += decodificatore.decode(pezzo, { stream: true });
+        }
+        if (!troppoGrande) corpo += decodificatore.decode();
+        else { try { await r.body.cancel(); } catch { /* gia' chiuso */ } }
+      } else {
+        corpo = await r.text();
+        troppoGrande = corpo.length > MAX_CORPO;
+      }
+      // I cookie si leggono SOLO con `getSetCookie()`. La ricaduta su
+      // `get("set-cookie")` sembrava prudenza ed era un buco: quel metodo
+      // restituisce le intestazioni FUSE con una virgola, e una virgola dentro
+      // un `Expires=Wed, 09 Jun 2027` e' indistinguibile da un separatore.
+      // Misurato dal tribunale: due `Set-Cookie` veri — uno di sessione
+      // dichiarato e uno di tracciamento no — diventavano una stringa sola, e
+      // `nomeCookie` ne leggeva il primo nome. Il secondo cookie spariva e il
+      // passo chiudeva `pass`. Non e' raggiungibile sui due motori di questa
+      // casa (Node 20.12.2 e 24.18.1 ce l'hanno entrambi), ma «oggi non si
+      // raggiunge» non e' una difesa: senza il metodo, i cookie NON si sanno
+      // leggere, e il passo che li misura deve dirlo invece di indovinare.
+      const leggibili = typeof r.headers.getSetCookie === "function";
+      return {
+        stato: r.status,
+        corpo: troppoGrande ? "" : corpo,
+        troppoGrande,
+        intestazioni: r.headers,
+        cookie: leggibili ? r.headers.getSetCookie() : [],
+        cookieLeggibili: leggibili,
+        url: r.url || url,
+      };
     } catch {
       if (i === tentativi - 1) return null;
       await new Promise((ok) => setTimeout(ok, 500));
@@ -172,8 +247,24 @@ async function preleva(url, { tentativi = 2, segui = false, attesa = ATTESA_MS }
 
 const unisci = (base, percorso) => new URL(percorso, base).toString();
 
-/** Il nome di un cookie da una riga `Set-Cookie`. */
-const nomeCookie = (riga) => String(riga).split("=")[0].trim();
+/**
+ * Il nome di un cookie da una riga `Set-Cookie`, oppure `null` se non e' un
+ * cookie.
+ *
+ * `split("=")[0]` da solo produceva nomi inventati: `Set-Cookie: HttpOnly`
+ * diventava un cookie di nome «HttpOnly», e `Set-Cookie: Path=/x; Secure` un
+ * cookie di nome «Path». Il rilievo restava un bloccante — direzione sicura —
+ * ma citava un oggetto che non esiste, e chi legge il verbale rischia di
+ * dichiarare nel certificato una riga fantasma per far tacere il gate.
+ */
+const ATTRIBUTI_COOKIE = new Set(["path", "domain", "expires", "max-age", "secure", "httponly", "samesite", "partitioned", "priority"]);
+const nomeCookie = (riga) => {
+  const primo = String(riga).split(";")[0];
+  if (!primo.includes("=")) return null;
+  const nome = primo.split("=")[0].trim();
+  if (!nome || ATTRIBUTI_COOKIE.has(nome.toLowerCase())) return null;
+  return nome;
+};
 
 /**
  * La superficie e' utilizzabile? E se no, perche'?
@@ -190,6 +281,32 @@ const motivoSuperficie = (ctx) =>
   ctx.pagine === null
     ? "superficie non stabilita: il passo `superficie-pubblica` non ha potuto identificare l'app, e leggere l'HTML di un'altra applicazione sarebbe il falso verde piu' costoso di tutti"
     : "superficie VUOTA: zero pagine lette. Non e' «un sito senza pagine», e' una camminata che non ha camminato — e un `pass` qui direbbe qualcosa su un sito che il gate non ha guardato";
+
+/**
+ * **La superficie e' COMPLETA?** — che e' una domanda diversa da «esiste?».
+ *
+ * `superficieUsabile` dice che qualche pagina e' stata letta. I passi 3-7
+ * dichiarano per contratto una premessa piu' forte — «HTML di **ogni** pagina
+ * letto», «ogni pagina **e ogni bundle** scaricati», «ogni pagina scoperta» — e
+ * non la controllavano: le pagine non scaricate sparivano dal denominatore
+ * invece di rendere il passo MANCANTE. Il tribunale l'ha misurato con una sola
+ * pagina che chiude il socket, e quella pagina era l'unica col modulo:
+ * `dati-raccolti` chiudeva `n/a` — «il sito non chiede niente a chi lo visita» —
+ * e `accessibilita-servita` `pass`. Il gate restava rosso per il passo 2, ma i
+ * singoli stati finiscono in `statiPassi`, e il confronto §19 del `perimetro`
+ * accettava nel certificato firmato `basi-giuridiche: non applicabile`. Cioe' un
+ * BUCO DI MISURA promosso a dichiarazione.
+ *
+ * Vale identico per la camminata troncata da `--max-pagine`.
+ */
+const superficieCompleta = (ctx) => superficieUsabile(ctx) && !ctx.troncata && (ctx.nonLette ?? []).length === 0;
+const motivoIncompleta = (ctx) => {
+  if (!superficieUsabile(ctx)) return motivoSuperficie(ctx);
+  if (ctx.troncata) {
+    return `camminata TRONCATA a ${ctx.pagine.length} pagine (--max-pagine): il resto del sito non e' stato guardato, e questo passo non puo' concludere niente sul sito — solo sul troncone`;
+  }
+  return `${ctx.nonLette.length} pagine scoperte e NON scaricate (${ctx.nonLette.join(", ")}): una pagina non letta non e' una pagina pulita, e questo passo dichiara di guardarle tutte`;
+};
 
 // ----------------------------------------------------------------- i passi
 const PASSI = [
@@ -268,7 +385,14 @@ const PASSI = [
         const percorso = daVedere.shift();
         if (viste.has(percorso) || rimandi.has(percorso)) continue;
         const r = await preleva(unisci(args.url, percorso));
-        if (!r) { viste.set(percorso, null); continue; }
+        // Un corpo oltre il tetto e' una pagina NON LETTA, non una pagina
+        // vuota: analizzarne meta' sarebbe l'amputazione del documento, che e'
+        // la classe di falso verde piu' costosa di questa skill.
+        if (!r || r.troppoGrande) {
+          viste.set(percorso, null);
+          if (r?.troppoGrande) rimandi.set(percorso, `corpo oltre ${Math.round(MAX_CORPO / 1024 / 1024)} MB: non letto`);
+          continue;
+        }
         // Le intestazioni `Set-Cookie` sono un fatto misurato anche quando non si
         // entra nella pagina: un cookie posto SUL RIMANDO (di sessione, di
         // lingua) sparirebbe del tutto se lo si buttasse insieme alla risposta.
@@ -289,6 +413,7 @@ const PASSI = [
       ctx.buildId = buildId;
       ctx.pagine = [...viste].filter(([, r]) => r !== null).map(([percorso, r]) => ({ percorso, ...r }));
       ctx.nonLette = [...viste].filter(([, r]) => r === null).map(([p]) => p);
+      ctx.troncata = troncata;
       ctx.rimandi = rimandi;
       ctx.cookie = cookieVisti;
 
@@ -332,7 +457,7 @@ const PASSI = [
     id: ID.informativa,
     nome: "informativa privacy raggiungibile",
     async esegui(ctx) {
-      if (!superficieUsabile(ctx)) return record(this.id, this.nome, "skipped", motivoSuperficie(ctx));
+      if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
       const conCandidati = ctx.pagine.map((p) => ({ percorso: p.percorso, candidati: candidatiInformativa(p.corpo, ctx.baseUrl) }));
       const peso = new Map();
       for (const p of conCandidati) {
@@ -387,7 +512,7 @@ const PASSI = [
     id: ID.dati,
     nome: "dati raccolti dai moduli pubblici",
     async esegui(ctx) {
-      if (!superficieUsabile(ctx)) return record(this.id, this.nome, "skipped", motivoSuperficie(ctx));
+      if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
       // `null` vuol dire «il passo precedente non ha potuto misurare», e non e'
       // la stessa cosa di «misurato: nessuna pagina rimanda». Con un `?? new Set()`
       // un intoppo di rete su una richiesta produceva il bloccante piu' grave di
@@ -404,8 +529,16 @@ const PASSI = [
 
       if (pagineConModuli.length === 0) {
         const premessa = `zero moduli e zero campi nell'HTML servito di ${ctx.pagine.length} pagine (${ctx.pagine.map((p) => p.percorso).join(" ")})`;
-        return record(this.id, this.nome, statoNonApplicabile(premessa),
-          `${premessa}\nNON APPLICABILE: il sito non chiede niente a chi lo visita. Un modulo costruito nel browser dopo il caricamento qui non si vede — vedi SKILL.md §Cosa un gate verde NON prova.`);
+        // La conclusione dice cio' che la premessa sostiene, e non una parola di
+        // piu'. Prima diceva «il sito non chiede niente a chi lo visita»: e' una
+        // frase sul SITO costruita su una misura fatta sulle PAGINE RAGGIUNTE, e
+        // una pagina che nessuno linka e che la sitemap non dichiara non entra
+        // nel giro — sta scritto in SKILL.md, ma il gate lo dimenticava proprio
+        // nella riga che una persona legge. Il tribunale l'ha misurato su un
+        // sito con `/contatti` non linkata: nome, email e telefono se ne andavano
+        // a un terzo, e il gate stampava quella frase.
+        return record(this.id, this.nome, statoNonApplicabile(premessa, ctx.pagine.length),
+          `${premessa}\nNON APPLICABILE: nessuna delle ${ctx.pagine.length} pagine raggiunte chiede niente a chi lo visita. Una pagina che nessuno linka e che la sitemap non dichiara non entra in questo conto, e un modulo costruito nel browser dopo il caricamento qui non si vede — vedi SKILL.md §Cosa un gate verde NON prova.`);
       }
       const findings = findingsDatiRaccolti({
         pagineConModuli,
@@ -427,16 +560,28 @@ const PASSI = [
     id: ID.archiviazione,
     nome: "cosa il sito archivia nel browser",
     async esegui(ctx) {
-      if (!superficieUsabile(ctx)) return record(this.id, this.nome, "skipped", motivoSuperficie(ctx));
+      if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
       // I cookie vengono dalla camminata, non dalle sole pagine entrate: un
       // `Set-Cookie` posto su un RIMANDO e' un cookie posto (vedi passo 2).
-      const cookie = (ctx.cookie ?? []).map((c) => ({ nome: nomeCookie(c.riga), percorso: c.percorso, riga: c.riga }));
+      const cookie = (ctx.cookie ?? [])
+        .map((c) => ({ nome: nomeCookie(c.riga), percorso: c.percorso, riga: c.riga }))
+        .filter((c) => c.nome !== null);
+      const malformati = (ctx.cookie ?? []).filter((c) => nomeCookie(c.riga) === null);
       const archiviazioni = [];
       const terziMappa = new Map();
       const bundleVisti = new Map();
       const bundleFalliti = [];
+      const bundleVuoti = [];
+      const bundleIncerti = [];
       let bundleLetti = 0;
       let inlineLetti = 0;
+      // Se il motore JS non sa leggere i `Set-Cookie`, il passo non lo sa e
+      // basta: non c'e' niente da concludere su cio' che il sito archivia.
+      if (ctx.pagine.some((p) => p.cookieLeggibili === false)) {
+        return record(this.id, this.nome, "skipped",
+          "questo motore JavaScript non espone `Headers.getSetCookie()`: i `Set-Cookie` non si possono leggere uno per uno, e leggerli fusi in una stringa sola ne farebbe sparire tutti tranne il primo.\n"
+          + "Serve Node 18.14 o successivo. La verifica non e' stata fatta.");
+      }
 
       for (const pagina of ctx.pagine) {
         for (const t of terziDi(pagina.corpo, ctx.baseUrl)) {
@@ -450,6 +595,7 @@ const PASSI = [
         // chi passa». Il corpo era gia' in memoria: bastava guardarlo.
         for (const corpo of corpiInline(pagina.corpo)) {
           inlineLetti++;
+          if (archiviazioneIncertaIn(corpo)) bundleIncerti.push(`${pagina.percorso} (script inline)`);
           for (const api of apiArchiviazioneIn(corpo)) {
             if (!archiviazioni.some((a) => a.api === api && a.percorso === pagina.percorso)) {
               archiviazioni.push({ api, percorso: pagina.percorso, bundle: "script inline" });
@@ -459,7 +605,16 @@ const PASSI = [
         for (const src of sorgentiInterne(pagina.corpo, ctx.baseUrl)) {
           if (!bundleVisti.has(src)) {
             const r = await preleva(unisci(ctx.baseUrl, src), { segui: true });
-            if (!r || r.stato >= 400) { bundleFalliti.push(src); bundleVisti.set(src, null); continue; }
+            if (!r || r.stato >= 400 || r.troppoGrande) { bundleFalliti.push(src); bundleVisti.set(src, null); continue; }
+            // **Un corpo vuoto non e' un bundle letto.** L'invariante scritta
+            // qui sotto — «un bundle non letto non e' un bundle pulito» — era
+            // fatta rispettare solo sul FALLIMENTO DI RETE, non sull'integrita'
+            // del contenuto: un `204`, o un `200` con zero byte (una cache che
+            // tronca, un proxy, un server che fa cloaking sul fetch del gate)
+            // veniva contato fra gli «script letti per intero» e il passo
+            // chiudeva `n/a` con la premessa che stampa quel numero. Misurato
+            // dal tribunale servendo `/app.js` con `204` e nessun corpo.
+            if (r.corpo.trim() === "") { bundleVuoti.push(src); bundleVisti.set(src, null); continue; }
             bundleLetti++;
             // Un `Set-Cookie` sulla risposta di un BUNDLE e' un cookie posto a
             // chi visita esattamente come quello del documento: il browser lo
@@ -468,8 +623,11 @@ const PASSI = [
             // spostare il cookie sulla sottorisorsa lo faceva sparire — «0
             // cookie» su un sito che ne poneva uno a ogni pagina.
             for (const riga of r.cookie ?? []) {
-              cookie.push({ nome: nomeCookie(riga), percorso: `${pagina.percorso} → ${src}`, riga });
+              const nome = nomeCookie(riga);
+              if (nome === null) malformati.push({ riga, percorso: `${pagina.percorso} → ${src}` });
+              else cookie.push({ nome, percorso: `${pagina.percorso} → ${src}`, riga });
             }
+            if (archiviazioneIncertaIn(r.corpo)) bundleIncerti.push(src);
             bundleVisti.set(src, apiArchiviazioneIn(r.corpo));
           }
           const trovate = bundleVisti.get(src);
@@ -486,10 +644,20 @@ const PASSI = [
       // collaudo avversario di vetrina-crafter, nella sua forma naturale qui:
       // se il gate ne salta uno in silenzio, «non archivia niente» e «non ho
       // guardato» diventano la stessa frase.
-      if (bundleFalliti.length > 0) {
+      if (bundleFalliti.length > 0 || bundleVuoti.length > 0) {
+        const righe = [];
+        if (bundleFalliti.length > 0) righe.push(`${bundleFalliti.length} script serviti non scaricati (${bundleFalliti.slice(0, 5).join(", ")}${bundleFalliti.length > 5 ? " …" : ""})`);
+        if (bundleVuoti.length > 0) righe.push(`${bundleVuoti.length} script scaricati con il CORPO VUOTO (${bundleVuoti.slice(0, 5).join(", ")}${bundleVuoti.length > 5 ? " …" : ""}): un 204, o un 200 senza byte, non e' uno script che non archivia — e' uno script che non abbiamo letto`);
         return record(this.id, this.nome, "skipped",
-          `${bundleFalliti.length} script serviti non scaricati (${bundleFalliti.slice(0, 5).join(", ")}${bundleFalliti.length > 5 ? " …" : ""}).\n` +
-          "Un bundle non letto non e' un bundle pulito: la verifica non e' stata fatta.");
+          `${righe.join("\n")}\nUn bundle non letto non e' un bundle pulito: la verifica non e' stata fatta.`);
+      }
+      // Un indizio di archiviazione che non nomina l'API per intero
+      // (`window["local"+"Storage"]`) non e' una misura: e' un «non lo so», e la
+      // §18 non ammette la misura incerta travestita da non applicabile.
+      if (bundleIncerti.length > 0 && archiviazioni.length === 0) {
+        return record(this.id, this.nome, "skipped",
+          `${bundleIncerti.length} script serviti contengono indizi di archiviazione senza nominare l'API per intero (${bundleIncerti.slice(0, 5).join(", ")}${bundleIncerti.length > 5 ? " …" : ""}).\n`
+          + "Questo gate legge nomi, non esegue codice: qui non sa dire se il sito archivia, e dire di no sarebbe una risposta che non ha misurato.");
       }
 
       const terzi = [...terziMappa.values()];
@@ -498,8 +666,17 @@ const PASSI = [
         const findings = ctx.certificato?.banner
           ? [{ severity: "issue", object: "consenso", message: "banner dichiarato e nessuna archiviazione misurata" }]
           : [];
-        return record(this.id, this.nome, findings.length > 0 ? "pass" : statoNonApplicabile(premessa),
-          `${premessa}\nNON APPLICABILE: il sito non mette niente nel browser di chi passa, quindi non c'e' niente da dichiarare e nessun banner da mostrare.\n${dettaglioFindings(findings)}`.trim());
+        for (const m of malformati) {
+          findings.push({ severity: "issue", object: m.percorso, message: `\`Set-Cookie\` non interpretabile come cookie: ${perStampa(m.riga, 120)}` });
+        }
+        // La riga «NON APPLICABILE» sta nel ramo che PRODUCE un `n/a`: con un
+        // banner dichiarato lo stato e' `pass`, e stampare comunque quella frase
+        // faceva leggere `OK` sopra una prosa che dice il contrario.
+        const stato = findings.length > 0 ? "pass" : statoNonApplicabile(premessa, ctx.pagine.length);
+        const conclusione = stato === "n/a"
+          ? "NON APPLICABILE: nessuna delle pagine raggiunte mette niente nel browser di chi passa, quindi non c'e' niente da dichiarare e nessun banner da mostrare."
+          : "nessuna archiviazione e nessun terzo misurati sulle pagine raggiunte; restano i rilievi qui sotto.";
+        return record(this.id, this.nome, stato, `${premessa}\n${conclusione}\n${dettaglioFindings(findings)}`.trim());
       }
 
       const findings = findingsArchiviazione({
@@ -525,7 +702,7 @@ const PASSI = [
     id: ID.a11y,
     nome: "accessibilita' dell'HTML servito",
     async esegui(ctx) {
-      if (!superficieUsabile(ctx)) return record(this.id, this.nome, "skipped", motivoSuperficie(ctx));
+      if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
       const findings = ctx.pagine.flatMap((p) => findingsAccessibilitaPagina(p.percorso, p.corpo));
       const g = contaGravita(findings);
       const dettaglio = [
@@ -544,7 +721,7 @@ const PASSI = [
     id: ID.lingua,
     nome: "lingua dichiarata e hreflang",
     async esegui(ctx) {
-      if (!superficieUsabile(ctx)) return record(this.id, this.nome, "skipped", motivoSuperficie(ctx));
+      if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
       if (!ctx.certificato || ctx.certificato.lingue.length === 0) {
         return record(this.id, this.nome, "skipped",
           "il certificato non dichiara nessuna lingua: senza, non c'e' niente contro cui confrontare i `lang` misurati, e un `NON APPLICABILE` qui sarebbe una risposta senza domanda");
@@ -597,9 +774,17 @@ const PASSI = [
     id: ID.uscita,
     nome: "contratto d'uscita (handoff)",
     async esegui() {
-      const percorso = trovaHandoff();
+      const trovato = trovaHandoff();
+      const percorso = typeof trovato === "string" ? trovato : trovato?.percorso ?? null;
       const testo = percorso ? leggiSeCe(percorso) : null;
       const findings = contrattoUscita(percorso ?? `${HANDOFF_DIR}/<n>-site-doctor.md`, testo, verdettoDa(steps));
+      if (trovato && typeof trovato !== "string" && trovato.ambigui) {
+        findings.push({
+          severity: "block",
+          object: HANDOFF_DIR,
+          message: `${trovato.ambigui.length} handoff con lo stesso numero (${trovato.ambigui.join(", ")}): non c'e' un «ultimo», e chi viene dopo non sa quale ho letto`,
+        });
+      }
       return record(this.id, this.nome, statoDaFindings(findings), findings.length === 0 ? `${percorso}` : dettaglioFindings(findings));
     },
   },
@@ -619,8 +804,18 @@ async function provaIdentita(html, buildId, url) {
   if (assetProvato) {
     const servito = await preleva(unisci(url, assetProvato), { segui: true });
     const suDisco = join(PROGETTO, ".next", assetProvato.replace(/^\/_next\//, ""));
+    // `existsSync` non distingue un file da una cartella, e `assetProvato` viene
+    // dall'HTML SERVITO: con `<script src="/_next/static/chunks">` — e
+    // `chunks` E' una cartella in ogni build Next — il `readFileSync` lanciava
+    // `EISDIR`, il gate usciva **2** e azzerava i sette passi che non avevano
+    // ancora girato, compresi quelli che non toccano la rete. Non e' un falso
+    // verde: e' una negazione di misura, e si ottiene scrivendo un `src`.
     if (servito && servito.stato === 200 && existsSync(suDisco)) {
-      assetIdentico = readFileSync(suDisco, "utf8") === servito.corpo;
+      try {
+        assetIdentico = statSync(suDisco).isFile() && readFileSync(suDisco, "utf8") === servito.corpo;
+      } catch {
+        assetIdentico = false;
+      }
     }
   }
   return esitoIdentita({ buildIdCombacia, assetProvato, assetIdentico, buildId, url });
@@ -699,11 +894,32 @@ function percorsoInternoConQuery(href, base) {
   return `${url.pathname}${url.search}`;
 }
 
+/**
+ * L'ULTIMO handoff di questa skill, e «ultimo» vuol dire per NUMERO.
+ *
+ * `.sort()` ordina le stringhe carattere per carattere: `"1" < "9"`, quindi
+ * `9-site-doctor.md` batteva `10-`, `11-`, `99-` per sempre. Il tribunale l'ha
+ * riprodotto end-to-end — con un `9-` ben scritto accanto a un `10-` col
+ * segnaposto e senza riga `Gate:`, il passo chiudeva **pass** citando il `9-`, e
+ * il documento che il `CLAUDE.md` dice all'agente successivo di leggere non
+ * veniva nemmeno aperto. In una catena con piu' di nove giri — cioe' questa —
+ * ogni handoff nuovo diventava invisibile.
+ *
+ * Due file con lo stesso numero sono un fatto da dire, non da risolvere
+ * indovinando: il consumatore a valle non saprebbe quale ha letto.
+ */
 function trovaHandoff() {
   const dir = join(PROGETTO, HANDOFF_DIR);
   if (!existsSync(dir)) return null;
-  const trovato = readdirSync(dir).filter((n) => /-site-doctor\.md$/.test(n)).sort().pop();
-  return trovato ? `${HANDOFF_DIR}/${trovato}` : null;
+  const nomi = readdirSync(dir).filter((n) => /-site-doctor\.md$/.test(n));
+  if (nomi.length === 0) return null;
+  const numerati = nomi.map((n) => ({ nome: n, numero: /^(\d+)-/.exec(n) ? Number(/^(\d+)-/.exec(n)[1]) : null }));
+  const senzaNumero = numerati.filter((x) => x.numero === null);
+  const conNumero = numerati.filter((x) => x.numero !== null).sort((a, b) => a.numero - b.numero);
+  if (conNumero.length === 0) return `${HANDOFF_DIR}/${senzaNumero.sort((a, b) => a.nome.localeCompare(b.nome)).pop().nome}`;
+  const ultimo = conNumero[conNumero.length - 1];
+  const pari = conNumero.filter((x) => x.numero === ultimo.numero);
+  return { percorso: `${HANDOFF_DIR}/${ultimo.nome}`, ambigui: pari.length > 1 ? pari.map((x) => x.nome) : null };
 }
 
 // ------------------------------------------------------------------- verdetto

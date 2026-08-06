@@ -410,8 +410,22 @@ export function findingsPerimetro({ tabella, leggiFile, statiPassi }) {
         });
         continue;
       }
+      // Se il passo non ha girato, il confronto §19 **non si fa** — e prima si
+      // spegneva in silenzio, perche' `if (statoVero && …)` saltava e basta.
+      // Bastava rinominare un `id` in `verify.mjs` per disattivare il §19 di
+      // quella voce e far chiudere `perimetro` avendo confrontato niente: e' il
+      // falso verde n°12 riaperto da un lato che la correzione della cella
+      // vuota non copriva. Un test lega ora i due elenchi.
+      if (statoVero === undefined) {
+        findings.push({
+          severity: "block",
+          object: voce.id,
+          message: `dichiarata mia, ma il passo \`${voce.mio}\` non ha girato in questa esecuzione: non c'e' niente contro cui confrontare «${dichiarato}»`,
+        });
+        continue;
+      }
       const atteso = { pass: "conforme", fail: "non conforme", skipped: "non verificato", "n/a": "non applicabile" }[statoVero];
-      if (statoVero && dichiarato && dichiarato !== atteso) {
+      if (dichiarato && dichiarato !== atteso) {
         findings.push({
           severity: "block",
           object: voce.id,

@@ -9,8 +9,8 @@
  */
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
@@ -186,3 +186,146 @@ for (const { file, chi } of GUSCI) {
     });
   });
 }
+
+// ═══════════════════════ il tribunale del 2026-08-06 — il guscio del gate
+/**
+ * Questi difetti vivono nel guscio di I/O, e si provano solo eseguendo il gate.
+ * Ogni test costruisce un progetto finto in una cartella temporanea, lo serve
+ * davvero, e legge il `--json`: nessuna asserzione su una funzione pura.
+ */
+// ═══════════════════════ il tribunale del 2026-08-06 — il guscio del gate
+/**
+ * Questi difetti vivono nel guscio di I/O e si provano solo eseguendo il gate:
+ * ogni test costruisce un progetto finto in una cartella temporanea, lo serve
+ * davvero, e legge il `--json`.
+ *
+ * **Il banco vive in un processo suo, e non e' un dettaglio**: `spawnSync`
+ * blocca il ciclo di eventi, quindi un server HTTP acceso in questo stesso
+ * processo non risponderebbe mai al gate. E' scritto in
+ * `references/verifica-deterministica.md` §Trappole di piattaforma — e ci sono
+ * cascato dentro scrivendo questi test, che e' il motivo per cui la nota adesso
+ * sta anche qui.
+ */
+describe("tribunale P.6-P3 — il guscio, provato eseguendolo", () => {
+  const GATE = fileURLToPath(new URL("./verify.mjs", import.meta.url));
+  const attendi = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  /** Accende un banco in un PROCESSO SUO e aspetta che risponda davvero. */
+  const accendi = async (dir, sorgente, porta) => {
+    const file = join(dir, "banco-di-prova.cjs");
+    writeFileSync(file, sorgente.replace("__PORTA__", String(porta)), "utf8");
+    const proc = spawn(process.execPath, [file], { stdio: "ignore" });
+    for (let i = 0; i < 80; i += 1) {
+      try {
+        const r = await fetch(`http://127.0.0.1:${porta}/__vivo`, { signal: AbortSignal.timeout(400) });
+        if (r.status) return { proc, url: `http://127.0.0.1:${porta}` };
+      } catch { /* non ancora */ }
+      await attendi(150);
+    }
+    proc.kill();
+    throw new Error(`il banco su ${porta} non ha risposto`);
+  };
+
+  const conProgetto = async (file, sorgente, porta, prova) => {
+    const dir = mkdtempSync(join(tmpdir(), "sd-trib-"));
+    let banco = null;
+    try {
+      for (const [rel, contenuto] of Object.entries(file)) {
+        mkdirSync(dirname(join(dir, rel)), { recursive: true });
+        writeFileSync(join(dir, rel), contenuto, "utf8");
+      }
+      banco = await accendi(dir, sorgente, porta);
+      const r = spawnSync(process.execPath, [GATE, "--url", banco.url, "--json"], { cwd: dir, encoding: "utf8", timeout: 120000 });
+      let doc;
+      try {
+        doc = JSON.parse(r.stdout);
+      } catch {
+        throw new Error(`il gate non ha prodotto JSON (uscita ${r.status}): ${(r.stdout || r.stderr || "").slice(0, 300)}`);
+      }
+      return await prova(doc, dir);
+    } finally {
+      banco?.proc.kill();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  const stato = (doc, id) => doc.steps.find((s) => s.id === id)?.status;
+  const dettaglio = (doc, id) => doc.steps.find((s) => s.id === id)?.detail ?? "";
+  const PROGETTO_FINTO = { ".next/BUILD_ID": "BANCOTRIBUNALE01", "docs/PROGETTO.md": "progetto finto" };
+
+  it("SD-TRIB-G1: uno `<script src>` finto dentro un attributo non spegne il censimento dell'archiviazione", async () => {
+    // La chiave universale del perito: il primo `<script` che una regexp
+    // ingenua trova sta DENTRO un valore di attributo — testo, per un browser —
+    // e il suo «contenuto» corre fino al `</script>` VERO, inghiottendo lo
+    // script che archivia davvero. Il passo chiudeva `n/a`: «il sito non mette
+    // niente nel browser di chi passa», con «0 script inline letti per intero».
+    const banco = `const {createServer}=require("http");
+const p='<!DOCTYPE html><html lang="it"><head><title>T</title></head><body><main><h1>T</h1>'
+ + '<div data-nota="<script src=/vuoto.js>"></div>'
+ + '<script>localStorage.setItem("sd_tracciato","1");</script>'
+ + '<p>build BANCOTRIBUNALE01</p></main></body></html>';
+createServer((q,s)=>{ if(q.url==="/vuoto.js"){s.writeHead(200,{"content-type":"application/javascript"});return s.end("export const a=1;");}
+ s.writeHead(200,{"content-type":"text/html; charset=utf-8"}); s.end(p); }).listen(__PORTA__,"127.0.0.1");`;
+    await conProgetto(PROGETTO_FINTO, banco, 3911, (doc) => {
+      assert.notEqual(stato(doc, "archiviazione-client"), "n/a", "n/a su un sito che scrive in localStorage");
+      assert.match(dettaglio(doc, "archiviazione-client"), /localStorage/);
+    });
+  });
+
+  it("SD-TRIB-G2: un bundle servito con il corpo VUOTO non e' un bundle letto", async () => {
+    const banco = `const {createServer}=require("http");
+createServer((q,s)=>{ if(q.url==="/app.js"){s.writeHead(204);return s.end();}
+ s.writeHead(200,{"content-type":"text/html; charset=utf-8"});
+ s.end('<!DOCTYPE html><html lang="it"><head><title>T</title></head><body><main><h1>T</h1><p>BANCOTRIBUNALE01</p><script src="/app.js"></script></main></body></html>'); }).listen(__PORTA__,"127.0.0.1");`;
+    await conProgetto(PROGETTO_FINTO, banco, 3912, (doc) => {
+      assert.equal(stato(doc, "archiviazione-client"), "skipped");
+      assert.match(dettaglio(doc, "archiviazione-client"), /CORPO VUOTO/);
+    });
+  });
+
+  it("SD-TRIB-G3: l'ultimo handoff e' il piu' ALTO di numero, non il primo in ordine alfabetico", async () => {
+    const banco = `const {createServer}=require("http");
+createServer((q,s)=>{ s.writeHead(200,{"content-type":"text/html; charset=utf-8"});
+ s.end('<!DOCTYPE html><html lang="it"><head><title>T</title></head><body><main><h1>T</h1><p>BANCOTRIBUNALE01</p></main></body></html>'); }).listen(__PORTA__,"127.0.0.1");`;
+    await conProgetto({
+      ...PROGETTO_FINTO,
+      "docs/handoff/9-site-doctor.md": "# 9\n\nGate: ROSSO\n",
+      "docs/handoff/10-site-doctor.md": "# 10 — il vero ultimo\n\nnessuna riga di verdetto qui dentro\n",
+    }, banco, 3913, (doc) => {
+      // Il `10-` non dichiara niente: il passo deve fallire citando LUI, non
+      // passare citando il `9-` che nessuno legge piu'.
+      assert.equal(stato(doc, "contratto-uscita"), "fail");
+      assert.match(dettaglio(doc, "contratto-uscita"), /10-site-doctor\.md/);
+    });
+  });
+
+  it("SD-TRIB-G4: una pagina scoperta e non scaricata rende MANCANTI i passi che dichiarano di guardarle tutte", async () => {
+    const banco = `const {createServer}=require("http");
+createServer((q,s)=>{ if(q.url==="/contatti"){return s.destroy();}
+ s.writeHead(200,{"content-type":"text/html; charset=utf-8"});
+ s.end('<!DOCTYPE html><html lang="it"><head><title>T</title></head><body><main><h1>T</h1><p>BANCOTRIBUNALE01</p><a href="/contatti">Contatti</a></main></body></html>'); }).listen(__PORTA__,"127.0.0.1");`;
+    await conProgetto(PROGETTO_FINTO, banco, 3914, (doc) => {
+      assert.match(dettaglio(doc, "superficie-pubblica"), /\/contatti/);
+      for (const id of ["dati-raccolti", "archiviazione-client", "accessibilita-servita"]) {
+        assert.equal(stato(doc, id), "skipped", `${id} ha concluso su una superficie amputata`);
+      }
+    });
+  });
+
+  it("SD-TRIB-G5: un asset che su disco e' una CARTELLA non manda in crash il gate", async () => {
+    const banco = `const {createServer}=require("http");
+createServer((q,s)=>{ if(q.url.startsWith("/_next/")){s.writeHead(200,{"content-type":"application/javascript"});return s.end("// servito");}
+ s.writeHead(200,{"content-type":"text/html; charset=utf-8"});
+ s.end('<!DOCTYPE html><html lang="it"><head><title>T</title></head><body><main><h1>T</h1><script src="/_next/static/chunks"></script></main></body></html>'); }).listen(__PORTA__,"127.0.0.1");`;
+    await conProgetto({
+      ".next/BUILD_ID": "NONCOMBACIA0001",
+      "docs/PROGETTO.md": "progetto finto",
+      ".next/static/chunks/dentro.js": "// una cartella, non un file",
+    }, banco, 3915, (doc) => {
+      // il verdetto e' rosso e MOTIVATO, non un'uscita 2 con nove passi azzerati
+      assert.equal(doc.ok, false);
+      assert.equal(doc.error, undefined);
+      assert.equal(doc.summary.passi, 9);
+    });
+  });
+});
