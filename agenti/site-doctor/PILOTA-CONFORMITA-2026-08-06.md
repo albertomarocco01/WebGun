@@ -2,14 +2,16 @@
 
 Progetto: **`fornodoro`** (pizzeria «Forno d'Oro»), ramo `master`.
 Pacchetto **P.4i**, 2026-08-06 sera → 2026-08-07 notte.
-Regia: `d147f52` → `980e61a` → `cbcbdc7` → **`bee36c9`** (si è mossa tre volte
-mentre il pacchetto lavorava; ogni corsa porta lo `sha` catturato prima e dopo).
+Regia: `d147f52` → `980e61a` → `cbcbdc7` → `bee36c9` → **`3b2df31`** (si è mossa
+**cinque volte** mentre il pacchetto lavorava; il giro dei gate è stato
+rilanciato per intero **tre volte**, e ogni corsa porta lo `sha` catturato prima
+e dopo).
 
 > **Il commit non descrive tutto quello che ha girato.** Alla consegna la regia
-> ha **otto script dei gate modificati e non committati** — fra cui
-> `agenti/site-doctor/scripts/conformita-lib.mjs` — per 264 righe aggiunte e 141
-> tolte. Le corse di questo verbale hanno usato quelle versioni lì. Chi rilegge
-> questi verdetti a modifiche committate **rilanci**.
+> ha ancora script dei gate **modificati e non committati** — fra cui
+> `agenti/site-doctor/scripts/conformita-lib.mjs`. Le corse di questo verbale
+> hanno usato quelle versioni lì. Chi rilegge questi verdetti a modifiche
+> committate **rilanci**.
 
 Questo verbale è **della regia**: raccoglie le uscite per intero e i rilievi che
 riguardano **le skill**, non il pilota. Ciò che riguarda il pilota sta nei suoi
@@ -20,7 +22,8 @@ documenti — `docs/conformita.md`, `docs/handoff/16-site-doctor.md`,
 
 La skill **site-doctor** ha girato per la prima volta su un progetto vero,
 `perimetro → scansiona → certifica → handoff`, e il suo gate è passato da
-**ROSSO (4 falliti, 3 verifiche mancanti)** a **VERDE (8 `pass`, 1 `n/a`)**.
+**ROSSO (4 falliti, 3 verifiche mancanti su 9 passi)** a **VERDE (12 `pass`,
+1 `n/a` su 14 passi)** — i passi sono diventati quattordici a metà strada, §1-bis.
 
 Tutti e quattro i rossi di partenza erano **cose vere di quel sito**, e nessuna
 era mai stata scritta da nessuna parte: un sito che chiede nome e telefono e non
@@ -28,6 +31,41 @@ ha un'informativa; una base giuridica che nessuno aveva dichiarato; un
 `localStorage` che nessun documento nominava; un contratto d'uscita inesistente.
 Il pilota ha avuto in una sera il documento che la catena non aveva mai
 prodotto, e otto voci nuove nel registro del debito.
+
+## 1-bis. Il momento che vale più di tutto il resto: D21 è arrivata a certificato emesso
+
+Alle 22 il certificato del pilota delegava `sitemap`, `robots`, `open-graph`,
+`favicon` e `dati-strutturati` a **speed-demon**. Era la verità di allora, ed era
+scritta con la misura accanto. Tre ore dopo la regia ha committato **D21**, e il
+gate è passato da **9 passi a 14**.
+
+**Il gate ha rifiutato il certificato che questa stessa skill aveva appena
+emesso**, con quattro bloccanti e con la frase che vale più di questo verbale:
+
+> *«delegata a speed-demon, ma questo gate la MISURA con il passo `sitemap-xml`.
+> Dal 2026-08-06 (D21) è di site-doctor: il certificato va aggiornato, perché
+> così com'è attribuisce a un altro una cosa che ho appena guardato io»*.
+
+Due cose da tenere.
+
+**La prima**: il rifiuto è **corretto e utile**. Una voce attribuita a chi non la
+guarda è il difetto da cui questa skill è nata; il caso più difficile da vedere
+non è l'attribuzione sbagliata, è quella **giusta ieri**. Il passo `perimetro` la
+prende, e la prende senza sapere niente di D21 — sa solo che `mio` non è `null`
+e che il documento dice un altro nome.
+
+**La seconda, ed è un limite della prosa e non del codice**: la prima stesura del
+certificato conteneva **già** l'avvertenza — *«queste righe cambieranno
+proprietario, e vanno cambiate rilanciando il gate, mai rileggendo questa
+frase»*. Averlo previsto non è servito a niente: il documento è rimasto
+sbagliato finché qualcuno non ha rilanciato. **Nessuna avvertenza scritta dentro
+un documento lo tiene aggiornato.**
+
+I cinque passi nuovi hanno trovato, sul pilota, tre cose che nessuno misurava:
+la **favicon risponde 200** su tutte e sei le pagine (ed è la voce da cui la
+skill è nata: sul pilota è stata un `404` per tre anelli); **sei pagine su sei
+dichiarano l'Open Graph e nessuna ha `og:image`**; **zero blocchi
+`application/ld+json`**. Le ultime due sono diventate residui n°59 e n°55.
 
 ## 2. Quattro rilievi sulle skill, in ordine di gravità
 
@@ -52,10 +90,16 @@ letterale, e nessun passo del gate la ridata. Il difetto non è il contenuto
 stantio: è che un `issue` falso convive con sette veri, e chi legge otto righe
 uguali smette di leggerle.
 
+**E in poche ore è successo due volte**: `contrasti` e `dati-strutturati` sono
+tutte e due misurate davvero — la prima da speed-demon, la seconda **da questo
+stesso gate** dopo D21 — e tutte e due continuano a uscire come scoperte.
+
 **Proposta**: il `grep` che produce `SCOPERTE` diventi eseguibile — uno script
 della skill che lo rilancia sui gate dei vicini e stampa la differenza — oppure
 ogni riga porti la **data della misura** accanto al testo, così che «misurato il
-2026-08-06» si legga come una data e non come un fatto. Decide la regia.
+2026-08-06» si legga come una data e non come un fatto. La versione di stanotte
+già stampa `misurato il 2026-08-06 sulla regia a d147f52`, che è metà del
+rimedio: dice **quando**, e non ancora **che è vecchio**. Decide la regia.
 
 ### 2.2 Il filtro dei nomi di servizio è cambiato, e un numero è cambiato con lui
 
@@ -164,6 +208,12 @@ certificato elida l'autorità e lo dichiari.
 | `docs/deploy.md` | §0-bis (n°27, D24 e il primo `git push`) e nove bloccanti risposti |
 | `docs/handoff/07 · 08 · 10 · 12 · 13 · 14 · 15` | ridatati contro le corse vere |
 
+**Il gate di pubblicazione, alla consegna: ROSSO con tre rifiuti**, e nessuno
+dei tre è di questo pacchetto — `segreti` (n°27, della direzione),
+`runbook-firmato` (di Alberto, in persona), `contratto-uscita` (l'handoff di
+launchpad, che non esiste finché non esiste una pubblicazione). Erano **quattro**
+a inizio serata: il quarto, `verdetti`, era nostro ed è chiuso.
+
 **Niente è stato pubblicato**: nessun account, nessun dominio, nessun DNS,
 nessun deploy, nessun `git push`. `git remote -v` è vuoto, ed è la precondizione
 scritta in `docs/deploy.md` §0-bis. `docs/deploy.md` resta **non firmato**.
@@ -219,7 +269,7 @@ OK    accessibilita' statica (jsx-a11y)
         34 file con markup lintati in src/app, src/components/ui
         nessun rilievo
 OK    identita' dell'app servita
-        http://127.0.0.1:3621 (HTTP 200) · build id 749faaeaadcf9236d75afebab52ba9e9a967226b · nessuno degli indizi di dev server
+        http://127.0.0.1:3621 (HTTP 200) · build id 9b6802a5de9b68da529c8da0924e99ea92916ddd · nessuno degli indizi di dev server
 OK    pagine dichiarate e pagine servite
         6 pagine dichiarate · 7 rotte da `page` nei sorgenti · 0 da `route` · 1 escluse dal contratto
         [issue] /privacy: rotta pubblica servita da `src/app/(sito)/privacy/page.tsx` e non dichiarata nel contratto: e' una pagina che chiunque puo' aprire e che nessuno ha firmato
@@ -291,14 +341,14 @@ OK    contratto delle pagine e delle soglie
 OK    rete E2E di Flow Sentinel
         gate flussi: VERDE (0 falliti, 0 mancanti su 7 passi)
 OK    build di produzione (non dev server)
-        http://127.0.0.1:3621 (HTTP 200) · build id 749faaeaadcf9236d75afebab52ba9e9a967226b · nessuno degli indizi di dev server nell'HTML servito
+        http://127.0.0.1:3621 (HTTP 200) · build id 9b6802a5de9b68da529c8da0924e99ea92916ddd · nessuno degli indizi di dev server nell'HTML servito
 OK    misura Lighthouse (mediana di N giri)
         dispersione massima ammessa: 5 punti (dichiarata nel contratto)
         home (/) · 3/3 giri: performance 99±0 · accessibility 100±0 · best-practices 100±0 · seo 100±0
-        menu (/menu) · 3/3 giri: performance 99±1 · accessibility 100±0 · best-practices 100±0 · seo 100±0
-        ordina (/ordina) · 3/3 giri: performance 100±1 · accessibility 100±0 · best-practices 100±0 · seo 100±0
+        menu (/menu) · 3/3 giri: performance 99±0 · accessibility 100±0 · best-practices 100±0 · seo 100±0
+        ordina (/ordina) · 3/3 giri: performance 99±1 · accessibility 100±0 · best-practices 100±0 · seo 100±0
         ordine (/ordine) · 3/3 giri: performance 99±0 · accessibility 100±0 · best-practices 100±0 · seo 100±0
-        chi-siamo (/chi-siamo) · 3/3 giri: performance 100±0 · accessibility 100±0 · best-practices 100±0 · seo 100±0
+        chi-siamo (/chi-siamo) · 3/3 giri: performance 99±1 · accessibility 100±0 · best-practices 100±0 · seo 100±0
 OK    soglie dichiarate
         20 soglie confrontate: ogni pagina dichiarata rispetta la sua
 OK    contrasto del testo (audit color-contrast)
@@ -312,14 +362,14 @@ OK    contratto d'uscita (handoff)
 ### site-doctor — VERDE, 8 `pass` e 1 `n/a` su 9 passi (regia `bee36c9`)
 
 ```
-GATE CONFORMITA': VERDE (0 falliti, 0 verifiche mancanti, 1 non applicabili su 9 passi)
+GATE CONFORMITA': VERDE (0 falliti, 0 verifiche mancanti, 1 non applicabili su 14 passi)
 
 OK    certificato di idoneita' firmato
         lingue dichiarate: it · informativa dichiarata: /privacy · banner: no
         archiviazioni dichiarate: 1 · campi con base giuridica: 5 · voci in tabella: 16
         confermato da: Direzione lavori (per delega del committente Alberto Marocco) il 2026-08-06
 OK    superficie pubblica camminata (collegamenti + sitemap)
-        identita': build id 749faaeaadcf9236d75afebab52ba9e9a967226b trovato nell'HTML servito · 6 pagine lette · 0 rimandi o errori non seguiti
+        identita': build id 9b6802a5de9b68da529c8da0924e99ea92916ddd trovato nell'HTML servito · 6 pagine lette · 0 rimandi o errori non seguiti
         radice: /
         sorgenti: collegamenti da / (6) · sitemap.xml (5)
         superficie: / /chi-siamo /menu /ordina /ordine /privacy
@@ -339,22 +389,38 @@ OK    accessibilita' dell'HTML servito
 N.A.  lingua dichiarata e hreflang
         lingue misurate sull'HTML servito di 6 pagine: it · rotte per lingua trovate nella superficie: nessuna · lingue dichiarate nel certificato: it
         NON APPLICABILE: sito monolingua misurato, gli hreflang non si applicano.
+OK    favicon: dichiarata e servita
+        1 icone dichiarate su 6 pagine, ognuna scaricata: /icon.svg?icon.3rkzeymsm89ww.svg → 200
+        ogni icona dichiarata risponde 200
+OK    Open Graph: l'anteprima che il sito sceglie
+        6 pagine su 6 dichiarano l'Open Graph · 0 immagini di anteprima scaricate
+          [issue] /: dichiara l'Open Graph e gli mancano og:image: un'anteprima a meta' e' quella che decide il motore, non il sito
+          [issue] /chi-siamo: dichiara l'Open Graph e gli mancano og:image: un'anteprima a meta' e' quella che decide il motore, non il sito
+          [issue] /menu: dichiara l'Open Graph e gli mancano og:image: un'anteprima a meta' e' quella che decide il motore, non il sito
+          [issue] /ordina: dichiara l'Open Graph e gli mancano og:image: un'anteprima a meta' e' quella che decide il motore, non il sito
+          [issue] /ordine: dichiara l'Open Graph e gli mancano og:image: un'anteprima a meta' e' quella che decide il motore, non il sito
+          [issue] /privacy: dichiara l'Open Graph e gli mancano og:image: un'anteprima a meta' e' quella che decide il motore, non il sito
+OK    dati strutturati (JSON-LD)
+        0 blocchi `application/ld+json` su 6 pagine, ognuno interpretato come JSON
+          [issue] dati-strutturati: nessuna delle 6 pagine dichiara dati strutturati (`application/ld+json`)
+OK    sitemap.xml: la promessa fatta ai motori
+        `/sitemap.xml` → HTTP 200 · 5 indirizzi dichiarati, confrontati con le 6 pagine servite
+        ogni indirizzo dichiarato nella sitemap e' servito
+OK    robots.txt: cosa il sito ammette
+        `/robots.txt` → HTTP 200 · 1 gruppi di regole · 1 righe `Sitemap:`
+        confrontato con la superficie camminata (6 pagine) e con la sitemap (5 indirizzi)
+        niente di cio' che il sito pubblicizza e' vietato ai motori
 OK    proprieta' delle voci di conformita'
-        16 righe in tabella contro 7 passi eseguiti · 8 voci scoperte
-        0 bloccanti, 8 da guardare, 0 righe fuori elenco
-          [issue] contrasti: delegata a speed-demon, e il suo GATE non la guarda: misurato il 2026-08-06: la parola «contrast» non compare in NESSUN file di `agenti/speed-demon/` (grep, 0 file). Il suo gate esegue Lighthouse con la categoria `accessibility`, che contiene l'audit `color-contrast`, ma legge solo il PUNTEGGIO della categoria (0 occorrenze di `audits` nei suoi script): il singolo audit non lo apre mai, la soglia sta in `docs/performance.md` del progetto e non ha un pavimento, e una deroga porta il rilievo da `block` a `warn`. Il documento citato la nomina — nominare non e' misurare, ed e' la forma esatta del difetto della favicon. Finche' resta cosi' questa voce e' SCOPERTA e va letta come tale
-          [issue] sitemap: delegata a speed-demon, e il suo GATE non la guarda: misurato il 2026-08-06: 0 occorrenze di `sitemap` in `agenti/speed-demon/scripts/verify.mjs` e `gate-lib.mjs`. La scrive e non la rilegge nessun passo — lo dichiara il suo stesso `STATO.md`. Il documento citato la nomina — nominare non e' misurare, ed e' la forma esatta del difetto della favicon. Finche' resta cosi' questa voce e' SCOPERTA e va letta come tale
-          [issue] robots: delegata a speed-demon, e il suo GATE non la guarda: misurato il 2026-08-06: le occorrenze di `robots` nel gate di speed-demon sono tutte `<meta name="robots">`, cioe' la voce `noindex-private`. Il file `robots.txt` non viene richiesto da nessun passo. Il documento citato la nomina — nominare non e' misurare, ed e' la forma esatta del difetto della favicon. Finche' resta cosi' questa voce e' SCOPERTA e va letta come tale
-          [issue] open-graph: delegata a speed-demon, e il suo GATE non la guarda: misurato il 2026-08-06: 0 occorrenze di `og:` nel gate di speed-demon. Nessun passo guarda l'Open Graph, ed e' meta' della voce che il 2026-08-06 risultava assegnata a DUE agenti insieme. Il documento citato la nomina — nominare non e' misurare, ed e' la forma esatta del difetto della favicon. Finche' resta cosi' questa voce e' SCOPERTA e va letta come tale
-          [issue] favicon: delegata a speed-demon, e il suo GATE non la guarda: misurato il 2026-08-06: 0 occorrenze di `favicon` nel gate di speed-demon. E' LA VOCE DEL DIFETTO: la favicon del pilota e' stata un `404` su ogni pagina per tre anelli, e questa skill nasce da li'. Il documento citato la nomina — nominare non e' misurare, ed e' la forma esatta del difetto della favicon. Finche' resta cosi' questa voce e' SCOPERTA e va letta come tale
-          [issue] dati-strutturati: SCOPERTA: nessuno la guarda. Resta scoperta e visibile — dichiararla e' l'unica cosa che la distingue da una dimenticata
-          [issue] accessibilita-admin: delegata a gestionale-crafter, e il suo GATE non la guarda: misurato il 2026-08-06: il passo `a11y` di gestionale-crafter lancia `eslint-plugin-jsx-a11y` sui SORGENTI (`verify.mjs:326-347`), non sull'HTML servito delle rotte protette. In questa casa e' gia' misurato che il sorgente mente, ed e' il motivo per cui l'accessibilita' del sito pubblico e' mia: qui la stessa ragione vale e la delega resta. Il documento citato la nomina — nominare non e' misurare, ed e' la forma esatta del difetto della favicon. Finche' resta cosi' questa voce e' SCOPERTA e va letta come tale
+        16 righe in tabella contro 12 passi eseguiti · 3 voci scoperte
+        0 bloccanti, 3 da guardare, 0 righe fuori elenco
+          [issue] contrasti: delegata a speed-demon, e il suo GATE non la guarda: misurato il 2026-08-06 sulla regia a `d147f52`: la parola «contrast» non compare in NESSUN file di `agenti/speed-demon/` (grep, 0 file). Il suo gate esegue Lighthouse con la categoria `accessibility`, che contiene l'audit `color-contrast`, ma legge solo il PUNTEGGIO della categoria (0 occorrenze di `audits` nei suoi script): il singolo audit non lo apre mai, la soglia sta in `docs/performance.md` del progetto e non ha un pavimento, e una deroga porta il rilievo da `block` a `warn`. Un'altra chat sta aggiungendo la lettura del singolo audit in questa stessa ondata: quando sara' in regia, questa riga si toglie RILANCIANDO IL GREP, non leggen…
+          [issue] accessibilita-admin: delegata a gestionale-crafter, e il suo GATE non la guarda: misurato il 2026-08-06 sulla regia a `d147f52`: il passo `a11y` di gestionale-crafter lancia `eslint-plugin-jsx-a11y` sui SORGENTI (`verify.mjs:326-347`), non sull'HTML servito delle rotte protette. E' una misura vera e dichiarata «sui sorgenti», non una delega vuota come le altre — ma non e' la stessa cosa che questa skill fa sul sito pubblico, ed e' per quella differenza che l'accessibilita' del pubblico e' mia. La delega resta perche' l'area protetta vuole una sessione. Il documento citato la nomina — nominare non e' misurare, ed e' la forma esatta del difetto della favicon. Finche' resta cosi' questa voce e' SCOPERTA e va letta …
           [issue] antispam: SCOPERTA: nessuno la guarda. Resta scoperta e visibile — dichiararla e' l'unica cosa che la distingue da una dimenticata
 OK    contratto d'uscita (handoff)
         docs/handoff/16-site-doctor.md
 Un NON APPLICABILE ha la sua premessa misurata stampata qui sopra: se la premessa e' falsa, lo e' anche la risposta.
 
-GATE CONFORMITA': VERDE (0 falliti, 0 verifiche mancanti, 1 non applicabili su 9 passi)
+GATE CONFORMITA': VERDE (0 falliti, 0 verifiche mancanti, 1 non applicabili su 14 passi)
 ```
 
 ### launchpad — ROSSO, 3 falliti e nessuno di questo pacchetto
@@ -364,7 +430,7 @@ GATE LAUNCHPAD: ROSSO (3 falliti, 0 verifiche mancanti su 9 passi)
 progetto: C:\Users\Utente\Desktop\fornodoro
 
 OK    si pubblica un commit, non un working tree
-        commit 122d8865ab74 · ramo master · remoto (nessuno)
+        commit 05cf64463d20 · ramo master · remoto (nessuno)
         [issue] master: nessun ramo remoto configurato
 OK    verdetti dichiarati dagli agenti a monte
         9 handoff letti: schema-forge · vetrina-crafter · gestionale-crafter · flow-sentinel · speed-demon · p4g-prerequisiti · p4h-credenziale-e-certificati · site-doctor · p4i-certificato-e-registro
@@ -373,14 +439,14 @@ OK    verdetti dichiarati dagli agenti a monte
         questo passo LEGGE una dichiarazione e ne misura la freschezza: non rilancia i gate a monte (references/verifica-deterministica.md §6)
         nessun rilievo
 OK    bloccanti dichiarati nel registro del debito
-        58 voci lette · 9 dichiarano `Blocca il deploy: si`: n°4 · n°5 · n°33 · n°12 · n°17 · n°27 · n°51 · n°52 · n°56
-        13 voci gia' chiuse a monte · 29 numeri citati dagli handoff
+        59 voci lette · 9 dichiarano `Blocca il deploy: si`: n°4 · n°5 · n°33 · n°12 · n°17 · n°27 · n°51 · n°52 · n°56
+        13 voci gia' chiuse a monte · 31 numeri citati dagli handoff
         questo passo LEGGE: l'elenco l'hanno scritto altri. `segreti` e `runtime-riproducibile` rimisurano da soli due di queste voci
         nessun rilievo
 FAIL  nessun segreto nel pacchetto che parte
         150 file tracciati letti · 0 nuovi non ancora tracciati · 0 binari · 4 ignorati guardati · 0 NON letti
         regole sul nome applicate a 150 percorsi, prima e indipendentemente dalla lettura
-        storia: 392 pezzi (file x commit, piu' i messaggi di commit e di tag) letti dagli ultimi 200 commit — un segreto tolto da HEAD e' ancora consegnato a chi ha clonato
+        storia: 406 pezzi (file x commit, piu' i messaggi di commit e di tag) letti dagli ultimi 200 commit — un segreto tolto da HEAD e' ancora consegnato a chi ha clonato
         6 famiglie di segreto cercate · quello che si trova NON si stampa: solo famiglia, file, riga e i primi quattro caratteri
         [block] supabase/seed/90-solo-sviluppo.sql:226: credenziale cablata in una migrazione o in un seed — password in chiaro dentro `crypt('…')`: pas… [11 caratteri]
         [issue] .env.e2e.local: 3 rilievi in un file IGNORATO da git (service-role · nome-di-servizio-valorizzato · entropia-alta) — prime righe: .env.e2e.local:11 · .env.e2e.local:11 · .env.e2e.local:11
@@ -405,7 +471,7 @@ OK    la build si rifa' uguale su un'altra macchina
         runtime dichiarato sul provider: Node 24
         nessun rilievo
 OK    l'impronta dell'artefatto e' derivata dal commit
-        impronta attesa dal commit di HEAD: `122d8865ab74` · `.next/BUILD_ID`: `122d8865ab741fdcc4453d0acb64d90ae2a9c55c`
+        impronta attesa dal commit di HEAD: `05cf64463d20` · `.next/BUILD_ID`: `05cf64463d2086e3da963d6d9cb9b5f77a9e54de`
         verificata su http://127.0.0.1:3621 — prova il MECCANISMO, non la pubblicazione: dopo il deploy si rilancia con `--url` sul dominio vero
         [issue] next.config.ts → generateBuildId: non solleva quando il commit non e' risolvibile
 FAIL  runbook firmato da un umano, sul contenuto
@@ -452,11 +518,11 @@ Routing suggerito (complessità + sicurezza): opus + Security-auditor + Specchio
 ### I commit della regia, catturati prima e dopo ogni corsa
 
 ```
-schema | exit=0 | regia prima=cbcbdc7 dopo=cbcbdc7
+schema | exit=0 | regia prima=3b2df31 dopo=3b2df31
 seed exit=0
-vetrina | exit=0 | regia prima=cbcbdc7 dopo=bee36c9
-gestionale | exit=0 | regia prima=bee36c9 dopo=bee36c9
-flussi | exit=0 | regia prima=bee36c9 dopo=bee36c9
-conformita | exit=0 | regia prima=bee36c9 dopo=bee36c9
-speed | exit=0 | regia prima=bee36c9 dopo=bee36c9
+vetrina | exit=0 | regia prima=3b2df31 dopo=3b2df31
+gestionale | exit=0 | regia prima=3b2df31 dopo=3b2df31
+flussi | exit=0 | regia prima=3b2df31 dopo=3b2df31
+conformita | exit=1 | regia prima=3b2df31 dopo=3b2df31
+speed | exit=0 | regia prima=3b2df31 dopo=86b1855
 ```
