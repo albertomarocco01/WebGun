@@ -179,7 +179,22 @@ export function ripulisciDocumento(html) {
     // Tag: si copia per intero, tenendo conto dei valori quotati — che sono il
     // punto: li' dentro `<`, `>` e `<!--` sono testo.
     const tag = leggiTag(html, i);
-    if (!tag) { fuori.push(c); i += 1; continue; }
+    if (!tag) {
+      // **Come fa il tokenizer vero.** Un `<` seguito da una lettera apre un
+      // tag, e da li' il parser dell'HTML non torna piu' indietro: se il tag non
+      // si chiude mai, quello che resta del documento e' un tag incompleto e non
+      // viene emesso. Prima qui si ricominciava dal carattere successivo, e
+      // ricominciare e' esattamente cio' che costava: con un apice solitario in
+      // mezzo e un `>` in fondo, ogni `<` rileggeva la coda — 128 KB in 16,7 s,
+      // terza quadratica di questa funzione (`SD-REDOS-01` due volte prima).
+      //
+      // Un `<` che NON apre un tag (`5 < 7`) non arriva qui: `leggiTag` lo
+      // scarta sul prefisso, prima di scandire, e resta testo come deve.
+      if (/^<\/?[a-zA-Z!?]/.test(html.slice(i, i + 3))) { i = n; continue; }
+      fuori.push(c);
+      i += 1;
+      continue;
+    }
     const nome = (/^<\/?\s*([a-zA-Z][a-zA-Z0-9-]*)/.exec(tag.testo)?.[1] ?? "").toLowerCase();
     // LA CHIAVE UNIVERSALE NUOVA, misurata al collaudo P2. Quel `\/?` accetta
     // anche la barra, quindi `</script>` veniva riconosciuto col nome `script`
@@ -263,12 +278,31 @@ export function ripulisciDocumento(html) {
   return { pulito: fuori.join(""), inline, stili };
 }
 
+/**
+ * Quanto lontano si spinge la lettura di UN tag prima di rinunciare.
+ *
+ * Terza quadratica trovata su questa funzione, e la piu' sottile delle tre: un
+ * apice solitario in mezzo al documento **piu'** un `>` in fondo. Il `>` finale
+ * disattiva la scorciatoia `ultimoMaggiore` (dopo l'ultimo `>` nessun `<` puo'
+ * aprire un tag), e l'apice dispari fa ignorare a ogni tentativo tutti i `>`
+ * successivi: ogni `<` rilegge la coda intera. Misurato dal tribunale — 16 KB
+ * 270 ms · 32 KB 1,1 s · 64 KB 4,3 s · 128 KB **16,7 s**, il raddoppio che
+ * quadruplica.
+ *
+ * Il limite rende il fallimento O(limite) invece che O(coda). 32 KB e' molto
+ * piu' di qualunque tag vero; il prezzo dichiarato e' che un tag con dentro un
+ * `data:` piu' lungo di cosi' viene letto come testo — e un `data:` non e'
+ * comunque un terzo, perche' `terziDi` lo scarta per costruzione.
+ */
+const TAG_PIU_LUNGO = 32768;
+
 /** Un tag dalla posizione `i`: `{ testo, fine }`, oppure `null` se non lo e'. */
 function leggiTag(html, i) {
   if (!/^<\/?[a-zA-Z!?]/.test(html.slice(i, i + 3))) return null;
   let j = i + 1;
   let apice = null;
-  while (j < html.length) {
+  const limite = Math.min(html.length, i + TAG_PIU_LUNGO);
+  while (j < limite) {
     const c = html[j];
     if (apice) {
       if (c === apice) apice = null;
@@ -279,7 +313,47 @@ function leggiTag(html, i) {
     }
     j += 1;
   }
-  return null; // tag non chiuso: si tratta il `<` come testo
+  return null; // tag non chiuso (o piu' lungo del limite): il `<` e' testo
+}
+
+/**
+ * **Una scansione sola per tutti i tag di apertura**, invece di una regexp per
+ * ogni nome cercato.
+ *
+ * `tagDi` costruiva `<nome\b(?:…)*>` e la faceva girare su tutto il documento.
+ * Su markup con tag mai chiusi — un template rotto, un esempio di codice
+ * incollato, o un sito che vuole far tacere il gate — ogni posizione combaciava
+ * col nome e poi scandiva fino in fondo: **quadratica**, misurata dal tribunale
+ * a 24 KB 237 ms · 48 KB 735 ms · 96 KB 3,4 s · 192 KB 13,5 s · 384 KB **49 s**.
+ *
+ * E c'e' una lezione che vale oltre questa funzione: `DENTRO_TAG`, introdotto in
+ * questo stesso pacchetto per chiudere una chiave universale, ha reso questa
+ * quadratica **2,6 volte piu' lenta** — tre alternative costano piu' di una
+ * classe negata a ogni carattere. Una correzione di correttezza puo' peggiorare
+ * un costo, e se nessuno rimisura non lo sa nessuno. Qui la scansione e' unica,
+ * lineare, e passa da `leggiTag`, che ora ha un limite suo.
+ */
+function tagApertiIn(htmlPulito) {
+  const testo = String(htmlPulito ?? "");
+  const trovati = [];
+  const ultimoMaggiore = testo.lastIndexOf(">");
+  let i = 0;
+  while (i < testo.length) {
+    const j = testo.indexOf("<", i);
+    if (j < 0 || j > ultimoMaggiore) break;
+    const tag = leggiTag(testo, j);
+    // Stessa regola del ripulitore: un tag che non si chiude mai chiude il
+    // documento. Ricominciare dal carattere dopo e' la quadratica.
+    if (!tag) {
+      if (/^<\/?[a-zA-Z!?]/.test(testo.slice(j, j + 3))) break;
+      i = j + 1;
+      continue;
+    }
+    i = tag.fine;
+    const m = /^<([a-zA-Z][\w:-]*)/.exec(tag.testo);
+    if (m) trovati.push({ nome: m[1].toLowerCase(), testo: tag.testo, da: j, dopo: tag.fine });
+  }
+  return trovati;
 }
 
 /**
@@ -444,16 +518,36 @@ export const DENTRO_TAG = `(?:[^>"']|"[^"]*"|'[^']*')*`;
 
 /** Tutti i tag di apertura di un nome, sul documento gia' ripulito. */
 export function tagDi(htmlPulito, nome) {
-  const re = new RegExp(`<${perRegexp(nome)}\\b${DENTRO_TAG}>`, "gi");
-  return htmlPulito.match(re) ?? [];
+  const cercato = String(nome).toLowerCase();
+  return tagApertiIn(htmlPulito).filter((t) => t.nome === cercato).map((t) => t.testo);
 }
 
-/** Elementi con il loro contenuto: `[{ tag, dentro }]`. Non per tag annidabili. */
+/**
+ * Elementi con il loro contenuto: `[{ tag, dentro }]`. Non per tag annidabili.
+ *
+ * Anche qui una scansione sola con due puntatori, e non una regexp con
+ * `[\s\S]*?`: su contenitori mai chiusi — `<label>` ripetuto, `<a href>` senza
+ * `</a>` — la ricerca falliva e ripartiva da ogni apertura. Misurata: 28 KB
+ * 28 ms · 112 KB 461 ms · 448 KB **10,9 s**, e il vero sito di raccolta e'
+ * `findingsAccessibilitaPagina`, che gira su ogni pagina scaricata.
+ */
 export function elementiDi(htmlPulito, nome) {
-  const re = new RegExp(`<(${perRegexp(nome)})\\b(${DENTRO_TAG})>([\\s\\S]*?)<\\/\\1>`, "gi");
-  const trovati = [];
+  const cercato = String(nome).toLowerCase();
+  const testo = String(htmlPulito ?? "");
+  const aperti = [];
+  const chiusi = [];
+  for (const t of tagApertiIn(testo)) if (t.nome === cercato) aperti.push(t);
+  const reChiusura = new RegExp(`</${perRegexp(cercato)}[ \\t\\n\\r]*>`, "gi");
   let m;
-  while ((m = re.exec(htmlPulito)) !== null) trovati.push({ tag: `<${m[1]}${m[2]}>`, dentro: m[3] });
+  while ((m = reChiusura.exec(testo)) !== null) chiusi.push({ da: m.index, dopo: reChiusura.lastIndex });
+  const trovati = [];
+  let k = 0;
+  for (const a of aperti) {
+    while (k < chiusi.length && chiusi[k].da < a.dopo) k += 1;
+    if (k >= chiusi.length) break;
+    trovati.push({ tag: a.testo, dentro: testo.slice(a.dopo, chiusi[k].da), da: a.da });
+    k += 1;
+  }
   return trovati;
 }
 
@@ -785,17 +879,28 @@ export function regioniNascoste(htmlPulito) {
   // mai ROSSO, e appenderlo non richiede nessun privilegio.
   const regioni = [];
   const pila = [];
+  // Un indice nome → posizioni nella pila: senza, una chiusura che non combacia
+  // con niente ripercorreva **tutta** la profondita' aperta, e poi la lasciava
+  // intatta perche' il ramo `i < 0` fa `continue`. Con molte aperture di nomi
+  // diversi e altrettante chiusure che non combaciano, ogni chiusura pagava
+  // l'intera pila: quadratica misurata a 25 KB 45 ms → 437 KB 5,6 s.
+  const dove = new Map();
   let profondita = 0;
   let inizio = null;
+  const testo = String(htmlPulito ?? "");
   const re = new RegExp(`<(/?)([a-zA-Z][\\w:-]*)\\b(${DENTRO_TAG})>`, "g");
   let m;
-  while ((m = re.exec(htmlPulito)) !== null) {
+  while ((m = re.exec(testo)) !== null) {
     const nome = m[2].toLowerCase();
     if (m[1]) {
-      let i = pila.length - 1;
-      while (i >= 0 && pila[i].nome !== nome) i -= 1;
-      if (i < 0) continue;
-      for (let k = pila.length - 1; k >= i; k -= 1) if (pila[k].nascosto) profondita -= 1;
+      const posizioni = dove.get(nome);
+      if (!posizioni || posizioni.length === 0) continue;
+      const i = posizioni[posizioni.length - 1];
+      for (let k = pila.length - 1; k >= i; k -= 1) {
+        if (pila[k].nascosto) profondita -= 1;
+        const suoi = dove.get(pila[k].nome);
+        if (suoi && suoi[suoi.length - 1] === k) suoi.pop();
+      }
       pila.length = i;
       if (profondita === 0 && inizio !== null) {
         regioni.push([inizio, re.lastIndex]);
@@ -824,6 +929,8 @@ export function regioniNascoste(htmlPulito) {
       const cima = pila[pila.length - 1];
       if (cima && chiudeIFratelli.has(cima.nome)) {
         if (cima.nascosto) profondita -= 1;
+        const suoi = dove.get(cima.nome);
+        if (suoi && suoi[suoi.length - 1] === pila.length - 1) suoi.pop();
         pila.pop();
         if (profondita === 0 && inizio !== null) {
           regioni.push([inizio, m.index]);
@@ -833,24 +940,45 @@ export function regioniNascoste(htmlPulito) {
     }
     if (nascosto && profondita === 0) inizio = m.index;
     if (nascosto) profondita += 1;
+    if (!dove.has(nome)) dove.set(nome, []);
+    dove.get(nome).push(pila.length);
     pila.push({ nome, nascosto });
   }
   // Contenitori nascosti mai chiusi: nascondono fino alla fine del documento.
-  if (profondita > 0 && inizio !== null) regioni.push([inizio, htmlPulito.length]);
-  return regioni;
+  if (profondita > 0 && inizio !== null) regioni.push([inizio, testo.length]);
+  // Fuse e ordinate: un elemento vuoto nascosto DENTRO un contenitore nascosto
+  // si registra prima del contenitore che lo contiene, quindi l'elenco grezzo
+  // non e' ordinato — e la ricerca binaria di `dentroRegioni` lo pretende.
+  return fondiIntervalli(regioni);
 }
 
-const dentroRegioni = (regioni, i) => regioni.some(([a, b]) => i >= a && i < b);
+/**
+ * Il carattere `i` sta dentro una regione nascosta?
+ *
+ * Ricerca binaria, non `some`: le regioni arrivano in ordine di documento e chi
+ * chiama scorre i collegamenti in ordine crescente, quindi il confronto lineare
+ * costava O(collegamenti × regioni) — misurato dal tribunale, 1,7 MB di pagina
+ * con molte regioni e molti collegamenti costavano 6,4 s.
+ */
+const dentroRegioni = (regioni, i) => {
+  let a = 0;
+  let b = regioni.length - 1;
+  while (a <= b) {
+    const m = (a + b) >> 1;
+    if (i < regioni[m][0]) b = m - 1;
+    else if (i >= regioni[m][1]) a = m + 1;
+    else return true;
+  }
+  return false;
+};
 
 export function candidatiInformativa(html, base) {
   const pulito = senzaScript(html);
   const nascoste = regioniNascoste(pulito);
   const trovati = new Map();
-  const re = new RegExp(`<(a)\\b(${DENTRO_TAG})>([\\s\\S]*?)</a>`, "gi");
-  let m;
-  while ((m = re.exec(pulito)) !== null) {
-    const tag = `<a${m[2]}>`;
-    const dentro = m[3];
+  // `elementiDi` invece della regexp con `[\s\S]*?`: stessa quadratica di
+  // `<label>` mai chiusa, su un elemento che una pagina puo' avere a centinaia.
+  for (const { tag, dentro, da } of elementiDi(pulito, "a")) {
     const attr = attributi(tag);
     const percorso = percorsoInterno(attr.href, base);
     if (!percorso) continue;
@@ -859,7 +987,7 @@ export function candidatiInformativa(html, base) {
     // bastava a piazzare un'esca (SD-VERDE-04). Si guarda l'ancora **e i suoi
     // contenitori**: nascondere il `<li>` intorno era il modo naturale di farlo,
     // e passava (collaudo P2).
-    if (tagNascosto(tag) || dentroRegioni(nascoste, m.index)) continue;
+    if (tagNascosto(tag) || dentroRegioni(nascoste, da)) continue;
     const testo = `${testoVisibile(dentro)} ${attr["aria-label"] ?? ""} ${attr.title ?? ""}`.trim();
     const daTesto = RE_INFORMATIVA_TESTO.test(testo);
     if (daTesto || RE_INFORMATIVA_PERCORSO.test(percorso)) {
@@ -1558,9 +1686,27 @@ export function nomeAccessibile(tag, dentro, documento = "") {
   return "";
 }
 
+/**
+ * Quanto puo' essere lungo un `id` prima che smettere di cercarlo sia l'unica
+ * cosa sensata.
+ *
+ * Il tribunale l'ha misurato ed e' il rilievo piu' brutto della tornata perche'
+ * non e' un rallentamento: e' un **crash deterministico**. `id` finiva dentro la
+ * sorgente di una `RegExp`, e oltre i ~30 KB V8 rifiuta il pattern con un
+ * `SyntaxError` — non catturato qui, catturato da `main`, che esce **2** e
+ * azzera tutti e nove i passi. Basta UN `aria-labelledby` lungo in una pagina
+ * qualunque, e la citazione del `verify.mjs` e' la sua stessa: «un gate che va in
+ * crash non e' ne' verde ne' rosso: e' assente, ed e' peggio di entrambi».
+ *
+ * Non e' un difetto di escape — `perRegexp` fa il suo lavoro e una stringa di
+ * 40 000 `x` senza un metacarattere lo riproduce lo stesso. E' lunghezza.
+ */
+const ID_PIU_LUNGO = 2048;
+
 /** Il testo visibile dell'elemento con quell'`id`, oppure `""` se non esiste. */
 export function testoDellId(documento, id) {
   if (!documento || !id) return "";
+  if (String(id).length > ID_PIU_LUNGO) return "";
   // `(?:^|[\s"'])id\s*=` e non `\bid\s*=`: in `data-id="eti"` il carattere prima
   // di `id` e' un trattino, che per `\b` e' un confine di parola — quindi un
   // `aria-labelledby` che punta al vuoto tornava a risolversi su un qualunque

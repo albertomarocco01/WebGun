@@ -67,8 +67,11 @@ import {
   perStampa,
   percorsoInterno,
   raggiungibiliDaCollegamenti,
+  ripulisciDocumento,
+  senzaScript,
   statoDaFindings,
   statoNonApplicabile,
+  tagDi,
   terziDi,
 } from "./servito-lib.mjs";
 
@@ -632,9 +635,21 @@ async function provaIdentita(html, buildId, url) {
  * Se questa funzione leggesse il documento ripulito troverebbe zero bundle e il
  * passo direbbe «nessuna archiviazione» dopo non aver letto niente.
  */
+/*
+ * Due difetti in una riga sola, tutti e due misurati dal tribunale del
+ * 2026-08-06, e tutti e due chiusi riusando gli scanner della lib invece di una
+ * seconda regexp scritta qui:
+ *
+ *   1. **Backtracking catastrofico.** `[^>]*` prima, e un'alternativa
+ *      `[^\s>]+` che si SOVRAPPONE a quella classe su ogni carattere: 4 KB
+ *      costavano 1 s, 8 KB 8,3 s, 14 KB **44 s** — piu' che quadratico. Bastavano
+ *      14 KB di `<script src="` senza `>` per far tacere il gate per sempre.
+ *   2. La stessa cecita' del `>` dentro un attributo che `DENTRO_TAG` chiude
+ *      altrove: `<script data-x="a>b" src="y">` non veniva letto.
+ */
 function sorgentiInterne(html, base) {
   const percorsi = new Set();
-  for (const tag of html.match(/<script\b[^>]*\bsrc\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)[^>]*>/gi) ?? []) {
+  for (const tag of tagDi(senzaScript(html), "script")) {
     const p = percorsoInternoConQuery(attributi(tag).src, base);
     if (p) percorsi.add(p);
   }
@@ -649,18 +664,25 @@ function sorgentiInterne(html, base) {
  * parla di `localStorage` in un articolo produrrebbe un bloccante su un sito che
  * non archivia niente — cioe' un rosso falso sulla stessa riga su cui abbiamo
  * appena chiuso un verde falso.
+ *
+ * **I corpi vengono da `ripulisciDocumento`, non da una seconda regexp.** Quella
+ * di prima era una chiave universale da un carattere, misurata dal tribunale:
+ *
+ *     <div data-nota="<script src=/x.js>"></div>
+ *     <script>localStorage.setItem('tracciato', '1');</script>
+ *
+ * il primo `<script` che la regexp trovava stava DENTRO un valore di attributo —
+ * testo, per un browser — e il suo contenuto correva fino al `</script>` VERO,
+ * inghiottendo lo script che archivia davvero; poi il `continue` su `src=`
+ * buttava via tutto. Il passo chiudeva `n/a`: «il sito non mette niente nel
+ * browser di chi passa», con la premessa che stampava «0 script inline letti per
+ * intero». Lo scanner della lib tiene lo stato degli apici e i confini giusti li
+ * conosce gia': qui non serviva un secondo parser, serviva usare il primo.
  */
 function corpiInline(html) {
-  const corpi = [];
-  const re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
-  let m;
-  while ((m = re.exec(html)) !== null) {
-    if (/\bsrc\s*=/i.test(m[1])) continue;
-    const corpo = m[2];
-    if (/self\.__next_f/.test(corpo)) continue;
-    if (corpo.trim()) corpi.push(corpo);
-  }
-  return corpi;
+  return ripulisciDocumento(html).inline
+    .filter(({ tag, corpo }) => !/\bsrc\s*=/i.test(tag) && !/self\.__next_f/.test(corpo) && corpo.trim())
+    .map(({ corpo }) => corpo);
 }
 
 /** Come `percorsoInterno`, ma tiene la query: un bundle e' il suo indirizzo intero. */

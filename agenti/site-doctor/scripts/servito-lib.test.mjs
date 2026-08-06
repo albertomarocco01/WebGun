@@ -109,7 +109,9 @@ describe("attributi", () => {
   });
 
   it("`elementiDi` porta il contenuto insieme al tag", () => {
-    assert.deepEqual(elementiDi("<a href='/x'>ciao</a>", "a"), [{ tag: "<a href='/x'>", dentro: "ciao" }]);
+    // `da` e' la posizione del tag di apertura: serve a chi deve sapere se
+    // l'elemento cade dentro una regione nascosta senza ricercarlo.
+    assert.deepEqual(elementiDi("<a href='/x'>ciao</a>", "a"), [{ tag: "<a href='/x'>", dentro: "ciao", da: 0 }]);
   });
 });
 
@@ -1168,5 +1170,64 @@ describe("tribunale P.6-P3 — i moduli, i campi, i terzi", () => {
     it("un BUILD_ID vero resta un'impronta", () => {
       assert.equal(eLaMiaBuild("<html>x SLbertaniCollaudo1 y</html>", "SLbertaniCollaudo1"), true);
     });
+  });
+});
+
+// ═════════════════════ il tribunale del 2026-08-06 — le quattro quadratiche
+/**
+ * Un gate che non finisce non dice mai ROSSO, e appenderlo non chiede nessun
+ * privilegio: basta scrivere il proprio sito. Ogni test qui misura, e il numero
+ * accanto e' il costo PRIMA della correzione, misurato dal perito.
+ */
+describe("tribunale P.6-P3 — quattro quadratiche, e nessuna era la stessa", () => {
+  const cronometra = (f) => { const t = Date.now(); f(); return Date.now() - t; };
+  const TETTO = 3000;
+
+  it("SD-TRIB-P1: `tagDi` su 384 KB di tag mai chiusi (era 49 s)", () => {
+    const doc = `>${"<input".repeat(64000)}`;
+    assert.ok(cronometra(() => tagDi(doc, "input")) < TETTO);
+  });
+
+  it("SD-TRIB-P2: `ripulisciDocumento` con un apice solitario e un `>` in fondo (era 16,7 s su 128 KB)", () => {
+    const doc = `${"<a".repeat(64000)}">`;
+    assert.ok(cronometra(() => ripulisciDocumento(doc)) < TETTO);
+  });
+
+  it("SD-TRIB-P3: `elementiDi` su 448 KB di contenitori mai chiusi (era 10,9 s)", () => {
+    const doc = "<label>".repeat(64000);
+    assert.ok(cronometra(() => elementiDi(doc, "label")) < TETTO);
+  });
+
+  it("SD-TRIB-P4: `regioniNascoste` con chiusure che non combaciano con niente (era 5,6 s)", () => {
+    let doc = "";
+    for (let i = 0; i < 32000; i += 1) doc += `<a${i}>`;
+    doc += "</zzz>".repeat(32000);
+    assert.ok(cronometra(() => regioniNascoste(doc)) < TETTO);
+  });
+
+  it("SD-TRIB-P5: `dentroRegioni` con molte regioni e molti collegamenti (era 6,4 s)", () => {
+    let doc = "<hr hidden>".repeat(16000);
+    for (let i = 0; i < 16000; i += 1) doc += `<a href="/p${i}">t${i}</a>`;
+    assert.ok(cronometra(() => candidatiInformativa(doc, "http://sito.test/")) < TETTO);
+  });
+
+  it("SD-TRIB-P6: un `id` lunghissimo NON manda in crash il gate (era un SyntaxError, uscita 2)", () => {
+    assert.equal(testoDellId('<div id="x">y</div>', "x".repeat(40000)), "");
+    assert.equal(nomeAccessibile('<a href="/x" aria-labelledby="' + "y".repeat(50000) + '">', ""), "");
+    // e un id vero continua a risolversi
+    assert.equal(testoDellId('<div id="x">y</div>', "x"), "y");
+  });
+
+  it("le due quadratiche gia' chiuse restano chiuse", () => {
+    assert.ok(cronometra(() => ripulisciDocumento("<".repeat(200000))) < TETTO);
+    assert.ok(cronometra(() => ripulisciDocumento('<div a="'.repeat(200000))) < TETTO);
+  });
+
+  it("un `<` che non apre un tag resta testo, e un tag mai chiuso chiude il documento", () => {
+    assert.equal(testoVisibile("<p>5 &lt; 7</p>").includes("5"), true);
+    // browser-fedele: da un `<a` mai chiuso in poi non c'e' piu' documento
+    assert.deepEqual(campiDiPagina('<input type="email" name="a"><a href="' + "x".repeat(100)), [
+      { elemento: "input", tipo: "email", nome: "a", id: "", form: "", autocomplete: "", ariaLabel: "", obbligatorio: false },
+    ]);
   });
 });
