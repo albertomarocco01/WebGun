@@ -1,4 +1,4 @@
-# STATO — Flow Sentinel
+# STATO — flow-sentinel
 
 **A che punto è:** collaudata in modo avversario e usata sul pilota della catena completa (`cavia`);
 **mai su un progetto di un cliente vero**, e i flussi critici non li ha mai confermati un committente.

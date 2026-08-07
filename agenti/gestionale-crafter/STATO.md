@@ -1,4 +1,4 @@
-# STATO — Gestionale Crafter
+# STATO — gestionale-crafter
 
 **A che punto è:** strumento collaudato su due banchi e su un progetto pilota, **mai usato per un cliente vero** — e le correzioni del 2026-08-07 non hanno ancora visto un database.
 **Proprietario:** Alberto

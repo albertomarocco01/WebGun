@@ -161,7 +161,7 @@ wt -d "C:\Users\Utente\Desktop\cavia" pwsh -NoExit -Command "claude --dangerousl
 **Cose che restano al cantiere, in ordine di valore:**
 
 1. **La terna d'ingresso** — Brief Smith, Preventivo Smith, **Prompt Smith**. È il 35% che manca ed è il pezzo che trasforma Web Gun da «catena che Alberto guida» a «pipeline che parte da un prompt». Prompt Smith è il più importante dei tre: è il cancello.
-2. `HOWTORUN.md` **non è guardato dal gate della regia** (che guarda `README.md` e `installa-skill.ps1`): le sue due righe che davano site-doctor e launchpad per «da creare» sono state corrette a mano il 2026-08-07, ma niente impedisce che rimarcisca. Chi tocca una skill controlla anche lì.
+2. **I documenti che nessun gate guarda rimarciscono in silenzio.** `HOWTORUN.md` ne era la prova — dava site-doctor e launchpad per «da creare» mesi dopo che erano finiti e collaudati — ed è stato eliminato il 2026-08-07 (D28) perché ripeteva `README.md` e `COME-SI-USA.md`. Il gate della regia guarda `README.md` e `installa-skill.ps1`, non gli altri: `COME-SI-USA.md` e `ROADMAP.md` sono esposti allo stesso rischio, e chi tocca una skill li controlla a mano.
 3. Il debito residuo delle sette skill e le ~50 voci del pilota.
 4. Gli agenti opzionali: Fly UI, AI Specialist, Cyber Shield.
 

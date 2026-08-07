@@ -1,4 +1,4 @@
-# STATO — Vetrina Crafter
+# STATO — vetrina-crafter
 
 **A che punto è:** strumento collaudato in avversario su due banchi e usato **una volta** su un progetto pilota vero (`cavia`), mai su un cliente vero.
 **Proprietario:** Alberto

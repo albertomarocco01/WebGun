@@ -1,4 +1,4 @@
-# Stato — Brief Smith
+# STATO — brief-smith
 
 - **Stato attuale:** scaffold (solo struttura, flusso da sviluppare)
 - **Proprietario:** TODO

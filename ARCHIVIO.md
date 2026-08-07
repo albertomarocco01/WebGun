@@ -13,6 +13,16 @@ della macchina, debito ancora aperto, limiti dichiarati dei gate — è stato **
 
 ## Come si ripesca un file
 
+La potatura è **un commit solo**: `fa901e6`. Tutto quello che è stato archiviato esiste, intatto,
+nel commit che lo precede — quindi la forma più corta è:
+
+```bash
+git show fa901e6^:agenti/site-doctor/COLLAUDO-2026-08-06.md
+git show fa901e6^ --stat | head -90      # l'elenco completo di cosa c'era
+```
+
+E la forma generale, che funziona anche per file archiviati in altri momenti:
+
 ```bash
 # 1. in quale commit è stato cancellato?
 git log --diff-filter=D --name-only -- "**/NOME-DEL-FILE.md"

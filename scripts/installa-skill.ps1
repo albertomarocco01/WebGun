@@ -42,12 +42,14 @@ $ErrorActionPreference = "Stop"
 # separate (108 test al 2026-07-30), con un collaudo avversario e un primo
 # consumatore reale alle spalle. Stato corrente in agenti/flow-sentinel/STATO.md.
 # `speed-demon` e' entrato il 2026-07-30, e per due giorni e' stato il caso di
-# scuola del difetto che questo file deve evitare: HOWTORUN.md e README.md
-# dichiaravano «junction come le altre, da scripts/installa-skill.ps1» mentre
-# l'elenco qui sotto non lo conteneva. Chi seguiva il manuale non installava
-# niente e non lo sapeva, perche' lo script non ha modo di accorgersi di una
-# skill che nessuno gli ha nominato. Quando una skill smette di essere uno
-# scaffold, questa riga si tocca **insieme** ai due documenti.
+# scuola del difetto che questo file deve evitare: i manuali dichiaravano
+# «junction come le altre, da scripts/installa-skill.ps1» mentre l'elenco qui
+# sotto non lo conteneva. Chi seguiva il manuale non installava niente e non lo
+# sapeva, perche' lo script non ha modo di accorgersi di una skill che nessuno
+# gli ha nominato. Quando una skill smette di essere uno scaffold, questa riga
+# si tocca **insieme** al README (il gate della regia confronta i due elenchi, e
+# da quel giorno un disallineamento come questo esce rosso invece che in
+# silenzio).
 # `vetrina-crafter` e' entrato il 2026-08-03, quando il suo gate a dieci passi ha
 # chiuso VERDE 10/10 su `banco-prova-controtempo` — un sito vero, sopra uno schema
 # prodotto eseguendo schema-forge. Costruita e sabotata lo stesso giorno: 122 test,

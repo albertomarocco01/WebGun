@@ -1,4 +1,4 @@
-# Stato — Cyber Shield
+# STATO — cyber-shield
 
 - **Stato attuale:** scaffold (solo struttura, flusso da sviluppare)
 - **Proprietario:** TODO

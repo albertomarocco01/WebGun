@@ -3,7 +3,7 @@
 **A che punto è:** gate costruito, sabotato, processato e collaudato in chat
 vergine — ma **nessun deploy è mai stato eseguito**, da nessuno, su nessun
 provider.
-**Proprietario:** Alberto Marocco.
+**Proprietario:** Alberto
 **Ultima misura:** 2026-08-07 — batteria **167 test, 0 falliti**; gate contro il
 pilota `cavia` (`C:/Users/Utente/Desktop/cavia`) senza `--url`: **ROSSO, 3
 falliti e 1 verifica mancante su 9 passi**. I tre rossi: `catena-gate` (dopo la

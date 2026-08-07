@@ -1,4 +1,4 @@
-# STATO — Speed Demon
+# STATO — speed-demon
 
 **A che punto è:** strumento collaudato, girato verde su un'app viva (il pilota `cavia`), **mai usato per un cliente vero** — l'elenco delle pagine che contano non l'ha mai firmato un committente.
 **Proprietario:** Alberto

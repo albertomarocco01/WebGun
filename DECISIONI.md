@@ -52,7 +52,7 @@ Lo Specchio della Commessa di code-maniac richiede conferma umana esplicita prim
 
 ### 2. Repo di origine di code-inquisition non noto
 
-La sezione "Fonte di verità" del README indica code-maniac e bugbay con URL GitHub (finzidev). Per code-inquisition non esiste un URL documentato in HOWTORUN.md (l'installazione avviene copiando la cartella): nel README è segnato "esterno (finzidev, URL non noto)". Da completare quando il proprietario fornisce il link.
+La sezione "Fonte di verità" del README indica code-maniac e bugbay con URL GitHub (finzidev). Per code-inquisition non esiste un URL documentato nella guida di installazione di allora, `HOWTORUN.md` (l'installazione avveniva copiando la cartella; il file e' stato eliminato il 2026-08-07, D28 — il suo ruolo e' oggi di `COME-SI-USA.md`): nel README è segnato "esterno (finzidev, URL non noto)". Da completare quando il proprietario fornisce il link.
 
 - **Stato:** presa — aggiornare il README quando l'URL è disponibile.
 
@@ -70,7 +70,7 @@ Il template `struttura_directory.md` di code-maniac è generico (placeholder). N
 
 ### 5. Dipendenze negli STATO.md dedotte dall'ordine di pipeline
 
-Le dipendenze a monte/a valle di ogni agente scaffold sono dedotte dall'ordine delle fasi in HOWTORUN.md (es. gestionale-crafter dipende da schema-forge e fly-ui). Sono ipotesi di partenza, non vincoli: il proprietario di ogni agente le conferma o corregge quando lo sviluppa.
+Le dipendenze a monte/a valle di ogni agente scaffold sono dedotte dall'ordine delle fasi della pipeline (allora in `HOWTORUN.md`, eliminato il 2026-08-07; oggi in `README.md` §La catena e in `ROADMAP.md`) (es. gestionale-crafter dipende da schema-forge e fly-ui). Sono ipotesi di partenza, non vincoli: il proprietario di ogni agente le conferma o corregge quando lo sviluppa.
 
 - **Stato:** presa.
 

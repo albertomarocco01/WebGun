@@ -1,4 +1,4 @@
-# Stato — AI Specialist
+# STATO — ai-specialist
 
 - **Stato attuale:** scaffold (solo struttura, flusso da sviluppare)
 - **Proprietario:** TODO
