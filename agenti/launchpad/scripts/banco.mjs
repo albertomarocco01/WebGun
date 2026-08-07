@@ -469,6 +469,61 @@ function scrivi(radice, percorso, contenuto) {
   writeFileSync(pieno, contenuto, "utf8");
 }
 
+/**
+ * IL PASSO 0 — la premessa della build, stampata dove la si legge.
+ *
+ * Il 2026-08-07 la direzione ha rigenerato questo banco da zero seguendo
+ * **soltanto** l'elenco stampato qui sotto, ed e' esattamente cio' che l'elenco
+ * chiede di fare. `npm run build` e' caduta con exit 1 e
+ *
+ *     Error: supabaseUrl is required.
+ *     Export encountered an error on /prenota/page: /prenota, exiting the build.
+ *
+ * `src/app/prenota/page.tsx` e' `force-static`: il client Supabase si costruisce
+ * **durante** la build, non a runtime, quindi le due `NEXT_PUBLIC_*` sono una
+ * premessa del passo 3 e non una configurazione di esercizio. Erano scritte in
+ * `docs/deploy.md` («prima della build») e in `.env.example` — cioe' in due file
+ * che il banco produce, e che chi segue l'elenco stampato non ha ancora aperto.
+ * Una premessa vera scritta dove nessuno la legge e' una premessa non
+ * dichiarata: il difetto era qui, non nel lettore.
+ *
+ * PERCHE' NON UN `.env.local` SCRITTO DA QUESTO SCRIPT. Sarebbe una riga di
+ * codice in meno e un file di configurazione comparso in silenzio nel progetto
+ * di qualcun altro — la classe di difetto che questa skill misura negli altri,
+ * fatta in casa. Il banco stampa cosa serve e lascia il comando a chi lo lancia.
+ *
+ * I VALORI SONO FINTI, E DEVONO RESTARLO. `.invalid` e' il dominio riservato di
+ * RFC 2606: non risolve per costruzione, quindi nessuno puo' credere che questo
+ * banco parli con un Supabase vero. La build passa lo stesso perche'
+ * `supabase-js` non contatta niente mentre si costruisce il client, e la lettura
+ * di `/prenota` torna `{ data: null }` — che la pagina rende come lista vuota.
+ * Misurato su questo banco il 2026-08-07: exit 0, 7 pagine su 7 prerenderizzate.
+ */
+function premessaBuild() {
+  return [
+    "  0.  LA PREMESSA DELLA BUILD — due variabili, o il passo 3 cade.",
+    "      `/prenota` e' `force-static`: il client Supabase si costruisce DURANTE",
+    "      la build. Senza queste due, `npm run build` esce 1 con",
+    "      `Error: supabaseUrl is required.` sul prerender di /prenota.",
+    "      I valori sono DICHIARATAMENTE FINTI (`.invalid` non risolve, RFC 2606):",
+    "      qui non si parla con nessun Supabase, e la pagina rende una lista vuota.",
+    "      Questo script NON scrive nessun `.env.local`: un file di configurazione",
+    "      comparso in silenzio e' il difetto che questa skill misura negli altri.",
+    "",
+    "        bash / Git Bash:",
+    '          export NEXT_PUBLIC_SUPABASE_URL="https://banco.supabase.invalid"',
+    '          export NEXT_PUBLIC_SUPABASE_ANON_KEY="chiave-anonima-finta-del-banco"',
+    "",
+    "        PowerShell:",
+    '          $env:NEXT_PUBLIC_SUPABASE_URL = "https://banco.supabase.invalid"',
+    '          $env:NEXT_PUBLIC_SUPABASE_ANON_KEY = "chiave-anonima-finta-del-banco"',
+    "",
+    "      Valgono per la SHELL, non per la cartella: se apri un altro terminale",
+    "      fra il passo 1 e il passo 3, vanno riesportate li'.",
+    "",
+  ];
+}
+
 function costruisci(args) {
   const { dove, porta } = args;
   if (existsSync(dove)) {
@@ -503,14 +558,15 @@ function costruisci(args) {
   console.log(`Banco scritto in ${dove}`);
   console.log(`Remoto locale in  ${resolve(remoto)}  (una cartella, non un servizio: qui non si pubblica niente)`);
   console.log("");
-  console.log("Restano TRE passi, che questo script non fa e non finge di aver fatto:");
+  console.log("Restano TRE passi e UNA PREMESSA, che questo script non fa e non finge di aver fatto:");
   console.log("");
+  for (const riga of premessaBuild()) console.log(riga);
   console.log(`  1.  cd ${dove} && npm install`);
   console.log("      git add package-lock.json && git commit -m \"Il lockfile\"   ← il gate lo pretende TRACCIATO");
   console.log("  2.  node <skill>/scripts/impronta.mjs --scrivi");
   console.log("      git add next.config.ts && git commit -m \"L'impronta dell'artefatto\"");
   console.log(`      node <skill>/scripts/banco.mjs --contratti --dove ${dove} --porta ${porta}`);
-  console.log(`  3.  npm run build && npx next start -p ${porta}`);
+  console.log(`  3.  npm run build && npx next start -p ${porta}          ← senza il passo 0 cade qui`);
   console.log("");
   console.log(`Poi il gate:  node <skill>/scripts/verify.mjs --url http://127.0.0.1:${porta}`);
   console.log("Atteso: VERDE 9/9.");
@@ -540,6 +596,11 @@ function contratti(args) {
   console.log("  docs/handoff/14-launchpad.md     `Gate: VERDE`, come prescrive il Flusso (l'handoff si scrive PRIMA del gate)");
   console.log("");
   console.log("Se il gate uscisse rosso, e' l'handoff che va riscritto: dichiarare non e' fallire.");
+  console.log("");
+  console.log("Prima di costruire, la premessa del passo 0 — nella shell da cui lanci la build:");
+  console.log('  export NEXT_PUBLIC_SUPABASE_URL="https://banco.supabase.invalid"        (valori finti)');
+  console.log('  export NEXT_PUBLIC_SUPABASE_ANON_KEY="chiave-anonima-finta-del-banco"   (`.invalid` non risolve)');
+  console.log("");
   console.log(`Ora: npm run build && npx next start -p ${porta}`);
   console.log(`Poi: node <skill>/scripts/verify.mjs --url http://127.0.0.1:${porta}`);
 }

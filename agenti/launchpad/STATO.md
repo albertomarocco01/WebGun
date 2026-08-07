@@ -2,15 +2,29 @@
 
 - **Stato attuale:** **costruito, collaudato e con le tre decisioni della
   direzione eseguite** (P.5 P0+P1+P2+P3, 2026-08-06). SKILL.md completo, gate a
-  **nove passi** con `--json`, **162 test** sugli script (erano 104 alla
-  consegna, 148 al collaudo), quattro reference, due template e un generatore di
-  banco. Il collaudo avversario in chat vergine (P2) **e' stato fatto** ed e'
-  costato **26 difetti**, di cui **nove falsi verdi con gravita' di blocco**;
-  prima c'era stato un tribunale a tre periti, 32 rilievi. P.5-P3 ha eseguito
-  **D20** e **D23** e chiuso una classe di difetto nei messaggi in **sette
-  punti**.
+  **nove passi** con `--json`, **167 test** sugli script (erano 104 alla
+  consegna, 148 al collaudo, 162 dopo P.5-P3), quattro reference, due template e
+  un generatore di banco. Il collaudo avversario in chat vergine (P2) **e' stato
+  fatto** ed e' costato **26 difetti**, di cui **nove falsi verdi con gravita' di
+  blocco**; prima c'era stato un tribunale a tre periti, 32 rilievi. P.5-P3 ha
+  eseguito **D20** e **D23** e chiuso una classe di difetto nei messaggi in
+  **sette punti**.
   **Nessun deploy è mai stato eseguito da questa skill.** Vedi §Cosa non è mai
   stato provato.
+- **`banco.mjs` stampava un elenco a cui mancava una premessa** (P.7f,
+  2026-08-07). La direzione ha rigenerato il banco da zero seguendo **soltanto**
+  quell'elenco — che è esattamente ciò che l'elenco chiede di fare — e
+  `npm run build` è caduta con exit 1 e `Error: supabaseUrl is required.` sul
+  prerender di `/prenota`. Le due `NEXT_PUBLIC_*` che servono erano scritte in
+  `docs/deploy.md` e in `.env.example`: due file che il banco **produce**, e che
+  chi segue l'elenco non ha ancora aperto. Ora c'è un **passo 0** stampato prima
+  del passo che ci casca, con valori dichiaratamente finti (`.invalid`, RFC
+  2606), e `banco.mjs` **non scrive nessun `.env.local`** — un file di
+  configurazione comparso in silenzio è la classe di difetto che questa skill
+  misura negli altri. Cinque test nuovi (`scripts/banco.test.mjs`) tengono
+  l'**output stampato**, non il sorgente: eseguono lo script vero e guardano il
+  suo `stdout`. Riprova: secondo banco rigenerato da zero seguendo solo le
+  istruzioni nuove → **VERDE 9/9**.
 - **Il gate è più severo di ieri, in tre modi**, e chi rilancia deve saperlo:
   la firma **per delega** su `docs/deploy.md` è un `block` (D20); un verdetto
   dentro una **citazione** non conta per `catena-gate` (D23 §1); una voce del
