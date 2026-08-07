@@ -193,7 +193,10 @@ docs/DEBITO-TECNICO.md                 aggiornato con le voci scoperte e le dero
 | `scripts/verify.mjs` | il gate — quattordici passi, `id` stabili, quattro stati, `--scadenza`, uscite 0/1/2 |
 | `scripts/conformita-lib.mjs` | **le regole** sui documenti: certificato, tabella di proprietà, basi giuridiche, verdetto dell'handoff. Funzioni pure |
 | `scripts/servito-lib.mjs` | **le regole** sull'app servita: superficie, informativa, moduli, archiviazione, accessibilità, lingua. Funzioni pure |
-| `scripts/banco.mjs` | il banco: **genera e serve** un sito statico di prova conforme e le sue varianti sabotate, senza dipendenze. È **il file** a essere tracciato, non un albero di pagine: un clone pulito rilancia ogni classe con un comando (`DECISIONI.md` §25) |
+| `scripts/banco.mjs` | il banco **del costruttore**: genera e serve un sito statico di prova conforme e le sue 25 varianti sabotate, senza dipendenze. È **il file** a essere tracciato, non un albero di pagine: un clone pulito rilancia ogni classe con un comando (`DECISIONI.md` §25) |
+| `scripts/banco-sl.mjs` | il banco **del collaudo** (D25, 2026-08-07): uno studio legale **bilingue**, dominio diverso dal pilota e dal banco del costruttore, con **42 classi di sabotaggio**. Scritto leggendo solo i documenti della skill, mai `scripts/`. Il certificato e l'handoff che il gate legge **nascono da questo file**: `--dir` va a una cartella di lavoro, mai a un progetto vero, perché `genera` comincia con un `rmSync` |
+| `scripts/giro.mjs` · `scripts/uno.mjs` | rilanciano le 42 classi (`giro`, uscita a `--json`, una riga per classe) o una sola (`uno`, l'uscita **umana** del gate). Generano il banco se manca, e non partono se la porta è già occupata da qualcun altro |
+| `scripts/giro-costruttore.mjs` | rilancia le 25 classi di `banco.mjs` contro il gate di oggi, per verificare che le uscite incollate nei verbali siano ancora vere |
 | `scripts/*.test.mjs` | test degli script — `npm test` dalla cartella della skill |
 | `resources/templates/conformita.md` | modello del certificato di idoneità |
 | `resources/templates/informativa-bozza.md` | modello dell'informativa **in bozza** che `certifica` genera quando manca: le sette voci dell'art. 13, i segnaposto dove va ciò che solo il titolare sa, e il guscio `src/app/privacy/page.tsx`. Su un sito multilingua se ne genera **una per lingua** |

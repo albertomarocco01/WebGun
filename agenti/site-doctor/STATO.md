@@ -1,5 +1,19 @@
 # Stato — Site Doctor
 
+- **P.6-P4 consegnata il 2026-08-07** — i tre MANCANTI onesti di P.6-P3, tutti
+  eseguiti. **Il tribunale sulle ~900 righe nuove: otto periti, 61 rilievi**, e
+  di nuovo ESLint · knip · jscpd · gitleaks · batteria **tutti verdi** mentre i
+  61 erano vivi (ottava convocazione su otto skill, ottava volta così). **Cinque
+  chiusi con un test, 56 dichiarati** uno per riga in `P6-P4-2026-08-07.md` §6.1.
+  Il roster-critic ha trovato un buco **prima** di spawnare — nessuno copriva la
+  superficie e l'identità — e da quell'ottavo perito è uscito il rilievo più
+  grave: **gate VERDE, uscita 0, su un sito che raccoglie IBAN e codice fiscale
+  in una pagina che il gate non apre mai**. `code-maniac scan` eseguito **per la
+  prima volta** (3 PASS · 4 MANCANTE · 3 ISSUE). **D25 fatta**: i quattro
+  sorgenti del banco sono tracciati in `scripts/`, e il gate ci chiude **VERDE
+  14/14 da un percorso tracciato, due corse su due**, con sette classi di
+  sabotaggio su otto rosse. Batteria **264 → 285**. Verbale:
+  `P6-P4-2026-08-07.md`.
 - **Stato attuale: P0+P1+P2 CONSEGNATE il 2026-08-06.** Il gate esiste, ha
   **nove passi** e **quattro stati**, chiude **VERDE 8/8 + 1 NON APPLICABILE**
   sul banco conforme, **VERDE 9/9** sul banco bilingue del collaudo, e **ROSSO
@@ -75,7 +89,7 @@ dichiarato **con il nome del proprietario e il file che lo dice**.
 
 | Cosa | Numero | Come è stato misurato |
 |---|---|---|
-| Test degli script | **264 verdi** | `npm test`, sul node di sistema (20.12.2) |
+| Test degli script | **285 verdi** | `npm test` (Node 24.18.1; le batterie vogliono Node 21+) |
 | Passi del gate implementati | **14**, con `id` stabili e ordine bloccato da un test | `scripts/verify.mjs`, `ID` |
 | Stati del verdetto | **4** (`pass` · `fail` · `skipped` · `n/a`) | `riepilogo()`, con i test dei tre casi |
 | Voci di conformità nell'elenco | **16** — **11 mie**, 3 delegate, 2 scoperte/parziali, 1 scoperta | `conformita-lib.mjs`, `VOCI` |
@@ -83,14 +97,16 @@ dichiarato **con il nome del proprietario e il file che lo dice**.
 | Rilievi del **tribunale** della costruzione | **33** — 26 chiusi con un test | `COSTRUZIONE-2026-08-06.md` §6.6 |
 | Difetti trovati dal **collaudo avversario** (P2) | **14**, tutti chiusi con un test | `COLLAUDO-2026-08-06.md` |
 | Rilievi del **tribunale di P.6-P3** (sei periti su `scripts/`) | **48**, con ESLint · knip · jscpd · batteria **tutti verdi** | `P6-P3-2026-08-06.md` §1-2 |
-| Classi di sabotaggio del collaudo | **42**, di cui **32 rosse**; le 10 verdi sono limiti dichiarati che reggono o assenze che per contratto valgono un `issue` | `banco-prova-collaudo-sd/`, gitignorato |
+| Rilievi del **tribunale di P.6-P4** (otto periti sulle ~900 righe di P.6-P3) | **61**, di cui **5 chiusi** e **56 dichiarati aperti** — di nuovo con ESLint · knip · jscpd · gitleaks · batteria **tutti verdi**. Ottava convocazione su otto skill, ottava volta così | `P6-P4-2026-08-07.md` §1-2 e §6.1 |
+| Classi di sabotaggio del collaudo | **42**, di cui **32 rosse**; le 10 verdi sono limiti dichiarati che reggono o assenze che per contratto valgono un `issue`. **Otto rilanciate da un percorso tracciato il 2026-08-07: sette rosse** (`HTM1` `HTM8` chiave universale · `NET1` scadenza · `INF1` `DAT3` `ROB2` `A11Y2`), `HTM9` verde già dichiarata. Le altre 34 non sono state rimisurate dopo le correzioni di P.6-P4 | `scripts/banco-sl.mjs` + `scripts/giro.mjs`, **tracciati** (D25) |
 | Classi di sabotaggio del costruttore | **25 su 25 rosse**, ognuna sul passo che dichiara di sorvegliare | `scripts/banco.mjs` |
 | Scadenza complessiva | **300 s**, estrapolati da una pendenza misurata (20,2 ms per ms di RTT, 19 richieste su 10 pagine) | `P6-P3-2026-08-06.md` §4.1 |
 | Comandi esercitati | **3 su 5** (`perimetro`, `scansiona`, `verify`) — `certifica` e `handoff` **non** esercitati su un progetto vero da questa skill: il pilota è di sola lettura | verbali |
 | Regole pure | 2 librerie | `servito-lib.mjs` · `conformita-lib.mjs` |
 | Gusci di I/O | 2 | `verify.mjs` · `banco.mjs` |
 | References | **5** | |
-| Guardiani | ESLint **0 errori** / 20 avvisi di complessità · knip **pulito** · jscpd **0 cloni** · `gitleaks` **pulito** · `semgrep` 5 rilievi `detect-non-literal-regexp`, scritti e non silenziati | eseguiti a chiusura di P.6-P3 |
+| Guardiani | ESLint **0 errori** / 21 avvisi di complessità · knip **pulito** · jscpd **0 cloni** · `gitleaks` **pulito sulla skill** (`gitleaks dir agenti/site-doctor` → `no leaks found`) · `semgrep` **5 findings: 4** `detect-non-literal-regexp` **+ 1** `react-insecure-request`, tutti riconfermati con la ragione e **zero `nosemgrep`** | eseguiti a chiusura di P.6-P4 |
+| `code-maniac scan` | eseguito **per la prima volta** il 2026-08-07: 10 passi — **3 PASS** (eslint, knip, jscpd), **4 MANCANTE** (`prettier` non installato · `tsc` non configurato, la skill è ESM puro · `convenzioni` non installato · `depcruise` non installato), **3 ISSUE** (complessità 28 hotspot · semgrep 5 · gitleaks 5, **nessuno di questa skill**) | `P6-P4-2026-08-07.md` §4 |
 
 ## Cosa un gate verde NON prova
 
@@ -133,15 +149,30 @@ il n°2 (`certifica` e `handoff` eseguiti come comandi su un progetto vero), il
 n°3 (l'informativa in bozza generata), e il **n°12** — le premesse dei `NON
 APPLICABILE` fatte su un documento amputabile.
 
-1. **Il tribunale non è stato convocato sul codice di P.6-P3.** Le ~900 righe
-   nuove — i cinque passi di D21, `--scadenza`, gli scanner riscritti — non le ha
-   guardate nessun perito. Su questa skill il tribunale ha trovato 33 e poi 48
-   rilievi con tutti gli strumenti statici verdi, e un perito ha già dimostrato
-   **misurando** che una correzione può peggiorare quello che tocca: è
-   **MANCANTE**, non PASS, ed è la prima cosa da fare. È la stessa frase che il
-   collaudo P2 aveva scritto per P.6-P3.
-2. **`code-maniac scan` non è stato eseguito** in questa tornata: la batteria
-   deterministica sì, pezzo per pezzo, ma non è la stessa cosa. **MANCANTE.**
+**Chiusi da P.6-P4 (2026-08-07)**: il **n°1** di allora (il tribunale, convocato
+per primo: **otto periti, 61 rilievi**), il **n°2** (`code-maniac scan` eseguito
+per la prima volta, esito per intero qui sopra e in `P6-P4-2026-08-07.md` §4) e
+il **n°6** (D25: i quattro sorgenti del banco sono tracciati in `scripts/`, e il
+gate ci chiude VERDE 14/14 da un percorso tracciato, due corse su due).
+
+1. **Cinquantasei dei 61 rilievi del tribunale restano aperti**, riprodotti e
+   dichiarati uno per riga in `P6-P4-2026-08-07.md` §6.1 con dove, cosa e verso.
+   Non è un giudizio sulla loro validità: è quanto entra in una chat. I cinque
+   che pesano di più, se si riparte da qui:
+   - **il gate VERDE su un sito che raccoglie IBAN in una pagina mai aperta**
+     (`collegamentiInterni` legge solo `<a href>`: un `<iframe src>` è invisibile
+     alla camminata);
+   - **`DENTRO_TAG` quadratica in dodici lettori**: 1 MB di pagina, scadenza
+     predefinita 300 s, **554 s reali** e 12 passi su 14 MANCANTI. Il rimedio
+     (`tagApertiIn`) esiste già nel file ed è arrivato a `tagDi` soltanto;
+   - **la scadenza non sorveglia nessun ciclo di CPU**, solo la rete;
+   - **`formaction`** consegna nome ed email a un terzo mentre il gate stampa una
+     destinazione che descrive un sito che non esiste;
+   - **quattro inneschi diversi che amputano il documento** (un attributo da
+     32 KB, un apostrofo, un `<!--` nel `<title>`, un `<a>` non chiuso).
+2. **Nessun rilievo di P.6-P4 è stato provato contro il pilota**: il mandato lo
+   teneva fuori perimetro anche in lettura, quindi le conseguenze sul
+   certificato già emesso non sono misurate. **MANCANTE.**
 3. **Due voci di conformità restano su gate che non le guardano come questo le
    guarderebbe**: `contrasti` (delega **vuota**: speed-demon legge il punteggio
    di categoria e mai il singolo audit `color-contrast`) e `accessibilita-admin`
@@ -153,19 +184,35 @@ APPLICABILE` fatte su un documento amputabile.
    chi l'ha scritta abbia letto il documento non lo sa nessuno strumento. È però
    più stretto di prima: una data senza nome, un trattino, o una delega con la
    parentesi vuota non passano più (D14).
-5. **Venti avvisi di complessità** di ESLint (erano 14), zero errori. I sei
-   nuovi sono le regole di D21: sono elenchi di casi, e spezzarli in funzioni da
-   tre righe renderebbe più difficile leggere la regola.
-6. **Il banco del collaudo resta gitignorato**, quindi la correzione al suo buco
-   di riproducibilità (`genera` cancellava i due documenti che il gate legge) non
-   è in regia. Proposta alla direzione, non decisione della skill.
+5. **Ventuno avvisi di complessità** di ESLint (erano 20), zero errori. I sei
+   di D21 sono elenchi di casi, e spezzarli in funzioni da tre righe renderebbe
+   più difficile leggere la regola; il ventunesimo viene dal banco entrato con
+   D25. `code-maniac scan` conta **28 hotspot** con la sua soglia, i due maggiori
+   `verify.mjs:685` (ccn 50) e `verify.mjs:439` (ccn 41).
+6. **Le altre 34 classi di sabotaggio non sono state rimisurate** dopo le
+   correzioni di P.6-P4, e **`giro-costruttore.mjs` non è stato eseguito**: è
+   entrato tracciato e coi percorsi aggiornati, ma le 25 classi del costruttore
+   sono verificate solo per lettura. **MANCANTE**, e adesso è un comando solo:
+   `node scripts/giro.mjs` e `node scripts/giro-costruttore.mjs`.
+6bis. **Tutte le misure di questo pacchetto sono su Node 24.18.1.** Nessuna su
+   Node 20, che è l'altro motore di casa. **MANCANTE.**
 7. **`terziDi` confronta l'host e non lo schema**: `http://stesso-host` su una
    pagina `https` non risulta un terzo. È contenuto misto, un'altra voce e un
    altro mestiere — rilevato dal tribunale e **non chiuso di proposito**.
+   *P.6-P4 non l'ha toccata.* Il perito della privacy ha trovato che l'inventario
+   degli **elementi** di `terziDi` perde sei richieste su sette (`@import` senza
+   `url()`, `<input type=image>`, `<body background>`, `<svg><image>`, `srcdoc`) —
+   e ha detto lui stesso che è cosa diversa: quella voce riguarda il **confronto
+   delle origini**, questo l'**inventario**. Sta fra i 56 come P3-R6.
 8. **Nessun sito multilingua costruito da vetrina-crafter è mai stato misurato.**
    Il banco bilingue è **statico**: gli hreflang, le due informative e le rotte
    per lingua sono provati, ma le rotte per lingua di Next potrebbero comportarsi
-   diversamente. Domini misurati: due. Stack: uno e mezzo.
+   diversamente. Domini misurati: due. Stack: uno e mezzo. **La voce resta
+   aperta con questa motivazione**: P.6-P4 ha chiuso un confronto di stringhe che
+   sbagliava in memoria (`it-IT` contro `it`, falso rosso su un sito bilingue
+   corretto) — nessuna rotta di Next è stata misurata, e la voce non si sposta di
+   un millimetro. `livelliTitoli` che ignora le regioni nascoste (P4-R6) resta
+   fra i 56.
 9. **Un `<script src>` della stessa origine che rimanda a un altro host** viene
    scaricato e il suo contenuto attribuito al sito, senza comparire fra i terzi.
    Non attaccato da nessuno dei due collaudi: resta aperto. `preleva` restituisce
