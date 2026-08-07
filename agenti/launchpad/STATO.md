@@ -25,6 +25,33 @@
   l'**output stampato**, non il sorgente: eseguono lo script vero e guardano il
   suo `stdout`. Riprova: secondo banco rigenerato da zero seguendo solo le
   istruzioni nuove → **VERDE 9/9**.
+- **Il semgrep del collaudo è RIPRODOTTO, e la voce non è più «non misurato»**
+  (P.7f, 2026-08-07). Il collaudo P2 dichiarava **2 rilievi
+  `detect-non-literal-regexp`**; P.5-P3 ne aveva ottenuti **0** e l'aveva
+  dichiarato onestamente non riprodotto. La differenza è il ruleset, e ora ha
+  un nome. **Elenco esatto di ciò che è stato lanciato oggi, dalla cartella
+  della skill, con semgrep 1.172.0:**
+
+  | Ruleset | Regole | File | Rilievi |
+  |---|---|---|---|
+  | `semgrep --config=auto scripts` | 200 | 13 | **2** — `gate-lib.mjs:705`, `impronta.mjs:210`, entrambi `detect-non-literal-regexp` |
+  | `semgrep --config=p/nodejs scripts` | 36 | 12 | 0 |
+  | `semgrep --config=p/javascript --config=p/security-audit --config=p/eslint-plugin-security scripts` (i tre di P.5-P3) | 83 | 13 | 0 |
+
+  La regola `javascript.lang.security.audit.detect-non-literal-regexp` **non è
+  in nessuno dei quattro pacchetti nominati**: la tira dentro solo `auto`. Un
+  conteggio di semgrep senza il ruleset accanto non è confrontabile con niente,
+  ed è il motivo per cui due chat oneste hanno misurato numeri diversi sullo
+  stesso codice.
+
+  **Le due esenzioni reggono, e una aveva un numero sbagliato.**
+  `impronta.mjs:210`: `nome` viene dal gruppo di cattura `([A-Za-z_$][\w$]*)`
+  due righe sopra — un identificatore JavaScript, nessun metacarattere
+  possibile. Regge. `gate-lib.mjs:705` (`riga1`): `etichetta` arriva solo da
+  chiamanti letterali, la funzione **non è esportata** e nessun test la chiama,
+  quindi l'elenco dei chiamanti è completo e chiuso — ma sono **otto**, e il
+  commento dell'esenzione ne dichiarava **sette**. L'esenzione regge, il suo
+  conteggio no: corretto, con la data.
 - **Il gate è più severo di ieri, in tre modi**, e chi rilancia deve saperlo:
   la firma **per delega** su `docs/deploy.md` è un `block` (D20); un verdetto
   dentro una **citazione** non conta per `catena-gate` (D23 §1); una voce del

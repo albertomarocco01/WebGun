@@ -204,9 +204,13 @@ export function conFrammento(testo, { esm = false } = {}) {
     return { testo, cambiato: false, motivo: "non riconosco cosa esporta questo next.config: il frammento va inserito a mano" };
   }
   const nome = perNome[1];
-  // Regex costruito, e semgrep lo segnala: `nome` viene da un gruppo di cattura
-  // ancorato a `[A-Za-z_$][\w$]*`, quindi non puo' contenere metacaratteri. La
-  // riga resta segnalata e la motivazione sta qui, dove si esercita.
+  // Regex costruito, e semgrep lo segnala (`detect-non-literal-regexp`, che
+  // gira con `--config=auto` e non coi tre ruleset nominati di P.5-P3 — vedi
+  // P.7f): `nome` viene dal gruppo di cattura `([A-Za-z_$][\w$]*)` due righe
+  // sopra, cioe' e' un identificatore JavaScript e non puo' contenere
+  // metacaratteri. Riletta il 2026-08-07: l'ancora e' ancora quella, e
+  // l'esenzione regge. La riga resta segnalata e la motivazione sta qui, dove
+  // si esercita.
   const dichiarazione = new RegExp(`(?:^|\\n)\\s*(?:const|let|var)\\s+${nome}\\s*(?::[^=]+)?=\\s*\\{`);
   const d = pulito.match(dichiarazione);
   if (!d) {

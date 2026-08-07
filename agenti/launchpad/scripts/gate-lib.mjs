@@ -696,11 +696,17 @@ export function findingsDebito({ voci = [], citati = new Set(), risposte = new M
 }
 
 // ================================================================ il runbook
-// Regex costruito, e semgrep lo segnala (`detect-non-literal-regexp`):
-// `etichetta` arriva **solo** dai sette letterali dei chiamanti qui sotto
-// (`Provider`, `Dominio`, …), mai dal documento. La riga resta segnalata e la
-// motivazione sta qui, dove si esercita — precedente della §8 di `DECISIONI.md`:
-// un'esenzione si scrive accanto alla regola che disattiva.
+// Regex costruito, e semgrep lo segnala (`detect-non-literal-regexp`, che gira
+// con `--config=auto` e NON con `p/javascript`/`p/security-audit`/
+// `p/eslint-plugin-security` — vedi P.7f): `etichetta` arriva **solo** dagli
+// otto letterali dei chiamanti qui sotto (`Provider`, `Dominio`, …), mai dal
+// documento. `riga1` non e' esportata e nessun test la chiama, quindi quegli
+// otto sono l'elenco completo. La riga resta segnalata e la motivazione sta
+// qui, dove si esercita — precedente della §8 di `DECISIONI.md`: un'esenzione
+// si scrive accanto alla regola che disattiva.
+// (Il 2026-08-07 questo commento diceva «sette»: i chiamanti erano gia' otto.
+// Un'esenzione che conta male le sue premesse e' un'esenzione che nessuno ha
+// ricontrollato — il numero si rilegge quando si rilegge la regola.)
 const riga1 = (testo, etichetta) =>
   senzaZoneCitate(testo).match(new RegExp(`^[ \\t>*_-]*${etichetta}[ \\t*_]*:[ \\t*_]*(.+)$`, "im"))?.[1]
     ?.replace(/\*\*/g, "").trim() ?? null;
