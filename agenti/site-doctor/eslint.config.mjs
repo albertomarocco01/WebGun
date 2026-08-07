@@ -8,6 +8,16 @@ import js from "@eslint/js";
 export default [
   js.configs.recommended,
   {
+    // Cio' che il banco GENERA non e' codice di questa skill: e' l'uscita di un
+    // finto `next build` (bundle, `_buildManifest.js`, chunk con `self` e
+    // `window`), scritta apposta per essere servita a un browser. Farla passare
+    // sotto le regole di Node produce errori veri su codice che nessuno di noi
+    // ha scritto — e un guardiano che urla su output generato e' un guardiano
+    // che si impara a ignorare (`DECISIONI.md` §8). I SORGENTI del banco
+    // (`banco-sl.mjs`, `giro.mjs`, …) restano dentro: quelli sono nostri.
+    ignores: ["scripts/banco-prova*/**"],
+  },
+  {
     files: ["scripts/**/*.mjs"],
     languageOptions: {
       ecmaVersion: 2024,
@@ -22,6 +32,14 @@ export default [
         URL: "readonly",
         AbortSignal: "readonly",
         setTimeout: "readonly",
+        // Il banco del collaudo serve byte veri su HTTP e ha un modo di
+        // rispondere «un byte al secondo» (classe NET1): gli servono `Buffer` e
+        // i due timer periodici. Sono globali di Node quanto gli altri qui
+        // sopra — mancavano perche' fino a D25 quel file era gitignorato e
+        // nessun guardiano l'aveva mai letto.
+        Buffer: "readonly",
+        setInterval: "readonly",
+        clearInterval: "readonly",
       },
     },
     rules: {

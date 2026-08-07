@@ -215,51 +215,68 @@ for (const { file, chi } of GUSCI) {
  * cascato dentro scrivendo questi test, che e' il motivo per cui la nota adesso
  * sta anche qui.
  */
-describe("tribunale P.6-P3 — il guscio, provato eseguendolo", () => {
-  const GATE = fileURLToPath(new URL("./verify.mjs", import.meta.url));
-  const attendi = (ms) => new Promise((r) => setTimeout(r, ms));
+// ---------------------------------------------------------------------------
+// L'attrezzatura per lanciare il GATE VERO contro un banco vero, in un processo
+// suo. Sta qui fuori e non dentro un `describe` perche' due tornate del
+// tribunale (P.6-P3 e P.6-P4) ne hanno bisogno uguale: tenerne due copie e'
+// quello che jscpd ha giustamente chiamato un clone di 39 righe.
+const GATE = fileURLToPath(new URL("./verify.mjs", import.meta.url));
+const attendi = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  /** Accende un banco in un PROCESSO SUO e aspetta che risponda davvero. */
-  const accendi = async (dir, sorgente, porta) => {
-    const file = join(dir, "banco-di-prova.cjs");
-    writeFileSync(file, sorgente.replace("__PORTA__", String(porta)), "utf8");
-    const proc = spawn(process.execPath, [file], { stdio: "ignore" });
-    for (let i = 0; i < 80; i += 1) {
-      try {
-        const r = await fetch(`http://127.0.0.1:${porta}/__vivo`, { signal: AbortSignal.timeout(400) });
-        if (r.status) return { proc, url: `http://127.0.0.1:${porta}` };
-      } catch { /* non ancora */ }
-      await attendi(150);
-    }
-    proc.kill();
-    throw new Error(`il banco su ${porta} non ha risposto`);
-  };
-
-  const conProgetto = async (file, sorgente, porta, prova) => {
-    const dir = mkdtempSync(join(tmpdir(), "sd-trib-"));
-    let banco = null;
+/** Accende un banco in un PROCESSO SUO e aspetta che risponda davvero. */
+const accendiBanco = async (dir, sorgente, porta) => {
+  const file = join(dir, "banco-di-prova.cjs");
+  writeFileSync(file, sorgente.replace("__PORTA__", String(porta)), "utf8");
+  const proc = spawn(process.execPath, [file], { stdio: "ignore" });
+  for (let i = 0; i < 80; i += 1) {
     try {
-      for (const [rel, contenuto] of Object.entries(file)) {
-        mkdirSync(dirname(join(dir, rel)), { recursive: true });
-        writeFileSync(join(dir, rel), contenuto, "utf8");
-      }
-      banco = await accendi(dir, sorgente, porta);
-      const r = spawnSync(process.execPath, [GATE, "--url", banco.url, "--json"], { cwd: dir, encoding: "utf8", timeout: 120000 });
-      let doc;
-      try {
-        doc = JSON.parse(r.stdout);
-      } catch {
-        throw new Error(`il gate non ha prodotto JSON (uscita ${r.status}): ${(r.stdout || r.stderr || "").slice(0, 300)}`);
-      }
-      return await prova(doc, dir);
-    } finally {
-      banco?.proc.kill();
-      rmSync(dir, { recursive: true, force: true });
+      const r = await fetch(`http://127.0.0.1:${porta}/__vivo`, { signal: AbortSignal.timeout(400) });
+      if (r.status) return { proc, url: `http://127.0.0.1:${porta}` };
+    } catch {
+      /* non ancora */
     }
-  };
+    await attendi(150);
+  }
+  proc.kill();
+  throw new Error(`il banco su ${porta} non ha risposto`);
+};
 
-  const stato = (doc, id) => doc.steps.find((s) => s.id === id)?.status;
-  const dettaglio = (doc, id) => doc.steps.find((s) => s.id === id)?.detail ?? "";
+/**
+ * Costruisce un progetto finto, accende il banco, lancia il gate con `--json`
+ * e passa il documento alla prova. `prima` serve a chi deve toccare il disco
+ * dopo la scrittura dei file (un flusso NTFS, una junction).
+ */
+const conProgettoEBanco = async (file, sorgente, porta, prova, prima = null) => {
+  const dir = mkdtempSync(join(tmpdir(), "sd-trib-"));
+  let banco = null;
+  try {
+    for (const [rel, contenuto] of Object.entries(file)) {
+      mkdirSync(dirname(join(dir, rel)), { recursive: true });
+      writeFileSync(join(dir, rel), contenuto, "utf8");
+    }
+    if (prima) prima(dir);
+    banco = await accendiBanco(dir, sorgente, porta);
+    const r = spawnSync(process.execPath, [GATE, "--url", banco.url, "--json"], { cwd: dir, encoding: "utf8", timeout: 120000 });
+    let doc;
+    try {
+      doc = JSON.parse(r.stdout);
+    } catch {
+      throw new Error(`il gate non ha prodotto JSON (uscita ${r.status}): ${(r.stdout || r.stderr || "").slice(0, 300)}`);
+    }
+    return await prova(doc, dir);
+  } finally {
+    banco?.proc.kill();
+    rmSync(dir, { recursive: true, force: true });
+  }
+};
+
+const statoDi = (doc, id) => doc.steps.find((s) => s.id === id)?.status;
+const dettaglioDi = (doc, id) => doc.steps.find((s) => s.id === id)?.detail ?? "";
+
+describe("tribunale P.6-P3 — il guscio, provato eseguendolo", () => {
+  const conProgetto = conProgettoEBanco;
+  const stato = statoDi;
+  const dettaglio = dettaglioDi;
   const PROGETTO_FINTO = { ".next/BUILD_ID": "BANCOTRIBUNALE01", "docs/PROGETTO.md": "progetto finto" };
 
   it("SD-TRIB-G1: uno `<script src>` finto dentro un attributo non spegne il censimento dell'archiviazione", async () => {
@@ -347,56 +364,13 @@ createServer((q,s)=>{ if(q.url.startsWith("/_next/")){s.writeHead(200,{"content-
  * silenzio che nessuno ha scritto.**
  */
 describe("tribunale P.6-P4 — il perimetro del progetto, provato eseguendolo", () => {
-  const GATE = fileURLToPath(new URL("./verify.mjs", import.meta.url));
-  const attendi = (ms) => new Promise((r) => setTimeout(r, ms));
-
   const BANCO = `const {createServer}=require("http");
 createServer((q,s)=>{ s.writeHead(200,{"content-type":"text/html; charset=utf-8"});
  s.end('<!DOCTYPE html><html lang="it"><head><title>T</title></head><body><main><h1>T</h1><p>BANCOP6P401</p></main></body></html>'); }).listen(__PORTA__,"127.0.0.1");`;
 
-  const accendi = async (dir, porta) => {
-    const file = join(dir, "banco-di-prova.cjs");
-    writeFileSync(file, BANCO.replace("__PORTA__", String(porta)), "utf8");
-    const proc = spawn(process.execPath, [file], { stdio: "ignore" });
-    for (let i = 0; i < 80; i += 1) {
-      try {
-        const r = await fetch(`http://127.0.0.1:${porta}/__vivo`, { signal: AbortSignal.timeout(400) });
-        if (r.status) return { proc, url: `http://127.0.0.1:${porta}` };
-      } catch {
-        /* non ancora */
-      }
-      await attendi(150);
-    }
-    proc.kill();
-    throw new Error(`il banco su ${porta} non ha risposto`);
-  };
-
-  const conProgetto = async (file, porta, prova, dopoScrittura = null) => {
-    const dir = mkdtempSync(join(tmpdir(), "sd-p6p4-"));
-    let banco = null;
-    try {
-      for (const [rel, contenuto] of Object.entries(file)) {
-        mkdirSync(dirname(join(dir, rel)), { recursive: true });
-        writeFileSync(join(dir, rel), contenuto, "utf8");
-      }
-      if (dopoScrittura) dopoScrittura(dir);
-      banco = await accendi(dir, porta);
-      const r = spawnSync(process.execPath, [GATE, "--url", banco.url, "--json"], { cwd: dir, encoding: "utf8", timeout: 120000 });
-      let doc;
-      try {
-        doc = JSON.parse(r.stdout);
-      } catch {
-        throw new Error(`il gate non ha prodotto JSON (uscita ${r.status}): ${(r.stdout || r.stderr || "").slice(0, 300)}`);
-      }
-      return await prova(doc, dir);
-    } finally {
-      banco?.proc.kill();
-      rmSync(dir, { recursive: true, force: true });
-    }
-  };
-
-  const stato = (doc, id) => doc.steps.find((s) => s.id === id)?.status;
-  const dettaglio = (doc, id) => doc.steps.find((s) => s.id === id)?.detail ?? "";
+  const conProgetto = (file, porta, prova, prima = null) => conProgettoEBanco(file, BANCO, porta, prova, prima);
+  const stato = statoDi;
+  const dettaglio = dettaglioDi;
   const BASE = { ".next/BUILD_ID": "BANCOP6P401", "docs/PROGETTO.md": "progetto finto" };
 
   const CERT = (dove) =>

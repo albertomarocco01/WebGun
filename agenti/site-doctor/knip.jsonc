@@ -7,8 +7,23 @@
   // `verify.mjs` e `banco.mjs` sono ENTRY POINT da riga di comando, non moduli
   // importati; le batterie si lanciano con `node --test`. Senza queste righe
   // knip li dichiara file morti.
-  "entry": ["scripts/verify.mjs", "scripts/banco.mjs", "scripts/*.test.mjs"],
-  "project": ["scripts/**/*.mjs"],
+  //
+  // Da D25 (2026-08-07) sono entry point anche i quattro sorgenti del banco del
+  // collaudo: `banco-sl.mjs` genera e serve, `giro.mjs` rilancia le 42 classi
+  // di sabotaggio, `giro-costruttore.mjs` le 25 del costruttore, `uno.mjs` ne
+  // prova una sola stampando l'uscita umana. Nessuno li importa perche' si
+  // lanciano a mano: e' la stessa ragione di `verify.mjs`.
+  "entry": [
+    "scripts/verify.mjs",
+    "scripts/banco.mjs",
+    "scripts/banco-sl.mjs",
+    "scripts/giro.mjs",
+    "scripts/giro-costruttore.mjs",
+    "scripts/uno.mjs",
+    "scripts/*.test.mjs"
+  ],
+  // Cio' che il banco genera non e' progetto: si rigenera con un comando.
+  "project": ["scripts/**/*.mjs", "!scripts/banco-prova*/**"],
 
   // eslint e jscpd non si importano: li ESEGUE `code-maniac scan` come binari.
   // Toglierli dal package.json spegnerebbe due passi della batteria.

@@ -344,7 +344,11 @@ const GEMELLO_EN = {
 };
 const GEMELLO_IT = Object.fromEntries(Object.entries(GEMELLO_EN).map(([a, b]) => [b, a]));
 
-function corpiIt(porta) {
+// `porta` non serve piu' qui: i corpi italiani non la nominano (i terzi hanno
+// host propri, e gli hreflang sono percorsi). Il parametro era rimasto dopo una
+// riscrittura, e nessun guardiano l'aveva visto perche' questo file e' entrato
+// sotto ESLint solo con D25.
+function corpiIt() {
   return {
     "/": {
       titolo: `${NOME} — diritto d'impresa a Verona`,
@@ -464,7 +468,7 @@ const INFORMATIVA_IT = `      <h1>Informativa sul trattamento dei dati personali
 
       <p>Ultimo aggiornamento: 2026-08-06.</p>`;
 
-function corpiEn(porta) {
+function corpiEn() {
   return {
     "/en": {
       titolo: `${NOME} — business law in Verona`,
@@ -1053,8 +1057,8 @@ export function genera({ dir, porta, conInformativa }) {
     ["en", "/en"],
   ];
 
-  const it = corpiIt(porta);
-  const en = corpiEn(porta);
+  const it = corpiIt();
+  const en = corpiEn();
 
   const pagine = {};
   for (const [percorso, p] of Object.entries(it)) {
@@ -1419,7 +1423,7 @@ export const SABOTAGGI = {
     corpo: ({ ext, percorso, corpo }) =>
       ext !== ".html" || percorso !== "/privacy"
         ? undefined
-        : corpo.replace(/  <main>[\s\S]*?  <\/main>/, "  <main>\n      <h1>Informativa sul trattamento dei dati personali</h1>\n      <p>In aggiornamento.</p>\n  </main>"),
+        : corpo.replace(/ {2}<main>[\s\S]*? {2}<\/main>/, "  <main>\n      <h1>Informativa sul trattamento dei dati personali</h1>\n      <p>In aggiornamento.</p>\n  </main>"),
   },
 
   // ───────────────────────────────────────────────────────── rete ────
