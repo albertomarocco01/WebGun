@@ -135,7 +135,7 @@ sono della direzione, al ritorno).
 
 | # | Cosa | Perimetro in **scrittura** | Criterio falsificabile | Stato |
 |---|---|---|---|---|
-| P.6-P5 | **I falsi verdi capitali, la quadratica, e la riga dei contrasti** — dieci rilievi di §6.1 scelti dalla direzione: `SCOPERTE.contrasti` (`conformita-lib.mjs:70` + riga 86 — la prova che quella riga aspettava esiste: grep 4 file a `a1454cf`, gate del vicino verde sul passo `contrasto`); **P7-R2** (IBAN e codice fiscale in una pagina mai aperta: `collegamentiInterni` legge solo `<a href>`); **P1-R2 + P1-R3** (attributo >32 KB che cancella la coda, apostrofo in valore non quotato — due porte della stessa stanza, e il commento 293-295 che dichiara un prezzo falso); **P3-R1** (`formaction`: il gate descrive un sito che non esiste); **P4-R4 + P7-R3** (`<sitemapindex>`: block sul formato che `generateSitemaps()` di Next produce da solo); **P4-R6** (`livelliTitoli` cieco alle regioni nascoste nei due versi); **P2-R1 + P2-R8** (la quadratica di `DENTRO_TAG` in dodici lettori — il rimedio `tagApertiIn` è già nel file, applicato a uno — e la 2,6× da rimisurare dopo); **P2-R2** (la scadenza sorveglia solo la rete: nessun ciclo di CPU la controlla) | `agenti/site-doctor/**` | ogni rilievo **riprodotto prima** di essere chiuso, un test nella forma d'input vera, e per ognuno la **domanda della porta diversa** scritta nel verbale (tre riaperture di classe misurate da P.6-P4); i **costi rimisurati dopo** le correzioni, sugli stessi input che li hanno provati (precedente della 2,6×); gate sul banco «3 da guardare» → **«2 da guardare»** e resta VERDE 14/14; le **42 classi del giro tutte rilanciate** (le 34 mai rimisurate comprese) e `giro-costruttore.mjs` (25 classi) **eseguito per la prima volta**; batteria sopra 285; gate della regia VERDE prima e dopo | mandato `agenti/site-doctor/prompts/P6-P5-i-falsi-verdi-e-la-quadratica.md` (Opus 5 · high) |
+| P.6-P5 | **I falsi verdi capitali, la quadratica, e la riga dei contrasti** — dieci rilievi di §6.1 scelti dalla direzione: `SCOPERTE.contrasti` (`conformita-lib.mjs:70` + riga 86 — la prova che quella riga aspettava esiste: grep 4 file a `a1454cf`, gate del vicino verde sul passo `contrasto`); **P7-R2** (IBAN e codice fiscale in una pagina mai aperta: `collegamentiInterni` legge solo `<a href>`); **P1-R2 + P1-R3** (attributo >32 KB che cancella la coda, apostrofo in valore non quotato — due porte della stessa stanza, e il commento 293-295 che dichiara un prezzo falso); **P3-R1** (`formaction`: il gate descrive un sito che non esiste); **P4-R4 + P7-R3** (`<sitemapindex>`: block sul formato che `generateSitemaps()` di Next produce da solo); **P4-R6** (`livelliTitoli` cieco alle regioni nascoste nei due versi); **P2-R1 + P2-R8** (la quadratica di `DENTRO_TAG` in dodici lettori — il rimedio `tagApertiIn` è già nel file, applicato a uno — e la 2,6× da rimisurare dopo); **P2-R2** (la scadenza sorveglia solo la rete: nessun ciclo di CPU la controlla) | `agenti/site-doctor/**` | ogni rilievo **riprodotto prima** di essere chiuso, un test nella forma d'input vera, e per ognuno la **domanda della porta diversa** scritta nel verbale (tre riaperture di classe misurate da P.6-P4); i **costi rimisurati dopo** le correzioni, sugli stessi input che li hanno provati (precedente della 2,6×); gate sul banco «3 da guardare» → **«2 da guardare»** e resta VERDE 14/14; le **42 classi del giro tutte rilanciate** (le 34 mai rimisurate comprese) e `giro-costruttore.mjs` (25 classi) **eseguito per la prima volta**; batteria sopra 285; gate della regia VERDE prima e dopo | mandato `agenti/site-doctor/prompts/P6-P5-i-falsi-verdi-e-la-quadratica.md` (Opus 5 · high) — **consegnata e collaudata 2026-08-07 (sera)**: 3 commit (`c74af63` · `cb56197` · `bdd2edc`), perimetro pulito, pilota mai aperto. **Dieci punti su dieci, undici rilievi chiusi** (P3-R2 — il form annidato — chiuso invece che solo dichiarato), ognuno riprodotto prima e **falsificato contro `git show HEAD:`** (15 test rossi sull'originale), **Chromium `--dump-dom` come giudice** sui cinque casi del parser. `leggiTag` riscritto sugli stati del tokenizer (via il tetto dei 32 KB **col commento che prometteva la garanzia falsa**; terza porta trovata e chiusa: `<!…>`/`<?…>` chiudono al primo `>` anche fra apici); la camminata legge l'inventario dei riferimenti navigabili (a, area, iframe/frame, form GET, meta refresh) **con le esclusioni dichiarate col motivo**; `<sitemapindex>` riconosciuta e seguita con tetto (50, oltre = MANCANTE); `DENTRO_TAG` **non esiste più** — dodici lettori su una passata sola, curva ×4-a-raddoppio → 0,2 ms, la chiave del `>` resta chiusa; la **scadenza sorveglia anche la CPU** (granularità: la pagina; banco CPU da +62% a +0 di sforamento). **La lezione dei costi applicata a sé**: la prima stesura costava ×4 sul benigno, trovato **ricronometrando HEAD-contro-corretto prima della consegna**, ridotto a ×1,0-1,6 dichiarato voce per voce. **Tre scarti dichiarati**: «32 rosse/10 verdi» era un errore d'aritmetica di P.6-P3 §7.4 copiato in due verbali (la tabella dice 31+11 e il giro combacia classe per classe); il banco del costruttore era **pre-D21** — al primo giro vero il conforme usciva ROSSO per il motivo giusto, corretto coi sabotaggi P e S spostati senza perdere la classe; crash di macchina `0xC0000409` **dopo** il verdetto stampato (Node 24.19.0, non deterministico, uguale su HEAD e corrente — i giri leggono `doc.ok`, memoria salvata). Batteria **285 → 308**; giro **43 classi** (nuova `SUP5`: il sito del perito che usciva VERDE con uscita 0); `giro-costruttore` eseguito **per la prima volta** (conforme VERDE + 25/25). **Verificata in proprio dalla direzione**: batteria **308/308** · gate regia **VERDE 5/5** · banco dal percorso tracciato **VERDE 14/14, «2 da guardare»** · **SUP5 rossa sui passi giusti** · **pilota: VERDE, 1 n/a, «2 da guardare»** (contrasti sparita dalle scoperte; restano le due vere: `accessibilita-admin` «sui sorgenti» e `antispam`). Restano **45 dei 61** rilievi, nominati nel verbale §5. **Chiusa** |
 
 ## Giornale di cantiere
 
@@ -1159,3 +1159,36 @@ sono della direzione, al ritorno).
   conteggio a «2 da guardare» e il numero stantio di `conformita.md:259` — si
   scrive al ritorno di P.6-P5, non prima: il certificato si riemette con la
   skill corretta, non con quella che sta per cambiare.
+- **2026-08-07 (sera)** — **P.6-P5 collaudata in proprio e chiusa; P.4j emesso.**
+
+  **Le misure della direzione**: batteria **308/308** · gate della regia
+  **VERDE 5/5** · perimetro dei 3 commit pulito · banco dal percorso tracciato
+  **VERDE 14/14, «2 da guardare»** · classe nuova **SUP5 rossa sui passi
+  giusti** (il sito del perito che raccoglieva IBAN dietro un iframe e usciva
+  VERDE) · **gate sul pilota: VERDE, 1 n/a, «2 da guardare»** — la voce
+  «contrasti» è sparita dalle scoperte e restano le due vere. Non rilanciati in
+  proprio: il giro completo 43/43, `giro-costruttore` 25/25+conforme e i
+  cronometraggi — dichiarati dalla chat con le prove incollate, accettati.
+
+  Il verbale `agenti/site-doctor/P6-P5-2026-08-07.md` è il migliore visto in
+  questo cantiere: ogni chiusura porta la **porta diversa con la risposta**, i
+  costi sono **rimisurati prima della consegna** (trovato e ridotto un ×4 suo),
+  e i tre scarti dall'atteso sono dichiarati con la prova — compreso un errore
+  d'aritmetica **nei nostri verbali storici** («32/10» dove la tabella dice
+  31+11: il conteggio che nessuno rifà, di nuovo) e il banco del costruttore
+  **pre-D21** che «verificato solo per lettura» non aveva visto: l'ha visto la
+  prima esecuzione. Due conferme di metodo: *eseguire batte leggere*, e *il
+  riassunto mente dove la tabella no*.
+
+  Sul pilota il gate nuovo rende visibili due rilievi **veri e non bloccanti**
+  già presenti: **`og:image` assente su 6 pagine** e **JSON-LD assente
+  ovunque** — materia di P.4j, che li chiude o li dichiara nel registro con la
+  colonna. **P.4j emesso** (`prompts/P4j-il-certificato-riemesso.md`,
+  Opus 5 · high): riemettere il certificato con le misure nuove (2 scoperte,
+  non «quattro» come dice la riga 259), decidere og:image e JSON-LD, e — la
+  lezione del quarto rosso — **ricostruire e riservire dopo l'ultimo commit**,
+  coi quattro gate rilanciati e dichiarati (launchpad atteso ROSSO 3, e solo 3).
+
+  Il debito vivo di site-doctor scende a **45 dei 61**, nominati nel verbale
+  §5; fra questi la P5-R3 «migliorata e rimisurata, non chiusa» e le porte
+  dichiarate aperte. Si riprendono a ondate future, non tutti insieme.
