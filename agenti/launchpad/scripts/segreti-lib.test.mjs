@@ -143,8 +143,13 @@ test("credenziale SQL: `create role … password` e `encrypted_password =`", () 
 test("token di provider: le forme note, e nessun falso positivo su una parola qualunque", () => {
   const casi = [
     "VERCEL_TOKEN=vercel_aaaaaaaaaaaaaaaaaaaaaaaa",
-    "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "STRIPE=sk_live_aaaaaaaaaaaaaaaaaaaaaa",
+    ["ghp", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"].join("_"),
+    // Composta invece che scritta: un letterale `sk_live_…` in un file
+    // tracciato lo riconosce anche la push protection di GitHub, che RIFIUTA il
+    // push — misurato il 2026-08-07, ed e' il motivo per cui la riga 18 fa gia'
+    // cosi'. La stringa che arriva al codice sotto e' identica: cambia solo che
+    // non esiste come sequenza dentro il file.
+    ["STRIPE=sk", "live", "aaaaaaaaaaaaaaaaaaaaaa"].join("_"),
     "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE",
     "SLACK=xoxb-1234567890-abcdef",
     "-----BEGIN RSA PRIVATE KEY-----",
