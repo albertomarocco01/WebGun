@@ -41,6 +41,7 @@ import {
   iconeDichiarate,
   langDi,
   leggiRobots,
+  leggiSitemap,
   livelliTitoli,
   lingueDaRotte,
   moduliDiPagina,
@@ -1523,5 +1524,205 @@ describe("tribunale P.6-P4 — le lingue dichiarate con la regione", () => {
     const soloIt = [{ percorso: "/", lang: "it-IT", hreflang: [] }];
     const e = esitoLingua({ pagine: soloIt, lingueDichiarate: ["it-it", "it-ch"], percorsi: ["/"] });
     assert.deepEqual(e.findings.filter((f) => f.severity === "block"), []);
+  });
+});
+
+// ═══════════════════ P.6-P5 — i falsi verdi capitali, e i loro due versi
+/**
+ * Ogni test qui sotto e' nato ROSSO contro l'originale di HEAD (falsificazione
+ * eseguita su una copia di `git show HEAD:`, mai su una de-correzione a mano) e
+ * porta la forma d'input del perito, non quella dell'implementazione. Dove il
+ * comportamento del browser e' la definizione di «giusto», il riferimento e'
+ * Chromium (`chrome-headless-shell --dump-dom`), come per il perito del parser.
+ */
+describe("P.6-P5 — l'inventario dei riferimenti navigabili (P7-R2)", () => {
+  const BASE5 = "http://127.0.0.1:3999";
+
+  it("falso verde: una pagina raggiungibile solo via <iframe src> entra nella superficie", () => {
+    // Il perito ha ottenuto GATE VERDE, uscita 0, su un sito che raccoglie IBAN
+    // e codice fiscale in una pagina che il gate non apriva mai.
+    assert.deepEqual(collegamentiInterni('<iframe src="/modulo-riservato" title="r"></iframe>', BASE5), ["/modulo-riservato"]);
+  });
+
+  it("entrano anche area href, form GET (o senza metodo), frame src e meta refresh", () => {
+    const html = '<area href="/mappa" alt="m"><form action="/ricerca" method="get"></form>'
+      + '<form action="/scrivi"></form><frame src="/vecchio"></frame>'
+      + '<meta http-equiv="refresh" content="5; url=/promo">';
+    assert.deepEqual(collegamentiInterni(html, BASE5), ["/mappa", "/promo", "/ricerca", "/scrivi", "/vecchio"]);
+  });
+
+  it("esclusioni dichiarate: un form POST e un link rel=alternate non si camminano", () => {
+    // Il POST non si misura con una GET; l'alternate e' un segnale per i motori
+    // e il passo lingua-e-hreflang BLOCCA gia' un hreflang fuori superficie.
+    const html = '<form action="/invia" method="post"></form><link rel="alternate" hreflang="en" href="/en">';
+    assert.deepEqual(collegamentiInterni(html, BASE5), []);
+  });
+
+  it("un iframe di un'altra origine non e' una pagina del sito", () => {
+    assert.deepEqual(collegamentiInterni('<iframe src="https://www.google.com/maps/embed?pb=x"></iframe>', BASE5), []);
+  });
+
+  it("il <base href> governa anche gli iframe, non solo gli <a>", () => {
+    assert.deepEqual(collegamentiInterni('<head><base href="/it/"></head><body><iframe src="modulo"></iframe></body>', BASE5), ["/it/modulo"]);
+  });
+});
+
+describe("P.6-P5 — le porte dell'amputazione (P1-R2, P1-R3)", () => {
+  const CODA = '<img src="/x.png"><form action="/y"><input name="telefono" autocomplete="tel"></form>';
+  const DOC = (dentro) => `<html lang="it"><head><title>t</title></head><body><main><h1>x</h1>${dentro}${CODA}</main></body></html>`;
+
+  it("falso n/a (P1-R2): un attributo oltre 32 KB — un <path d> SVG — NON cancella la coda", () => {
+    // Prima: 8 bloccanti -> 0, e `dati-raccolti` chiudeva n/a con premessa
+    // misurata e falsa. Chromium legge il tag fino al suo `>`: anche noi.
+    const doc = DOC(`<svg><path d="${"M0 0 L1 1 ".repeat(4000)}"/></svg>`);
+    assert.equal(campiDiPagina(doc).length, 1, "il campo dopo il path deve esistere");
+    assert.ok(findingsAccessibilitaPagina("/p", doc).some((f) => /img/.test(f.message)), "l'img senza alt dopo il path deve essere vista");
+  });
+
+  it("falso n/a (P1-R3): un apostrofo in un valore NON quotato e' un carattere, non una stringa aperta", () => {
+    const doc = DOC("<div data-autore=D'Angelo>firma</div>");
+    assert.equal(campiDiPagina(doc).length, 1);
+    // e il VALORE e' quello che legge il browser (--dump-dom): D'Angelo, non D
+    assert.equal(attributi("<div data-autore=D'Angelo>")["data-autore"], "D'Angelo");
+  });
+
+  it("non-regressione P.6-P3: un apice DOPO `=` apre davvero un valore quotato, col `>` dentro", () => {
+    assert.equal(attributi('<img alt="prima > dopo" src="/a.png">').src, "/a.png");
+    assert.equal(attributi('<div title = "a>b">').title, "a>b", "spazi attorno a `=` ammessi, come nel tokenizer");
+    assert.equal(campiDiPagina(DOC(`<div data-cfg='{"a":"b>c"}'>x</div>`)).length, 1);
+  });
+
+  it("la terza porta, chiusa e provata: `<?…?>` e un DOCTYPE chiudono al PRIMO `>`, anche fra apici (Chromium)", () => {
+    assert.equal(campiDiPagina(DOC('<?php echo "a>b" ?>')).length, 1);
+  });
+
+  it("una virgoletta nel NOME di un attributo e' un carattere: il tag chiude al primo `>` (Chromium)", () => {
+    assert.equal(campiDiPagina(DOC('<div "a>b">testo</div>')).length, 1);
+  });
+});
+
+describe("P.6-P5 — dove va DAVVERO il modulo (P3-R1, P3-R2)", () => {
+  const BASE5 = "http://127.0.0.1:3999";
+
+  it("falso verde (P3-R1): un formaction su un bottone d'invio e' una destinazione, coi campi del modulo", () => {
+    const d = destinazioniModuli(
+      '<form action="/contatti" method="post"><input name="email" type="email"><button type="submit" formaction="https://raccolta.esempio.com/collect">Invia</button></form>',
+      BASE5,
+    );
+    const fa = d.find((x) => x.tramite === "formaction");
+    assert.ok(fa, "la destinazione del formaction deve esistere");
+    assert.equal(fa.altraOrigine, true);
+    assert.equal(fa.campi.length, 1);
+    // e l'action del form resta una destinazione: il visitatore puo' usare entrambe
+    assert.ok(d.some((x) => x.tramite === "action"));
+  });
+
+  it("un bottone NON d'invio non aggiunge destinazioni, e un input submit si'", () => {
+    const solo = destinazioniModuli('<form action="/a"><input name="email" type="email"><button type="button" formaction="https://x.example/c">x</button></form>', BASE5);
+    assert.deepEqual(solo.map((x) => x.tramite), ["action"]);
+    const conInput = destinazioniModuli('<form action="/a"><input name="email" type="email"><input type="image" formaction="https://x.example/c" alt="invia"></form>', BASE5);
+    assert.ok(conInput.some((x) => x.tramite === "formaction"));
+  });
+
+  it("falso verde (P3-R2): il form ANNIDATO si ignora e i campi restano del form vero (Chromium)", () => {
+    // La forma del perito: gate = «modulo verso il terzo SENZA campi personali».
+    // Il browser ignora la <form> annidata e spedisce i campi al form esterno.
+    const d = destinazioniModuli(
+      '<form action="https://terzo.example/fuori" method="post"><form action="/dentro"><input name="email" type="email" autocomplete="email"></form>',
+      BASE5,
+    );
+    assert.equal(d.length, 1);
+    assert.equal(d[0].origine, "https://terzo.example");
+    assert.equal(d[0].campi.length, 1);
+  });
+
+  it("i campi dopo il primo </form> sono orfani, come nel browser", () => {
+    const d = destinazioniModuli(
+      '<form action="https://terzo.example/f" method="post"><form action="/x"></form><input name="email" type="email">',
+      BASE5,
+    );
+    assert.equal(d.length, 1, "il form annidato non e' un modulo");
+    assert.equal(d[0].campi.length, 0, "il primo </form> chiude il form VERO: cio' che segue e' orfano");
+  });
+});
+
+describe("P.6-P5 — la <sitemapindex> (P4-R4, P7-R3)", () => {
+  const BASE5 = "http://127.0.0.1:3999";
+  const INDICE = `<?xml version="1.0"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<sitemap><loc>${BASE5}/sitemap/0.xml</loc></sitemap>
+<sitemap><loc>${BASE5}/sitemap/1.xml</loc></sitemap>
+</sitemapindex>`;
+
+  it("falso rosso: le <loc> di un indice sono sitemap da seguire, non pagine da camminare", () => {
+    // E' il formato che `generateSitemaps()` di Next produce da solo: prima ogni
+    // sotto-sitemap prendeva un block «dichiarata e non servita» e i file XML
+    // entravano nella camminata come pagine.
+    assert.deepEqual(percorsiDaSitemap(INDICE, BASE5), []);
+    assert.deepEqual(leggiSitemap(INDICE, BASE5), { tipo: "sitemapindex", percorsi: [], sottoSitemap: ["/sitemap/0.xml", "/sitemap/1.xml"] });
+    assert.equal(leggiSitemap(`<urlset><url><loc>${BASE5}/menu</loc></url></urlset>`, BASE5).percorsi[0], "/menu");
+  });
+
+  it("verso ↑: un indice conforme con sotto-sitemap valide e pagine servite e' verde", () => {
+    const f = findingsSitemap({
+      risposta: { stato: 200, corpo: INDICE },
+      percorsi: ["/", "/menu"],
+      superficie: new Set(["/", "/menu"]),
+      rimandi: new Map(),
+      sotto: [{ percorso: "/sitemap/0.xml", stato: 200, valida: true }, { percorso: "/sitemap/1.xml", stato: 200, valida: true }],
+    });
+    assert.deepEqual(f, []);
+  });
+
+  it("verso ↓, non aperto: una sitemap che promette pagine morte resta un block", () => {
+    const f = findingsSitemap({
+      risposta: { stato: 200, corpo: `<urlset><url><loc>${BASE5}/morta</loc></url></urlset>` },
+      percorsi: ["/", "/morta"],
+      superficie: new Set(["/"]),
+      rimandi: new Map(),
+    });
+    assert.ok(f.some((x) => x.severity === "block" && x.object === "/morta"));
+  });
+
+  it("un indice che promette una sotto-sitemap morta, o non-sitemap, e' un block", () => {
+    const f = findingsSitemap({
+      risposta: { stato: 200, corpo: INDICE },
+      percorsi: [],
+      superficie: new Set(["/"]),
+      rimandi: new Map(),
+      sotto: [{ percorso: "/sitemap/0.xml", stato: 404, valida: false }, { percorso: "/sitemap/1.xml", stato: 200, valida: false }],
+    });
+    assert.equal(f.filter((x) => x.severity === "block").length, 2);
+  });
+});
+
+describe("P.6-P5 — i titoli si contano fra i visibili (P4-R6)", () => {
+  it("verso ↑ (falso rosso): un accordion coi pannelli nascosti non e' una gerarchia saltata", () => {
+    const doc = '<html lang="it"><head><title>t</title></head><body><main><h1>Domande</h1><h2>Sezione</h2><div hidden><h5>dettaglio</h5></div></main></body></html>';
+    assert.deepEqual(livelliTitoli(doc), [1, 2]);
+    assert.ok(!findingsAccessibilitaPagina("/f", doc).some((f) => /saltata/.test(f.message)));
+  });
+
+  it("verso ↓ (falso verde): un h1 dentro display:none non titola la pagina", () => {
+    const doc = '<html lang="it"><head><title>t</title></head><body><main><div style="display:none"><h1>fantasma</h1></div><p>x</p></main></body></html>';
+    assert.deepEqual(livelliTitoli(doc), []);
+    assert.ok(findingsAccessibilitaPagina("/g", doc).some((f) => /nessun <h1>/.test(f.message)));
+  });
+
+  it("un titolo nascosto sul PROPRIO tag conta come nascosto", () => {
+    assert.deepEqual(livelliTitoli("<h1 hidden>x</h1><h2>y</h2>"), [2]);
+  });
+});
+
+describe("P.6-P5 — i dodici lettori sono lineari (P2-R1)", () => {
+  const cronometra = (f) => { const t = Date.now(); f(); return Date.now() - t; };
+
+  it("un apice mai chiuso non fa rileggere la coda a nessun lettore (era x4 a ogni raddoppio: 10,2 s a 256 KB)", () => {
+    const ostile = "<form a='b ".repeat(24000);
+    assert.ok(ostile.length > 250000);
+    assert.ok(cronometra(() => regioniNascoste(ostile)) < 2000, "regioniNascoste: era 10,2 s su questo input");
+    assert.ok(cronometra(() => destinazioniModuli(`<html><body>${ostile}</body></html>`, "http://127.0.0.1:3999")) < 2000);
+    assert.ok(cronometra(() => testoVisibile(ostile)) < 2000);
+    assert.ok(cronometra(() => livelliTitoli(ostile)) < 2000);
+    assert.ok(cronometra(() => terziDi(`${ostile}>`, "http://127.0.0.1:3999")) < 2000);
   });
 });

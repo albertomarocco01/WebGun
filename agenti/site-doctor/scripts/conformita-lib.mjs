@@ -56,22 +56,23 @@ import { perRegexp } from "./servito-lib.mjs";
  * l'esito di QUESTA esecuzione: la delega non e' piu' un'affermazione, e' una
  * misura.
  *
- * Restano due deleghe misurate vuote, e il perche' e' diverso per ognuna.
+ * **2026-08-07: la riga `contrasti` si e' tolta NEL MODO PRESCRITTO** — il
+ * vicino ha aggiunto il passo, e il grep rilanciato lo misura. Sulla regia a
+ * `a1454cf` la parola «contrast» compare in 4 file di `agenti/speed-demon/`:
+ * `gate-lib.mjs` (esporta `letturaContrasto`, `esitoContrasto`,
+ * `findingsContrasto`, `statoContrasto`, `dettaglioContrasto`), `verify.mjs`
+ * (passo `id: "contrasto"`, che legge `report.audits["color-contrast"]` e non
+ * piu' il solo punteggio di categoria), `SKILL.md` e `STATO.md`. La riga non e'
+ * stata tolta leggendo un handoff: e' stata tolta rilanciando
+ * `grep -rl -i "contrast" agenti/speed-demon/` e leggendo il codice trovato.
+ *
+ * Resta una delega misurata parziale, col suo perche'.
  */
 const SCOPERTE = Object.freeze({
-  // `contrasti` resta di speed-demon perche' vuole un browser — cascata,
-  // specificita', `currentColor`, gradienti — e questo gate non ne apre nessuno.
-  // Ma la delega resta VUOTA finche' il suo passo non legge il singolo audit.
-  // **Questa misura dipende dal vicino, quindi porta il commit della regia a cui
-  // si riferisce** (`DECISIONI.md` §18 n°3): i gate di questa casa si stanno
-  // cambiando sotto a vicenda apposta, in questa ondata, e una misura senza il
-  // suo commit non e' ripetibile.
-  contrasti:
-    "misurato il 2026-08-06 sulla regia a `d147f52`: la parola «contrast» non compare in NESSUN file di `agenti/speed-demon/` (grep, 0 file). Il suo gate esegue Lighthouse con la categoria `accessibility`, che contiene l'audit `color-contrast`, ma legge solo il PUNTEGGIO della categoria (0 occorrenze di `audits` nei suoi script): il singolo audit non lo apre mai, la soglia sta in `docs/performance.md` del progetto e non ha un pavimento, e una deroga porta il rilievo da `block` a `warn`. Un'altra chat sta aggiungendo la lettura del singolo audit in questa stessa ondata: quando sara' in regia, questa riga si toglie RILANCIANDO IL GREP, non leggendo un handoff",
-  // `accessibilita-admin` resta di gestionale-crafter per la ragione opposta:
-  // l'area protetta vuole una sessione, e questo gate non ne apre nessuna. La
-  // dichiarazione pero' deve dire COSA misura — «sui sorgenti» — perche' in
-  // questa casa e' gia' misurato che i sorgenti mentono.
+  // `accessibilita-admin` resta di gestionale-crafter perche' l'area protetta
+  // vuole una sessione, e questo gate non ne apre nessuna. La dichiarazione
+  // pero' deve dire COSA misura — «sui sorgenti» — perche' in questa casa e'
+  // gia' misurato che i sorgenti mentono.
   "accessibilita-admin":
     "misurato il 2026-08-06 sulla regia a `d147f52`: il passo `a11y` di gestionale-crafter lancia `eslint-plugin-jsx-a11y` sui SORGENTI (`verify.mjs:326-347`), non sull'HTML servito delle rotte protette. E' una misura vera e dichiarata «sui sorgenti», non una delega vuota come le altre — ma non e' la stessa cosa che questa skill fa sul sito pubblico, ed e' per quella differenza che l'accessibilita' del pubblico e' mia. La delega resta perche' l'area protetta vuole una sessione",
 });
@@ -83,7 +84,11 @@ export const VOCI = Object.freeze([
   { id: "consenso", nome: "banner di consenso", mio: "archiviazione-client", re: /consenso|banner/i },
   { id: "accessibilita-pubblico", nome: "accessibilita del sito pubblico", mio: "accessibilita-servita", re: /accessibilit|a11y/i },
   { id: "lingua-hreflang", nome: "lingua dichiarata e hreflang", mio: "lingua-e-hreflang", re: /hreflang|lingua|multilingua/i },
-  { id: "contrasti", nome: "contrasti di colore", mio: null, re: /contrast/i, scoperta: SCOPERTE.contrasti },
+  // Dal 2026-08-07 la delega dei contrasti e' PIENA: il gate di speed-demon ha
+  // il passo `contrasto` che legge `report.audits["color-contrast"]` (grep
+  // rilanciato, 4 file — vedi il commento di SCOPERTE). Niente `scoperta`:
+  // resta delegata come `canonical` e `noindex-private`.
+  { id: "contrasti", nome: "contrasti di colore", mio: null, re: /contrast/i },
   { id: "canonical", nome: "canonical", mio: null, re: /canonical/i },
   // D21: cinque voci tornate a casa. `mio` non e' una promessa — e' l'`id` del
   // passo che le misura, e il §19 confronta la riga del certificato con lo

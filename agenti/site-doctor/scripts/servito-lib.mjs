@@ -265,55 +265,91 @@ export function ripulisciDocumento(html) {
       // difetto n°12 del collaudo P2, rifatta con un tag di chiusura invece che
       // con uno orfano. Tolto anche lo `\s*` iniziale: `</ script>` per il
       // browser NON e' un tag, e non deve esserlo nemmeno qui.
-      const chiusura = new RegExp(`</${nome}(?=[\\s/>])${DENTRO_TAG}>`, "i");
+      // La chiusura si trova per PREFISSO e si delimita con `leggiTag`: gli
+      // apici di un eventuale attributo si leggono con le regole vere del
+      // tokenizer, non con la regexp che qui riapriva la cecita' del `>`.
       const resto = html.slice(i);
-      const m = chiusura.exec(resto);
-      const corpo = m ? resto.slice(0, m.index) : resto;
+      const prefisso = new RegExp(`</${nome}(?=[\\s/>])`, "i").exec(resto);
+      const fineChiusura = prefisso ? leggiTag(resto, prefisso.index) : null;
+      const corpo = fineChiusura ? resto.slice(0, prefisso.index) : resto;
       if (nome === "script") { if (corpo.trim()) inline.push({ tag: tag.testo, corpo }); }
       else if (nome === "style" && corpo.trim()) stili.push({ tag: tag.testo, corpo });
-      fuori.push(m ? m[0] : `</${nome}>`);
-      i = m ? i + m.index + m[0].length : n;
+      fuori.push(fineChiusura ? fineChiusura.testo : `</${nome}>`);
+      i = fineChiusura ? i + fineChiusura.fine : n;
     }
   }
   return { pulito: fuori.join(""), inline, stili };
 }
 
 /**
- * Quanto lontano si spinge la lettura di UN tag prima di rinunciare.
+ * Un tag dalla posizione `i`: `{ testo, fine }`, oppure `null` se non lo e'.
  *
- * Terza quadratica trovata su questa funzione, e la piu' sottile delle tre: un
- * apice solitario in mezzo al documento **piu'** un `>` in fondo. Il `>` finale
- * disattiva la scorciatoia `ultimoMaggiore` (dopo l'ultimo `>` nessun `<` puo'
- * aprire un tag), e l'apice dispari fa ignorare a ogni tentativo tutti i `>`
- * successivi: ogni `<` rilegge la coda intera. Misurato dal tribunale — 16 KB
- * 270 ms · 32 KB 1,1 s · 64 KB 4,3 s · 128 KB **16,7 s**, il raddoppio che
- * quadruplica.
+ * Questa funzione ha avuto DUE vite, e la seconda esiste perche' la prima
+ * mentiva su dove finisce un tag — in due modi, tutti e due misurati dal
+ * tribunale di P.6-P4 e riprodotti contro Chromium (`--dump-dom`):
  *
- * Il limite rende il fallimento O(limite) invece che O(coda). 32 KB e' molto
- * piu' di qualunque tag vero; il prezzo dichiarato e' che un tag con dentro un
- * `data:` piu' lungo di cosi' viene letto come testo — e un `data:` non e'
- * comunque un terzo, perche' `terziDi` lo scarta per costruzione.
+ * 1. **Il limite dei 32 KB (P1-R2).** C'era un tetto (`TAG_PIU_LUNGO`) oltre
+ *    il quale la lettura rinunciava, messo per chiudere una quadratica. Il
+ *    commento prometteva che il prezzo fosse «un tag viene letto come testo»;
+ *    il prezzo VERO era che un tag oltre il tetto veniva trattato come MAI
+ *    CHIUSO, e per la regola qui sotto **tutto cio' che segue spariva dal
+ *    documento**: un `<path d>` SVG da 35 KB — markup ordinario, lo esporta
+ *    qualunque programma di grafica — faceva passare 8 bloccanti a 0 e
+ *    chiudere `dati-raccolti` `n/a` con premessa misurata e falsa. Il browser
+ *    non ha nessun tetto: legge il tag fino al suo `>`. Ora nemmeno noi.
+ *    La quadratica che il tetto chiudeva non si riapre: e' la regola «un tag
+ *    mai chiuso chiude il documento» (nei chiamanti) a renderla impossibile —
+ *    la scansione fallita si paga UNA volta, non una per `<`.
+ *
+ * 2. **Gli apici fuori posto (P1-R3).** Si trattava OGNI `"` o `'` come
+ *    apertura di un valore quotato. Per il tokenizer HTML un apice apre un
+ *    valore solo SUBITO DOPO `=` (spazi ammessi): in `data-autore=D'Angelo`
+ *    l'apostrofo e' un carattere del valore, e in `<div "a>b">` la virgoletta
+ *    e' un carattere del nome. Con la vecchia regola l'apice apriva una
+ *    stringa che non si chiudeva mai, i `>` successivi diventavano invisibili,
+ *    e di nuovo spariva la coda del documento. Verificato con Chromium: il
+ *    valore e' `D'Angelo`, il tag chiude al primo `>`, la coda resta.
+ *
+ * `<!…>` e `<?…>` non sono tag: per il tokenizer sono DOCTYPE o bogus comment,
+ * e li' il primo `>` chiude SEMPRE — anche dentro una coppia di apici.
+ * Misurato con Chromium: `<?php echo "a>b" ?>` chiude sul `>` fra le
+ * virgolette, e un DOCTYPE con identificatori quotati fa lo stesso (parse
+ * error, ma il token finisce li').
  */
-const TAG_PIU_LUNGO = 32768;
-
-/** Un tag dalla posizione `i`: `{ testo, fine }`, oppure `null` se non lo e'. */
 function leggiTag(html, i) {
   if (!/^<\/?[a-zA-Z!?]/.test(html.slice(i, i + 3))) return null;
+  if (html[i + 1] === "!" || html[i + 1] === "?") {
+    const fine = html.indexOf(">", i + 1);
+    return fine < 0 ? null : { testo: html.slice(i, fine + 1), fine: fine + 1 };
+  }
   let j = i + 1;
-  let apice = null;
-  const limite = Math.min(html.length, i + TAG_PIU_LUNGO);
-  while (j < limite) {
-    const c = html[j];
+  let apice = 0;
+  // Gli stati del tokenizer che decidono se un apice apre un valore: DENTRO
+  // (fra un attributo e l'altro, o nel nome), PRIMA_VALORE (subito dopo `=`),
+  // VALORE_NUDO (valore senza apici, dove `"` `'` `=` sono caratteri).
+  // Confronti sui codici, non regexp per carattere: questa funzione gira su
+  // ogni tag di ogni pagina, e un `/\s/.test` qui dentro costava da solo il
+  // grosso del fattore misurato nella rimisura di P.6-P5.
+  const DENTRO = 0, PRIMA_VALORE = 1, VALORE_NUDO = 2;
+  let stato = DENTRO;
+  while (j < html.length) {
+    const c = html.charCodeAt(j);
     if (apice) {
-      if (c === apice) apice = null;
-    } else if (c === '"' || c === "'") {
-      apice = c;
-    } else if (c === ">") {
+      if (c === apice) { apice = 0; stato = DENTRO; }
+    } else if (c === 62 /* > */) {
       return { testo: html.slice(i, j + 1), fine: j + 1 };
+    } else if (stato === PRIMA_VALORE) {
+      if (c === 34 /* " */ || c === 39 /* ' */) apice = c;
+      // uno spazio dopo `=` lascia aperta l'attesa del valore
+      else if (!(c === 32 || c === 9 || c === 10 || c === 13 || c === 12)) stato = VALORE_NUDO;
+    } else if (c === 32 || c === 9 || c === 10 || c === 13 || c === 12) {
+      stato = DENTRO;
+    } else if (c === 61 /* = */ && stato !== VALORE_NUDO) {
+      stato = PRIMA_VALORE;
     }
     j += 1;
   }
-  return null; // tag non chiuso (o piu' lungo del limite): il `<` e' testo
+  return null; // tag mai chiuso: per il browser il documento finisce qui
 }
 
 /**
@@ -326,14 +362,16 @@ function leggiTag(html, i) {
  * col nome e poi scandiva fino in fondo: **quadratica**, misurata dal tribunale
  * a 24 KB 237 ms · 48 KB 735 ms · 96 KB 3,4 s · 192 KB 13,5 s · 384 KB **49 s**.
  *
- * E c'e' una lezione che vale oltre questa funzione: `DENTRO_TAG`, introdotto in
- * questo stesso pacchetto per chiudere una chiave universale, ha reso questa
- * quadratica **2,6 volte piu' lenta** — tre alternative costano piu' di una
- * classe negata a ogni carattere. Una correzione di correttezza puo' peggiorare
- * un costo, e se nessuno rimisura non lo sa nessuno. Qui la scansione e' unica,
- * lineare, e passa da `leggiTag`, che ora ha un limite suo.
+ * E c'e' una lezione che vale oltre questa funzione: `DENTRO_TAG`, introdotto
+ * per chiudere una chiave universale, ha reso questa quadratica **2,6 volte
+ * piu' lenta** — tre alternative costano piu' di una classe negata a ogni
+ * carattere. Una correzione di correttezza puo' peggiorare un costo, e se
+ * nessuno rimisura non lo sa nessuno. Qui la scansione e' unica, lineare, e
+ * passa da `leggiTag`. Con P.6-P5 (P2-R1) questa scansione e' diventata la
+ * strada di TUTTI i lettori: `DENTRO_TAG` non esiste piu' — dodici regexp che
+ * rileggevano la coda a ogni tentativo sono dodici filtri su una passata sola.
  */
-function tagApertiIn(htmlPulito) {
+function tuttiITag(htmlPulito) {
   const testo = String(htmlPulito ?? "");
   const trovati = [];
   const ultimoMaggiore = testo.lastIndexOf(">");
@@ -350,11 +388,14 @@ function tagApertiIn(htmlPulito) {
       continue;
     }
     i = tag.fine;
-    const m = /^<([a-zA-Z][\w:-]*)/.exec(tag.testo);
-    if (m) trovati.push({ nome: m[1].toLowerCase(), testo: tag.testo, da: j, dopo: tag.fine });
+    const m = /^<(\/?)([a-zA-Z][\w:-]*)/.exec(tag.testo);
+    if (m) trovati.push({ nome: m[2].toLowerCase(), chiusura: m[1] === "/", testo: tag.testo, da: j, dopo: tag.fine });
   }
   return trovati;
 }
+
+/** I soli tag di APERTURA, dalla stessa scansione. */
+const tagApertiIn = (htmlPulito) => tuttiITag(htmlPulito).filter((t) => !t.chiusura);
 
 /**
  * Le pagine raggiungibili da `/` seguendo SOLO i collegamenti, sul grafo gia'
@@ -393,6 +434,33 @@ function fondiIntervalli(intervalli) {
 }
 
 /**
+ * I tag tolti dal testo, con la stessa lettura del ripulitore.
+ *
+ * Prima qui c'era una regexp (`<${DENTRO_TAG}>`): un'altra delle dodici copie
+ * della stessa idea, con lo stesso costo quadratico sull'input ostile e una
+ * generosita' in piu' — strappava anche `< 5 >`, che per il browser e' testo.
+ * `leggiTag` decide con le regole del tokenizer, una volta per tutti.
+ */
+function senzaTagRestanti(testo) {
+  const s = String(testo ?? "");
+  const pezzi = [];
+  let i = 0;
+  while (i < s.length) {
+    const j = s.indexOf("<", i);
+    if (j < 0) { pezzi.push(s.slice(i)); break; }
+    pezzi.push(s.slice(i, j));
+    const tag = leggiTag(s, j);
+    if (tag) { pezzi.push(" "); i = tag.fine; continue; }
+    // un tag mai chiuso chiude il documento (la regola del ripulitore);
+    // un `<` che non apre un tag resta testo
+    if (/^<\/?[a-zA-Z!?]/.test(s.slice(j, j + 3))) break;
+    pezzi.push("<");
+    i = j + 1;
+  }
+  return pezzi.join("");
+}
+
+/**
  * Solo il testo visibile: tag via, entita' principali sciolte, spazi compressi.
  *
  * `soloVisibile` toglie prima le **regioni che l'HTML dichiara nascoste**, e non
@@ -421,8 +489,7 @@ export function testoVisibile(html, { soloVisibile = false } = {}) {
       base = pezzi.join(" ");
     }
   }
-  return base
-    .replace(new RegExp(`<${DENTRO_TAG}>`, "g"), " ")
+  return senzaTagRestanti(base)
     .replace(/&#x27;|&apos;/g, "'")
     .replace(/&quot;/g, '"')
     .replace(/&amp;/g, "&")
@@ -431,7 +498,11 @@ export function testoVisibile(html, { soloVisibile = false } = {}) {
     .trim();
 }
 
-const RE_ATTRIBUTO = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
+// Nel ramo del valore NUDO gli apici sono caratteri: `data-autore=D'Angelo`
+// vale `D'Angelo`, non `D` (P1-R3, verificato con Chromium). Solo lo spazio e
+// il `>` chiudono un valore senza apici, come nello stato «attribute value
+// (unquoted)» del tokenizer.
+const RE_ATTRIBUTO = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
 
 /**
  * Gli attributi di un tag, con il NOME IN MINUSCOLO.
@@ -517,30 +588,18 @@ function daPuntoDiCodice(punto) {
 export const perRegexp = (frammento) => String(frammento).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
- * Cosa puo' stare DENTRO un tag di apertura, fra il nome e il `>`.
- *
- * `[^>]*` era la forma usata in undici punti di questo file, e il tribunale del
- * 2026-08-06 l'ha aperta con **un carattere**: un `>` dentro un valore di
- * attributo quotato. Non e' un artificio — in HTML il `>` in un valore non va
- * scritto con un'entita', e i moduli veri lo scrivono per sbaglio
- * (`alt="prima > dopo"`, `data-cfg='{"a":"b>c"}'`). Il ripulitore lo capiva gia'
- * (`leggiTag` tiene lo stato degli apici); **nessuno l'aveva detto ai lettori a
- * valle**, e ognuno di loro si fermava al primo `>`.
- *
- * Costo misurato di un solo `>` messo bene: `terziDi` non censiva piu' il terzo,
- * `campiDiPagina` leggeva un `type="email"` come `text` senza nome,
- * `destinazioniModuli` non vedeva l'`action` verso un'altra origine,
- * `regioniNascoste` non vedeva il contenitore nascosto, `collegamentiInterni`
- * perdeva una pagina dalla camminata. Quattro passi con un carattere: e' la
- * chiave universale piu' economica trovata finora in questa casa, ed e' la
- * QUARTA istanza in tre giorni della stessa lezione — uno scanner scritto a mano
- * che non guarda dove si trova.
- *
- * Le tre alternative sono **disgiunte sul primo carattere** (`[^>"']` esclude
- * gli apici), quindi la regexp non puo' backtrackare in modo esponenziale: e'
- * una scelta, non un caso, e ha il suo test di tempo.
+ * QUI VIVEVA `DENTRO_TAG` — la regexp che diceva cosa puo' stare fra il nome di
+ * un tag e il `>` — e la sua storia va conservata perche' governa ancora questo
+ * file. Era nata per chiudere la chiave universale del `>` in un valore quotato
+ * (`alt="prima > dopo"`: un carattere, e quattro passi persi — tribunale del
+ * 2026-08-06), ed era usata in DODICI lettori. Due prezzi, tutti e due
+ * misurati: le tre alternative rendevano la scansione 2,6× piu' lenta (P2-R8),
+ * e su un apice mai chiuso ogni tentativo rileggeva la coda — quadratica in
+ * dodici punti, 1 MB di pagina → 554 s reali e 12 passi su 14 MANCANTI
+ * (P2-R1). Da P.6-P5 ogni lettore passa da `tuttiITag`/`leggiTag`: la chiave
+ * del `>` resta chiusa (i test di P.6-P3 la sorvegliano), e la scansione e'
+ * una, lineare, con le regole del tokenizer.
  */
-const DENTRO_TAG = `(?:[^>"']|"[^"]*"|'[^']*')*`;
 
 /** Tutti i tag di apertura di un nome, sul documento gia' ripulito. */
 export function tagDi(htmlPulito, nome) {
@@ -609,10 +668,42 @@ export function percorsoInterno(href, base) {
  * arrivava con la diagnosi sbagliata, che e' il modo in cui un gate si fa
  * ignorare.
  */
+/**
+ * **L'inventario dei riferimenti che portano un visitatore su una pagina
+ * dell'origine** — non i soli `<a href>`, ed e' la chiusura di P7-R2.
+ *
+ * Il perito della superficie ha ottenuto `GATE CONFORMITA': VERDE`, uscita 0,
+ * su un sito che raccoglie IBAN e codice fiscale in una pagina raggiungibile
+ * solo via `<iframe src>`: questa funzione leggeva 1 riferimento navigabile su
+ * 7. Entrano quindi, ognuno col suo motivo:
+ *
+ *   - `a href`, `area href` — la navigazione: un clic e l'utente e' la';
+ *   - `iframe src`, `frame src` — un documento dell'origine MOSTRATO dentro la
+ *     pagina: chi visita lo vede e ne compila i moduli senza navigare;
+ *   - `form action` con metodo GET (o assente: GET e' il default, e un metodo
+ *     invalido ricade su GET) — premere il bottone porta l'utente su quella
+ *     pagina, ed e' un GET come quello di questa camminata;
+ *   - `meta http-equiv=refresh` con `url=` — la navigazione succede da sola.
+ *
+ * **Esclusioni, dichiarate col motivo:**
+ *   - `form action` con metodo POST: la pagina di destinazione di un POST non
+ *     si misura con una GET, e camminarla direbbe qualcosa su un'altra
+ *     risposta. Resta il rilievo di `findingsDestinazioni` quando riceve dati
+ *     personali fuori dalla superficie;
+ *   - `link rel=alternate` (hreflang comprese): un visitatore non ci naviga —
+ *     e' un segnale per i motori — e il passo `lingua-e-hreflang` gia' BLOCCA
+ *     un hreflang interno che punta fuori dalla superficie camminata: metterlo
+ *     qui dentro spegnerebbe quel controllo, non lo rafforzerebbe;
+ *   - `object data`, `embed src`: quasi sempre media non-HTML (un PDF, un
+ *     SVG); camminarli produrrebbe rilievi d'accessibilita' su un documento
+ *     che non e' una pagina. E' una PORTA DICHIARATA APERTA: un documento HTML
+ *     incorporato cosi' non entra nella superficie (verbale P.6-P5).
+ */
 export function collegamentiInterni(html, base) {
   const pulito = senzaScript(html);
   const percorsi = new Set();
-  const dichiarata = attributi(tagDi(pulito, "base")[0] ?? "<base>").href;
+  const tutti = tagApertiIn(pulito);
+  const dichiarata = attributi(tutti.find((t) => t.nome === "base")?.testo ?? "<base>").href;
   let radice = base;
   if (dichiarata) {
     try {
@@ -621,35 +712,70 @@ export function collegamentiInterni(html, base) {
       radice = base;
     }
   }
-  for (const tag of tagDi(pulito, "a")) {
-    const href = (attributi(tag).href ?? "").trim();
-    if (!href || href.startsWith("#") || /^(mailto:|tel:|javascript:|data:)/i.test(href)) continue;
+  // Il `<base>` vale per OGNI riferimento relativo della pagina — src degli
+  // iframe e action dei moduli compresi — non solo per gli `<a>`.
+  const aggiungi = (grezzo) => {
+    const riferimento = (grezzo ?? "").trim();
+    if (!riferimento || riferimento.startsWith("#") || /^(mailto:|tel:|javascript:|data:)/i.test(riferimento)) return;
     let assoluto;
     try {
       // Si RISOLVE contro il `<base>`, ma si CONFRONTA con l'origine vera del
       // sito: un `<base>` che punta a un CDN non rende interno quel CDN.
-      assoluto = new URL(href, radice).toString();
+      assoluto = new URL(riferimento, radice).toString();
     } catch {
-      continue;
+      return;
     }
     const p = percorsoInterno(assoluto, base);
     if (p) percorsi.add(p);
+  };
+  for (const t of tutti) {
+    if (t.nome === "a" || t.nome === "area") {
+      aggiungi(attributi(t.testo).href);
+    } else if (t.nome === "iframe" || t.nome === "frame") {
+      aggiungi(attributi(t.testo).src);
+    } else if (t.nome === "form") {
+      const a = attributi(t.testo);
+      const metodo = (a.method ?? "").trim().toLowerCase();
+      if (metodo !== "post" && metodo !== "dialog") aggiungi(a.action);
+    } else if (t.nome === "meta") {
+      const a = attributi(t.testo);
+      if ((a["http-equiv"] ?? "").toLowerCase() === "refresh") {
+        const m = /url\s*=\s*['"]?([^'";]+)/i.exec(a.content ?? "");
+        if (m) aggiungi(m[1]);
+      }
+    }
   }
   return [...percorsi].sort();
 }
 
-/** I percorsi dichiarati da una `sitemap.xml`. Seconda sorgente, indipendente. */
-export function percorsiDaSitemap(xml, base) {
-  if (typeof xml !== "string") return [];
-  const percorsi = new Set();
+/**
+ * Cosa dichiara una `sitemap.xml`: pagine, oppure ALTRE sitemap.
+ *
+ * Una `<sitemapindex>` e' l'indice: le sue `<loc>` sono file XML, non pagine —
+ * ed e' esattamente il formato che `generateSitemaps()` di Next produce da
+ * solo. Prima questa distinzione non c'era: le sotto-sitemap finivano nella
+ * camminata come pagine (due file XML «serviti» che falliscono ogni regola
+ * d'accessibilita') e ognuna prendeva un `block` «dichiarata e non servita» —
+ * un ROSSO su un sito conforme, cioe' il modo in cui un gate si fa scavalcare
+ * per abitudine (P4-R4 + P7-R3, conferma incrociata di due periti).
+ */
+export function leggiSitemap(xml, base) {
+  if (typeof xml !== "string") return { tipo: null, percorsi: [], sottoSitemap: [] };
+  const radice = /<\s*(urlset|sitemapindex)\b/i.exec(xml);
+  const tipo = radice ? radice[1].toLowerCase() : null;
+  const trovati = new Set();
   const re = /<loc>\s*([^<\s]+)\s*<\/loc>/gi;
   let m;
   while ((m = re.exec(xml)) !== null) {
     const p = percorsoInterno(m[1], base);
-    if (p) percorsi.add(p);
+    if (p) trovati.add(p);
   }
-  return [...percorsi].sort();
+  if (tipo === "sitemapindex") return { tipo, percorsi: [], sottoSitemap: [...trovati].sort() };
+  return { tipo, percorsi: [...trovati].sort(), sottoSitemap: [] };
 }
+
+/** I percorsi di PAGINA dichiarati da una `sitemap.xml`. Seconda sorgente, indipendente. */
+export const percorsiDaSitemap = (xml, base) => leggiSitemap(xml, base).percorsi;
 
 /**
  * Il `BUILD_ID` di questo progetto compare nell'HTML servito?
@@ -903,6 +1029,15 @@ export function regioniNascoste(htmlPulito) {
   // che il tribunale aveva chiuso sul ripulitore (`SD-REDOS-01`), rifatto da chi
   // quel verbale l'aveva appena letto: un gate che si puo' appendere non dice
   // mai ROSSO, e appenderlo non richiede nessun privilegio.
+  // Se il documento non contiene NESSUNA delle sottostringhe che possono
+  // nascondere (`hidden` copre anche `aria-hidden`; `display` e `visibility`
+  // coprono gli stili), nessun tag puo' risultare nascosto e la risposta e'
+  // vuota per costruzione. Non e' un'euristica: e' la condizione necessaria di
+  // `tagNascosto`, verificata in una passata. Serve perche' da P.6-P5 questa
+  // funzione la chiamano anche `livelliTitoli` e i lettori del nome
+  // accessibile, su ogni pagina: senza la scorciatoia la correzione di P4-R6
+  // costava 3× su una pagina qualunque (rimisurato, lezione P2-R8).
+  if (!/hidden|display|visibility/i.test(String(htmlPulito ?? ""))) return [];
   const regioni = [];
   const pila = [];
   // Un indice nome → posizioni nella pila: senza, una chiusura che non combacia
@@ -914,11 +1049,12 @@ export function regioniNascoste(htmlPulito) {
   let profondita = 0;
   let inizio = null;
   const testo = String(htmlPulito ?? "");
-  const re = new RegExp(`<(/?)([a-zA-Z][\\w:-]*)\\b(${DENTRO_TAG})>`, "g");
-  let m;
-  while ((m = re.exec(testo)) !== null) {
-    const nome = m[2].toLowerCase();
-    if (m[1]) {
+  // `tuttiITag`, non una regexp col corpo del tag dentro: era una delle dodici
+  // copie di `DENTRO_TAG`, e su un apice mai chiuso ogni tentativo rileggeva la
+  // coda — misurato in P.6-P5: 182 ms a 32 KB, 10,2 s a 256 KB, ×4 a raddoppio.
+  for (const t of tuttiITag(testo)) {
+    const nome = t.nome;
+    if (t.chiusura) {
       const posizioni = dove.get(nome);
       if (!posizioni || posizioni.length === 0) continue;
       const i = posizioni[posizioni.length - 1];
@@ -929,18 +1065,18 @@ export function regioniNascoste(htmlPulito) {
       }
       pila.length = i;
       if (profondita === 0 && inizio !== null) {
-        regioni.push([inizio, re.lastIndex]);
+        regioni.push([inizio, t.dopo]);
         inizio = null;
       }
       continue;
     }
-    const nascosto = tagNascosto(m[0]);
+    const nascosto = tagNascosto(t.testo);
     // La barra NON autochiude: `<div hidden/>` **sembra** una chiusura e invece
     // resta aperto, cioe' nasconde tutto il resto della pagina. Prima bastava
     // scriverla per far contare come visibile un pie' di pagina che nessuno
     // vede. Autochiudono solo gli elementi che l'HTML dichiara vuoti.
     if (VUOTI.has(nome)) {
-      if (nascosto) regioni.push([m.index, re.lastIndex]);
+      if (nascosto) regioni.push([t.da, t.dopo]);
       continue;
     }
     // Chiusura IMPLICITA. Un `<li>` chiude il `<li>` precedente, e il browser fa
@@ -959,12 +1095,12 @@ export function regioniNascoste(htmlPulito) {
         if (suoi && suoi[suoi.length - 1] === pila.length - 1) suoi.pop();
         pila.pop();
         if (profondita === 0 && inizio !== null) {
-          regioni.push([inizio, m.index]);
+          regioni.push([inizio, t.da]);
           inizio = null;
         }
       }
     }
-    if (nascosto && profondita === 0) inizio = m.index;
+    if (nascosto && profondita === 0) inizio = t.da;
     if (nascosto) profondita += 1;
     if (!dove.has(nome)) dove.set(nome, []);
     dove.get(nome).push(pila.length);
@@ -1211,49 +1347,87 @@ export function destinazioniModuli(html, base) {
   const fuori = [];
   for (const { tag, dentro } of moduliConContenuto(pulito)) {
     const attr = attributi(tag);
+    const campi = [...campiDiPagina(dentro), ...campiLegatiPerId(pulito, attr.id)];
+    // **Le destinazioni di un modulo non sono una sola** (P3-R1). Un
+    // `formaction` su un bottone d'invio SOSTITUISCE l'`action` del form: il
+    // perito ha costruito un `<button type=submit formaction=…>` che consegna
+    // nome ed email a un terzo, e questo gate stampava destinazione e gravita'
+    // di un sito che non esiste — leggeva solo l'`action`. Ogni bottone
+    // d'invio con `formaction` e' una destinazione in piu', con GLI STESSI
+    // campi: e' lo stesso modulo, spedito altrove.
+    const azioni = [];
     const azione = (attr.action ?? "").trim();
-    if (!azione) continue;
-    let url;
-    try {
-      url = new URL(azione, base);
-    } catch {
-      continue;
+    if (azione) azioni.push({ azione, tramite: "action" });
+    for (const t of tagApertiIn(dentro)) {
+      if (t.nome !== "button" && t.nome !== "input") continue;
+      const a = attributi(t.testo);
+      const tipo = (a.type ?? (t.nome === "button" ? "submit" : "text")).trim().toLowerCase();
+      // invia il modulo solo un `<button type=submit>` (il default) o un
+      // `<input type=submit|image>`: gli altri non hanno un formaction efficace
+      if (t.nome === "button" && tipo !== "submit") continue;
+      if (t.nome === "input" && tipo !== "submit" && tipo !== "image") continue;
+      const fa = (a.formaction ?? "").trim();
+      if (fa) azioni.push({ azione: fa, tramite: "formaction" });
     }
-    if (!/^https?:$/.test(url.protocol)) continue;
-    const locale = /^(localhost|127\.0\.0\.1|\[::1\]|::1)$/i.test(url.hostname);
-    fuori.push({
-      azione,
-      origine: url.origin,
-      altraOrigine: url.host !== mia.host,
-      destinazione: percorsoInterno(azione, base),
-      inChiaro: url.protocol === "http:" && !locale,
-      campi: [...campiDiPagina(dentro), ...campiLegatiPerId(pulito, attr.id)],
-    });
+    for (const { azione: az, tramite } of azioni) {
+      let url;
+      try {
+        url = new URL(az, base);
+      } catch {
+        continue;
+      }
+      if (!/^https?:$/.test(url.protocol)) continue;
+      const locale = /^(localhost|127\.0\.0\.1|\[::1\]|::1)$/i.test(url.hostname);
+      fuori.push({
+        azione: az,
+        tramite,
+        origine: url.origin,
+        altraOrigine: url.host !== mia.host,
+        destinazione: percorsoInterno(az, base),
+        inChiaro: url.protocol === "http:" && !locale,
+        campi,
+      });
+    }
   }
   return fuori;
 }
 
 /**
- * I `<form>` con il loro contenuto, **anche quando il tag di chiusura non c'e'**.
+ * I `<form>` con il loro contenuto, **come li vede il browser** — anche quando
+ * il tag di chiusura non c'e', e anche quando qualcuno ne annida uno.
  *
  * `elementiDi` pretende il `</form>`, e il browser no: un modulo senza chiusura
  * invia lo stesso. Il tribunale l'ha misurato — togliendo un tag di chiusura,
  * `destinazioniModuli` tornava `[]` mentre i campi c'erano tutti, e i due
  * bloccanti introdotti dal collaudo P2 («li invia a un'ALTRA ORIGINE», «li invia
- * IN CHIARO») non scattavano piu'. Un modulo non chiuso arriva fino al prossimo
- * `<form` o alla fine del documento, che e' esattamente cio' che fa il parser.
+ * IN CHIARO») non scattavano piu'.
+ *
+ * **Il form annidato (P3-R2).** Il parser HTML IGNORA un `<form>` aperto mentre
+ * un altro e' ancora aperto (il «form element pointer» non e' nullo), e il primo
+ * `</form>` chiude quello VERO. La versione precedente faceva l'opposto —
+ * troncava il form vero alla `<form` annidata e attribuiva i campi a quella —
+ * quindi `<form action=terzo><form action=/x></form><input email…>` risultava
+ * «modulo verso il terzo SENZA campi personali»: nessun bloccante, su un
+ * modulo che il browser spedisce al terzo coi campi dentro. Verificato con
+ * Chromium (`--dump-dom`): il form annidato sparisce dal DOM e i campi restano
+ * nel form esterno; i campi DOPO il primo `</form>` sono orfani, per il
+ * browser e per questa funzione.
  */
 function moduliConContenuto(pulito) {
-  const apre = new RegExp(`<form\\b${DENTRO_TAG}>`, "gi");
-  const trovati = [];
-  const aperture = [];
+  const aperture = tagApertiIn(pulito).filter((t) => t.nome === "form");
+  const chiusure = [];
+  const reChiusura = /<\/form\s*>/gi;
   let m;
-  while ((m = apre.exec(pulito)) !== null) aperture.push({ tag: m[0], da: m.index, dopo: apre.lastIndex });
-  for (let i = 0; i < aperture.length; i += 1) {
-    const limite = i + 1 < aperture.length ? aperture[i + 1].da : pulito.length;
-    const resto = pulito.slice(aperture[i].dopo, limite);
-    const chiude = /<\/form\s*>/i.exec(resto);
-    trovati.push({ tag: aperture[i].tag, dentro: chiude ? resto.slice(0, chiude.index) : resto });
+  while ((m = reChiusura.exec(pulito)) !== null) chiusure.push({ da: m.index, dopo: reChiusura.lastIndex });
+  const trovati = [];
+  let chiusoFino = -1;
+  let k = 0;
+  for (const a of aperture) {
+    if (a.da < chiusoFino) continue; // annidato in un form ancora aperto: il browser lo ignora
+    while (k < chiusure.length && chiusure[k].da < a.dopo) k += 1;
+    const chiude = k < chiusure.length ? chiusure[k] : null;
+    trovati.push({ tag: a.testo, dentro: pulito.slice(a.dopo, chiude ? chiude.da : pulito.length) });
+    chiusoFino = chiude ? chiude.dopo : pulito.length;
   }
   return trovati;
 }
@@ -1401,30 +1575,34 @@ function findingsDestinazioni(pagina, superficie) {
   for (const m of pagina.destinazioni ?? []) {
     const personali = m.campi.filter((c) => classificaCampo(c).personale);
     if (personali.length === 0) continue;
+    // Il rilievo dice DA QUALE PORTA esce il dato: un `formaction` su un
+    // bottone d'invio non e' l'`action` del form, e chi corregge deve sapere
+    // quale riga del markup guardare (P3-R1).
+    const porta = m.tramite === "formaction" ? " (dal `formaction` di un bottone d'invio)" : "";
     if (m.altraOrigine) {
       findings.push({
         severity: "block",
         object: `${pagina.percorso} → modulo verso ${m.origine}`,
-        message: `raccoglie ${personali.length} dati personali e li invia a un'ALTRA ORIGINE (${m.origine}): e' un destinatario ai sensi dell'art. 13 e va dichiarato. Un terzo che riceve il modulo non deve nemmeno fare niente nel browser — i dati glieli consegna il sito`,
+        message: `raccoglie ${personali.length} dati personali e li invia a un'ALTRA ORIGINE (${m.origine})${porta}: e' un destinatario ai sensi dell'art. 13 e va dichiarato. Un terzo che riceve il modulo non deve nemmeno fare niente nel browser — i dati glieli consegna il sito`,
       });
     }
     if (m.inChiaro) {
       findings.push({
         severity: "block",
         object: `${pagina.percorso} → modulo verso ${m.origine}`,
-        message: `raccoglie ${personali.length} dati personali e li invia IN CHIARO (${m.azione}): attraversano la rete leggibili da chiunque stia in mezzo`,
+        message: `raccoglie ${personali.length} dati personali e li invia IN CHIARO (${m.azione})${porta}: attraversano la rete leggibili da chiunque stia in mezzo`,
       });
     }
-    // La camminata segue gli `<a href>`. Una pagina raggiungibile SOLO dal
-    // bottone di un modulo resta fuori dalla superficie — ed e' un limite
-    // dichiarato, ma il gate lo applicava in silenzio: restringeva l'insieme
-    // che poi dichiarava conforme. Adesso lo dice. `issue` perche' la pagina
-    // di destinazione di un POST spesso non e' navigabile da sola.
+    // Una destinazione interna fuori dalla superficie: dal 2026-08-07 i moduli
+    // GET si camminano (P7-R2), quindi qui restano i POST e i `formaction` —
+    // pagine che ricevono dati e che questa camminata non puo' misurare con una
+    // GET. `issue` perche' la pagina di destinazione di un POST spesso non e'
+    // navigabile da sola; il limite resta DETTO, non applicato in silenzio.
     if (!m.altraOrigine && superficie && !superficie.has(m.destinazione)) {
       findings.push({
         severity: "issue",
         object: `${pagina.percorso} → ${m.destinazione}`,
-        message: "il modulo consegna dati personali a una pagina che la camminata NON ha raggiunto (i collegamenti si seguono, i bottoni no): quella pagina riceve dati e non e' stata certificata",
+        message: "il modulo consegna dati personali a una pagina che la camminata NON ha raggiunto (un POST non si misura con una GET): quella pagina riceve dati e non e' stata certificata",
       });
     }
   }
@@ -1546,7 +1724,7 @@ export function terziDi(html, base) {
   // scarica dal dominio di un terzo esattamente come un `<style>` — indirizzo IP
   // e User-Agent di chi visita compresi, che e' cio' che rende un terzo un
   // destinatario. Guardavamo l'ELEMENTO `<style>` e non l'ATTRIBUTO.
-  for (const t of pulito.match(new RegExp(`<[a-zA-Z][a-zA-Z0-9-]*\\b${DENTRO_TAG}>`, "g")) ?? []) {
+  for (const { testo: t } of tagApertiIn(pulito)) {
     const stile = attributi(t).style;
     if (!stile || !stile.includes("url(")) continue;
     for (const m of stile.matchAll(/url\(\s*['"]?([^'")]+)['"]?\s*\)/gi)) aggiungi(m[1], "style");
@@ -1705,7 +1883,8 @@ export function nomeAccessibile(tag, dentro, documento = "") {
   for (const { dentro: titolo } of elementiDi(dentro ?? "", "title")) {
     if (testoVisibile(titolo)) return testoVisibile(titolo);
   }
-  for (const qualsiasi of (dentro ?? "").match(new RegExp(`<[a-zA-Z]${DENTRO_TAG}>`, "gi"))?.filter((t) => /\baria-label\s*=/i.test(t)) ?? []) {
+  for (const { testo: qualsiasi } of tagApertiIn(dentro ?? "")) {
+    if (!/\baria-label\s*=/i.test(qualsiasi)) continue;
     const etichetta = attributi(qualsiasi)["aria-label"];
     if (etichetta?.trim()) return etichetta.trim();
   }
@@ -1716,16 +1895,13 @@ export function nomeAccessibile(tag, dentro, documento = "") {
  * Quanto puo' essere lungo un `id` prima che smettere di cercarlo sia l'unica
  * cosa sensata.
  *
- * Il tribunale l'ha misurato ed e' il rilievo piu' brutto della tornata perche'
- * non e' un rallentamento: e' un **crash deterministico**. `id` finiva dentro la
- * sorgente di una `RegExp`, e oltre i ~30 KB V8 rifiuta il pattern con un
- * `SyntaxError` — non catturato qui, catturato da `main`, che esce **2** e
- * azzera tutti e nove i passi. Basta UN `aria-labelledby` lungo in una pagina
- * qualunque, e la citazione del `verify.mjs` e' la sua stessa: «un gate che va in
- * crash non e' ne' verde ne' rosso: e' assente, ed e' peggio di entrambi».
- *
- * Non e' un difetto di escape — `perRegexp` fa il suo lavoro e una stringa di
- * 40 000 `x` senza un metacarattere lo riproduce lo stesso. E' lunghezza.
+ * La storia: `id` finiva dentro la sorgente di una `RegExp`, e oltre i ~30 KB
+ * V8 rifiuta il pattern con un `SyntaxError` — un **crash deterministico** da
+ * UN `aria-labelledby` lungo (tribunale P.6-P3). Da P.6-P5 la `RegExp` non
+ * esiste piu' — il confronto e' fra stringhe, via `attributi` — quindi il
+ * crash non e' piu' possibile per costruzione. Il tetto resta come limite
+ * DICHIARATO: un id oltre i 2 KB non e' un id, e' un punto in cui smettere di
+ * cercare, e il test di P.6-P3 su questa classe continua a valere.
  */
 const ID_PIU_LUNGO = 2048;
 
@@ -1733,27 +1909,43 @@ const ID_PIU_LUNGO = 2048;
 export function testoDellId(documento, id) {
   if (!documento || !id) return "";
   if (String(id).length > ID_PIU_LUNGO) return "";
-  // `(?:^|[\s"'])id\s*=` e non `\bid\s*=`: in `data-id="eti"` il carattere prima
-  // di `id` e' un trattino, che per `\b` e' un confine di parola — quindi un
-  // `aria-labelledby` che punta al vuoto tornava a risolversi su un qualunque
-  // `data-id` con quel valore, e nei framework a componenti i `data-*` con id
-  // sintetici sono la norma. E' SD-VERDE-06 riaperto in forma piu' stretta.
-  // Il valore si accetta anche SENZA apici: pretenderli era un falso rosso.
-  const re = new RegExp(
-    `<([a-zA-Z][a-zA-Z0-9-]*)\\b(?:[^>"']|"[^"]*"|'[^']*')*?[\\s]id\\s*=\\s*(?:"${perRegexp(id)}"|'${perRegexp(id)}'|${perRegexp(id)}(?=[\\s>]))${DENTRO_TAG}>([\\s\\S]*?)<\\/\\1>`,
-    "i",
-  );
-  const m = re.exec(documento);
-  return m ? testoVisibile(m[2], { soloVisibile: true }) : "";
+  // `attributi`, non una regexp costruita sull'id: cosi' `data-id="eti"` non
+  // combacia (il nome dell'attributo e' `data-id`, non `id` — SD-VERDE-06), il
+  // valore si legge con o senza apici, e l'id non entra in nessuna sorgente di
+  // RegExp. Il primo elemento con quell'id E una chiusura vince; un elemento
+  // vuoto (un `<img id=…>`) non ha testo da dare e si salta.
+  const cercato = String(id);
+  for (const t of tagApertiIn(documento)) {
+    if (attributi(t.testo).id !== cercato) continue;
+    const chiude = new RegExp(`</${perRegexp(t.nome)}[ \\t\\n\\r]*>`, "i").exec(documento.slice(t.dopo));
+    if (!chiude) continue;
+    return testoVisibile(documento.slice(t.dopo, t.dopo + chiude.index), { soloVisibile: true });
+  }
+  return "";
 }
 
-/** I livelli dei titoli, in ordine di documento. */
+/**
+ * I livelli dei titoli VISIBILI, in ordine di documento.
+ *
+ * Le regioni nascoste si escludono, nei due versi, ed e' la chiusura di P4-R6:
+ * prima un accordion coi pannelli chiusi produceva un `block` di gerarchia
+ * saltata su una pagina corretta, e un `h1` sepolto in un `display:none`
+ * faceva passare per titolata una pagina che a chi la apre non dichiara
+ * niente. Uno screen reader non legge il contenuto `display:none`/`hidden`:
+ * la gerarchia che si annuncia e' quella visibile, ed e' quella che si conta —
+ * la stessa regola di `testoVisibile({ soloVisibile })` sull'informativa.
+ * Cio' che uno script rivela dopo il caricamento questo gate non lo vede, ed
+ * e' il limite dichiarato della Legge n°3.
+ */
 export function livelliTitoli(html) {
   const pulito = senzaScript(html);
-  const re = new RegExp(`<h([1-6])\\b${DENTRO_TAG}>`, "gi");
+  const nascoste = regioniNascoste(pulito);
   const livelli = [];
-  let m;
-  while ((m = re.exec(pulito)) !== null) livelli.push(Number(m[1]));
+  for (const t of tagApertiIn(pulito)) {
+    if (!/^h[1-6]$/.test(t.nome)) continue;
+    if (tagNascosto(t.testo) || dentroRegioni(nascoste, t.da)) continue;
+    livelli.push(Number(t.nome[1]));
+  }
   return livelli;
 }
 
@@ -1766,12 +1958,14 @@ function regoleDocumento(html, pulito, dove) {
   // guardava il ripulito); e un `<svg><title>icona</title></svg>` nel corpo —
   // markup che questa casa RACCOMANDA, perche' e' il rimedio SD-ROSSO-01 —
   // chiudeva il bloccante sulla prima cosa che uno screen reader annuncia.
-  const testa = pulito.split(new RegExp(`<body\\b${DENTRO_TAG}>`, "i"))[0];
-  const titolo = new RegExp(`<title${DENTRO_TAG}>([\\s\\S]*?)</title>`, "i").exec(testa);
-  if (!titolo || testoVisibile(titolo[1]).length === 0) dove("nessun <title>, o vuoto: e' la prima cosa che uno screen reader annuncia");
+  const tutti = tagApertiIn(pulito);
+  const corpoTag = tutti.find((t) => t.nome === "body");
+  const testa = corpoTag ? pulito.slice(0, corpoTag.da) : pulito;
+  const titolo = elementiDi(testa, "title")[0] ?? null;
+  if (!titolo || testoVisibile(titolo.dentro).length === 0) dove("nessun <title>, o vuoto: e' la prima cosa che uno screen reader annuncia");
 
-  const html5 = new RegExp(`<html\\b${DENTRO_TAG}>`, "i").exec(pulito);
-  const lang = html5 ? attributi(html5[0]).lang : undefined;
+  const html5 = tutti.find((t) => t.nome === "html");
+  const lang = html5 ? attributi(html5.testo).lang : undefined;
   if (!lang || !lang.trim()) dove("nessun attributo `lang` su <html>: la sintesi vocale non sa in che lingua leggere");
 
   const main = tagDi(pulito, "main").length;
@@ -1998,8 +2192,8 @@ export function hreflangDi(html, base) {
 
 /** Il `lang` di <html>, oppure `null`. */
 export function langDi(html) {
-  const tag = new RegExp(`<html\\b${DENTRO_TAG}>`, "i").exec(senzaScript(html));
-  const lang = tag ? attributi(tag[0]).lang : "";
+  const tag = tagApertiIn(senzaScript(html)).find((t) => t.nome === "html");
+  const lang = tag ? attributi(tag.testo).lang : "";
   return lang && lang.trim() ? lang.trim() : null;
 }
 
@@ -2171,7 +2365,7 @@ const RE_SITEMAP_XML = /<\s*(urlset|sitemapindex)\b/i;
  * verifica: sono due domande diverse, ed e' il motivo per cui questa voce
  * esiste come passo suo.
  */
-export function findingsSitemap({ risposta, percorsi, superficie, rimandi }) {
+export function findingsSitemap({ risposta, percorsi, superficie, rimandi, sotto = [] }) {
   if (!risposta) {
     return [{ severity: "issue", object: "sitemap.xml", message: "`/sitemap.xml` non risponde: i motori non hanno l'elenco che il sito dichiara di pubblicare, e la camminata di questo gate perde la sua seconda sorgente" }];
   }
@@ -2187,8 +2381,28 @@ export function findingsSitemap({ risposta, percorsi, superficie, rimandi }) {
     });
     return findings;
   }
+  // Le sotto-sitemap di un indice sono promesse come gli indirizzi: un indice
+  // che dichiara una sitemap morta, o che ne serve una che non e' XML di
+  // sitemap, mente ai motori esattamente come una `<loc>` verso un 404.
+  for (const s of sotto) {
+    if (s.stato !== 200) {
+      findings.push({
+        severity: "block",
+        object: s.percorso,
+        message: `dichiarata nella \`<sitemapindex>\` come sotto-sitemap e risponde ${s.stato === null || s.stato === undefined ? "niente" : `HTTP ${s.stato}`}: l'indice promette un elenco che non c'e'`,
+      });
+    } else if (!s.valida) {
+      findings.push({
+        severity: "block",
+        object: s.percorso,
+        message: "dichiarata nella `<sitemapindex>` come sotto-sitemap, risponde 200 e non e' una sitemap (nessun `<urlset>`)",
+      });
+    }
+  }
   if (percorsi.length === 0) {
-    findings.push({ severity: "issue", object: "sitemap.xml", message: "`/sitemap.xml` e' una sitemap e non dichiara nessun indirizzo: e' rotta, non assente" });
+    if (findings.length === 0) {
+      findings.push({ severity: "issue", object: "sitemap.xml", message: "`/sitemap.xml` e' una sitemap e non dichiara nessun indirizzo: e' rotta, non assente" });
+    }
     return findings;
   }
   for (const p of percorsi) {

@@ -175,30 +175,43 @@ describe("il perimetro — la Legge n°1, resa falsificabile", () => {
   // D21, 2026-08-06: cinque delle otto sono tornate a casa. Non perche' il
   // vicino abbia aggiunto il passo, ma perche' la proprieta' segue la misura —
   // e ognuna ha ora un passo suo, confrontato dal §19.
-  const SCOPERTE_ATTESE = ["contrasti", "accessibilita-admin", "antispam"];
+  // P.6-P5, 2026-08-07: `contrasti` e' uscita NEL MODO PRESCRITTO — il vicino
+  // ha aggiunto il passo `contrasto` (legge `report.audits["color-contrast"]`)
+  // e il grep rilanciato lo misura: 4 file. Restano due.
+  const SCOPERTE_ATTESE = ["accessibilita-admin", "antispam"];
 
-  it("una tabella completa e coerente produce SOLO le voci scoperte, e sono tre", () => {
+  it("una tabella completa e coerente produce SOLO le voci scoperte, e sono due", () => {
     const f = perimetro(RIGHE_BUONE);
     assert.deepEqual(blocchi(f), []);
     assert.deepEqual(f.map((x) => x.object).sort(), [...SCOPERTE_ATTESE].sort());
     assert.match(f.find((x) => x.object === "antispam").message, /SCOPERTA/);
   });
 
-  it("una delega che il gate del vicino non guarda e' un rilievo, e nomina la misura E il commit", () => {
+  // I due versi della regola con cui una riga entra ed esce da SCOPERTE:
+  // il verso che RESTA (delega dichiarata ma il gate del vicino misura solo i
+  // sorgenti: issue con la misura e il commit) e il verso che SI TOGLIE (il
+  // gate del vicino ha il passo, misurato col grep: nessun issue).
+  it("verso ↑: una delega che il gate del vicino non guarda come servito e' un rilievo, e nomina la misura E il commit", () => {
     const f = perimetro(RIGHE_BUONE);
-    const con = f.find((x) => x.object === "contrasti");
-    assert.equal(con.severity, "issue");
-    assert.match(con.message, /il suo GATE non la guarda/);
-    assert.match(con.message, /0 file/);
+    const adm = f.find((x) => x.object === "accessibilita-admin");
+    assert.equal(adm.severity, "issue");
+    assert.match(adm.message, /il suo GATE non la guarda/);
+    assert.match(adm.message, /SORGENTI/);
     // D18 §3: una misura che dipende dal vicino porta il commit della regia a
     // cui si riferisce, o non e' ripetibile.
-    assert.match(con.message, /sulla regia a `[0-9a-f]{7}`/);
-    assert.match(con.message, /nominare non e' misurare/);
+    assert.match(adm.message, /sulla regia a `[0-9a-f]{7}`/);
+    assert.match(adm.message, /nominare non e' misurare/);
   });
 
-  it("le due deleghe che REGGONO non producono nessun rilievo", () => {
+  it("verso ↓: una voce delegata a un vicino il cui GATE la guarda non produce l'issue", () => {
     const f = perimetro(RIGHE_BUONE);
-    for (const id of ["canonical", "noindex-private"]) {
+    assert.equal(f.find((x) => x.object === "contrasti"), undefined,
+      "dal 2026-08-07 il gate di speed-demon ha il passo `contrasto` (grep rilanciato: 4 file): la voce non e' piu' scoperta");
+  });
+
+  it("le tre deleghe che REGGONO non producono nessun rilievo", () => {
+    const f = perimetro(RIGHE_BUONE);
+    for (const id of ["canonical", "noindex-private", "contrasti"]) {
       assert.equal(f.find((x) => x.object === id), undefined, `${id} e' misurata davvero dal gate di speed-demon: non deve comparire`);
     }
   });

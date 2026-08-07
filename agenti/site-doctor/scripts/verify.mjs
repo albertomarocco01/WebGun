@@ -72,9 +72,9 @@ import {
   iconeDichiarate,
   langDi,
   leggiRobots,
+  leggiSitemap,
   moduliDiPagina,
   openGraphDi,
-  percorsiDaSitemap,
   perStampa,
   percorsoInterno,
   raggiungibiliDaCollegamenti,
@@ -348,6 +348,58 @@ async function preleva(url, { tentativi = 2, segui = false, attesa = ATTESA_MS }
 const unisci = (base, percorso) => new URL(percorso, base).toString();
 
 /**
+ * Quante sotto-sitemap di una `<sitemapindex>` questo gate segue.
+ *
+ * `generateSitemaps()` di Next ne produce una per voce dell'elenco che gli si
+ * da': cinquanta copre ogni progetto di questa casa con margine. OLTRE il
+ * tetto la verifica non e' stata fatta, e il passo `sitemap-xml` lo dice con
+ * uno `skipped` — un elenco letto a meta' non e' un elenco verificato (§18).
+ * Il tetto NON tocca il numero di `<loc>` per sitemap: la coda della camminata
+ * puo' ancora nascere enorme da una sitemap sola (P2-R10, dichiarata aperta).
+ */
+export const MAX_SOTTO_SITEMAP = 50;
+
+/**
+ * La sitemap servita, con l'indice RISOLTO (P4-R4 + P7-R3): se `/sitemap.xml`
+ * e' una `<sitemapindex>` — il formato che Next genera da solo — le
+ * sotto-sitemap si seguono e le pagine sono l'unione delle loro `<loc>`. I
+ * file XML delle sotto-sitemap NON sono pagine e non entrano nella camminata:
+ * prima ci entravano, e un sito conforme usciva rosso con un `block` per ogni
+ * sotto-sitemap.
+ */
+async function leggiSitemapServita(baseUrl) {
+  const risposta = await preleva(unisci(baseUrl, "/sitemap.xml"), { segui: true });
+  if (!risposta || risposta.stato !== 200) {
+    return { risposta, tipo: null, percorsi: [], sotto: [], oltreIlTetto: 0, scadutaQui: false };
+  }
+  const radice = leggiSitemap(risposta.corpo, baseUrl);
+  const percorsi = new Set(radice.percorsi);
+  const sotto = [];
+  const daSeguire = radice.sottoSitemap.slice(0, MAX_SOTTO_SITEMAP);
+  for (const p of daSeguire) {
+    if (scaduta()) {
+      return { risposta, tipo: radice.tipo, percorsi: [...percorsi].sort(), sotto, oltreIlTetto: radice.sottoSitemap.length - sotto.length, scadutaQui: true };
+    }
+    const r = await preleva(unisci(baseUrl, p), { segui: true });
+    if (!r || r.stato !== 200) {
+      sotto.push({ percorso: p, stato: r ? r.stato : null, valida: false });
+      continue;
+    }
+    const dentro = leggiSitemap(r.corpo, baseUrl);
+    sotto.push({ percorso: p, stato: r.stato, valida: dentro.tipo === "urlset" });
+    for (const pagina of dentro.percorsi) percorsi.add(pagina);
+  }
+  return {
+    risposta,
+    tipo: radice.tipo,
+    percorsi: [...percorsi].sort(),
+    sotto,
+    oltreIlTetto: radice.sottoSitemap.length - daSeguire.length,
+    scadutaQui: false,
+  };
+}
+
+/**
  * Il nome di un cookie da una riga `Set-Cookie`, oppure `null` se non e' un
  * cookie.
  *
@@ -477,10 +529,13 @@ const PASSI = [
         return record(this.id, this.nome, identita.stato, identita.diagnosi);
       }
 
-      // Seconda sorgente, indipendente dai collegamenti.
-      const sitemap = await preleva(unisci(args.url, "/sitemap.xml"), { segui: true });
-      const sitemapLetta = Boolean(sitemap && sitemap.stato === 200 && /<urlset|<loc>/i.test(sitemap.corpo));
-      const daSitemap = sitemapLetta ? percorsiDaSitemap(sitemap.corpo, args.url) : [];
+      // Seconda sorgente, indipendente dai collegamenti — con l'indice risolto:
+      // le `<loc>` di una `<sitemapindex>` sono file XML da seguire, non pagine
+      // da camminare (P4-R4 + P7-R3).
+      const mappa = await leggiSitemapServita(args.url);
+      const sitemapLetta = Boolean(mappa.risposta && mappa.risposta.stato === 200
+        && (mappa.tipo !== null || mappa.percorsi.length > 0));
+      const daSitemap = sitemapLetta ? mappa.percorsi : [];
 
       // Camminata in ampiezza dai collegamenti, partendo dalla radice e dalla
       // sitemap. Una pagina che rimanda altrove NON e' quella pagina: si
@@ -572,7 +627,7 @@ const PASSI = [
       const dettaglio = [
         `identita': ${identita.stato === "pass" ? identita.diagnosi : "NON confermata dal build id (vedi sotto)"} · ${ctx.pagine.length} pagine lette · ${rimandi.size} rimandi o errori non seguiti`,
         `radice: ${radicePercorso}${radicePercorso === "/" ? "" : " (la radice rimanda, e il rimando e' stato seguito)"}`,
-        `sorgenti: collegamenti da ${radicePercorso} (${daCollegamenti.length}) · sitemap.xml ${sitemapLetta ? `(${daSitemap.length})` : "NON LETTA"}`,
+        `sorgenti: collegamenti da ${radicePercorso} (${daCollegamenti.length}) · sitemap.xml ${sitemapLetta ? `(${daSitemap.length}${mappa.tipo === "sitemapindex" ? `, indice con ${mappa.sotto.length} sotto-sitemap seguite` : ""})` : "NON LETTA"}`,
         `superficie: ${ctx.pagine.map((p) => p.percorso).join(" ")}`,
         rimandi.size > 0 ? `non entrate: ${[...rimandi].map(([p, d]) => `${p} → ${perStampa(d, 120)}`).join(" · ")}` : "",
         dettaglioFindings(findings),
@@ -594,7 +649,20 @@ const PASSI = [
     nome: "informativa privacy raggiungibile",
     async esegui(ctx, args) {
       if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
-      const conCandidati = ctx.pagine.map((p) => ({ percorso: p.percorso, candidati: candidatiInformativa(p.corpo, ctx.baseUrl) }));
+      // La scadenza si guarda anche NEI CICLI DI LETTURA, non solo in rete
+      // (P2-R2): leggere i collegamenti di una pagina costa CPU, e un tetto che
+      // sorveglia solo i `fetch` e' un tetto che una pagina scritta bene
+      // scavalca. Vale per ogni passo che itera sulle pagine; la granularita'
+      // dichiarata e' LA PAGINA — dentro la lettura di una singola pagina il
+      // controllo non entra, e il superamento massimo e' il costo di una.
+      const conCandidati = [];
+      for (const p of ctx.pagine) {
+        if (scaduta()) {
+          return record(this.id, this.nome, "skipped",
+            motivoScadenza(ctx, args, ctx.inizio, `si e' fermato dopo aver letto i collegamenti di ${conCandidati.length} pagine su ${ctx.pagine.length}`));
+        }
+        conCandidati.push({ percorso: p.percorso, candidati: candidatiInformativa(p.corpo, ctx.baseUrl) });
+      }
       const peso = new Map();
       for (const p of conCandidati) {
         for (const c of p.candidati) peso.set(c.percorso, (peso.get(c.percorso) ?? 0) + c.peso);
@@ -651,7 +719,7 @@ const PASSI = [
   {
     id: ID.dati,
     nome: "dati raccolti dai moduli pubblici",
-    async esegui(ctx) {
+    async esegui(ctx, args) {
       if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
       // `null` vuol dire «il passo precedente non ha potuto misurare», e non e'
       // la stessa cosa di «misurato: nessuna pagina rimanda». Con un `?? new Set()`
@@ -662,9 +730,18 @@ const PASSI = [
         return record(this.id, this.nome, "skipped",
           "il passo `informativa-privacy` non ha potuto stabilire quali pagine rimandano all'informativa: senza, «non rimanda» e «non ho guardato» sarebbero la stessa frase");
       }
-      const pagineConModuli = ctx.pagine
-        .map((p) => ({ percorso: p.percorso, moduli: moduliDiPagina(p.corpo), campi: campiDiPagina(p.corpo), destinazioni: destinazioniModuli(p.corpo, ctx.baseUrl) }))
-        .filter((p) => p.moduli > 0 || p.campi.length > 0);
+      // La scadenza nei cicli di lettura (P2-R2): granularita' = la pagina.
+      const pagineConModuli = [];
+      let letteQui = 0;
+      for (const p of ctx.pagine) {
+        if (scaduta()) {
+          return record(this.id, this.nome, "skipped",
+            motivoScadenza(ctx, args, ctx.inizio, `si e' fermato dopo aver letto i moduli di ${letteQui} pagine su ${ctx.pagine.length}`));
+        }
+        letteQui += 1;
+        const letta = { percorso: p.percorso, moduli: moduliDiPagina(p.corpo), campi: campiDiPagina(p.corpo), destinazioni: destinazioniModuli(p.corpo, ctx.baseUrl) };
+        if (letta.moduli > 0 || letta.campi.length > 0) pagineConModuli.push(letta);
+      }
       const campiTotali = pagineConModuli.reduce((n, p) => n + p.campi.length, 0);
 
       if (pagineConModuli.length === 0) {
@@ -723,7 +800,17 @@ const PASSI = [
           + "Serve Node 18.14 o successivo. La verifica non e' stata fatta.");
       }
 
+      let pagineLette = 0;
       for (const pagina of ctx.pagine) {
+        // La scadenza anche qui, prima del lavoro di CPU su ogni pagina
+        // (P2-R2): censire i terzi e leggere gli script inline costa lettura,
+        // non rete, e il controllo che stava solo sul ciclo dei bundle lasciava
+        // questa parte senza tetto.
+        if (scaduta()) {
+          return record(this.id, this.nome, "skipped",
+            motivoScadenza(ctx, args, ctx.inizio, `si e' fermato dopo aver letto terzi e script di ${pagineLette} pagine su ${ctx.pagine.length}`));
+        }
+        pagineLette += 1;
         for (const t of terziDi(pagina.corpo, ctx.baseUrl)) {
           if (!terziMappa.has(t.origine)) terziMappa.set(t.origine, t);
         }
@@ -845,9 +932,22 @@ const PASSI = [
   {
     id: ID.a11y,
     nome: "accessibilita' dell'HTML servito",
-    async esegui(ctx) {
+    async esegui(ctx, args) {
       if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
-      const findings = ctx.pagine.flatMap((p) => findingsAccessibilitaPagina(p.percorso, p.corpo));
+      // Questo passo non faceva NESSUNA richiesta e non riceveva nemmeno
+      // `args`: era il ciclo di pura CPU che P2-R2 indicava — la scadenza
+      // sorvegliava solo la rete, e le regole d'accessibilita' su una pagina
+      // costosa giravano senza tetto. Granularita': la pagina.
+      const findings = [];
+      let letteQui = 0;
+      for (const p of ctx.pagine) {
+        if (scaduta()) {
+          return record(this.id, this.nome, "skipped",
+            motivoScadenza(ctx, args, ctx.inizio, `si e' fermato dopo l'accessibilita' di ${letteQui} pagine su ${ctx.pagine.length}`));
+        }
+        letteQui += 1;
+        findings.push(...findingsAccessibilitaPagina(p.percorso, p.corpo));
+      }
       const g = contaGravita(findings);
       const dettaglio = [
         `${ctx.pagine.length} pagine lette sull'HTML servito, carico RSC escluso dal conteggio dei tag`,
@@ -864,17 +964,21 @@ const PASSI = [
   {
     id: ID.lingua,
     nome: "lingua dichiarata e hreflang",
-    async esegui(ctx) {
+    async esegui(ctx, args) {
       if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
       if (!ctx.certificato || ctx.certificato.lingue.length === 0) {
         return record(this.id, this.nome, "skipped",
           "il certificato non dichiara nessuna lingua: senza, non c'e' niente contro cui confrontare i `lang` misurati, e un `NON APPLICABILE` qui sarebbe una risposta senza domanda");
       }
-      const pagine = ctx.pagine.map((p) => ({
-        percorso: p.percorso,
-        lang: langDi(p.corpo),
-        hreflang: hreflangDi(p.corpo, ctx.baseUrl),
-      }));
+      // La scadenza nei cicli di lettura (P2-R2): granularita' = la pagina.
+      const pagine = [];
+      for (const p of ctx.pagine) {
+        if (scaduta()) {
+          return record(this.id, this.nome, "skipped",
+            motivoScadenza(ctx, args, ctx.inizio, `si e' fermato dopo lingua e hreflang di ${pagine.length} pagine su ${ctx.pagine.length}`));
+        }
+        pagine.push({ percorso: p.percorso, lang: langDi(p.corpo), hreflang: hreflangDi(p.corpo, ctx.baseUrl) });
+      }
       const { findings, stato, premessa } = esitoLingua({
         pagine,
         lingueDichiarate: ctx.certificato.lingue,
@@ -901,7 +1005,15 @@ const PASSI = [
     nome: "favicon: dichiarata e servita",
     async esegui(ctx, args) {
       if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
-      const pagine = ctx.pagine.map((p) => ({ percorso: p.percorso, icone: iconeDichiarate(p.corpo, ctx.baseUrl) }));
+      // La scadenza nei cicli di lettura (P2-R2): granularita' = la pagina.
+      const pagine = [];
+      for (const p of ctx.pagine) {
+        if (scaduta()) {
+          return record(this.id, this.nome, "skipped",
+            motivoScadenza(ctx, args, ctx.inizio, `si e' fermato dopo le icone di ${pagine.length} pagine su ${ctx.pagine.length}`));
+        }
+        pagine.push({ percorso: p.percorso, icone: iconeDichiarate(p.corpo, ctx.baseUrl) });
+      }
       const tutte = [...new Set(pagine.flatMap((p) => p.icone))];
       const risposte = new Map();
       for (const url of tutte) {
@@ -933,7 +1045,13 @@ const PASSI = [
     nome: "Open Graph: l'anteprima che il sito sceglie",
     async esegui(ctx, args) {
       if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
-      const pagine = ctx.pagine.map((p) => {
+      // La scadenza nei cicli di lettura (P2-R2): granularita' = la pagina.
+      const pagine = [];
+      for (const p of ctx.pagine) {
+        if (scaduta()) {
+          return record(this.id, this.nome, "skipped",
+            motivoScadenza(ctx, args, ctx.inizio, `si e' fermato dopo l'Open Graph di ${pagine.length} pagine su ${ctx.pagine.length}`));
+        }
         const og = openGraphDi(p.corpo);
         let immagine = null;
         if (og["og:image"]) {
@@ -941,8 +1059,8 @@ const PASSI = [
             immagine = new URL(og["og:image"], ctx.baseUrl).toString();
           } catch { immagine = null; }
         }
-        return { percorso: p.percorso, og, immagine };
-      });
+        pagine.push({ percorso: p.percorso, og, immagine });
+      }
       const immagini = [...new Set(pagine.map((p) => p.immagine).filter(Boolean))];
       const risposte = new Map();
       for (const url of immagini) {
@@ -968,9 +1086,17 @@ const PASSI = [
   {
     id: ID.datiStrutturati,
     nome: "dati strutturati (JSON-LD)",
-    async esegui(ctx) {
+    async esegui(ctx, args) {
       if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
-      const pagine = ctx.pagine.map((p) => ({ percorso: p.percorso, jsonld: blocchiJsonLd(p.corpo) }));
+      // La scadenza nei cicli di lettura (P2-R2): granularita' = la pagina.
+      const pagine = [];
+      for (const p of ctx.pagine) {
+        if (scaduta()) {
+          return record(this.id, this.nome, "skipped",
+            motivoScadenza(ctx, args, ctx.inizio, `si e' fermato dopo i dati strutturati di ${pagine.length} pagine su ${ctx.pagine.length}`));
+        }
+        pagine.push({ percorso: p.percorso, jsonld: blocchiJsonLd(p.corpo) });
+      }
       const totale = pagine.reduce((n, p) => n + p.jsonld.length, 0);
       const findings = findingsDatiStrutturati({ pagine });
       const dettaglio = [
@@ -985,19 +1111,31 @@ const PASSI = [
   {
     id: ID.sitemap,
     nome: "sitemap.xml: la promessa fatta ai motori",
-    async esegui(ctx) {
+    async esegui(ctx, args) {
       if (!superficieCompleta(ctx)) return record(this.id, this.nome, "skipped", motivoIncompleta(ctx));
-      const risposta = await preleva(unisci(ctx.baseUrl, "/sitemap.xml"), { segui: true });
-      const percorsi = risposta && risposta.stato === 200 ? percorsiDaSitemap(risposta.corpo, ctx.baseUrl) : [];
+      const mappa = await leggiSitemapServita(ctx.baseUrl);
+      if (mappa.scadutaQui) {
+        return record(this.id, this.nome, "skipped",
+          motivoScadenza(ctx, args, ctx.inizio, `si e' fermato dopo ${mappa.sotto.length} sotto-sitemap dell'indice`));
+      }
+      // Un tetto superato non e' un elenco verificato: le sotto-sitemap oltre
+      // MAX_SOTTO_SITEMAP non sono state lette, e dirlo `pass` sarebbe un
+      // conteggio che dichiara «tutto servito» avendo guardato una parte (§18).
+      if (mappa.oltreIlTetto > 0) {
+        return record(this.id, this.nome, "skipped",
+          `l'indice dichiara ${mappa.sotto.length + mappa.oltreIlTetto} sotto-sitemap e questo gate ne segue al massimo ${MAX_SOTTO_SITEMAP} (tetto dichiarato): ${mappa.oltreIlTetto} non sono state lette, e un elenco letto a meta' non e' un elenco verificato.`);
+      }
+      const percorsi = mappa.percorsi;
       ctx.inSitemap = new Set(percorsi);
       const findings = findingsSitemap({
-        risposta,
+        risposta: mappa.risposta,
         percorsi,
         superficie: new Set(ctx.pagine.map((p) => p.percorso)),
         rimandi: ctx.rimandi ?? new Map(),
+        sotto: mappa.sotto,
       });
       const dettaglio = [
-        `\`/sitemap.xml\` → ${risposta ? `HTTP ${risposta.stato}` : "nessuna risposta"} · ${percorsi.length} indirizzi dichiarati, confrontati con le ${ctx.pagine.length} pagine servite`,
+        `\`/sitemap.xml\` → ${mappa.risposta ? `HTTP ${mappa.risposta.stato}` : "nessuna risposta"}${mappa.tipo === "sitemapindex" ? ` · indice: ${mappa.sotto.length} sotto-sitemap seguite` : ""} · ${percorsi.length} indirizzi dichiarati, confrontati con le ${ctx.pagine.length} pagine servite`,
         findings.length === 0 ? "ogni indirizzo dichiarato nella sitemap e' servito" : "",
         dettaglioFindings(findings),
       ].filter(Boolean).join("\n");
