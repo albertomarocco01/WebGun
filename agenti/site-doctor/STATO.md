@@ -1,5 +1,24 @@
 # Stato — Site Doctor
 
+- **P.6-P5 consegnata il 2026-08-07 (sera)** — dieci punti del mandato, tutti
+  eseguiti: **11 rilievi del tribunale di P.6-P4 chiusi con un test** (i dieci
+  chiesti piu' P3-R2, che era da dichiarare ed era la stanza accanto), ognuno
+  riprodotto prima e falsificato contro `git show HEAD:` — 15 test nuovi rossi
+  sull'originale. I capitali: l'**iframe invisibile** (P7-R2: la camminata ora
+  legge l'inventario dei riferimenti navigabili), le **porte dell'amputazione**
+  (P1-R2/R3: via il tetto dei 32 KB e l'apice trattato da stringa — Chromium
+  `--dump-dom` come giudice), il **formaction** e il **form annidato**
+  (P3-R1/R2), la **`<sitemapindex>`** riconosciuta (P4-R4+P7-R3, il formato di
+  Next), `livelliTitoli` sui **visibili** (P4-R6), la **quadratica di
+  `DENTRO_TAG` chiusa in tutti i lettori** (P2-R1: 11,5 s → 0,2 ms a 256 KB;
+  P2-R8 rimisurato) e la **scadenza che sorveglia anche la CPU** (P2-R2:
+  13 s → 8 s su scadenza 8). `contrasti` e' uscita da `SCOPERTE` **rilanciando
+  il grep** (4 file, gate del vicino col passo `contrasto`): il banco chiude
+  «2 da guardare». Batteria **285 → 308**, giro **43 classi** (con `SUP5`,
+  l'iframe del perito) e **`giro-costruttore` eseguito per la prima volta** —
+  che ha trovato il certificato del banco del costruttore fermo all'era
+  pre-D21: il conforme usciva ROSSO per il motivo giusto, corretto. Verbale:
+  `P6-P5-2026-08-07.md`.
 - **P.6-P4 consegnata il 2026-08-07** — i tre MANCANTI onesti di P.6-P3, tutti
   eseguiti. **Il tribunale sulle ~900 righe nuove: otto periti, 61 rilievi**, e
   di nuovo ESLint · knip · jscpd · gitleaks · batteria **tutti verdi** mentre i
@@ -89,23 +108,23 @@ dichiarato **con il nome del proprietario e il file che lo dice**.
 
 | Cosa | Numero | Come è stato misurato |
 |---|---|---|
-| Test degli script | **285 verdi** | `npm test` (Node 24.18.1; le batterie vogliono Node 21+) |
+| Test degli script | **308 verdi** | `npm test` (Node 24.19.0; le batterie vogliono Node 21+) |
 | Passi del gate implementati | **14**, con `id` stabili e ordine bloccato da un test | `scripts/verify.mjs`, `ID` |
 | Stati del verdetto | **4** (`pass` · `fail` · `skipped` · `n/a`) | `riepilogo()`, con i test dei tre casi |
 | Voci di conformità nell'elenco | **16** — **11 mie**, 3 delegate, 2 scoperte/parziali, 1 scoperta | `conformita-lib.mjs`, `VOCI` |
-| Deleghe misurate **vuote** | **1** (`contrasti`) + 1 parziale (`accessibilita-admin`) — era **7 su 9** prima di D21 | `SCOPERTE` in `conformita-lib.mjs`, col commit della regia accanto |
+| Deleghe misurate **vuote** | **0** + 1 parziale (`accessibilita-admin`) — era 7 su 9 prima di D21, poi 1+1; `contrasti` e' uscita il **2026-08-07 rilanciando il grep** (4 file sulla regia a `a1454cf`: il gate di speed-demon ha il passo `contrasto` che legge il singolo audit) | `SCOPERTE` in `conformita-lib.mjs`, col commit della regia accanto |
 | Rilievi del **tribunale** della costruzione | **33** — 26 chiusi con un test | `COSTRUZIONE-2026-08-06.md` §6.6 |
 | Difetti trovati dal **collaudo avversario** (P2) | **14**, tutti chiusi con un test | `COLLAUDO-2026-08-06.md` |
 | Rilievi del **tribunale di P.6-P3** (sei periti su `scripts/`) | **48**, con ESLint · knip · jscpd · batteria **tutti verdi** | `P6-P3-2026-08-06.md` §1-2 |
 | Rilievi del **tribunale di P.6-P4** (otto periti sulle ~900 righe di P.6-P3) | **61**, di cui **5 chiusi** e **56 dichiarati aperti** — di nuovo con ESLint · knip · jscpd · gitleaks · batteria **tutti verdi**. Ottava convocazione su otto skill, ottava volta così | `P6-P4-2026-08-07.md` §1-2 e §6.1 |
-| Classi di sabotaggio del collaudo | **42**, di cui **32 rosse**; le 10 verdi sono limiti dichiarati che reggono o assenze che per contratto valgono un `issue`. **Otto rilanciate da un percorso tracciato il 2026-08-07: sette rosse** (`HTM1` `HTM8` chiave universale · `NET1` scadenza · `INF1` `DAT3` `ROB2` `A11Y2`), `HTM9` verde già dichiarata. Le altre 34 non sono state rimisurate dopo le correzioni di P.6-P4 | `scripts/banco-sl.mjs` + `scripts/giro.mjs`, **tracciati** (D25) |
-| Classi di sabotaggio del costruttore | **25 su 25 rosse**, ognuna sul passo che dichiara di sorvegliare | `scripts/banco.mjs` |
+| Classi di sabotaggio del collaudo | **43** (con `SUP5`, l'iframe di P7-R2): **32 rosse sui passi giusti, 11 verdi dichiarate**. Il conteggio storico «32 rosse, 10 verdi» era un errore d'aritmetica del riepilogo di P.6-P3 §7.4 — la sua stessa tabella elenca 31+11 — propagato a due verbali e scoperto rilanciando **tutte** le classi (P.6-P5) | `scripts/banco-sl.mjs` + `scripts/giro.mjs`, **tracciati** (D25); giro completo il 2026-08-07 |
+| Classi di sabotaggio del costruttore | **25 su 25 rosse sul loro passo + conforme VERDE** — `giro-costruttore.mjs` **eseguito per la prima volta** il 2026-08-07: ha trovato il certificato del banco fermo all'era pre-D21 (conforme ROSSO su `perimetro` per il motivo giusto), corretto in questo pacchetto | `scripts/banco.mjs` + `scripts/giro-costruttore.mjs` |
 | Scadenza complessiva | **300 s**, estrapolati da una pendenza misurata (20,2 ms per ms di RTT, 19 richieste su 10 pagine) | `P6-P3-2026-08-06.md` §4.1 |
 | Comandi esercitati | **3 su 5** (`perimetro`, `scansiona`, `verify`) — `certifica` e `handoff` **non** esercitati su un progetto vero da questa skill: il pilota è di sola lettura | verbali |
 | Regole pure | 2 librerie | `servito-lib.mjs` · `conformita-lib.mjs` |
 | Gusci di I/O | 2 | `verify.mjs` · `banco.mjs` |
 | References | **5** | |
-| Guardiani | ESLint **0 errori** / 21 avvisi di complessità · knip **pulito** · jscpd **0 cloni** · `gitleaks` **pulito sulla skill** (`gitleaks dir agenti/site-doctor` → `no leaks found`) · `semgrep` **5 findings: 4** `detect-non-literal-regexp` **+ 1** `react-insecure-request`, tutti riconfermati con la ragione e **zero `nosemgrep`** | eseguiti a chiusura di P.6-P4 |
+| Guardiani | ESLint **0 errori** / 24 avvisi (21 di P.6-P4 piu' tre da P.6-P5: `leggiTag`, `collegamentiInterni`, `destinazioniModuli` — elenchi di stati e di porte, stessa ragione dei sei di D21) · knip **pulito** · jscpd **0 cloni** · `gitleaks` **pulito sulla skill** (`no leaks found`) · `semgrep` di P.6-P4 riconfermati, **zero `nosemgrep`** — P2-R12 resta della stessa natura: la ricerca della chiusura ora e' per prefisso ma interpola ancora il nome del tag, che viene da un estrattore vincolato (`[a-zA-Z][a-zA-Z0-9-]*`, nessun metacarattere possibile) | eseguiti a chiusura di P.6-P5 |
 | `code-maniac scan` | eseguito **per la prima volta** il 2026-08-07: 10 passi — **3 PASS** (eslint, knip, jscpd), **4 MANCANTE** (`prettier` non installato · `tsc` non configurato, la skill è ESM puro · `convenzioni` non installato · `depcruise` non installato), **3 ISSUE** (complessità 28 hotspot · semgrep 5 · gitleaks 5, **nessuno di questa skill**) | `P6-P4-2026-08-07.md` §4 |
 
 ## Cosa un gate verde NON prova
@@ -155,21 +174,28 @@ per la prima volta, esito per intero qui sopra e in `P6-P4-2026-08-07.md` §4) e
 il **n°6** (D25: i quattro sorgenti del banco sono tracciati in `scripts/`, e il
 gate ci chiude VERDE 14/14 da un percorso tracciato, due corse su due).
 
-1. **Cinquantasei dei 61 rilievi del tribunale restano aperti**, riprodotti e
-   dichiarati uno per riga in `P6-P4-2026-08-07.md` §6.1 con dove, cosa e verso.
-   Non è un giudizio sulla loro validità: è quanto entra in una chat. I cinque
-   che pesano di più, se si riparte da qui:
-   - **il gate VERDE su un sito che raccoglie IBAN in una pagina mai aperta**
-     (`collegamentiInterni` legge solo `<a href>`: un `<iframe src>` è invisibile
-     alla camminata);
-   - **`DENTRO_TAG` quadratica in dodici lettori**: 1 MB di pagina, scadenza
-     predefinita 300 s, **554 s reali** e 12 passi su 14 MANCANTI. Il rimedio
-     (`tagApertiIn`) esiste già nel file ed è arrivato a `tagDi` soltanto;
-   - **la scadenza non sorveglia nessun ciclo di CPU**, solo la rete;
-   - **`formaction`** consegna nome ed email a un terzo mentre il gate stampa una
-     destinazione che descrive un sito che non esiste;
-   - **quattro inneschi diversi che amputano il documento** (un attributo da
-     32 KB, un apostrofo, un `<!--` nel `<title>`, un `<a>` non chiuso).
+**Chiusi da P.6-P5 (2026-08-07, sera)**: **11 dei 56 rilievi** (P7-R2, P1-R2,
+P1-R3, P3-R1, P3-R2, P4-R4, P4-R6, P7-R3, P2-R1, P2-R8, P2-R2 — ognuno
+riprodotto prima, falsificato contro `git show HEAD:`, con la domanda della
+porta diversa nel verbale), la voce **n°3 per metà** (`contrasti` fuori da
+`SCOPERTE` col grep rilanciato) e il **n°6 per intero** (giro 43/43 e
+`giro-costruttore` eseguito). Verbale: `P6-P5-2026-08-07.md`.
+
+1. **Quarantacinque dei 61 rilievi del tribunale restano aperti**, riprodotti e
+   dichiarati uno per riga in `P6-P4-2026-08-07.md` §6.1 con dove, cosa e verso
+   (11 chiusi da P.6-P5: la fotografia viva sta nel verbale P.6-P5 §5). I
+   più pesanti fra quelli che restano:
+   - **`<title>` è RCDATA** (P1-R4): un `<!--` nel titolo amputa il documento;
+     e **un `<a>` non chiuso fonde i collegamenti** (P1-R5);
+   - **il cookie che sparisce** (P3-R3) e **le sei richieste su sette non
+     censite da `terziDi`** (P3-R6);
+   - **`sitemap-xml` e `robots-txt` che chiudono `pass` senza risposta**
+     (P5-R1) e il `?? new Set()` che **disarma l'unico block** (P5-R2);
+   - **`MAX_PAGINE` conta solo `viste`** (P2-R6/P7-R5: 2001 richieste con una
+     pagina vista) e la **coda da 223 678 elementi** (P2-R10, che il tetto
+     delle sotto-sitemap NON tocca — dichiarato);
+   - **l'HTML servito che sceglie quale file locale confrontare** (P7-R1) e
+     `superficieCompleta` che non guarda **se ha trovato qualcosa** (P7-R6).
 2. **Nessun rilievo di P.6-P4 è stato provato contro il pilota**: il mandato lo
    teneva fuori perimetro anche in lettura, quindi le conseguenze sul
    certificato già emesso non sono misurate. **MANCANTE.**

@@ -102,6 +102,20 @@ pagina — si registra il rimando e non ci si entra. È anche il motivo per cui
 l'area amministrativa non finisce nella superficie pubblica senza che nessuno
 debba elencarla: risponde `307` verso l'accesso.
 
+**Cosa si segue — l'inventario dei riferimenti navigabili (P.6-P5, P7-R2).**
+La camminata non legge i soli `<a href>`: il tribunale di P.6-P4 ha ottenuto un
+gate VERDE, uscita 0, su un sito che raccoglie IBAN e codice fiscale in una
+pagina raggiungibile solo via `<iframe src>`. Entrano: `a href`, `area href`
+(la navigazione), `iframe src` e `frame src` (documenti dell'origine mostrati
+dentro la pagina, coi loro moduli), `form action` con metodo GET o assente
+(premere il bottone è una GET come questa camminata), `meta http-equiv=refresh`
+(la navigazione succede da sola). **Esclusioni dichiarate**: `form action` POST
+(non si misura con una GET; resta il rilievo di `findingsDestinazioni`),
+`link rel=alternate` (un visitatore non ci naviga, e il passo
+`lingua-e-hreflang` **blocca** già un hreflang interno fuori superficie —
+camminarlo spegnerebbe quel controllo), `object data` ed `embed src` (quasi
+sempre media non-HTML: porta dichiarata aperta nel verbale P.6-P5).
+
 ### 3. `informativa-privacy`
 
 **Premessa**: superficie stabilita e pagine scaricate.
@@ -155,7 +169,7 @@ una deroga.
 | `favicon` | un'icona dichiarata che non risponde `200`; **oppure** nessuna icona dichiarata e `/favicon.ico` che non risponde `200` (e' il difetto del pilota, dove la favicon e' stata un `404` per tre anelli) | alcune pagine dichiarano l'icona e altre no |
 | `open-graph` | `og:image` che punta a una risorsa che non risponde | nessun tag `og:` sul sito; alcune pagine senza; `og:title`/`type`/`url`/`image` mancanti dove l'Open Graph c'e' |
 | `dati-strutturati` | un blocco `application/ld+json` che **non e' JSON valido** (un motore lo scarta per intero, e il sito crede di avere dati strutturati) | nessun blocco sul sito; un blocco senza `@type` |
-| `sitemap-xml` | `200` con un corpo che non e' una sitemap (un `200` che serve un'altra cosa e' peggio di un `404`); un indirizzo dichiarato e non servito | sitemap assente o non `200`; sitemap valida con zero indirizzi |
+| `sitemap-xml` | `200` con un corpo che non e' una sitemap (un `200` che serve un'altra cosa e' peggio di un `404`); un indirizzo dichiarato e non servito; una **sotto-sitemap promessa dall'indice** che non risponde o non e' un `<urlset>` | sitemap assente o non `200`; sitemap valida con zero indirizzi |
 | `robots-txt` | vieta ai motori indirizzi che la **`sitemap.xml` pubblicizza**: sono due file dello stesso sito che dicono il contrario | `robots.txt` assente; vieta pagine pubbliche non in sitemap; nessuna riga `Sitemap:`; `Sitemap:` verso un'altra origine |
 
 **Perche' cinque passi e non uno.** La tabella di proprieta' assegna UNA voce a
@@ -166,6 +180,18 @@ cioe' rifarebbe al contrario il difetto che questa skill esiste per chiudere.
 **Il confronto che nessuno faceva.** `robots.txt` contro `sitemap.xml` era
 elencato fra le cose scoperte del collaudo P2 — «due file che scrive lo stesso
 agente e che nessuno confronta». Con D21 sono tutti e due di questa skill.
+
+**La `<sitemapindex>` (P.6-P5, P4-R4 + P7-R3).** È il formato che
+`generateSitemaps()` di Next produce da solo: le sue `<loc>` sono **altre
+sitemap**, non pagine. Prima ognuna prendeva un `block` «dichiarata e non
+servita» e i file XML entravano nella camminata come pagine — un ROSSO su un
+sito conforme, che è il modo in cui un gate si fa scavalcare per abitudine.
+Ora l'indice si riconosce, le sotto-sitemap si **seguono** (fino a
+`MAX_SOTTO_SITEMAP` = 50, tetto dichiarato: oltre, il passo è **MANCANTE** —
+un elenco letto a metà non è un elenco verificato) e le pagine sono l'unione
+delle loro `<loc>`. Il tetto NON tocca il numero di `<loc>` per sitemap: la
+coda della camminata può ancora nascere enorme da una sitemap sola (P2-R10,
+dichiarata aperta).
 
 ### 13. `perimetro`
 
@@ -244,6 +270,15 @@ scrive**: alzarlo è una decisione, lasciarlo scadere in silenzio no.
 
 - L'attesa di ogni richiesta si accorcia al tempo che resta, e il secondo
   tentativo non parte: scadere non deve costare altri 15 secondi.
+- **La scadenza sorveglia anche i cicli di lettura, non solo la rete**
+  (P.6-P5, P2-R2): ogni passo che itera sulle pagine la controlla **a ogni
+  pagina** — prima nessun ciclo di CPU la guardava, e il passo a11y non
+  riceveva nemmeno `args`. La granularità dichiarata è LA PAGINA: dentro la
+  lettura di una singola pagina il controllo non entra, e il superamento
+  massimo è il costo di una. Misurato su un banco di 26 pagine da ~1,3 MB con
+  `--scadenza 8`: il gate di prima chiudeva in **13 s** (+62%), questo in
+  **8 s**, con ogni passo `skipped` col motivo e il conteggio («si è fermato
+  dopo aver letto i moduli di 8 pagine su 26»).
 - La camminata si interrompe, e il passo 2 diventa **`skipped`** — non `fail`: la
   causa non è il sito, è il tempo che gli abbiamo dato. I rilievi trovati sulle
   pagine già lette restano stampati, perché sono misure vere. (`--max-pagine`
