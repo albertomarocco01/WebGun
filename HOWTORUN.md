@@ -124,13 +124,28 @@ Ordine operativo pensato per un progetto reale (es. e-commerce da zero).
 
 14. 🔵 **Cyber Shield**  
    Specializzato in cybersecurity: verifica vulnerabilità, permessi, esposizione di dati e configurazioni pericolose prima della messa online.
-15. 🔵 **Site Doctor**  
-   Scanner pre-produzione di conformità: cookie/GDPR e privacy, accessibilità (alt, contrasti, HTML semantico), Open Graph per le anteprime social, hreflang multilingua, favicon, robots.txt e sitemap. In pratica: il certificato di idoneità del sito prima del lancio.
+15. 🟢 **Site Doctor**  
+   **Cosa fa:** il **certificato di idoneità pre-produzione** — la conformità che nessun altro agente guarda. Cammina la superficie pubblica **servita** (collegamenti *e* `sitemap.xml`, due sorgenti indipendenti) e misura su quella: informativa privacy raggiunta seguendo i collegamenti, base giuridica di ogni campo di ogni modulo, cosa il sito **archivia davvero** nel browser (`Set-Cookie` più le API di archiviazione cercate dentro i **bundle scaricati**), accessibilità dell'HTML servito, lingua e `hreflang` reciproci, favicon, Open Graph, JSON-LD, `sitemap.xml` e `robots.txt`. Misura la superficie che un visitatore raggiunge, **non l'elenco che qualcuno ha scritto**; e non rimisura ciò che un vicino misura già — pretende che sia dichiarato **col nome del proprietario**, perché una voce con due proprietari è una voce di nessuno. Gate a **14 passi** con id stabili e **quattro** stati (`pass` · `fail` · `skipped` · `n/a`).  
+   **Prerequisiti:** Node ≥ 20, il progetto generato **costruito** (`npm run build`) e servito su una **porta dedicata**, `docs/conformita.md` firmato e gli handoff dei vicini. **Nessuno strumento esterno**: niente browser, niente `npx`, solo `fetch` e lettura di file — quindi a questo gate serve l'**interprete**, non il `PATH`. Il prezzo dichiarato è che i **contrasti** non li misura: sono delegati a speed-demon, che apre un browser.  
+   **Come si installa:** junction come le altre, da `scripts/installa-skill.ps1`.  
+   **Come si usa / lancia:**
+   - in conversazione: `/site-doctor`, poi `perimetro` (**STOP**: la tabella di proprietà, prima di ogni misura) → `scansiona` → `certifica` (**STOP** alla firma del certificato) → **`handoff`** → **`verify`**
+   - `verify` è **ultimo**, come per flow-sentinel: il passo `contratto-uscita` controlla che l'handoff esista e dica il vero su **questa** esecuzione
+   - il gate a mano, dalla radice del progetto generato: `node <skill>/scripts/verify.mjs --url http://127.0.0.1:<porta> [--json] [--max-pagine N] [--scadenza SECONDI]`. `--url` **non ha un default**: senza, il gate legge la riga `URL verificato:` del certificato e altrimenti si **rifiuta di indovinare**. `--scadenza` ha un default **misurato** (300 s) e non si può disattivare: i passi non completati escono `skipped` — mai `pass`, mai `n/a` — e la riga finale si stampa sempre
+   - verbali: `agenti/site-doctor/COSTRUZIONE-2026-08-06.md` · `COLLAUDO-2026-08-06.md` (collaudo avversario in chat vergine, banco studio legale bilingue) · `P6-P3-2026-08-06.md` (tribunale a sei periti: 48 rilievi, gate 9 → 14 passi) · `PILOTA-CONFORMITA-2026-08-06.md` (primo consumatore reale)
 
 ## FASE 6 — Lancio e vendita
 
-16. 🔵 **Launchpad**  
-   Deployment 1-click su Vercel/Cloudflare con DNS, domini e certificati SSL. L'ultimo miglio: dal codice al sito online.
+16. 🟢 **Launchpad**  
+   **Cosa fa:** l'ultimo miglio, dal codice al sito online su Vercel o Cloudflare. **Non pubblica da sola: decide se si può pubblicare**, e fa firmare a un umano cosa va online — perché una pubblicazione non si annulla. Misura il *pacchetto* e il *viaggio*: che parta il commit giusto (`radice-pulita`), che i verdetti a monte esistano e non siano **scaduti** (`catena-gate`), che nessuna voce bloccante del registro del debito resti senza risposta nel runbook, che non partano **segreti** (file tracciati, nuovi, ignorati, **e la storia git** — diff e messaggi), che l'ambiente e il runtime si ricostruiscano uguali altrove, che l'artefatto porti l'**impronta del commit** (`generateBuildId`), che `docs/deploy.md` sia firmato **da chi decide e non per delega**, e che l'handoff dica il vero. Gate a **9 passi** con id stabili e `--json`.  
+   **Prerequisiti:** Node ≥ 20, `git` col repo del progetto e un remoto configurato, il progetto generato **costruito** (`npm run build`) e servito su una **porta dedicata**, gli handoff a monte e `docs/DEBITO-TECNICO.md`. **Nessuno strumento esterno**: il controllo dei segreti è in casa (`scripts/segreti.mjs`), non delegato a `gitleaks`.  
+   **Come si installa:** junction come le altre, da `scripts/installa-skill.ps1`.  
+   **Come si usa / lancia:**
+   - in conversazione: `/launchpad`, poi `segreti` → `impronta` → `piano` (**STOP**: Specchio del deploy, il runbook lo firma un umano) → **`handoff`** → **`verify`** → `pubblica` (**STOP**: conferma umana che nomina il dominio) → `verifica-pubblicato`
+   - il gate a mano, dalla radice del progetto generato: `node <skill>/scripts/verify.mjs [--url http://127.0.0.1:<porta>] [--json]`
+   - il **banco di prova** si rigenera da zero: `node <skill>/scripts/banco.mjs --dove <cartella> --porta <porta>` scrive un progetto gemello, lo mette in git con un remoto **locale** (una cartella `.git` nuda: qui non si pubblica niente) e **stampa** i passi che non fa — `npm install`, la build e l'avvio — invece di fingere di averli fatti. Atteso alla fine: **VERDE 9/9**
+   - **quello che questa skill non ha mai fatto, ed è il suo mestiere:** nessun deploy è mai stato eseguito. Non un account creato, non un dominio comprato, non un record DNS toccato, non un centesimo speso. Il gate è misurato su due banchi e su un pilota che **non si deve pubblicare**: il primo deploy vero lo autorizza Alberto di persona
+   - verbali: `agenti/launchpad/COSTRUZIONE-2026-08-06.md` · `COLLAUDO-2026-08-06.md` (collaudo avversario in chat vergine: 26 difetti, nove falsi verdi con gravità di blocco) · `P5-P3-2026-08-06.md` (D20 e D23 eseguite)
 17. 🟢 **DemonIAc**  
    Genera automaticamente video demo con Remotion da mostrare alle aziende. Opzionale nella pipeline: serve per vendere il risultato, non per costruirlo.
 
