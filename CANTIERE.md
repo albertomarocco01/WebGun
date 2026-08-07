@@ -136,6 +136,7 @@ sono della direzione, al ritorno).
 | # | Cosa | Perimetro in **scrittura** | Criterio falsificabile | Stato |
 |---|---|---|---|---|
 | P.6-P5 | **I falsi verdi capitali, la quadratica, e la riga dei contrasti** — dieci rilievi di §6.1 scelti dalla direzione: `SCOPERTE.contrasti` (`conformita-lib.mjs:70` + riga 86 — la prova che quella riga aspettava esiste: grep 4 file a `a1454cf`, gate del vicino verde sul passo `contrasto`); **P7-R2** (IBAN e codice fiscale in una pagina mai aperta: `collegamentiInterni` legge solo `<a href>`); **P1-R2 + P1-R3** (attributo >32 KB che cancella la coda, apostrofo in valore non quotato — due porte della stessa stanza, e il commento 293-295 che dichiara un prezzo falso); **P3-R1** (`formaction`: il gate descrive un sito che non esiste); **P4-R4 + P7-R3** (`<sitemapindex>`: block sul formato che `generateSitemaps()` di Next produce da solo); **P4-R6** (`livelliTitoli` cieco alle regioni nascoste nei due versi); **P2-R1 + P2-R8** (la quadratica di `DENTRO_TAG` in dodici lettori — il rimedio `tagApertiIn` è già nel file, applicato a uno — e la 2,6× da rimisurare dopo); **P2-R2** (la scadenza sorveglia solo la rete: nessun ciclo di CPU la controlla) | `agenti/site-doctor/**` | ogni rilievo **riprodotto prima** di essere chiuso, un test nella forma d'input vera, e per ognuno la **domanda della porta diversa** scritta nel verbale (tre riaperture di classe misurate da P.6-P4); i **costi rimisurati dopo** le correzioni, sugli stessi input che li hanno provati (precedente della 2,6×); gate sul banco «3 da guardare» → **«2 da guardare»** e resta VERDE 14/14; le **42 classi del giro tutte rilanciate** (le 34 mai rimisurate comprese) e `giro-costruttore.mjs` (25 classi) **eseguito per la prima volta**; batteria sopra 285; gate della regia VERDE prima e dopo | mandato `agenti/site-doctor/prompts/P6-P5-i-falsi-verdi-e-la-quadratica.md` (Opus 5 · high) — **consegnata e collaudata 2026-08-07 (sera)**: 3 commit (`c74af63` · `cb56197` · `bdd2edc`), perimetro pulito, pilota mai aperto. **Dieci punti su dieci, undici rilievi chiusi** (P3-R2 — il form annidato — chiuso invece che solo dichiarato), ognuno riprodotto prima e **falsificato contro `git show HEAD:`** (15 test rossi sull'originale), **Chromium `--dump-dom` come giudice** sui cinque casi del parser. `leggiTag` riscritto sugli stati del tokenizer (via il tetto dei 32 KB **col commento che prometteva la garanzia falsa**; terza porta trovata e chiusa: `<!…>`/`<?…>` chiudono al primo `>` anche fra apici); la camminata legge l'inventario dei riferimenti navigabili (a, area, iframe/frame, form GET, meta refresh) **con le esclusioni dichiarate col motivo**; `<sitemapindex>` riconosciuta e seguita con tetto (50, oltre = MANCANTE); `DENTRO_TAG` **non esiste più** — dodici lettori su una passata sola, curva ×4-a-raddoppio → 0,2 ms, la chiave del `>` resta chiusa; la **scadenza sorveglia anche la CPU** (granularità: la pagina; banco CPU da +62% a +0 di sforamento). **La lezione dei costi applicata a sé**: la prima stesura costava ×4 sul benigno, trovato **ricronometrando HEAD-contro-corretto prima della consegna**, ridotto a ×1,0-1,6 dichiarato voce per voce. **Tre scarti dichiarati**: «32 rosse/10 verdi» era un errore d'aritmetica di P.6-P3 §7.4 copiato in due verbali (la tabella dice 31+11 e il giro combacia classe per classe); il banco del costruttore era **pre-D21** — al primo giro vero il conforme usciva ROSSO per il motivo giusto, corretto coi sabotaggi P e S spostati senza perdere la classe; crash di macchina `0xC0000409` **dopo** il verdetto stampato (Node 24.19.0, non deterministico, uguale su HEAD e corrente — i giri leggono `doc.ok`, memoria salvata). Batteria **285 → 308**; giro **43 classi** (nuova `SUP5`: il sito del perito che usciva VERDE con uscita 0); `giro-costruttore` eseguito **per la prima volta** (conforme VERDE + 25/25). **Verificata in proprio dalla direzione**: batteria **308/308** · gate regia **VERDE 5/5** · banco dal percorso tracciato **VERDE 14/14, «2 da guardare»** · **SUP5 rossa sui passi giusti** · **pilota: VERDE, 1 n/a, «2 da guardare»** (contrasti sparita dalle scoperte; restano le due vere: `accessibilita-admin` «sui sorgenti» e `antispam`). Restano **45 dei 61** rilievi, nominati nel verbale §5. **Chiusa** |
+| P.4j | **Il certificato riemesso, e le due anteprime** — riallineare `docs/conformita.md` del pilota alla misura nuova («2 da guardare»), chiudere o dichiarare `og:image` e JSON-LD col criterio scritto, ricostruire e riservire dopo l'ultimo commit coi quattro gate dichiarati | `fornodoro/**` + il solo verbale `agenti/site-doctor/PILOTA-CONFORMITA-2-2026-08-07.md` | le voci o chiuse e provate col gate o dichiarate nel registro con la colonna; il certificato ridatato **per ultimo** col numero preso rilanciando il gate; launchpad atteso ROSSO 3 — e se dice altro, fermarsi e scriverlo | mandato `prompts/P4j-il-certificato-riemesso.md` (Opus 5 · high) — **consegnata e collaudata 2026-08-07 (sera)**: 4 commit nel pilota (`4a801e9`..`8c87400`), 1 in regia (solo verbale, `01bb83d`). **JSON-LD chiuso** (scheda `Restaurant` su `/` e `/chi-siamo`, orari da `orari_apertura` non trascritti, n°55 chiusa) e **`og:image` dichiarata invece che chiusa, misurando**: `public/` è vuota e l'unica immagine è una favicon SVG 32×32 — dichiararla col solo `200` sarebbe stato **un falso verde costruito apposta** (n°59 resta, con la misura). Telefono/email fuori dal blocco perché gli slot portano una **frase**, non un recapito: ritagliarli sarebbe il quinto parser a mano (n°60). Certificato riemesso: «sono quattro» → **due**, numero preso rilanciando il gate; ridatato per ultimo. **Il criterio «launchpad ROSSO 3» del mandato era impossibile per costruzione** — terzo errore della stessa classe della direzione: chiudere un rilievo nel codice fa scadere in blocco la freschezza di **tutti** gli handoff a monte (misurato nei due versi) → ROSSO 4, dichiarato e non «sistemato». Due scarti di macchina dichiarati: speed-demon rosso due volte per un `next dev` estraneo da 3,5 GB (n°61), un conteggio copiato da P.4i corretto rifacendolo (9 bloccanti, non 10). **Collaudata dalla direzione, che ha poi chiuso il quarto rosso in proprio**: catena intera rilanciata sulla build finale — schema **9/9** (reset vero + seed, n°58 non scattata: il node di sistema è salito a 24.19) · gestionale **7/7** · flussi **7/7 con Playwright 22/22** · speed-demon **8/8 al primo giro** · vetrina **10/10** · site-doctor **VERDE, 1 n/a, «2 da guardare»** — e gli **otto handoff riconfermati per delega coi verdetti accanto** (commit `33d787c` nel pilota, poi rebuild e riservito). **Launchpad: ROSSO 3 — i tre costituzionali** (segreti/D24 · runbook di Alberto · handoff di una pubblicazione mai avvenuta). **Chiusa** |
 
 ## Giornale di cantiere
 
@@ -1192,3 +1193,44 @@ sono della direzione, al ritorno).
   Il debito vivo di site-doctor scende a **45 dei 61**, nominati nel verbale
   §5; fra questi la P5-R3 «migliorata e rimisurata, non chiusa» e le porte
   dichiarate aperte. Si riprendono a ondate future, non tutti insieme.
+- **2026-08-07 (notte) — P.4j collaudata, gli otto handoff riconfermati, e la
+  catena del pilota è tutta verde tranne i tre rossi costituzionali.**
+
+  **Il collaudo di P.4j**: perimetri puliti (4 commit nel pilota, 1 in regia sul
+  solo verbale), le due decisioni rette da misure — JSON-LD chiuso leggendo
+  l'HTML servito prima di scrivere, og:image **dichiarata apposta** perché
+  chiuderla col solo `200` era un falso verde costruito. Il suo «ROSSO 4» era
+  vero e onesto, e il quarto rosso era **il terzo errore della stessa classe nei
+  miei mandati**: un criterio («launchpad ROSSO 3») incompatibile per costruzione
+  con un altro obbligo dello stesso mandato («chiudi il rilievo nel codice») —
+  ogni commit su `src/` fa scadere la freschezza di **tutti** gli handoff a
+  monte. La classe ha ora un nome in memoria: prima di emettere un criterio,
+  verificarlo **contro il perimetro e contro gli altri obblighi dello stesso
+  mandato**.
+
+  **Il lavoro della direzione a valle**: la catena intera rilanciata in proprio
+  sulla build `8c87400` — schema **9/9** (db reset vero, seed riapplicato col
+  node di sistema che è **salito a 24.19**: la trappola n°58 non è scattata) ·
+  gestionale **7/7** · flussi **7/7, Playwright 22/22** · speed-demon **8/8 al
+  primo giro** (nonostante **due** `next dev` estranei — MAPS-SCRAPER a 3,5 GB e
+  AIsthenics — che restano accesi e non sono nostri: n°61 confermata come
+  avvertenza) · vetrina **10/10** · site-doctor **VERDE, 1 n/a, «2 da
+  guardare»**. Poi gli **otto handoff riconfermati** con un blocco in citazione
+  ciascuno — il gate rilanciato, non riletto, e la firma per delega dichiarata —
+  commit `33d787c`, rebuild, riservito, e **launchpad: ROSSO 3** — segreti
+  (n°27, si chiude con D24 al primo push) · runbook (firma di Alberto) ·
+  handoff di launchpad (esisterà quando una pubblicazione sarà avvenuta).
+  Site-doctor riverificato anche sulla build servita finale: VERDE.
+
+  **Igiene di macchina**: spenti due banchi orfani di P.6-P5 (porte 3894/3896);
+  i quattro processi `chrome-devtools-mcp` sono MCP di altre finestre Claude e
+  **non si toccano**; nessun chrome orfano di Lighthouse; RAM libera a 1,1 GB
+  con i due dev server estranei accesi — se sabato servono misure pulite,
+  conviene chiuderli (decisione di Alberto: sono suoi).
+
+  **Lo stato della strada del deploy, a valle di tutto**: ogni gate della
+  catena è verde sulla build servita; launchpad conta 9 bloccanti dichiarati e
+  0 mancanti; i tre rossi che restano sono esattamente i tre atti fuori
+  portata dei pacchetti — la settima pagina nel contratto della vetrina e la
+  firma del runbook (di Alberto), la riscrittura della storia (D24, al
+  momento del push, coordinata dalla direzione).
