@@ -153,6 +153,15 @@ const ripulisci = (s) =>
 
 const normalizza = (s) => ripulisci(s).toLowerCase().replace(/[àá]/g, "a").replace(/[èé]/g, "e").replace(/[ìí]/g, "i").replace(/[òó]/g, "o").replace(/[ùú]/g, "u");
 
+/**
+ * Un blocco recintato e' senza ambiguita' un ESEMPIO: e' li' che vive il
+ * fac-simile del modello. Vale per la riga `Gate:` di un handoff e — dal
+ * tribunale di P.6-P4 — anche per le intestazioni e le tabelle di un
+ * certificato, che prima si leggevano volentieri da dentro un ```.
+ */
+const senzaBlocchiDiCodice = (testo) =>
+  String(testo ?? "").replace(/^[^\S\n]*(```|~~~)[\s\S]*?^[^\S\n]*\1[^\S\n]*$/gm, " ");
+
 // ------------------------------------------------------------ tabelle markdown
 /**
  * La prima tabella markdown sotto un'intestazione.
@@ -161,12 +170,29 @@ const normalizza = (s) => ripulisci(s).toLowerCase().replace(/[àá]/g, "a").rep
  * chiama distingue i due casi guardando `sezionePresente`. E' la differenza fra
  * «dichiarato niente» e «non dichiarato», e confonderle sarebbe un pass su una
  * sezione mai scritta.
+ *
+ * `doppie` dice quante intestazioni combaciano. Il tribunale di P.6-P4 ha
+ * scritto un certificato con DUE sezioni «Voci di conformita' e proprieta'» —
+ * la prima delegava una voce a un vicino inventato citando un file a caso, la
+ * seconda dichiarava onestamente «scoperta» — e questa funzione sceglieva la
+ * prima IN SILENZIO. Sulle voci che il gate misura da se' il §19 intercetta la
+ * bugia lo stesso; sulle voci DELEGATE, dove nessun confronto con l'esecuzione
+ * esiste, la tabella letta al posto di quella vera E' il verdetto.
+ *
+ * E' la stessa classe di `fc5c0f6` («un refuso nell'intestazione spegneva la
+ * regola dei due proprietari») dall'altro lato: quella correzione guardava come
+ * si leggono le COLONNE della tabella trovata, non QUALE intestazione si trova.
+ * Un documento che si contraddice non si decide in codice — si dichiara.
  */
 export function tabellaSotto(testo, reIntestazione) {
-  if (typeof testo !== "string") return { sezionePresente: false, righe: [] };
-  const righe = testo.split(/\r?\n/);
+  if (typeof testo !== "string") return { sezionePresente: false, righe: [], doppie: 0 };
+  // Le intestazioni e le tabelle dentro un blocco recintato sono un esempio,
+  // non una dichiarazione: senza questa riga, una tabella fasulla scritta in un
+  // ``` prima della sezione vera veniva letta al posto di quella vera.
+  const righe = senzaBlocchiDiCodice(testo).split(/\r?\n/);
+  const combacianti = righe.filter((r) => /^#{1,6}\s/.test(r) && reIntestazione.test(r)).length;
   let i = righe.findIndex((r) => /^#{1,6}\s/.test(r) && reIntestazione.test(r));
-  if (i < 0) return { sezionePresente: false, righe: [] };
+  if (i < 0) return { sezionePresente: false, righe: [], doppie: 0 };
   const livello = (righe[i].match(/^#+/) ?? ["#"])[0].length;
   const corpo = [];
   for (i += 1; i < righe.length; i++) {
@@ -184,7 +210,7 @@ export function tabellaSotto(testo, reIntestazione) {
     if (eRiga) dentro.push(r);
     else if (dentro.length > 0 && r.trim() !== "") break;
   }
-  if (dentro.length < 2) return { sezionePresente: true, righe: [] };
+  if (dentro.length < 2) return { sezionePresente: true, righe: [], doppie: combacianti };
   // `\|` con l'escape e' una pipe LETTERALE dentro una cella, non un separatore.
   const celle = (r) => r.trim().replace(/^\|/, "").replace(/\|$/, "")
     .split(/(?<!\\)\|/)
@@ -201,7 +227,7 @@ export function tabellaSotto(testo, reIntestazione) {
     });
     dati.push(oggetto);
   }
-  return { sezionePresente: true, righe: dati };
+  return { sezionePresente: true, righe: dati, doppie: combacianti };
 }
 
 /**
@@ -234,8 +260,21 @@ export function leggiCertificato(testo) {
   const lingueGrezze = rigaEtichettata(testo, "Lingue dichiarate");
   const banner = rigaEtichettata(testo, "Banner di consenso");
   const superficie = tabellaSotto(testo, /superficie pubblica/i);
+  const archiviazioni = tabellaSotto(testo, /archiviazione dichiarata/i);
+  const datiRaccolti = tabellaSotto(testo, /dati raccolti/i);
+  const voci = tabellaSotto(testo, /voci di conformit/i);
+  // Quali sezioni compaiono piu' di una volta. Non si sceglie: si dichiara.
+  const sezioniDoppie = [
+    ["Superficie pubblica dichiarata", superficie],
+    ["Archiviazione dichiarata", archiviazioni],
+    ["Dati raccolti", datiRaccolti],
+    ["Voci di conformita' e proprieta'", voci],
+  ]
+    .filter(([, t]) => (t.doppie ?? 0) > 1)
+    .map(([nome, t]) => ({ nome, quante: t.doppie }));
   return {
     confermatoDa,
+    sezioniDoppie,
     dataConferma: confermatoDa ? (/(\d{4}-\d{2}-\d{2})/.exec(confermatoDa)?.[1] ?? null) : null,
     urlDichiarato: rigaEtichettata(testo, "URL verificato"),
     informativa: rigaEtichettata(testo, "Informativa privacy"),
@@ -246,9 +285,9 @@ export function leggiCertificato(testo) {
     banner: banner !== null && /^(s[iì]|yes|presente)/i.test(banner),
     superficie: superficie.righe.map((r) => r.percorso ?? r.pagina ?? "").filter(Boolean),
     superficieDichiarata: superficie,
-    archiviazioni: tabellaSotto(testo, /archiviazione dichiarata/i).righe,
-    datiRaccolti: tabellaSotto(testo, /dati raccolti/i).righe,
-    voci: tabellaSotto(testo, /voci di conformit/i),
+    archiviazioni: archiviazioni.righe,
+    datiRaccolti: datiRaccolti.righe,
+    voci,
     haSegnaposto: RE_SEGNAPOSTO.test(senzaCommenti(testo)),
   };
 }
@@ -298,6 +337,18 @@ export function findingsCertificato(cert) {
   if (cert.lingue.length === 0) manca("nessuna riga `Lingue dichiarate:`: senza, il passo sulla lingua non ha niente contro cui confrontare quello che misura");
   if (cert.haSegnaposto) findings.push({ severity: "issue", object: "docs/conformita.md", message: "il certificato contiene ancora segnaposto `{{…}}` fuori dalla riga della firma" });
   if (!cert.voci.sezionePresente) manca("nessuna sezione «Voci di conformita' e proprieta'»: e' la tabella che questa skill esiste per produrre");
+  // Due sezioni con lo stesso nome: si leggeva la prima IN SILENZIO. Su una
+  // voce che questo gate misura da se', il §19 intercetta comunque la bugia;
+  // su una voce DELEGATA nessun confronto con l'esecuzione esiste, e allora la
+  // tabella letta al posto di quella vera E' il verdetto. E' la stessa regola
+  // dei due proprietari, un piano piu' su: un documento che si contraddice non
+  // si decide in codice.
+  for (const s of cert.sezioniDoppie ?? []) {
+    manca(
+      `${s.quante} sezioni «${s.nome}» nello stesso certificato: quale governa? ` +
+        `Finche' sono due, ogni riga che leggo puo' essere quella sbagliata — e su una voce delegata nessuno se ne accorgerebbe`,
+    );
+  }
   return findings;
 }
 
@@ -555,9 +606,6 @@ const RE_RIGA_GATE = /^[-*> \t]*\**gate\**[ \t]*:[ \t]*\**[ \t]*(VERDE|ROSSO)\b/
  * E' la stessa scelta di `senzaCommenti` per i segnaposto, applicata alla riga
  * che un consumatore a valle legge per decidere se fidarsi.
  */
-const senzaBlocchiDiCodice = (testo) =>
-  String(testo ?? "").replace(/^[^\S\n]*(```|~~~)[\s\S]*?^[^\S\n]*\1[^\S\n]*$/gm, " ");
-
 /**
  * §19 di DECISIONI.md: l'handoff dichiara il verdetto, e il gate lo confronta
  * con il proprio. Non e' un rosso strutturale — se il gate e' rosso e

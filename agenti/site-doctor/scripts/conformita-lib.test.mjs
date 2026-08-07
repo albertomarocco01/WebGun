@@ -77,8 +77,10 @@ const leggiFinto = (p) => FILE[p] ?? null;
 
 describe("tabelle markdown", () => {
   it("distingue «sezione assente» da «tabella vuota»", () => {
-    assert.deepEqual(tabellaSotto("# X", /voci/i), { sezionePresente: false, righe: [] });
-    assert.deepEqual(tabellaSotto("## Voci di conformità\n\ntesto e basta", /voci di conformit/i), { sezionePresente: true, righe: [] });
+    // `doppie` = quante intestazioni combaciano (tribunale P.6-P4): zero se la
+    // sezione non c'e', una se c'e' una volta sola.
+    assert.deepEqual(tabellaSotto("# X", /voci/i), { sezionePresente: false, righe: [], doppie: 0 });
+    assert.deepEqual(tabellaSotto("## Voci di conformità\n\ntesto e basta", /voci di conformit/i), { sezionePresente: true, righe: [], doppie: 1 });
   });
 
   it("legge le righe con le intestazioni normalizzate", () => {
@@ -477,5 +479,73 @@ describe("tribunale P.6-P3 — i documenti che scrive l'imputato", () => {
     assert.equal(verdettoDa([{ status: "pass" }, { status: "skip" }]), "ROSSO");
     assert.equal(verdettoDa([{ status: "pass" }, { status: "n/a" }]), "VERDE");
     assert.equal(verdettoDa([{ status: "pass" }, { status: "skipped" }]), "ROSSO");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tribunale P.6-P4 — il primo rilievo del perito del certificato.
+// `fc5c0f6` aveva chiuso «come leggo le COLONNE della tabella che ho trovato».
+// Restava aperto «QUALE intestazione trovo», ed e' la stessa classe.
+describe("tribunale P.6-P4 — due sezioni con lo stesso nome, e il blocco recintato", () => {
+  const TESTA = ["# Certificato di idoneita'", "", "Confermato da: Alberto Marocco il 2026-08-07", "", "Lingue dichiarate: it", ""];
+  const TAB = (proprietario, esito) => [
+    "| voce | proprietario | dove e dichiarato | esito |",
+    "|---|---|---|---|",
+    `| antispam | ${proprietario} | ${esito === "scoperto" ? "—" : "CHANGELOG.md"} | ${esito} |`,
+    "",
+  ];
+  const doc = (...parti) => [...TESTA, ...parti].join("\n");
+
+  it("due sezioni «Voci di conformita'» non si scelgono in silenzio: si dichiarano", () => {
+    const testo = doc(
+      "## Voci di conformita' e proprieta'", "", ...TAB("vetrina-crafter", "conforme"),
+      "## Voci di conformita' e proprieta'", "", ...TAB("scoperto", "scoperto"),
+    );
+    const t = tabellaSotto(testo, /voci di conformit/i);
+    assert.equal(t.doppie, 2, "la funzione deve sapere quante intestazioni combaciano");
+
+    const blocchi = findingsCertificato(leggiCertificato(testo)).filter((f) => f.severity === "block");
+    assert.equal(blocchi.length, 1, "una sola ragione, e chiara");
+    assert.match(blocchi[0].message, /2 sezioni «Voci di conformita' e proprieta'»/);
+    // La ragione per cui e' `block` e non `issue`: su una voce DELEGATA nessun
+    // confronto con l'esecuzione esiste, quindi la tabella sbagliata E' il
+    // verdetto e nessuno se ne accorgerebbe.
+    assert.match(blocchi[0].message, /delegata|delegat/i);
+  });
+
+  it("una tabella dentro un blocco recintato e' un esempio, non una dichiarazione", () => {
+    const testo = doc(
+      "Esempio di come si compila questa sezione:", "",
+      "```markdown",
+      "## Voci di conformita' e proprieta'", "",
+      ...TAB("un-vicino-inventato", "conforme"),
+      "```", "",
+      "## Voci di conformita' e proprieta'", "", ...TAB("scoperto", "scoperto"),
+    );
+    const t = tabellaSotto(testo, /voci di conformit/i);
+    // Prima leggeva SEDICI righe dal blocco recintato e non arrivava mai alla
+    // sezione vera sotto, che dichiarava onestamente «scoperto».
+    assert.equal(t.righe.length, 1);
+    assert.equal(t.righe[0].proprietario, "scoperto");
+    assert.equal(t.doppie, 1, "l'intestazione dentro il blocco non conta come sezione");
+    assert.deepEqual(findingsCertificato(leggiCertificato(testo)).filter((f) => f.severity === "block"), []);
+  });
+
+  it("un certificato con UNA sola sezione non guadagna rilievi nuovi", () => {
+    const testo = doc("## Voci di conformita' e proprieta'", "", ...TAB("scoperto", "scoperto"));
+    const t = tabellaSotto(testo, /voci di conformit/i);
+    assert.equal(t.doppie, 1);
+    assert.deepEqual(findingsCertificato(leggiCertificato(testo)).filter((f) => f.severity === "block"), []);
+  });
+
+  it("la regola vale per tutte e quattro le sezioni a tabella, non solo per le voci", () => {
+    const testo = doc(
+      "## Dati raccolti", "", "| campo | base giuridica |", "|---|---|", "| email | consenso |", "",
+      "## Dati raccolti", "", "| campo | base giuridica |", "|---|---|", "| email | contratto |", "",
+      "## Voci di conformita' e proprieta'", "", ...TAB("scoperto", "scoperto"),
+    );
+    const blocchi = findingsCertificato(leggiCertificato(testo)).filter((f) => f.severity === "block");
+    assert.equal(blocchi.length, 1);
+    assert.match(blocchi[0].message, /2 sezioni «Dati raccolti»/);
   });
 });
