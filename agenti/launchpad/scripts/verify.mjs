@@ -745,8 +745,8 @@ async function main() {
 // E il confronto e' DOPPIO perche' una junction non e' il suo bersaglio:
 // invocato da `.claude/skills/launchpad/...`, `resolve(argv[1])` restituisce il
 // percorso della junction mentre `import.meta.url` e' gia' canonico — il
-// confronto secco e' falso e lo script esce 0 muto (misurato il 2026-08-04 su
-// otto script di questa casa, IGIENE2-JUNCTION-2026-08-04.md). `realpathSync`
+// confronto secco e' falso e lo script esce 0 muto: misurato il 2026-08-04 su
+// otto script di questa casa, che lo facevano davvero. `realpathSync`
 // scioglie la junction; se solleva si ricade sul confronto testuale: mai un
 // errore che ammutolisce.
 if (process.argv[1]) {

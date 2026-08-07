@@ -2,6 +2,44 @@
 
 Registro delle decisioni prese (o da prendere) sulla struttura e sull'orchestrazione. Una voce per decisione: contesto, decisione, stato.
 
+> **I numeri non si toccano.** Il codice degli agenti cita queste voci come `DECISIONI.md §18`, e
+> gli hint che i gate stampano rimandano qui: rinumerare significherebbe far puntare al vuoto
+> messaggi già in circolazione. Una decisione superata si **annota**, non si riscrive né si
+> rinumera. Le decisioni del *cantiere* (`D1`…`D28`) sono un'altra cosa e stanno in
+> [CANTIERE.md](CANTIERE.md).
+
+## Indice
+
+| § | Decisione |
+|---|---|
+| 1 | Specchio della Commessa in modalità pipeline automatica — **aperta** |
+| 2 | Repo di origine di code-inquisition non noto |
+| 3 | `Web Gun.docx` e `webgun_content.txt` restano in radice |
+| 4 | Struttura standard dei progetti generati |
+| 5 | Dipendenze negli STATO.md dedotte dall'ordine di pipeline |
+| 6 | **Conferma dei gate in pipeline**: le azioni irreversibili le autorizza un umano |
+| 7 | Le skill stanno in `agenti/`, `.claude/skills/` è uno specchio via junction |
+| 8 | I linter si configurano, il gate non si declassa |
+| 9 | Il denaro sta in `bigint` di centesimi, non in `integer` |
+| 10 | Un distruttivo autorizzato si dichiara al gate, non lo si aggira |
+| 11 | Il gate dichiara sempre cosa ha guardato |
+| 12 | I banchi di prova si buttano, i verbali restano — *estesa dalla D28* |
+| 13 | Schema Forge resta imperativo: niente `supabase/schemas/` dichiarativi |
+| 14 | Il comando `rls` è stato tolto |
+| 15 | Il contratto `--json` ha un `id` per passo, separato dall'etichetta |
+| 16 | Un test pgTAP che attacca ogni policy di scrittura è obbligatorio |
+| 17 | Le regole euristiche non sono `block`, tranne dove la prova è nel catalogo |
+| 18 | **Uno strumento che non ha letto niente non produce un `pass`** |
+| 19 | L'handoff deve dichiarare il verdetto del gate, e il gate lo verifica |
+| 20 | Il banco veterinario si traccia, perché non è più un banco usa e getta |
+| 21 | **Fly UI non esiste**: componenti scritti a mano, dietro una cucitura |
+| 22 | Su Supabase i `grant` nelle migrazioni sono no-op, e il `grant` per colonna non restringe da solo |
+| 23 | Un route handler non esegue i layout: la guardia della sezione non lo protegge |
+| 24 | I contenuti editabili dal cliente sono di Gestionale Crafter |
+| 25 | Un banco si tiene solo se un clone pulito lo sa rilanciare |
+| 26 | `webgun_content.txt` si genera, non si scrive |
+| 27 | I privilegi si scrivono nelle migrazioni: i default di Supabase sono cambiati due volte in un mese |
+
 ## Decisioni aperte
 
 ### 1. Specchio della Commessa in modalità pipeline automatica
@@ -122,11 +160,12 @@ Motivo: un audit parziale, o su un database sbagliato, non deve poter assomiglia
 
 `banco-prova/` e `banco-prova-pastificio/` sono stati rimossi il 2026-07-26 a collaudo chiuso. Erano progetti Supabase usa e getta, gitignorati, e si rigenerano con `supabase init`.
 
-Motivo: un banco che resta in giro invecchia e diventa una fonte di verità falsa — qualcuno ci guarda dentro e crede che sia lo stato dell'arte. Ciò che vale è il **verbale** (`COLLAUDO-2026-07-25.md`) e ciò che il collaudo ha prodotto: regole nelle references, test negli script. La regola `.gitignore` resta (`banco-prova*/`) perché il prossimo agente ne creerà altri.
+Motivo: un banco che resta in giro invecchia e diventa una fonte di verità falsa — qualcuno ci guarda dentro e crede che sia lo stato dell'arte. Ciò che vale è il **verbale** del collaudo — oggi nella storia di git, `ARCHIVIO.md` dice come si ripesca — e ciò che il collaudo ha prodotto: regole nelle references, test negli script. La regola `.gitignore` resta (`banco-prova*/`) perché il prossimo agente ne creerà altri.
 
 Il logo di Schema Forge, che stava dentro `banco-prova/` per sbaglio, è stato spostato in `agenti/schema-forge/resources/branding/`.
 
 - **Stato:** presa — **con l'eccezione della §20**, ristretta dalla §25. Fra il 2026-07-28 e il 2026-07-30 l'eccezione si era allargata fino a coprire tutti e cinque i banchi, cioè aveva smesso di essere un'eccezione. La §25 le ha rimesso un criterio falsificabile — *si traccia il banco che un clone pulito sa rilanciare* — e ha rimandato gli altri quattro alla regola scritta qui sopra.
+- **Estesa il 2026-08-07 (`CANTIERE.md` D28), e va letta insieme a questa riga.** «I verbali restano» valeva quando erano pochi: a fine lavoro erano **oltre cinquanta file** in mezzo a quelli vivi, ed è successo esattamente ciò che questa decisione voleva evitare — un documento di luglio letto come se fosse lo stato dell'arte. La sostanza qui sopra non cambia e anzi si applica: *ciò che vale di un collaudo sono le regole nelle references e i test negli script*, e quelli **restano tutti**. Cambia dove vive il verbale: **nella storia di git** invece che accanto al codice vivo, con `ARCHIVIO.md` a dire dove ripescarlo. Ciò che un verbale conteneva e nessun altro sapeva — debito aperto, limiti dichiarati, trappole della macchina — è stato travasato negli `STATO.md` e in `COME-SI-USA.md` **prima** di cancellare.
 
 ## Decisioni prese estendendo Schema Forge con la skill Supabase ufficiale (2026-07-27)
 
@@ -152,7 +191,7 @@ Motivo: `rls` non aggiungeva niente a `forge` e faceva peggio di `verify`. Un co
 
 `scripts/rls-audit.mjs` resta, e resta lanciabile a mano: ma ora **stampa sempre in testa** il database e gli schemi che ha guardato, anche quando non ha niente da segnalare. La garanzia della §11 vale su entrambi i percorsi, non solo dentro il gate.
 
-- **Stato:** presa — `SKILL.md`, `README.md`, `COME-PROVARLA.md` allineati.
+- **Stato:** presa — `SKILL.md`, `README.md` e `COME-PROVARLA.md` di `agenti/schema-forge/` allineati (sono i tre documenti che nominavano il comando).
 
 ### 15. Il contratto `--json` ha un `id` per passo, separato dall'etichetta
 
@@ -290,9 +329,11 @@ Motivo per non lasciarlo scoperto: un bisogno senza proprietario non sparisce, s
 
 ### 25. Un banco si tiene solo se un clone pulito lo sa rilanciare
 
-Il 2026-07-28 la §20 era stata estesa in silenzio da tre a quattro banchi: il verbale
-`agenti/gestionale-crafter/COLLAUDO-2026-07-28.md` §Una nota sul `.gitignore` traccia anche
-`banco-prova-negozio`, `banco-prova-accademia` e `banco-sporco`, e il 2026-07-30 il collaudo
+Il 2026-07-28 la §20 era stata estesa in silenzio da tre a quattro banchi: il collaudo di
+Gestionale Crafter ha tracciato anche `banco-prova-negozio`, `banco-prova-accademia` e
+`banco-sporco` — sorgenti soltanto, 149 file e circa 1,1 MB senza `node_modules` e `.next`,
+con le chiavi locali (`.env*`) tenute fuori, *perché un `.env` tracciato è l'abitudine
+sbagliata da cui nasce quello vero* — e il 2026-07-30 il collaudo
 avversario di Speed Demon ha aggiunto `banco-prova-immobiliare` con la stessa motivazione. A
 quel punto tutti e cinque i banchi erano tracciati, l'eccezione era diventata la regola, e la
 §12 — «i banchi si buttano, i verbali restano» — non aveva più nessun caso a cui applicarsi.
@@ -336,7 +377,8 @@ dentro crede di leggere lo stato dell'arte.
 **Cosa questa decisione costa, detto prima che qualcuno lo scopra dopo.** I verbali di
 gestionale-crafter, flow-sentinel (P3, `evolve`) e speed-demon citano file dentro quei banchi:
 quei riferimenti ora puntano nella storia, non nell'albero di lavoro. Chi vuole rileggerli fa
-il `git checkout` qui sopra. E la batteria E2E di `banco-prova-negozio` — l'unico consumatore
+il `git checkout` qui sopra — e dal 2026-08-07 (D28) quei verbali sono a loro volta in archivio,
+quindi si ripescano allo stesso modo: `ARCHIVIO.md`. E la batteria E2E di `banco-prova-negozio` — l'unico consumatore
 reale che flow-sentinel abbia mai avuto — non è più a portata di un comando: per rifarla serve
 `npm install`, `supabase start` e ricreare `.env.e2e.local`, che è esattamente lo stesso lavoro
 che serviva ieri, solo dichiarato invece che presunto.

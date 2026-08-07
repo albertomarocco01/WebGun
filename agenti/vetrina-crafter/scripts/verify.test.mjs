@@ -183,7 +183,8 @@ describe("premesse dell'audit statico", () => {
 //    vede il canale con cui una chat aperta sul repo di un progetto generato
 //    vede la skill (`.claude/skills/<skill>/scripts/...`): li' `argv[1]` resta il
 //    percorso della junction mentre `import.meta.url` e' gia' canonico, e il
-//    confronto secco era falso (`PILOTA-PRE-2026-08-04.md` §2b).
+//    confronto secco era falso: il gate usciva 0 senza stampare una riga
+//    (misurato il 2026-08-04 su cinque gate di questa casa).
 //
 // Perche' i test di `vetrina-audit.mjs` stanno in QUESTO file e non in un
 // `vetrina-audit.test.mjs`: lo `npm test` di questa skill elenca i file di test

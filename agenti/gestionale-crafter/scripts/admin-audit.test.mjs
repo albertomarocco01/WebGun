@@ -34,9 +34,9 @@
  *    regola `epiloghi-vivi` della regia PRESCRIVEVA — e invocata da
  *    `.claude/skills/<skill>/scripts/...` era falsa, perche' `resolve`
  *    normalizza ma non scioglie una junction mentre `import.meta.url` e' gia'
- *    canonico. Tutti e cinque i gate della casa uscivano 0 muti su quel canale
- *    (`PILOTA-PRE-2026-08-04.md` §2b), e questo guscio con loro — cioe' di nuovo
- *    «nessun bloccante» senza aver letto un file. Gli altri due sono ciechi: lo
+ *    canonico. Tutti e cinque i gate della casa uscivano 0 muti su quel canale,
+ *    e questo guscio con loro — cioe' di nuovo «nessun bloccante» senza aver
+ *    letto un file. Gli altri due sono ciechi: lo
  *    statico vieta un token che qui non compare, il funzionale usa il percorso
  *    reale, canonico per costruzione. Solo il canale junction vede il canale
  *    junction.

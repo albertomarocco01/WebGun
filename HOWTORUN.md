@@ -95,7 +95,7 @@ Ordine operativo pensato per un progetto reale (es. e-commerce da zero).
    - il gate a mano, dalla radice del progetto generato: `node <skill>/scripts/verify.mjs`
    - solo l'audit di accesso e permessi: `node <skill>/scripts/admin-audit.mjs --db-url "$DB"`
    - dopo un gate verde, sulla superficie critica: `/code-inquisition src/modules/admin src/app/admin --focus security`
-   - guida pratica: `agenti/gestionale-crafter/COME-PROVARLA.md` · verbale: `agenti/gestionale-crafter/COLLAUDO-2026-07-28.md`
+   - stato corrente, limiti dichiarati e debito aperto: `agenti/gestionale-crafter/STATO.md`. Il limite che conta: **il gate conta le guardie, non sa se chiedono il ruolo giusto** — sostituendo `richiediRuolo("direttore")` con `richiediStaff()` nella pagina del personale l'audit rispose «nessun bloccante», e a limitare il danno restarono solo le policy del database. I quattro sabotaggi che lo fanno diventare rosso senza un banco sono in `STATO.md` §Come si prova (verbali archiviati il 2026-08-07: `ARCHIVIO.md`)
 11. 🔵 **AI Specialist**  
    Integra assistenti IA, RAG e agenti autonomi nel sito: ad esempio il chatbot che guida i clienti dell'e-commerce tra prodotti e ordini.
 
@@ -109,7 +109,7 @@ Ordine operativo pensato per un progetto reale (es. e-commerce da zero).
    - in conversazione: `/flow-sentinel`, poi `map` (**STOP**: conferma umana dei flussi) → `forge` → `run` → **`handoff`** → **`verify`**; dopo una migrazione dello schema: `evolve`
    - `verify` è **ultimo**, come per schema-forge e gestionale-crafter: uno dei sette passi controlla il contratto d'uscita, quindi scrivere l'handoff dopo il gate significa farlo nascere rosso per come è ordinato il flusso, e un rosso strutturale è quello che insegna a scavalcare i rossi veri. (Fino al 2026-07-30 questa riga insegnava l'ordine contrario, smentita dal Flusso 1 della sua stessa `SKILL.md`.)
    - il gate a mano, dalla radice del progetto generato: `node <skill>/scripts/verify.mjs [--url <url>] [--db-url <url>]`. Senza le due opzioni l'app e il database si risolvono dal `supabase/config.toml` del progetto e l'ambiente non viene mai consultato — una `SUPABASE_DB_URL` rimasta da un altro progetto è il modo in cui il difetto nasce
-   - verbali: `agenti/flow-sentinel/COSTRUZIONE-2026-07-28.md` · `COLLAUDO-2026-07-28.md` · `COLLAUDO-P3-2026-07-30.md` (primo consumatore reale) · `COLLAUDO-EVOLVE-2026-07-30.md` (`evolve`, 5 casi su 5)
+   - stato corrente e forme d'asserzione che non possono fallire: `agenti/flow-sentinel/STATO.md`. Quattro passaggi la hanno costruita e messa alla prova — costruzione e collaudo del 2026-07-28, il primo consumatore reale e `evolve` (5 casi su 5) il 2026-07-30, il pilota il 2026-08-05 — e da lì viene il difetto peggiore mai trovato qui: una batteria in cui **tutti** i test erano `test.skip` motivati (quindi lint pulito) chiudeva il gate VERDE 7/7, perché le spec si contavano come file e mai come esecuzioni (verbali archiviati il 2026-08-07: `ARCHIVIO.md`)
 13. 🟢 **Speed Demon**  
    **Cosa fa:** misura un sito già costruito e già testato su una **build di produzione** (mai `next dev`), propone le ottimizzazioni **col loro costo** (**STOP** allo Specchio), le applica **una alla volta** rimisurando e rilanciando la batteria E2E, e verifica i metatag nell'**HTML servito**. Le pagine che contano, le soglie e il metodo stanno in `docs/performance.md` del progetto generato, firmato da chi decide. Gate a 7 passi con id stabili.  
    **Prerequisiti:** Node ≥ 20, **Chrome** e `lighthouse` raggiungibile (`npx lighthouse`), il progetto generato costruito (`npm run build`) e servito su una **porta dedicata**, e la skill `flow-sentinel` raggiungibile per il passo `rete-verde`. Ognuno assente vale MANCANTE, mai PASS.  
@@ -118,7 +118,7 @@ Ordine operativo pensato per un progetto reale (es. e-commerce da zero).
    - in conversazione: `/speed-demon`, poi `measure` → `plan` (**STOP**: conferma delle ottimizzazioni e del loro costo) → `tune` → `handoff` → `verify`
    - il gate a mano, dalla radice del progetto generato: `node <skill>/scripts/verify.mjs --url http://127.0.0.1:<porta>`
    - **la porta va guardata, non supposta.** Il gate non indovina un `localhost:3000`, e dal 2026-07-30 verifica anche che l'app a quell'indirizzo sia **quella di questo progetto**, confrontando il `.next/BUILD_ID`: su questa macchina la 3100 — la porta che un contratto firmato dichiarava — era occupata dal sito di un'altra azienda. Chi occupa una porta si guarda con `Get-NetTCPConnection -LocalPort <porta> -State Listen`
-   - verbali: `agenti/speed-demon/COSTRUZIONE-2026-07-30.md` · `COLLAUDO-AVVERSARIO-2026-07-30.md`
+   - stato corrente e limiti dichiarati: `agenti/speed-demon/STATO.md`. Il collaudo avversario del 2026-07-30 trovò **17 difetti**, e **sei** erano già scritti in prosa nelle references e mai implementati: la prosa sapeva, il codice no — è la ragione per cui qui una reference nuova si accompagna al suo test (verbali archiviati il 2026-08-07: `ARCHIVIO.md`)
 
 ## FASE 5 — Sicurezza e conformità
 
@@ -132,7 +132,7 @@ Ordine operativo pensato per un progetto reale (es. e-commerce da zero).
    - in conversazione: `/site-doctor`, poi `perimetro` (**STOP**: la tabella di proprietà, prima di ogni misura) → `scansiona` → `certifica` (**STOP** alla firma del certificato) → **`handoff`** → **`verify`**
    - `verify` è **ultimo**, come per flow-sentinel: il passo `contratto-uscita` controlla che l'handoff esista e dica il vero su **questa** esecuzione
    - il gate a mano, dalla radice del progetto generato: `node <skill>/scripts/verify.mjs --url http://127.0.0.1:<porta> [--json] [--max-pagine N] [--scadenza SECONDI]`. `--url` **non ha un default**: senza, il gate legge la riga `URL verificato:` del certificato e altrimenti si **rifiuta di indovinare**. `--scadenza` ha un default **misurato** (300 s) e non si può disattivare: i passi non completati escono `skipped` — mai `pass`, mai `n/a` — e la riga finale si stampa sempre
-   - verbali: `agenti/site-doctor/COSTRUZIONE-2026-08-06.md` · `COLLAUDO-2026-08-06.md` (collaudo avversario in chat vergine, banco studio legale bilingue) · `P6-P3-2026-08-06.md` (tribunale a sei periti: 48 rilievi, gate 9 → 14 passi) · `PILOTA-CONFORMITA-2026-08-06.md` (primo consumatore reale)
+   - stato corrente, le 43 classi del banco e il registro dei rilievi aperti: `agenti/site-doctor/STATO.md`. È la skill più processata della casa: collaudo avversario in chat vergine su un banco studio legale bilingue, poi **due** tribunali (48 rilievi, che portarono il gate da 9 a 14 passi; poi 61), poi due passaggi sul pilota. La lezione che ne resta: **una classe chiusa non è una stanza chiusa** — a un perito si chiede per quale *porta diversa* si entra nella stessa stanza (verbali archiviati il 2026-08-07: `ARCHIVIO.md`)
 
 ## FASE 6 — Lancio e vendita
 
@@ -145,7 +145,7 @@ Ordine operativo pensato per un progetto reale (es. e-commerce da zero).
    - il gate a mano, dalla radice del progetto generato: `node <skill>/scripts/verify.mjs [--url http://127.0.0.1:<porta>] [--json]`
    - il **banco di prova** si rigenera da zero: `node <skill>/scripts/banco.mjs --dove <cartella> --porta <porta>` scrive un progetto gemello, lo mette in git con un remoto **locale** (una cartella `.git` nuda: qui non si pubblica niente) e **stampa** i passi che non fa — `npm install`, la build e l'avvio — invece di fingere di averli fatti. Atteso alla fine: **VERDE 9/9**
    - **quello che questa skill non ha mai fatto, ed è il suo mestiere:** nessun deploy è mai stato eseguito. Non un account creato, non un dominio comprato, non un record DNS toccato, non un centesimo speso. Il gate è misurato su due banchi e su un pilota che **non si deve pubblicare**: il primo deploy vero lo autorizza Alberto di persona
-   - verbali: `agenti/launchpad/COSTRUZIONE-2026-08-06.md` · `COLLAUDO-2026-08-06.md` (collaudo avversario in chat vergine: 26 difetti, nove falsi verdi con gravità di blocco) · `P5-P3-2026-08-06.md` (D20 e D23 eseguite)
+   - stato corrente e conto dei rossi sul pilota: `agenti/launchpad/STATO.md`. Il collaudo avversario in chat vergine trovò **26 difetti**, e **nove** erano falsi verdi con gravità di blocco: un gate che dice «si può pubblicare» sbagliando è peggio di nessun gate, perché la pubblicazione non si annulla (verbali archiviati il 2026-08-07: `ARCHIVIO.md`)
 17. 🟢 **DemonIAc**  
    Genera automaticamente video demo con Remotion da mostrare alle aziende. Opzionale nella pipeline: serve per vendere il risultato, non per costruirlo.
 

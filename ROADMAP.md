@@ -24,6 +24,7 @@ Aggiornato al **2026-08-07**.
 | Passi di gate deterministici | **64** in totale |
 | Test automatici che li sorvegliano | **1 480**, tutti verdi il 2026-08-07 |
 | Tribunali di revisione convocati | **8**, con **190 rilievi veri** |
+| Skill senza riserve per un cliente vero | **nessuna delle sette** — ognuna dichiara la sua, e non è la stessa (vedi in fondo) |
 | Siti pubblicati | **0** — mai un account, un dominio, un centesimo |
 
 ---
@@ -92,6 +93,14 @@ Maps Scraper e Aisthenics sono di Alberto e vivono per conto loro. Everything Sc
 Crafter, Super Teacher, Brainer, Projentic e Flowtastic sono degli amici e non toccano la catena
 di produzione siti.
 
+**Quello che è degli amici non si corregge qui, e resta aperto lo stesso.** In
+`agenti/code-maniac/scripts/tree.mjs` la guardia dell'epilogo confronta il percorso del modulo
+con `process.argv[1]` **grezzo**: senza `resolve()` e senza sciogliere la junction, lo script
+lanciato per percorso relativo o da `.claude/skills/` esce **senza stampare una riga**. È la
+stessa classe che in casa si chiude con il doppio confronto (`resolve` + `realpathSync`, con
+ricaduta sul testuale). Il file è uno snapshot esterno: la correzione va proposta a finzidev nel
+repo d'origine, la proposta è scritta e **non è mai stata inoltrata**.
+
 ---
 
 ## I tre che mancano, in ordine di utilità
@@ -119,6 +128,12 @@ di quel perimetro **oggi è già coperto**, e da chi lo misura davvero:
 Shield prende ciò che oggi nessuno guarda — dipendenze vulnerabili, header di sicurezza,
 rate-limiting, superficie delle Server Action — e non ricalca i vicini.
 
+La prima voce di quel perimetro è già misurata e aperta: **sulle RPC pubbliche del pilota non
+c'è nessun tetto ai tentativi** — 30 ordini inviati in 1,36 s, tutti HTTP 200, e sessanta
+tentativi di lettura per codice senza un solo 429. Non è materia di schema (non lo si scrive in
+una policy) né di vetrina (un bottone disabilitato in volo non è un tetto), e infatti sta
+dichiarata aperta in entrambi: è il debito che aspetta questo agente e nessun altro.
+
 ### 3. AI Specialist — il più grosso, e il meno urgente
 
 Chatbot, RAG, agenti dentro il sito del cliente. È lavoro vero e dipende da uno schema già forgiato.
@@ -142,6 +157,36 @@ Le strade sono due, ed è una decisione da prendere:
 
 ---
 
+## Debito trasversale alle skill
+
+Tre voci che non appartengono a nessuna skill in particolare: nessun gate le chiude da solo,
+perché chiuderle vuol dire cambiare qualcosa che sta **fra** le skill. Sono decisioni di
+architettura, non pulizie.
+
+- **La stessa difesa esiste in tre copie identiche.** `mascheraUrl` (toglie la password da una
+  URL prima di stamparla) e `credenzialiPsql` (passa le credenziali a `psql` fuori dalla riga di
+  comando) vivono duplicate in schema-forge, gestionale-crafter e flow-sentinel. La duplicazione
+  è dichiarata, e ha un costo misurato: spenta `credenzialiPsql` in schema-forge e in
+  gestionale-crafter, le due batterie sono rimaste **verdi** (216/216 e 208/208) — una difesa
+  contro le password si poteva togliere del tutto in due skill su tre senza un rosso, perché i
+  test esistevano in una copia sola. I test ora stanno in ognuna; **le copie sono ancora tre**.
+  Estrarre una libreria comune fra skill che si installano una per una è la decisione che manca.
+- **La password del database resta leggibile nella tabella dei processi per tutta la durata del
+  gate.** Tre `verify.mjs` ricevono il database come `--db-url` e lo ripassano al proprio script
+  di audit sempre come argomento: la protezione è chiusa **alla foglia** (la chiamata a `psql`),
+  non lungo la catena. Chiuderla significa cambiare l'interfaccia fra ogni `verify.mjs` e i suoi
+  audit, e il primo salto è comunque la riga di comando che scrive un umano — che questa casa
+  **non** vuole leggere dall'ambiente, perché passare la URL a mano è la difesa contro l'auditare
+  per sbaglio il database di un altro progetto. Va decisa, non fatta di corsa.
+- **Nessuna regola pretende che un epilogo esista.** Il passo `epiloghi-vivi` del gate della regia
+  **vieta** il token `import.meta.main` — che su Node 20 fa uscire un gate muto con codice 0 — ma
+  non impone in positivo che uno script chiami il suo `main()`. Uno script che perdesse del tutto
+  l'invocazione passerebbe il gate della regia in silenzio: è dimostrato, non temuto, perché la
+  regia finta dei test contiene apposta un `verify.mjs` privo di epilogo e il passo su quella
+  regia chiude **verde**.
+
+---
+
 ## Cosa nessuno ha mai provato
 
 Detto qui perché non lo si scopra dopo:
@@ -149,9 +194,24 @@ Detto qui perché non lo si scopra dopo:
 - **Nessun deploy.** Launchpad decide se si *può* pubblicare; nessuno ha mai premuto il pulsante.
   Il primo lo autorizza Alberto di persona (`DECISIONI.md` §6).
 - **Nessun cliente vero.** Tutta la catena è stata provata sulla cavia (`../cavia`) e su banchi
-  costruiti apposta. In ogni collaudo **i contratti li ha firmati chi costruiva**: il gate legge
-  la firma, non la sua verità.
+  costruiti apposta. Sui banchi **i contratti li ha firmati chi costruiva**: il gate legge la
+  firma, non la sua verità. Tutte e sette le skill portano ancora la riserva nel proprio
+  `STATO.md`, ma non per lo stesso motivo — vedi la tabella qui sotto.
 - **L'ingresso non esiste.** Brief Smith e Prompt Smith sono congelati: oggi il lavoro parte da un
   prompt scritto a mano.
 - **I guardiani non sono automatici.** Code Maniac e Code Inquisition si lanciano a mano quando
   la Regola dei guardiani lo impone (`CLAUDE.md`); niente li fa scattare da solo.
+
+### Perché ciascuna non è ancora pronta per un cliente
+
+La differenza conta, perché dice **cosa** serve per togliere la riserva: per due skill è una
+firma, per due è lavoro sul gate, per una è un deploy.
+
+| Skill | Perché la riserva resta | Cosa la toglie |
+|---|---|---|
+| **vetrina-crafter** | il motivo della firma è **chiuso**: `docs/vetrina.md` del pilota l'ha firmato Alberto di persona il 2026-08-05, senza aver costruito niente | un cliente pagante |
+| **flow-sentinel**, **speed-demon** | il contratto del pilota porta una firma **per delega** (`CANTIERE.md`, D14), che per decisione esplicita **non** chiude il punto | la controfirma di Alberto sulle due righe, poi si rilanciano i due gate: cinque minuti |
+| **gestionale-crafter** | limite del gate, non della firma: conta le guardie e **non sa se chiedono il ruolo giusto** — sostituita `richiediRuolo("direttore")` con `richiediStaff()` sulla vista del personale, l'audit ha risposto «nessun bloccante» | lavoro sulla skill |
+| **schema-forge** | limiti del gate: non può vedere un seed non rieseguibile a caldo (`db reset` parte sempre da pulito), e guarda la forma delle policy, non la semantica | lavoro sulla skill |
+| **site-doctor** | nessun certificato è mai stato firmato da un committente: le firme esistenti sono per delega | la firma di un committente |
+| **launchpad** | un motivo solo: **il primo deploy non è mai avvenuto** | il primo deploy |

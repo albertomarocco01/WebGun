@@ -1,366 +1,247 @@
-# Stato — Flow Sentinel
+# STATO — Flow Sentinel
 
-- **Stato attuale:** costruita (P1), **collaudata in modo indipendente** (P2) il 2026-07-28, e
-  **usata su un consumatore reale** (P3) il 2026-07-30 sul banco `banco-prova-negozio`
-  (Bottega Nord), costruito da altri due agenti. Batteria **16/16 verde**, gate **VERDE 7/7**.
-  P3 ha trovato **un difetto bloccante dell'app** che due gate verdi a monte non avevano visto
-  — nessuno riusciva ad accedere al gestionale — e **un falso verde della skill**: `app-viva`
-  ha dichiarato viva l'app di un altro progetto. Verbale: `COLLAUDO-P3-2026-07-30.md`.
-  **Secondo passaggio la sera stessa**, dopo che i costruttori avevano chiuso i cinque difetti
-  riportati: batteria riestesa a **11 flussi / 16 test**, e un difetto nuovo che non era di
-  nessun codice — `service_role` aveva perso i permessi perche' la CLI Supabase era passata da
-  2.95.4 a 2.110.0 cambiando `alter default privileges`. **Un progetto fermo si e' rotto da
-  solo**, e l'ha visto solo chi usa la chiave per misurare. Dettagli:
-  `banco-prova-negozio/docs/handoff/14-flow-sentinel.md`.
-  Dettagli della costruzione originale:
-  `SKILL.md` confermata in P0 e rimasta **non modificata** attraverso P1, P2 e P3 — la prima
-  modifica e' del 2026-07-30, quando il collaudo di `evolve` ha scoperto che quella procedura
-  copriva un caso su quattro (`COLLAUDO-EVOLVE-2026-07-30.md` §4); esistono le
-  **4 references**, il gate `verify.mjs` a **7 passi** con id stabili, le regole pure in
-  `scripts/gate-lib.mjs` con **103 test verdi allora** (**171 oggi**, con P.7e il 2026-08-07; **131** con P.7d, **111** rimisurati il 2026-08-06 — questa riga diceva 110 mentre §Cosa esiste diceva 111), i **3 template** e la configurazione
-  ESLint delle spec. Il gate e' stato **eseguito davvero** su due banchi Next.js + Supabase locale,
-  scritti da due mani diverse: `banco-prova-flow/` (P1, e-commerce) e `banco-prova-collaudo-fs/`
-  (P2, palestra) — **VERDE 7 su 7 su entrambi**, e rosso ogni volta che qualcosa e' stato rotto apposta.
-- **Il collaudo avversario ha trovato dieci difetti**, tutti misurati prima di essere corretti, tutti
-  con un test di regressione e un commit ciascuno. Sette erano **falsi verdi**: il gate diceva verde
-  senza aver guardato. Verbale con le uscite incollate: `COLLAUDO-2026-07-28.md`.
-  **NON ancora usabile su un progetto cliente:** P3 ha tolto il primo dei due dubbi — il terzo banco
-  l'hanno scritto **altri agenti**, non chi scriveva le regole — ma il secondo resta intero: i flussi
-  critici li ha proposti l'agente e confermati l'orchestratore, mai un committente. Punti aperti in
-  fondo, ordinati per gravita'.
-- **Proprietario:** Alberto
-- **Dipendenze:**
-  - A monte: gestionale-crafter (l'app da testare), schema-forge (il modello di accesso del suo
-    handoff e' la fonte dei flussi ostili; seed e utenti), ai-specialist se presente.
-    **Fly UI non esiste** (`../../DECISIONI.md` §21): non c'e' nessuna libreria di
-    componenti a monte, i componenti li scrive a mano chi costruisce il progetto
-  - A valle: speed-demon (ottimizza con la batteria come rete di sicurezza), cyber-shield (parte dai
-    flussi ostili dichiarati), launchpad (non pubblica su gate rosso)
-- **Guardiani:** ESLint **0 errori 0 warning** (riconfermato con `node_modules` locali veri — P.7c punti 1-2, commit `a6f6d1e`, 2026-08-03), `knip` **0 rilievi** (rieseguito dal direttore il 2026-08-04), `jscpd` **0 cloni** su `scripts/`. Batteria **131 verdi** dal 2026-08-06 sera (P.7d); erano 111.
-- **2026-08-03 — il gate non partiva sul Node di sistema, e usciva `0` muto.** *Il difetto:* l'epilogo era
-  `if (import.meta.main) await main();`, e `import.meta.main` e' arrivato in **Node 24**; su Node 20.12.2
-  — l'unico Node di sistema di questa macchina — vale `undefined`, `main()` non girava e **il gate usciva
-  `0` senza stampare una riga**, cioe' un verde che non aveva guardato niente. Questo gate lo pagava due
-  volte: **speed-demon lo lancia come sottoprocesso** col `node` del PATH per il suo passo `rete-verde`, e
-  da un gate muto ricavava «non ha prodotto JSON leggibile», cioe' una verifica MANCANTE per colpa d'altri.
-  I prerequisiti dichiarati dicono «Node >= 20»: era il codice a violare il proprio contratto. *La
-  correzione:* la forma gia' collaudata di `vetrina-crafter`, `process.argv[1]` risolto e confrontato con
-  `fileURLToPath(import.meta.url)`, a comportamento invariato su Node 24. *Come si e' provata:* in una
-  cartella non-progetto nelle **due direzioni** — prima Node 20 usciva `0` con zero righe e Node 24 usciva
-  `2` con il messaggio, dopo **entrambi escono `2` con lo stesso messaggio**. Due test di regressione in
-  `scripts/verify.test.mjs` (108 → **110**): uno **funzionale** (lancia il gate in una cartella
-  non-progetto e pretende uscita != 0 e output non muto — copre tutta la classe «l'epilogo non parte», ma
-  su Node 24 non vede *questo* difetto) e uno **statico** (il sorgente non contiene `import.meta.main` —
-  l'unico dei due che lo impedisce su qualunque Node). Pacchetto P.0-igiene.
+**A che punto è:** collaudata in modo avversario e usata sul pilota della catena completa (`cavia`);
+**mai su un progetto di un cliente vero**, e i flussi critici non li ha mai confermati un committente.
+**Proprietario:** Alberto
+**Ultima misura:** 2026-08-07 — batteria delle regole pure **171/171 verde**, knip 0, jscpd 0 cloni,
+**ESLint 1 errore** (regressione nuova, in §Debito); gate rilanciato dalla direzione sul pilota con app
+viva e database seedato: **VERDE 7/7, 22 test su 13 file di spec**.
 
-- **2026-08-06 — semgrep sugli script, la prima volta: 4 rilievi, 0 veri (P.7c punto 3).**
-  Configurazione dichiarata: `semgrep scan --config auto` (1.172.0, il profilo della casa —
-  `references/motore-deterministico.md` di code-maniac), **200 regole su 5 file, 100% di righe
-  analizzate**. Esiti: **due `detect-child-process`** (`verify.mjs`:109 e :115, ERROR) → **falsi
-  positivi provati**: nessuno dei due passa da `shell: true` — la scelta e' scritta e motivata nel
-  commento sopra `dove` (CVE-2024-27980, «prezzo gia' pagato da Schema Forge») — e gli argomenti
-  viaggiano come vettore. **Due `detect-non-literal-regexp`**: `gate-lib.mjs`:376, dove il nome
-  interpolato ha appena passato `/^[A-Za-z_$][\w$]*$/` **tre righe sopra** (nessun metacarattere
-  possibile), e `gate-lib.mjs`:550, dove `valoreToml` riceve tre chiavi letterali (`port`,
-  `site_url`, `schemas`). Nessuna correzione, nessun `nosemgrep`: quattro rilievi **dichiarati**.
-  Nessuno script toccato, quindi **batteria non ripetuta** (nulla da misurare prima e dopo).
+## Cosa fa
 
-- **2026-08-06 — `/code-inquisition` sugli script, la prima volta, e il punto aperto n°7 ha una risposta: il difetto piu' grave e' qui (P.7c punto 4).** Referto con le uscite incollate: `../../INQUISIZIONE-GATE-2026-08-06.md`. Sette esperti, due verificatori che hanno rifatto le misure. Lo stesso giorno: ESLint 0, semgrep 4 (0 veri), gitleaks 0, batteria **111/111**.
-  - **CRITICAL — un flusso critico dichiarato puo' non essere mai eseguito, e il gate resta VERDE 7/7.** `batteriaHaEseguito` (`gate-lib.mjs:503-504`) e' un **OR globale**: `esito.passati > 0` per **tutta** la batteria. Caso costruito con le funzioni pure: 13 flussi, 13 spec con `test.skip` **motivato** piu' un test banale che passa → **tutti e sette i passi `pass`**, dettaglio `1 passati, 0 falliti, 13 saltati`. `spec-coverage` misura i tag `@flusso:` nel **testo del file**, mai l'esito. E' la stessa classe che lo STATO dichiara chiusa dal collaudo P2 — chiusa per il 100% dei test saltati, **aperta per il 92%**. Smentita tentata e fallita: non esiste nessun passo che confronti i flussi *eseguiti* con quelli *dichiarati*. Aggravante: **speed-demon legge solo `esito.ok`**, quindi il falso verde si propaga muto al gate a valle. Seconda via, piu' silenziosa: `testIgnore`/`grep` in `playwright.config.ts`, di cui il gate legge **solo** `retries` (l'esclusione totale cade in `skipped`; quella parziale no).
-  - **CRITICAL (condiviso) — `which`/`where` cercano anche nella directory corrente**, che e' il progetto auditato (`verify.mjs:102`): un `npx.cmd` o un `psql.exe` piantato nella radice del progetto vince sul PATH (misurato).
-  - **MEDIUM — ReDoS vero su `IMPORT_HELPER_DB`** (`gate-lib.mjs:354`), e il costo si paga **una volta per flusso** (`:389`): 500 → 218 ms · 1000 → 262 ms · 2000 → 2 049 ms · **4000 → 19 552 ms**. Bastano 8 000 caratteri di spazio bianco in una spec del progetto. Un gate che non risponde non e' ne' verde ne' rosso.
-  - **MEDIUM — nessun timeout su psql e su `npx playwright test`**: l'unico limite dei quattro gate della pipeline e' il `AbortSignal.timeout(15_000)` di `verify.mjs:297` — ed e' proprio quello che fa uscire questo gate **ROSSO e leggibile in 15,2 s** dove speed-demon resta appeso 45 secondi in silenzio. La lezione e' che il pattern giusto e' gia' in casa, in questo file.
-  - **LOW — `motivato()` legge `//` senza distinguere una stringa da un commento**: un `.skip` il cui titolo contiene `https://…//home` risulta motivato → nessun rilievo.
-  - **LOW — ricorsione sull'albero del report Playwright** (`gate-lib.mjs:453`): profondita' 20 000 → `RangeError` non catturato, il processo muore senza JSON. La docstring della funzione dichiara l'opposto («un report malformato deve portare a MANCANTE, mai a un'eccezione»).
-  - **LOW — il passo `playwright` non consulta mai `res.status`** del runner: difetto reale ma **inerte** (ogni suo esito e' gia' intercettato da `res.error` e dal parse del report).
-  - **LOW — `righeDaPsql` di questa skill e' tornato ai delimitatori di default di psql**: innocuo oggi (query a colonna singola), pericoloso al primo riuso — e' la classe che schema-forge ha gia' pagato.
-  - **LOW — commento TOML nell'array multi-riga**: `senzaVirgolette` toglie la cella col `#`, non la coda del commento dopo la virgola → uno schema fantasma nella riga stampata.
-  - **LOW — `references/playwright.md` non dichiara nessun `timeout`** (grep: zero occorrenze), ed e' il limite su cui il gate fa affidamento.
+Genera ed esegue la batteria End-to-End (Playwright + TypeScript) sui flussi critici di un sito Web Gun
+— carrello, checkout, login, area riservata — a costruzione finita, prima di speed-demon e launchpad.
+**Non corregge l'app**: il difetto va nell'handoff e in `docs/DEBITO-TECNICO.md`, il fix è dei
+costruttori. Comandi: `map`, `forge`, `run`, `verify`, `evolve`, `handoff`. Le tre leggi:
 
-  **Sorte**: tutti **dichiarati**, nessuno chiuso qui — ognuno vuole un test che lo falsifichi e il gate rilanciato contro un'app viva, che questa chat non ha (D17).
+1. **Il flusso prima del test (Specchio dei flussi).** I flussi, positivi e ostili, si propongono e ci
+   si ferma finché non arriva la conferma; `docs/flussi-critici.md` è il contratto. Una batteria
+   perfetta sui flussi sbagliati è comunque da buttare.
+2. **Il browser è il giudice, non l'LLM.** Un test vale se è girato davvero, contro app viva e database
+   reale seedato. Premessa mancante = **MANCANTE**, mai verde.
+3. **Un test che non può fallire non è un test.** Il positivo asserisce l'effetto sul **database**, non
+   la pagina; l'ostile asserisce il **rifiuto**. Al collaudo si prova col **sabotaggio**: app rotta in
+   un punto noto, batteria che deve diventare rossa.
 
-- **2026-08-06 — P.7d: i due rilievi gravi di questa skill sono CHIUSI, e il n°7 con loro** (verbale con le uscite incollate: `../../PROCESSO-GATE-2026-08-06.md`). Riprodotti **prima** di correggere e rimisurati dopo. Batteria **111 → 131**, ESLint 0, knip 0, gitleaks 0, jscpd **0 cloni**.
-  - **CRITICAL (C2) — CHIUSO, e non con una soglia.** Il passo conta i **flussi percorsi**, non i test girati: ogni flusso dichiarato vuole almeno un test ESEGUITO che porti `@flusso:<id>` nel titolo pieno. L'etichetta si legge dal titolo del test eseguito e non dal testo del file, perche' il testo del file dichiara la COPERTURA e il titolo di un test che gira dichiara l'ESECUZIONE — confonderle era il difetto. Misurato sullo stesso report (13 flussi, 13 spec `test.skip` motivate, un test banale verde): da **`pass` con «1 passati, 0 falliti, 13 saltati»** a **`MANC` con «0 flussi critici su 13 percorsi davvero dal browser»**, una riga per flusso col motivo giusto — se le spec sono state saltate, o se nessun test porta l'etichetta. Otto asserzioni su un report nella forma vera del reporter JSON. Il falso verde non si propaga piu' a speed-demon, perche' `ok` diventa `false`.
-  - **CRITICAL (C1, condiviso) — CHIUSO** con le stesse quattro chiusure delle sorelle: `where "$PATH:<nome>"`, `where.exe`/`cmd.exe` col percorso pieno, rifiuto dei candidati dentro il progetto, nessun nome nudo. Più `process.execPath` per l'ESLint delle spec. **Sabotaggio**: prima il finto `node` piantato nella radice comprava un `OK lint delle spec`; dopo il file-traccia non viene creato affatto.
-  - **H2 + L1 (condivisi) — CHIUSI**: questo gate non aveva **nessun** filtro sugli argomenti che passano da `cmd /c`, e ci passano l'SQL intero e l'URL del database. Il commento «non si abilita `shell: true`» dice ora anche che `cmd.exe /c` una shell lo è.
-  - **M14 + L10 — CHIUSI**: `timeout` più `PGCONNECT_TIMEOUT` su psql, e un tetto di 30 minuti su `npx playwright test` — il gate non fa più affidamento su un limite che il template della skill non dichiara. L'`AbortSignal.timeout` che questa skill aveva già è quello che il 2026-08-06 l'ha fatta tornare in **18,2 s con un ROSSO leggibile** dove speed-demon restava appeso: ora quel pattern vale su tutte e tre le chiamate.
-  - **M1 — CHIUSO** nella funzione riscritta: `-X` è arrivato con `interrogaDb`.
-  - **Restano aperti** → **M5, L11, L3, L7 chiusi da P.7e** il 2026-08-06/07; **L8 resta MANCANTE con la sua ragione**; L6 resta dichiarato inerte dal referto stesso. Vedi la voce qui sotto.
-  - **MANCANTE, con il suo nome**: il gate **non è stato rilanciato contro un'app viva e un database seedato** (D17: l'unico stack acceso è del pilota, di P.4h). C2 è stato provato su un report JSON nella forma vera del reporter, non su una batteria vera; il giro completo è l'atto di chiusura del prossimo pacchetto.
-- **2026-08-06 — `gitleaks` installato e puntato: il MANCANTE storico e' chiuso (P.7c punto 5).**
-  `gitleaks` 8.30.1 (scoop, bucket `main`). Su questi `scripts/`: **nessun rilievo**. Sul repo
-  intero: **storia** (`gitleaks git .`, 143 commit) **4 rilievi, 0 veri**; **disco**
-  (`gitleaks dir .`, 179,72 MB) **26 rilievi, 0 veri** — tre su file tracciati, tutti e tre
-  **fixture di rilevatori di segreti**, gli altri in artefatti non tracciati dei banchi
-  (`.next/`, `.env.local`) con la chiave demo locale di Supabase (`iss: supabase-demo`).
-  Nota per chi usera' lo strumento: `gitleaks git` trova il segreto **dove e' stato
-  introdotto**, non dove il file sta oggi (una rinomina senza modifiche non lascia diff da
-  leggere); `dir` guarda il disco. Le due modalita' non si sostituiscono a vicenda.
+## Il gate
 
-## Piano di costruzione (deciso in P0)
+**Sette passi**, id stabili, `--json` col contratto comune agli altri gate della pipeline.
 
-| Fase | Cosa | Dove | Stato |
-|---|---|---|---|
-| P0 | progettazione SKILL.md | qui | fatta, confermata dall'umano il 2026-07-28 |
-| P1 | references, scripts (gate + lib pura + test), banco minimo usa e getta, sabotaggio provato | branch `agente/flow-sentinel` | **fatta il 2026-07-28** |
-| P2 | collaudo avversario indipendente su dominio diverso: caccia ai falsi verdi del gate | chat dedicata, vergine | **fatta il 2026-07-28** — 10 difetti, `COLLAUDO-2026-07-28.md` |
-| P3 | primo consumatore reale: batteria su Bottega Nord (`banco-prova-negozio`), dopo l'handoff di gestionale-crafter | chat dedicata | **fatta il 2026-07-30** — 15/15 verde, gate 7/7, 2 difetti veri, `COLLAUDO-P3-2026-07-30.md` |
+| passo | cosa prova |
+|---|---|
+| `flussi-critici` | il contratto esiste, ha la riga `Confermato da:` firmata, ogni flusso ha id stabile e tipo |
+| `spec-coverage` | ogni flusso dichiarato ha una spec col tag `@flusso:<id>`; le spec orfane si segnalano |
+| `lint-spec` | ESLint sulle spec: `.only` committato = block, skip non motivato = issue |
+| `effetto-db` | ogni spec positiva importa **e chiama** `e2e/helpers/db`; ogni ostile asserisce il rifiuto |
+| `app-viva` | l'app risponde all'URL dichiarato, il database risponde sulla sua porta, seed applicato |
+| `playwright` | esegue la batteria e conta i **flussi percorsi** dal titolo dei test eseguiti, non i tag nei file |
+| `contratto-uscita` | handoff scritto, senza segnaposto a metà, riga `Gate:` coerente coi sei passi sopra |
 
-## Cosa esiste, misurato
+Si lancia **dalla radice del progetto generato**:
 
-| Cosa | Numero | Come e' stato misurato |
-|---|---|---|
-| Passi del gate | 7 | `verify.mjs --json`, `summary.passi` |
-| Test degli script | **111 verdi** (79 dopo P1, +24 in P2, +3 in P3 su `ambienteBatteria`, +2 col collaudo di `evolve`, +2 con P.0-igiene il 2026-08-03, +1 col test junction di P.0-igiene-2 il 2026-08-04) | `node --test "scripts/**/*.test.mjs"` |
-| References | 4 | `references/`, 1288 righe dopo P1, corrette in tre punti da P2 |
-| Template | 3 | `flussi-critici.md`, `handoff-flow-sentinel.md`, `eslint-spec.config.mjs` |
-| Banchi su cui il gate e' girato | **3**, di tre domini — e il terzo scritto da **altri agenti** | `banco-prova-flow/` (5 flussi, 5 spec) · `banco-prova-collaudo-fs/` (6 flussi, 6 spec) · **`banco-prova-negozio/` (11 flussi, 11 spec, 16 test, gate 7/7)**. Nessuno dei tre e' piu' su disco: i primi due erano usa e getta, il terzo e' stato cancellato il 2026-07-30 (`../../DECISIONI.md` §25) e torna con `git checkout 67f9001 -- banco-prova-negozio` |
-| Difetti piantati e rilevati | 5 su 5 (P1) + 3 su 3 (P2, classi nuove) | `COSTRUZIONE` §3.2 · `COLLAUDO` §4 |
-| Premesse tolte e riconosciute mancanti | 3 su 3 | `COSTRUZIONE-2026-07-28.md` §MANCANTE |
-| Forme ostili provate sulle regole pure | 79, con input della forma vera | `COLLAUDO-2026-07-28.md` §6 |
-| Difetti del gate trovati dal collaudo | **10** (7 falsi verdi, 3 crash o rossi sbagliati) | `COLLAUDO-2026-07-28.md` §3 |
+```
+node C:/Users/Utente/Desktop/WebGun/agenti/flow-sentinel/scripts/verify.mjs [--url <url>] [--db-url <url>] [--json]
+```
 
-## Tre falsi verdi trovati costruendo, e chiusi
+Uscite: `0` verde · `1` rosso · `2` errore di esecuzione. Uno `skipped` è una **verifica mancante**, non
+una superata: il gate resta rosso.
 
-Nessuno dei tre veniva dal compito: due sono usciti facendo girare il gate per davvero, il terzo
-dalla verifica avversaria delle references — cercando di smentire una frase, non di leggere il codice.
+- **Senza `--url`/`--db-url` l'ambiente non viene mai consultato**: app e database escono da
+  `supabase/config.toml` (`[auth].site_url`, `[db].port`) — una `SUPABASE_DB_URL` accesa da un altro
+  progetto è il modo in cui il difetto nasce. Ma `site_url` è una riga di un documento e può mentire:
+  sul pilota diceva `:3000` mentre l'app viveva sulla `:3621`. Lì il passo è uscito MANCANTE dicendolo;
+  con un altro progetto acceso sulla 3000 avrebbe misurato l'app di uno sconosciuto chiamandola verde.
+- **Prerequisiti**, ognuno assente vale MANCANTE: `@playwright/test` installato nel progetto, `psql` nel
+  PATH, ESLint nella cartella della skill.
+- **Limiti di tempo**: 30 min su `npx playwright test`, `timeout` + `PGCONNECT_TIMEOUT` su psql,
+  `AbortSignal.timeout(15_000)` sulle sonde HTTP. Un gate che non risponde non è né verde né rosso.
+- Gira col **node di sistema** (20.12.2) e da **entrambi i canali**, percorso reale e junction
+  `.claude/skills/…`. `npx playwright test` eredita il node del **PATH**, non l'interprete del gate.
 
-1. **Un contratto non firmato passava per firmato.** `RIGA_CONFERMA` usava `\s` fra i due punti e la
-   firma, e `\s` comprende l'a capo: una riga `Confermato da:` **vuota** catturava la prima riga non
-   vuota che seguiva — l'intestazione del primo flusso — e il passo usciva **verde**. E' il falso verde
-   peggiore, perche' sta esattamente sul passo che esiste per impedirlo. Riprodotto, chiuso ammettendo i
-   soli spazi orizzontali, due test di regressione. Stessa correzione sulla riga `Gate:`.
-   **Vale anche per Schema Forge**, che ha la stessa forma di regex: vedi le proposte del verbale.
-2. **Lo shim che Windows non sa eseguire.** `where npx` elenca per primo lo script di shell **senza
-   estensione** (quello per Git Bash); `spawnSync` non lo esegue, e il passo `playwright` diceva «report
-   JSON non interpretabile» su una macchina dove `npx playwright test` funziona. Il guasto andava nella
-   direzione sicura (MANCANTE, mai un falso verde), la diagnosi no: incolpava Playwright. Chiuso con
-   `primoEseguibile()`, che sceglie la riga con estensione eseguibile, piu' un esito distinto per
-   l'errore di esecuzione.
-3. **`effetto-db` verificava l'import e non la chiamata.** Il ritaglio della clausola di import partiva
-   dal **primo** `import` del file, quindi in una spec vera — che comincia sempre con
-   `import { test, expect } from "@playwright/test";` — i nomi raccolti erano `test`, `expect`,
-   `import`, `contaProdotti`, e un `expect(...)` qualsiasi passava per una chiamata all'helper del
-   database. Bastava importare l'helper e non usarlo mai per avere il verde, **sul passo che esiste
-   apposta per pretendere la chiamata**. Sul banco non si vedeva: le cinque spec l'helper lo chiamano.
-   Chiuso vietando `;` e virgolette dentro la clausola, con due test nuovi che usano la forma **vera**
-   di una spec. La lezione: i test della regola usavano frammenti con un solo import, cioe' una forma
-   che nella realta' non esiste — un test che non somiglia all'input vero prova la fixture, non la
-   regola.
+## Come si prova
 
-## Cosa un gate verde NON prova
+1. **Batteria delle regole pure** (le regole stanno in `scripts/gate-lib.mjs`, il guscio di I/O in
+   `verify.mjs`), da `agenti/flow-sentinel`:
 
-Questa sezione esiste perche' la sua assenza e' il modo in cui un verde diventa una firma in bianco.
+   ```
+   npm test
+   # se npm non è nel PATH:
+   "/c/Program Files/nodejs/node.exe" "/c/Program Files/nodejs/node_modules/npm/bin/npm-cli.js" test
+   ```
 
+   **171 test, 171 verdi**, misurato il 2026-08-07. Il vecchio STATO diceva 158 in un punto e 131 in un
+   altro: fotografie di pacchetti intermedi.
+
+2. **Guardiani**: `npx eslint .` · `npx knip` · `npx jscpd scripts/`. Oggi **1 errore** ESLint (vedi
+   Debito), 0 knip, 0 cloni.
+
+3. **Il gate contro un'app vera.** La skill non ha un banco proprio: il consumatore vivo è il pilota
+   `cavia` in `C:/Users/Utente/Desktop/cavia` (13 flussi, 13 spec, 22 test). Da quella radice, con
+   `supabase start` + `supabase db reset` prima e **un solo stack Supabase acceso** (tre insieme
+   saturano una macchina da 16 GB):
+
+   ```
+   node C:/Users/Utente/Desktop/WebGun/agenti/flow-sentinel/scripts/verify.mjs --url http://127.0.0.1:3621
+   ```
+
+   Il banco del primo consumatore reale torna con `git checkout 67f9001 -- banco-prova-negozio`, ma il
+   checkout non basta: vuole `npm install`, `supabase start` e la ricreazione di `.env.e2e.local` ed
+   `e2e/.auth/`, gitignorati di proposito.
+
+4. **Sabotaggio**: `references/sabotaggio.md`, a mano al collaudo, non a ogni giro. È l'unica cosa che
+   prova che la batteria sappia diventare rossa.
+
+## Cosa NON è mai stato provato
+
+Questa sezione esiste perché la sua assenza è il modo in cui un verde diventa una firma in bianco.
+
+- **Un cliente vero.** I flussi li propone l'agente e li conferma l'orchestratore o la direzione lavori
+  **per delega dichiarata**. Il gate legge la riga `Confermato da:`, **non la sua verità**.
 - **Che l'elenco dei flussi sia completo.** Il gate verifica che ogni flusso *dichiarato* sia attaccato,
-  non che sia stato dichiarato tutto quello che conta. Un checkout dimenticato allo Specchio resta
-  invisibile a tutti e sette i passi. La difesa e' la conferma umana, e non e' automatizzabile.
-- **Che l'asserzione di effetto sia quella giusta.** `effetto-db` guarda la **forma**: che la spec
+  non che sia stato dichiarato tutto ciò che conta: un checkout dimenticato allo Specchio resta
+  invisibile a tutti e sette i passi. La difesa è la conferma umana, e non è automatizzabile.
+- **Che l'asserzione di effetto sia quella giusta.** `effetto-db` guarda la **forma** — che la spec
   importi e chiami `e2e/helpers/db`. Una chiamata che legge la tabella sbagliata copre la casella.
-  Stessa onesta' che Schema Forge scrive sul suo audit RLS.
-- **Che i flussi ostili in lettura siano davvero rifiutati.** Su `ostile-lettura` il gate non pretende
-  nessuna asserzione sul database — non c'e' stato da confrontare — quindi una spec che asserisce solo
-  l'URL e non l'assenza del contenuto riservato passa. Lo trova il sabotaggio di classe C, non il gate.
-  E non basta guardare il DOM: se il rifiuto lo decide il browser, l'HTML riservato e' gia' stato
-  servito e ogni `getByText` lo trova pulito. Si asserisce sul **corpo della risposta** — misurato in
-  P2, `COLLAUDO-2026-07-28.md` §4.1.
-- **Che il seed contenga i dati giusti.** `app-viva` conta tabelle e righe: sa che il database non e'
-  vuoto, non sa che dentro ci sia quello che serve ai flussi.
-- **Che la batteria trovi i difetti.** Lo dimostra il sabotaggio, e il sabotaggio si esegue al collaudo,
-  a mano, non a ogni giro (`references/sabotaggio.md`).
+- **Che i flussi ostili in lettura siano rifiutati davvero.** Lì il gate non pretende asserzioni sul
+  database (non c'è stato da confrontare), quindi una spec che asserisce solo l'URL passa. E il DOM non
+  basta: se il rifiuto lo decide il browser, l'HTML riservato è già stato servito e ogni `getByText` lo
+  trova pulito. Si asserisce sul **corpo della risposta** di navigazione, che un redirect del client non
+  può riscrivere (misurato al collaudo indipendente).
+- **Che il seed contenga i dati giusti.** `app-viva` conta tabelle e righe: sa che il database non è
+  vuoto, non che dentro ci sia quello che serve ai flussi.
+- **Che la batteria trovi i difetti.** Lo dimostra solo il sabotaggio, che non gira a ogni giro.
+- **Che un flusso CAMBIATO nel corpo venga visto.** Stesso id, passi o effetto diversi: il gate **non lo
+  vede — misurato**, legge le intestazioni e non i passi, e resta verde su un contratto che descrive un
+  percorso che la spec non fa più. È il caso più frequente nella vita di un progetto: gli altri tre di
+  `evolve` lasciano una traccia strutturale, questo no. Non è correggibile senza reinventare la
+  comprensione del testo — c'è un test che dichiara il limite, e la difesa è l'agente.
+- **Che la data di `Confermato da:` sia più recente dell'ultimo cambio di rotte.** È nella procedura di
+  `evolve`; **nessuno script la esegue**.
+- **Che l'app misurata sia quella giusta, quando la batteria non esiste.** Con le spec la classe è chiusa
+  (`ambienteBatteria` impone alla batteria l'URL appena interrogato: un'app sbagliata dà una batteria
+  rossa invece di un verde muto); senza spec il passo vede solo «qualcuno risponde lì».
+- **Che la batteria non sporchi il database.** Le asserzioni di conteggio che la reference insegna sono
+  **relative**: una riga orfana non fa rossa nessuna spec e si scopre al giro dopo, come un rosso che
+  parla d'altro. Sul pilota l'ha trovato il tribunale, non il gate; la rete che lo chiude sta fuori
+  dalle spec e **non è nel contratto di `forge`** (§Le asserzioni che non potevano fallire, §Debito).
+- **Che il sito serva quello che il database contiene.** Una spec che ripristina solo il **dato** lascia
+  la pagina in cache ISR a servire il testo di prova: sul pilota `/chi-siamo` ha servito «Prova E2E» per
+  cinque minuti, e a trovarlo è stato il gate della **vetrina**. Rimettere a posto il dato non è
+  rimettere a posto ciò che dipende dal dato: il ripristino passa dalla stessa porta del cambiamento.
+- **Che la chiave `service_role` funzioni.** Nessun passo la usa. Il 2026-07-30 ha perso
+  `select/insert/update/delete` su tutte le tabelle perché la CLI Supabase era passata da 2.95.4 a
+  2.110.0 cambiando `alter default privileges` — **un progetto fermo si è rotto da solo** — e tre gate
+  della pipeline sono rimasti verdi: rossa è diventata solo la batteria. Senza spec quella rottura
+  sarebbe invisibile a tutti e tre.
+- **Le stringhe dentro le spec.** Un `import … from './helpers/db'` dentro una stringa soddisfa la Terza
+  Legge (verde falso); un `retries: 1` dentro un template multi-riga fa passare una configurazione che
+  non lo dichiara; l'interno di un template si legge come codice — **limite dichiarato**, col suo test,
+  nel verso rumoroso.
 - **Niente sulla sicurezza oltre i flussi dichiarati.** Le porte che nessuno ha dichiarato le cerca
-  Cyber Shield: qui si prova che quelle dichiarate restano chiuse.
+  cyber-shield: qui si prova solo che quelle dichiarate restino chiuse.
 
-## Cosa ha trovato il collaudo indipendente (P2)
+## Le asserzioni che non potevano fallire — le forme viste sul pilota
 
-Dieci difetti, tutti riprodotti prima di essere corretti. I quattro che contano:
+Un tribunale (`/code-inquisition`) puntato **sulla batteria e non sull'app** — perché il difetto di
+classe di questo anello è *un test che non può fallire*, e se lo trova qualcuno più a valle è già
+costato — ha restituito **21 rilievi: 9 corretti, 1 refutato con una misura**, il resto dichiarato.
+`tsc` ed ESLint erano **puliti e non ne hanno visto nessuno**: stanno tutti nello strato di «cosa
+dimostra questa asserzione», che nessun analizzatore guarda. E il gate li dichiarava tutti coperti,
+perché `effetto-db` verifica **import e chiamata**, non la semantica. Le forme si ripetono, quindi
+valgono più dei nove casi:
 
-1. **Una batteria in cui ogni test e' saltato usciva VERDE 7/7**, con `ok: true`: le spec si contavano
-   come **file**, mai come esecuzioni. Bastavano sei `test.skip` con la motivazione accanto — cioe' la
-   forma legittima, quella che `lint-spec` non segnala nemmeno — per avere un gate verde su zero flussi
-   percorsi. Era l'ultimo punto in cui «uno strumento che esce 0 senza aver letto» era rimasto aperto.
-2. **Un handoff che dichiarava `Gate: VERDE` su un gate ROSSO passava**, se piu' sopra citava in un
-   blocco recintato il rosso dell'esecuzione precedente — cioe' esattamente cio' che
-   `references/sabotaggio.md` prescrive di incollare li' dentro.
-3. **Un contratto firmato da `{{UMANO | ORCHESTRATORE}}`** — il template compilato a meta' — o da un
-   asterisco del grassetto passava per firmato.
-4. **La spec ostile guardava il DOM dopo il redirect.** Col controllo di ruolo spostato nel browser,
-   l'area riservata veniva servita per intero al socio e la batteria restava verde 6 su 6: ogni
-   `getByText(...).toHaveCount(0)` girava sulla pagina lecita. Ora si asserisce sul corpo della
-   risposta di navigazione, che un redirect del client non puo' riscrivere.
+- **Asserzioni di conteggio relative** (`+1 riga`, `stato diverso da prima`): nessuna spec diventa
+  rossa per una riga lasciata dietro. Si chiude **fuori** dalle spec — un `e2e/global-teardown.ts` che
+  confronta i totali col seed e solleva — e si **collauda piantando un residuo a mano**: 22 test
+  passati e gate ROSSO lo stesso. Una rete che nessuno ha visto scattare non è una rete.
+- **L'ostile in scrittura che non ripulisce quando l'attacco RIESCE**, cioè il giorno in cui la difesa
+  che sorveglia regredisce: l'unico giorno in cui la pulizia serve davvero. La peggiore sospendeva una
+  titolare e **chiudeva fuori il `global-setup` del giro successivo** — la batteria si serra fuori da
+  sola. Ogni ostile in scrittura vuole il suo `afterEach`, non un `afterEach` sul caso felice.
+- **L'asserzione tautologica**: la riga che il commento annunciava come «senza prezzo» ricontrollava
+  l'etichetta che un `expect.poll` due righe sopra aveva appena stabilito. Vera per costruzione.
+- **Il DOM al posto della policy**: spostare il filtro dalla policy alla query avrebbe lasciato il DOM
+  identico e la bozza leggibile con la chiave anonima. Un rifiuto si asserisce rileggendo la tabella
+  **dal browser con la chiave anonima**, pretendendo zero righe.
+- **Conteggi negati invece che contati**: «sei voci» ne asseriva due, «due sole voci» negava due nomi
+  su cinque. Si contano e si nominano.
+- **La pulizia armata dopo un'asserzione che può scadere**, mentre la riga era già scritta: la finestra
+  fra le due lascia orfani. La variabile di pulizia si arma dall'URL, **prima** di ogni asserzione.
+- **Il ripristino d'emergenza che scrive dritto nel database**, saltando la `revalidatePath` da cui
+  passa il cambiamento vero — lo stesso difetto già trovato sulla via normale, riaperto sulla via
+  d'emergenza. L'`afterEach` passa dalla UI; la scrittura diretta è l'ultima spiaggia.
+- **La prosa del contratto che descrive un passo che la spec non percorre** («porta la cucina su una
+  pagina viva», e nessun `goto`). Costa 300 ms rendere vera una riga firmata.
 
-Gli altri sei: `retries` letto in un commento o ignorato dentro `projects`, `test.fixme` invisibile,
-l'asserzione commentata via che contava come asserzione, gli schemi esposti multiriga che sparivano in
-silenzio, tre crash su report malformati, e tre rossi sbagliati su codice commentato.
+**Il rilievo refutato vale quanto i nove corretti, per come è caduto**: non discutendone, ma con una
+build sabotata. Sosteneva che una spec provasse solo la guardia della *rotta* e non quella
+dell'*azione*; togliendo davvero la guardia dall'azione la spec è diventata rossa. In App Router la
+Server Action gira **prima** del re-render, quindi la sua uscita vince su quella della pagina — e sotto
+la guardia dell'azione c'è comunque la policy, che risponde `42501`. Un'ipotesi su cosa dimostri una
+spec si chiude con una build, non con un secondo parere.
 
-## Punti aperti — ordinati per gravita'
+**Sette dei nove hanno la stessa forma: il contratto prometteva più di quanto la spec asserisse** — il
+caso di `evolve` che il gate dichiara invisibile. Chi scrive sia il contratto sia le spec **non può
+essere il proprio revisore**: le due metà si confermano a vicenda per costruzione.
 
-> **CHIUSO il 2026-08-04 (P.0-igiene-2) — il gate parla anche dalla junction.**
-> Era: invocato come `.claude/skills/flow-sentinel/scripts/verify.mjs` il gate
-> usciva **0 senza stampare una riga**, mentre per percorso reale usciva 2 col
-> messaggio (misura di P.4-pre, `../../PILOTA-PRE-2026-08-04.md` §2b). Causa:
-> `resolve(process.argv[1])` normalizza il percorso ma non scioglie una junction,
-> mentre `import.meta.url` è già canonico — guardia falsa, `main()` mai chiamata.
-> Ora l'epilogo confronta **due volte** (testuale e `realpathSync`, con ricaduta
-> sul testuale se `realpathSync` solleva), ed è la forma che l'`hint` della regola
-> `epiloghi-vivi` prescrive da oggi. Commit `257e34d` (guardia), `e6deb39`
-> (`hint`), `c96ae00` (test).
->
-> **Misura del 2026-08-04**, node di sistema 20.12.2, cartella vuota fuori
-> dall'albero: **entrambi i canali escono 2** con lo stesso messaggio, carattere
-> per carattere — `Ne' docs/ ne' e2e/ in <cwd>: non c'e' batteria da verificare
-> (lancia il gate dalla radice del progetto).` Uscite incollate in
-> `../../IGIENE2-JUNCTION-2026-08-04.md` §1. **Cade il vincolo provvisorio di
-> D12**: i gate si lanciano da **entrambi** i canali, junction compresa — che è
-> come li vede una chat aperta sul repo di un progetto generato.
->
-> Ricaduta che riguardava questa skill in proprio: speed-demon lancia questo gate
-> come sottoprocesso per il suo passo `rete-verde`, e da un gate muto ricavava
-> «non ha prodotto JSON leggibile», cioè una verifica MANCANTE per colpa d'altri.
-> Misurato oggi sulla stessa cartella dai due canali: `GATE FLUSSI: ROSSO (1
-> falliti, 6 verifiche mancanti su 7 passi)`, identico (verbale §5).
->
-> Regressione piantata: un terzo test invoca il gate **attraverso una junction
-> vera** e pretende uscita ≠ 0 e output non vuoto; statico e funzionale sono
-> ciechi a questo difetto, provato col sabotaggio (verbale §4).
+## Debito aperto
 
-> **Quattro punti chiusi da P3** il 2026-07-30 — il consumatore reale (era il n°1), `lint-spec`
-> senza dipendenze (n°3, chiuso operativamente: resta da scrivere il README), `psql` nel PATH (n°4,
-> c'e' e il passo interroga il database davvero) e l'URL preso da `[auth].site_url` (n°5, che non e'
-> piu' un timore: e' stato **misurato** come falso verde e **corretto**). Dettaglio in
-> `COLLAUDO-P3-2026-07-30.md` §6.
+| cosa | perché resta | chi lo chiude |
+|---|---|---|
+| **ESLint 1 errore**: `PAROLA_IMPORT` assegnata e mai usata (`gate-lib.mjs:468`), residuo della riscrittura di `clausoleHelperDb` | misurato oggi; fino a ieri si dichiarava «0 errori 0 warning». Una riga da togliere, ma tocca il gate e vuole la batteria rilanciata | chi tiene la skill |
+| `righeDaPsql` è tornato ai delimitatori di default di psql: una cella con un a capo dà **tre righe invece di due** | innocuo oggi (query a colonna singola), pericoloso al primo riuso; neutralizzare i separatori in SQL vuole un Postgres vivo, e farlo alla cieca rende **silenzioso** un guasto oggi **rumoroso** | pacchetto con un banco |
+| Lo spogliatore delle spec legge l'interno dei template multi-riga come codice | correzione incompleta: la configurazione va letta con le stringhe svuotate, la spec con le stringhe intatte — il percorso dell'helper dentro una stringa ci vive | chi tiene la skill |
+| `references/playwright.md` prescrive `goto("/accesso")` | il progetto reale aveva `/accedi`: forma inventata in un documento altrove preciso al carattere | chi tiene la skill |
+| La stessa reference costruisce l'helper DB con `createClient` di `@supabase/supabase-js` | su Node 20.12.2, il node dei gate, **muore in costruzione** (`native WebSocket not found`): il vincolo duro è di `@supabase/realtime-js` (>=22). La deroga — PostgREST e GoTrue in HTTP diretto — sta nel pilota e non nella reference, e fa scrivere l'attacco ostile nella forma esatta di chi apre i DevTools | chi tiene la skill |
+| La stessa reference tace su cosa fare quando gli **utenti di prova sono dati di dominio** | prescrive «li crea il global-setup con l'admin API, MAI il seed»; sul banco erano righe di `staff` legate a `auth_user_id` del seed: ricrearli li duplica, riallinearli avrebbe **riparato in silenzio** il difetto che la batteria doveva misurare | chi tiene la skill |
+| Il residuo di un sabotaggio può sopravvivere a un `git status` pulito | con `core.autocrlf=true` (default Git su Windows) `git restore` riscrive **CRLF**: `git status` resta vuoto e `code-maniac scan` ingiallisce su file che nessuno ha toccato. Il limite e il rimedio (`prettier --check` accanto a `git status`, o `core.autocrlf input` nei progetti generati) sono ora scritti in `references/sabotaggio.md` §Il ripristino: resta una procedura **a mano**, nessuno script la impone | chi tiene la skill |
+| `e2e/global-teardown.ts` non è nel contratto d'uscita di `forge` | nel pilota l'ha inventato chi ha scoperto il difetto, collaudandolo con un ordine piantato a mano: **22 test passati e gate rosso lo stesso**. `contratto-uscita` potrebbe pretenderlo come già pretende `retries: 1` | chi tiene la skill |
+| Nessun passo del gate usa la **chiave di servizio** | chiuderebbe la classe del 2026-07-30 e costa una `curl` a PostgREST | chi tiene la skill |
+| Nessuna regola statica sui flussi `ostile-lettura` | scelta dichiarata, ma resta un buco che solo la prosa difende | chi tiene la skill |
+| Il gate non distingue una firma **per delega** da una vera | scelta dichiarata; con l'autonomia della catena la delega è però la condizione normale, quindi va deciso se stamparla come **residuo** invece che come conferma | direzione |
+| Rilievi **dichiarati** e non chiusi | i 4 di semgrep sono falsi positivi provati (due `detect-child-process` che non passano da `shell: true`, due `detect-non-literal-regexp` su input validati o letterali), nessun `nosemgrep` messo; il passo `playwright` non consulta `res.status` del runner — reale ma **inerte** | — |
+| Nessun banco proprio della skill è su disco | «batteria verde, gate 7/7» non si rilancia in un comando, si ricostruisce | — |
 
-1. ~~**`evolve` non e' mai stato collaudato.**~~ — **chiuso il 2026-07-30**,
-   `COLLAUDO-EVOLVE-2026-07-30.md`. Cinque casi guidati sui file veri di Bottega Nord contro le
-   funzioni vere del gate: **5 su 5 combaciano** con la reference, e il caso del `warn` e' stato
-   rifatto sul processo intero (uscita **0**, gate VERDE, avviso stampato). Il gate e' l'unica
-   parte che ha retto senza correzioni. **Resta aperto cio' che il collaudo ha scoperto:** un
-   flusso che cambia nel **corpo** mantenendo lo stesso id il gate **non lo vede** — legge le
-   intestazioni, non i passi — ed e' il caso piu' frequente nella vita di un progetto, perche'
-   gli altri tre lasciano una traccia strutturale e questo no. Non e' correggibile senza
-   reinventare la comprensione del testo: e' fissato da un test di regressione che dichiara il
-   limite, e nella procedura la difesa e' l'agente. Manca anche l'esecuzione del **controllo
-   della data** di `Confermato da:`: ora e' nella procedura, ma nessuno script lo fa.
-2. **Il gate puo' ancora dire `app-viva` verde su un'app estranea, quando la batteria non esiste.**
-   P3 ha chiuso la classe dove conta: `verify.mjs` **impone** ora alla batteria l'URL che ha appena
-   interrogato (`ambienteBatteria`), quindi un'app sbagliata produce una batteria rossa invece di un
-   verde silenzioso. Ma su un progetto senza spec il passo vede ancora solo «qualcuno risponde a
-   quell'indirizzo». Difesa residua: l'URL stampato sempre, anche sul verde.
-3. **La reference prescrive una rotta di accesso che non esiste.** `references/playwright.md` scrive
-   `goto("/accesso")`; il progetto reale ha `/accedi`. Non ha fatto danni — la spec la scrive chi
-   guarda l'app — ma e' una forma inventata dentro un documento che altrove e' preciso al carattere.
-4. **La reference non dice cosa fare quando gli utenti di prova sono dati di dominio.** Prescrive che
-   li crei il global-setup con l'admin API e «MAI il seed». Su Bottega Nord sono righe di `staff`
-   legate a `auth_user_id` scritti nel seed: ricrearli li duplicherebbe, e «riallinearli» con
-   `updateUserById` avrebbe **riparato in silenzio** il difetto bloccante che P3 ha trovato — cioe' la
-   batteria avrebbe aggiustato la premessa che doveva misurare. La deroga e' stata dichiarata nel
-   banco; la reference tace.
-6. **Nessuna regola statica sui flussi `ostile-lettura`.** Vedi sopra: e' una scelta dichiarata (non
-   c'e' stato da confrontare), non una dimenticanza, ma resta un buco che solo la prosa difende.
-7. **`code-inquisition` non e' mai stato lanciato sugli script di questa skill.** La Regola dei
-   guardiani lo chiede sui punti critici; qui il punto critico e' la chiave amministrativa negli helper
-   del progetto generato, e su quello il gate non ha nessun controllo automatico — solo la prosa di
-   `references/playwright.md`. **`semgrep` e `gitleaks` sono stati puntati su questi script il
-   2026-08-06** (semgrep 1.172.0 `--config auto`: **4 rilievi, 0 veri**, tutti dichiarati con la
-   prova a fianco; gitleaks 8.30.1: **nessun rilievo** — §2026-08-06). **`code-inquisition` e' stato
-   eseguito il 2026-08-06** e ha risposto alla domanda che questo punto poneva: la parte che pesa non
-   era la chiave amministrativa negli helper — era che **un flusso critico dichiarato puo' non essere
-   mai eseguito col gate VERDE 7/7** (CRITICAL, §2026-08-06). Il punto resta aperto per quel difetto,
-   non piu' per la verifica mancante.
-8. **Il gate non ha nessun passo che usi la chiave di servizio.** *(Numero in coda per non
-   spostare le citazioni degli altri punti; per gravita' starebbe subito dopo il n°2.)*
-   Il 2026-07-30, sul banco
-   di P3, `service_role` ha perso `select/insert/update/delete` su tutte le tabelle perche' era
-   cambiata la versione della CLI Supabase — e i **tre** gate della pipeline sono rimasti verdi,
-   perche' nessuno dei tre usa quella chiave: schema-forge gira come `postgres` o con
-   `set role`, gestionale-crafter legge il codice, e `app-viva` di questa skill chiede solo un
-   HTTP sotto il 500. Rossa e' diventata la **batteria**, che con quella chiave misura l'effetto
-   dei flussi. E' un buon esito — il rosso e' arrivato — ma dipende dal fatto che il progetto
-   abbia una batteria: su un progetto senza spec la stessa rottura sarebbe invisibile a tutti e
-   tre i gate. Un passo che interroghi PostgREST **con la chiave di servizio** chiuderebbe la
-   classe, e costa una `curl`.
-9. **Nessuno dei tre banchi e' su disco, e le prove stanno nei verbali.** I due di P1 e P2 erano usa e
-   getta e gitignorati; `banco-prova-negozio` — l'unico consumatore reale che questa skill abbia mai
-   avuto — e' stato tracciato dal 2026-07-28 e **cancellato dal disco il 2026-07-30** (`../../DECISIONI.md`
-   §25): i suoi sorgenti sono nel commit `67f9001`, ma le chiavi che la batteria legge (`.env.e2e.local`,
-   `e2e/.auth/`) erano gitignorate di proposito, quindi rilanciarla non e' un `git checkout` — e' `npm
-   install`, `supabase start` e ricreare le chiavi. Lo stesso lavoro di prima, adesso dichiarato invece
-   che presunto. **Nessun banco vivo significa che «batteria 16/16, gate 7/7» oggi non e' verificabile in
-   un comando**: e' un'affermazione datata in `COLLAUDO-P3-2026-07-30.md`, non un fatto che si rilancia.
+## Com'è andata (in breve)
 
----
+**Costruzione (2026-07-28)** — 4 references, gate a 7 passi, regole pure con 79 test, 2 template più la
+config ESLint delle spec; primo banco: 5 difetti piantati su 5 rilevati, 3 premesse tolte e riconosciute
+mancanti su 3. La SKILL.md, confermata dall'umano, è rimasta intatta fino al 2026-07-30.
 
-## Dal primo consumatore reale della pipeline completa — pilota `fornodoro`, P.4d (2026-08-05)
+**Collaudo avversario indipendente (2026-07-28)**, altro dominio, chat vergine: **10 difetti**, di cui
+**7 falsi verdi**. I peggiori: una batteria con **ogni test saltato** usciva VERDE 7/7 — le spec si
+contavano come **file**, mai come esecuzioni, e «non è fallito niente» non è «è successo qualcosa»;
+chiuso da `batteriaHaEseguito()`, che rende il passo **MANCANTE** e non `fail`, perché nessuno ha
+guardato non è un difetto trovato. Playwright ha poi **due** parole per «questo test non gira» e il
+gate ne leggeva una: un flusso critico spento con `test.fixme` (o `test.describe.fixme`) restava
+**coperto**, perché l'etichetta `@flusso:` sta nel titolo e il titolo c'è lo stesso. Poi: una riga
+`Confermato da:` **vuota** catturava la prima riga non vuota successiva, perché `\s` comprende l'a capo
+— falso verde sul passo che esiste per impedirlo; un handoff con `Gate: VERDE` su un gate rosso passava
+se più sopra citava il rosso precedente in un blocco recintato; la spec ostile guardava il DOM **dopo**
+il redirect.
 
-Quarto anello di una catena vera (`07 → 08 → 10 → 12`), su un'app di produzione viva e un database
-seminato: 13 flussi, 22 test, gate **VERDE 7/7**. Verbale: `PILOTA-2026-08-05.md`.
-Quattro difetti della **skill**, non del progetto. Sono righe, non correzioni: decide chi possiede la skill.
+**Primo consumatore reale (2026-07-30)**, banco scritto da **altri due agenti**: 15/15 e gate 7/7,
+riesteso a 11 flussi / 16 test la sera stessa. Ha trovato un difetto bloccante dell'app che due gate a
+monte non avevano visto, e **un falso verde della skill** (`app-viva` dichiarava viva l'app di un altro
+progetto). Lo stesso giorno il collaudo di `evolve` ha scoperto che quella procedura copriva **un caso su
+quattro**: l'unica modifica mai fatta alla SKILL.md.
 
-10. **`references/playwright.md` §L'helper di effetto DB prescrive una forma che non parte sul node
-    dei gate.** L'esempio costruisce l'helper con `createClient` di `@supabase/supabase-js`. Su
-    Node 20.12.2 — il node di sistema, cioe' quello con cui il `CLAUDE.md` della regia prescrive di
-    lanciare i gate, e quello con cui `verify.mjs` lancia `npx playwright test` — `createClient`
-    **muore in costruzione**: `Error: Node.js detected but native WebSocket not found`, perche'
-    inizializza il client realtime anche quando nessuno lo usa. Misurato il 2026-08-05. Nel pilota la
-    deroga e' stata scritta (PostgREST e GoTrue in HTTP diretto, con il perche' dentro il file), e ha
-    avuto un effetto collaterale buono: sulle spec ostili l'attacco si scrive nella forma esatta in
-    cui lo farebbe chi apre i DevTools. **La reference dovrebbe mostrare quella forma**, o almeno
-    dichiarare che l'esempio pretende Node 22+.
+**Pilota della catena completa (2026-08-05)** — `cavia` (nei verbali archiviati porta ancora il nome
+vecchio, `fornodoro`), quarto anello di `07 → 08 → 10 → 12 → 13`: 13 flussi, 22 test, **VERDE 7/7**,
+sabotaggio su cinque classi. Il sabotaggio ha detto che la batteria **sapeva fallire** sui difetti
+piantati; il tribunale, subito dopo, ne ha trovate nove che **non potevano fallire** —
+§Le asserzioni che non potevano fallire.
 
-11. **`references/sabotaggio.md` §Il ripristino prescrive un controllo che non puo' vedere il
-    residuo che il sabotaggio stesso produce.** Il passo 3 dice «`git status` pulito sui file
-    dell'applicazione e delle spec». Su una macchina con `core.autocrlf=true` — il default di Git per
-    Windows — `git restore` rimette il contenuto e **scrive CRLF**, e Prettier (`endOfLine: "lf"`)
-    segnala quei file. Git normalizza i fine-riga nel confronto con l'indice, quindi `git status`
-    resta **vuoto** mentre `code-maniac scan` diventa giallo su cinque file che nessuno ha
-    modificato. Misurato il 2026-08-05 dopo cinque classi di sabotaggio. Rimedio: aggiungere
-    `npx prettier --check` accanto a `git status` nel passo 3, oppure far nascere i progetti generati
-    con `core.autocrlf input`.
+**Guardiani e tribunale sugli script (2026-08-06/07)** — semgrep 1.172.0 `--config auto`: 4 rilievi,
+0 veri; gitleaks 8.30.1: nessuno. Poi `/code-inquisition`, col rilievo capitale: **un flusso critico
+dichiarato poteva non essere mai eseguito col gate VERDE 7/7**, perché il controllo era un OR globale
+sulla batteria — chiuso contando i **flussi percorsi** dal titolo dei test **eseguiti**. Chiusi anche
+`which`/`where` che cercavano nella directory corrente, i timeout mancanti, gli argomenti passati a
+`cmd /c` senza filtro e un ReDoS vero (19,5 s per flusso su 4 000 caratteri, ora 40 000 in meno di
+1 ms). Il tribunale sul pacchetto ha poi trovato **due regressioni delle correzioni stesse**, una delle
+quali costava 14,5 s dove voleva togliere un crash: una correzione può peggiorare un costo, e si
+rimisura HEAD contro corretto. Batteria 79 → 111 → 131 → 158 → **171**.
 
-12. **Il gate non ha nessun modo di accorgersi che la batteria sporca il database — e la skill non
-    chiede a `forge` di generarne uno.** Le asserzioni di conteggio che la reference insegna
-    (`contaProdotti()` prima, `contaProdotti()` dopo) sono tutte **relative**: una riga orfana non fa
-    diventare rossa nessuna spec, e si scopre solo al giro dopo sotto forma di un rosso che parla
-    d'altro. Nel pilota l'ha trovato il **tribunale**, non il gate, e la chiusura e' stata un
-    `e2e/global-teardown.ts` che confronta i totali con quelli del seed e solleva — collaudato
-    piantando un ordine a mano: **22 test passati e gate rosso lo stesso**. Quel file dovrebbe stare
-    nel contratto d'uscita di `forge` accanto a `global-setup`, non essere inventato da chi lo scopre.
-    E il passo `contratto-uscita` potrebbe pretenderlo, come gia' pretende `retries: 1`.
-
-13. **Il motivo «la firma e' nostra» resta aperto, e adesso ha un precedente.** Su `fornodoro` il
-    contratto dei flussi porta `Confermato da: Direzione lavori (per delega del committente Alberto
-    Marocco) il 2026-08-05` — firma per delega dichiarata (D14 della regia), scritta in tre posti
-    perche' non la si scambi per una vera. Il gate la legge e la ristampa, e **non puo' distinguerla
-    da una firma vera**: e' una scelta dichiarata di `flussi-critici` («il gate legge la riga, non la
-    sua verita'»), ma con l'autonomia della catena diventa la condizione normale, non l'eccezione.
-    Vale la pena decidere se il passo debba **riconoscere** la forma «per delega» e stamparla come
-    residuo invece che come conferma.
-
-### La lezione che vale oltre questa skill
-
-Il collaudo per sabotaggio ha detto che la batteria **sapeva fallire** su cinque classi piantate; il
-tribunale ha trovato **nove asserzioni che non potevano fallire** su difetti che nessuno aveva
-pensato di piantare — e sette avevano la stessa forma: **il contratto prometteva piu' di quanto la
-spec asserisse**. E' il caso 4 di `evolve`, che la `SKILL.md` dichiara invisibile al gate («e' l'unico
-dei quattro casi in cui la difesa sono io»). Su `fornodoro` la difesa **non** e' stato l'agente: un
-anello che scrive sia il contratto sia le spec non puo' essere il proprio revisore — le sue due meta'
-si confermano a vicenda per costruzione. Le due verifiche non si sostituiscono, e la Regola dei
-guardiani fa bene a chiederle entrambe.
-
-- **2026-08-06/07 — P.7e: M5, L11, L3, L7, L2 e un difetto nuovo. Verbale: `../../PROCESSO-GATE-2-2026-08-06.md`.** Batteria **131 → 158**. ESLint 0, knip 0, semgrep 0, gitleaks 0.
-  - **M5 — CHIUSO, e non è sceso di priorità.** `([^;"']*?)\s+from` ha due quantificatori che si contendono lo stesso spazio bianco. Misurato su questa macchina: **1 000 caratteri → 1,6 s · 2 000 → 15,0 s · 4 000 → non finito in due minuti**, e il costo si paga **una volta per flusso**. Il limite arrivato con H10 lo trasformava in un gate che si ferma con un messaggio invece che in uno muto, e va bene — ma un gate che impiega venti secondi per flusso su un ingresso ostile è un gate che qualcuno lancerà con un timeout più corto. La correzione non è un quantificatore più stretto: si cerca prima il `from "…helpers/db…"`, che ha un solo quantificatore, e poi si risale all'`import` più vicino. **40 000 caratteri → meno di 1 ms.** E non riapre il difetto del 2026-07-28: fra `import` e `from` non ci può stare la fine di un'altra istruzione.
-  - **L11 — CHIUSO.** `motivato()` chiedeva `linea.includes("//")`: un `test.skip("apre https://esempio.test//home", …)` risultava motivato, zero rilievi su uno skip che non spiega niente. Lo scanner delle spec ora tiene lo stato del delimitatore. Di rimbalzo, un `.only` **nominato** dentro una stringa non è più un `.only` committato.
-  - **L3 — CHIUSO.** La visita all'albero del report Playwright era ricorsiva: profondità 20 000 → `RangeError`, processo morto **senza JSON**, cioè un gate rosso indistinguibile da un gate che non ha risposto. Ora è iterativa, e il test costruisce l'albero. Il report lo scrive Playwright, ma il gate legge un file che sta nel progetto **auditato**.
-  - **L7 — CHIUSO**, e con esso il suo gemello inverso: `senzaVirgolette` toglieva il commento con una regexp che morde anche dentro una stringa (`site_url = "http://127.0.0.1:3000/#/app"` → mezza URL) e non toglieva la coda del commento dentro l'array multi-riga. Ora il `#` lo taglia `senzaCommentoToml`, riga per riga, sapendo dove si trova.
-  - **Un difetto che il referto non aveva** (n°53): `senzaCommentiJs` dichiarava «le stringhe restano: un `//` dentro un URL non apre un commento, ed è il solo caso che si incontra in un file di configurazione» — la frase del n°50 parola per parola. Misurato: `export default { use: { nota: "retries: 1" } };` faceva chiudere `pass` una configurazione che `retries` **non lo dichiara affatto**. La correzione mostra la regola: **due domande diverse, due spogliatori** — la configurazione si legge con le stringhe svuotate, la spec con le stringhe intatte, perché il percorso dell'helper del database dentro una stringa ci vive.
-  - **M2 + L2 — CHIUSI**: la URL del database esce mascherata da tutte e cinque le righe che la stampavano, e la password lascia `argv` per `PGPASSWORD`.
-  - **Resta aperto, MANCANTE con la sua ragione — L8.** La sonda è rossa e misurata: `righeDaPsql("public.brutta
-tabella
-public.ok")` dà **tre righe invece di due**. Oggi è innocuo (le due query di questa skill hanno **una colonna sola**) e pericoloso al primo riuso; neutralizzare i separatori in SQL vuole un Postgres vivo per essere provato, e applicarlo alla cieca renderebbe **silenzioso** un guasto che oggi è **rumoroso**. Va nel pacchetto che ha un banco.
-
-- **2026-08-07 — il tribunale sul pacchetto stesso.** `/code-inquisition --scope diff` sui 25 file di P.7e: cinque esperti, un critico del roster, **diciannove rilievi**. Referto e misure: `../../PROCESSO-GATE-2-2026-08-06.md` §9. Per questa skill, e **una era una regressione di P.7e**:
-  - **P3 — lo stato della stringa rinasceva a ogni riga** mentre `inBlocco` no: la riga che CHIUDE un template multi-riga comincia con un backtick, che quindi ne apriva uno nuovo e spegneva il resto della riga. **`.only` committato, zero rilievi** — e `.only` e', per ammissione della skill, «il modo piu' economico che esista per produrre un falso verde». Prima della correzione di § L11 le stringhe non si guardavano affatto e il rilievo usciva.
-  - **`visita`: § L3 ha tolto la `RangeError` e ha lasciato il costo.** Il percorso era un array ricopiato a ogni nodo: profondita' 40 000 in **14,5 secondi**. Un gate che non muore e non risponde e' MUTO lo stesso, che e' lo stato che L3 voleva evitare. Ora **16 ms**, e l'ORDINE dei falliti — che era cambiato senza che nessuno lo notasse — e' di nuovo quello in profondita'.
-  - **`clausoleHelperDb` quadratica** (750 ms su 3 200 import, ×4 sul codice di prima): l'ultimo `import` si cerca all'indietro invece di rifare `matchAll` su tutto il prefisso. **99 ms**, e il ReDoS di § M5 resta chiuso (40 000 spazi in 0,6 ms).
-  - **Una mutazione sopravvissuta**: la riga `if (FINE_ISTRUZIONE.test(clausola)) continue;` — la guardia che impedisce alla clausola di risalire all'import di `@playwright/test` — non la provava nessuno. Ora ha la sua rete.
-  - **Resta aperto**: un `import … from './helpers/db'` scritto dentro una stringa soddisfa la Terza Legge (verde falso); `retries: 1` dentro un template multi-riga fa passare una configurazione che non lo dichiara — correzione incompleta di n°53; l'interno di un template multi-riga si legge come codice, ed e' un **limite dichiarato** col suo test, nel verso rumoroso.
+**2026-08-07** — gate rilanciato dalla direzione sul pilota, sulla build finale, app viva e database
+seedato: **VERDE 7/7, 22 passati 0 falliti 0 saltati su 13 file di spec**. Chiude il MANCANTE delle due
+tornate di correzioni, provate fino a lì su report JSON e mai su una batteria vera.

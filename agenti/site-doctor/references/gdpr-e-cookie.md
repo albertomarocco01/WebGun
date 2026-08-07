@@ -170,7 +170,7 @@ Il gate misura la premessa e poi guarda il banner, mai il contrario:
 
 ## 6. Il caso del pilota, per intero
 
-Misurato il 2026-08-06 su `fornodoro` (pizzeria, ordini d'asporto):
+Misurato il 2026-08-06 su `cavia` (pizzeria, ordini d'asporto):
 
 | cosa | misura |
 |---|---|

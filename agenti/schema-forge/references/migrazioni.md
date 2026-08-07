@@ -97,6 +97,21 @@ L'esenzione si scrive **mentre si scrive la migrazione**, non dopo: una volta ap
 
 Senza autorizzazione umana l'esenzione **non si scrive**. Non è un modo per far passare il gate: è il modo di registrare che qualcuno se n'è preso la responsabilità, con data e motivo, nel file che quella responsabilità la esegue.
 
+## Due trappole da una riga, dentro il corpo di una funzione
+
+- **Un `$$` dentro un commento del corpo chiude il corpo.** Il delimitatore vince sul commento: una riga di prosa che *cita* `$$` per spiegarlo tronca la funzione lì, e la migrazione muore con un `syntax error` che indica un punto qualunque più avanti. Se il testo deve nominarlo, si usa un delimitatore etichettato (`$corpo$ … $corpo$`) o si riscrive la frase.
+- **Un blocco `exception` attorno a un cast si scrive per classe, non per codice.** Enumerare le condizioni osservate (`invalid_datetime_format`, `invalid_text_representation`, …) lascia sempre fuori quella che Postgres ha e tu non hai misurato — ne è comparsa una quarta dopo tre misurate. La forma giusta cattura tutto e discrimina sulla **classe**, rilanciando il resto:
+
+```sql
+exception
+    when others then
+        if sqlstate like '22%' then      -- classe 22: data exception
+            raise exception 'valore non valido';
+        else
+            raise;                        -- tutto il resto non e' affar mio
+        end if;
+```
+
 ## Rollback
 
 Ogni migrazione dichiara come si torna indietro: SQL inverso in commento in testa al file, oppure la riga esplicita `-- IRREVERSIBILE: perdita di <cosa>`. Un'irreversibilità dichiarata è una decisione; un'irreversibilità scoperta dopo è un incidente.

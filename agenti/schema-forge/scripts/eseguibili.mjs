@@ -1,8 +1,8 @@
 /**
  * eseguibili.mjs — Chi decide QUALE binario esegue il gate.
  *
- * PERCHE' ESISTE UN MODULO APPOSTA. Il 2026-08-06 il tribunale
- * (`INQUISIZIONE-GATE-2026-08-06.md` § C1, `executed-confirmed`) ha misurato che
+ * PERCHE' ESISTE UN MODULO APPOSTA. Il 2026-08-06 il tribunale convocato sui
+ * gate della regia ha misurato (rilievo C1, `executed-confirmed`) che
  * i quattro gate storici lasciavano scegliere al progetto AUDITATO quale
  * eseguibile lanciare. I gate si lanciano dalla radice del progetto generato —
  * lo prescrive il `CLAUDE.md` — e sia `where` sia `spawnSync` col nome nudo

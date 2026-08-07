@@ -6,8 +6,9 @@
 
 ## Il difetto da cui nasce questa skill
 
-`PILOTA-2026-08-06.md` §4, verbale di catena del progetto pilota, elenca fra le
-«tre cose che un anello ha dovuto indovinare»:
+Il verbale di catena del progetto pilota elencava, fra le «tre cose che un
+anello ha dovuto indovinare» (verbale archiviato il 2026-08-07: `ARCHIVIO.md`;
+il passo che conta è trascritto qui sotto per esteso):
 
 > **La proprietà dell'Open Graph** era assegnata due volte nello stesso file
 > (08 §6: a speed-demon e a site-doctor) — e site-doctor **non esiste**. La

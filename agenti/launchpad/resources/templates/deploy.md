@@ -107,7 +107,7 @@ Nominare non è rispondere: il gate pretende una risposta leggibile per numero.
 ### Le tre famiglie che questa casa ha già incontrato
 
 Non sono di un progetto: sono i modi in cui un sito Web Gun arriva a un passo
-dal deploy con qualcosa che non può partire. Sul pilota `fornodoro` sono i
+dal deploy con qualcosa che non può partire. Sul pilota `cavia` sono i
 debiti n°4, n°17, n°27 e n°32, misurati da quattro agenti diversi prima che
 launchpad esistesse.
 

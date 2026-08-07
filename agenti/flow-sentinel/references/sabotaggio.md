@@ -220,6 +220,8 @@ Il ripristino è completo quando valgono **tutte e tre**:
 2. il dettaglio del passo `playwright` riporta **lo stesso conteggio** annotato al passo 1 della procedura (`N file di spec · M passati, 0 falliti, 0 saltati`), e nessuna riga «passati al SECONDO tentativo» che prima non c'era;
 3. `git status` pulito sui file dell'applicazione e delle spec. Gli artefatti di Playwright (`test-results/`, `playwright-report/`) restano fuori dal conteggio perché sono gitignorati: se compaiono in `git status`, il `.gitignore` del progetto è incompleto ed è un difetto a sé.
 
+**Limite noto del controllo 3, e va saputo prima di fidarsene.** Con `core.autocrlf=true` — il default di Git su Windows — `git restore` riscrive il file con fine-riga **CRLF** anche se in origine era LF: il contenuto per Git è identico, quindi `git status --porcelain` non stampa nulla, ma sul disco il file è cambiato e `code-maniac scan` (o `prettier --check`) ingiallisce su file che nessuno ha toccato. Il controllo 3 dice «nessuna modifica di contenuto», non «il file è tornato com'era». Chi sabota su Windows affianca a `git status` un `npx prettier --check <file>`, oppure il progetto generato mette `core.autocrlf input` — altrimenti il residuo del sabotaggio si presenta al giro dopo come un rosso che parla d'altro.
+
 Perché conta più del sabotaggio stesso: **un sabotaggio dimenticato in casa è un difetto vero introdotto da chi doveva cercarli**. La classe B è la peggiore da dimenticare — l'app continua a funzionare, il messaggio di successo arriva, e l'unico segnale è una spec rossa che qualcuno, sapendo di aver sabotato quel giorno, potrebbe scambiare per un residuo del collaudo.
 
 ## Cosa si scrive nel verbale

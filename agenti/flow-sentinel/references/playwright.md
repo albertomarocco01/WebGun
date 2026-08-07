@@ -45,6 +45,20 @@ L'ordine è: `getByRole` / `getByLabel` → `getByText` per contenuti stabili �
 
 Il perché è tutto nel momento in cui il selettore si rompe. **Un selettore di ruolo si rompe quando si rompe l'accessibilità** — il bottone perde il nome accessibile, l'input perde la sua label, la pagina smette di essere navigabile da tastiera: cioè esattamente quando serve che qualcosa diventi rosso. **Un selettore CSS si rompe quando qualcuno rinomina una classe**, cioè quando non è successo niente di male, e regge intatto mentre il bottone diventa inaccessibile. La prima classe di rotture è informazione, la seconda è rumore — e una batteria che produce rumore viene disattivata dopo la terza volta.
 
+### Due trappole che fanno fallire un selettore giusto
+
+**Su una pagina Next.js il ruolo `alert` è sempre almeno due.** `getByRole("alert")` da solo fallisce con `strict mode violation: getByRole('alert') resolved to 2 elements: - unexpected value ""`: oltre all'avviso dell'applicazione, l'App Router tiene sempre nel DOM l'annunciatore di rotta `__next-route-announcer__`, che ha ruolo `alert` ed è vuoto. **Si filtra sempre per il testo del messaggio**, col perché scritto accanto — non si aggira alzando `strict` o prendendo `.first()`, che sceglierebbe a caso fra i due:
+
+```ts
+// SÌ
+await expect(page.getByRole("alert").filter({ hasText: "Prodotto creato" })).toBeVisible();
+
+// NO — due elementi, e la spec fallisce per un motivo che non c'entra col flusso
+await expect(page.getByRole("alert")).toHaveText("Prodotto creato");
+```
+
+**Il contenuto di un campo di testo non è testo della pagina.** `filter({ hasText: "Rosa Amato" })` non trova la riga della persona se quel nome sta nel `value` di un `<input>`: `hasText` guarda il testo reso, e il valore di un input non lo è. Si àncora la riga a qualcosa che la pagina *scrive* davvero (un'etichetta, un'intestazione) o si usa `getByRole("textbox")` con `toHaveValue`. Il modo in cui la trappola si presenta è ingannevole: la spec fallisce come «elemento non trovato», cioè esattamente come se la funzionalità fosse rotta.
+
 ## Attese: una condizione, mai un numero di millisecondi
 
 `waitForTimeout` è **vietato**, ed è una delle due regole che questa configurazione aggiunge di suo — l'altra è in fondo a questa sezione, e sotto ci sono comunque le due raccomandate (`js` e `typescript-eslint`). La regola sta in `resources/config/eslint-spec.config.mjs` e il passo `lint-spec` la applica alla cartella `e2e/` con `--no-config-lookup`, cioè ignorando la configurazione del progetto:
@@ -61,8 +75,12 @@ Il perché è scritto accanto alla regola: `waitForTimeout(500)` passa sulla mac
 Le tre forme giuste, in ordine di preferenza:
 
 ```ts
-// 1. una condizione sulla pagina: `expect` riprova finche' non e' vera o scade
-await expect(page.getByRole("alert")).toHaveText("Prodotto creato");
+// 1. una condizione sulla pagina: `expect` riprova finche' non e' vera o scade.
+//    Il ruolo `alert` e' filtrato per testo: su Next.js ce n'e' sempre un altro,
+//    l'annunciatore di rotta vuoto (vedi §Selettori).
+await expect(
+  page.getByRole("alert").filter({ hasText: "Prodotto creato" }),
+).toBeVisible();
 
 // 2. una risposta di rete. L'attesa si CREA PRIMA del click: creandola dopo, la
 // risposta puo' essere gia' arrivata e l'attesa scade su un evento passato.

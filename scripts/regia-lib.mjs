@@ -143,8 +143,9 @@ const EPILOGO = "import.meta.main";
  * `if (import.meta.main)` VIVO in uno script: la guardia e' arrivata in Node 24,
  * su Node 20 vale `undefined` e il corpo non gira. Il processo esce **0 senza
  * stampare una riga**, e chi legge il codice d'uscita crede di aver visto un
- * verde. Misurato il 2026-08-02 su questa macchina (Node 20.12.2) sui gate di
- * quattro skill: quattro gate muti (P.0-igiene, `CANTIERE.md`).
+ * verde. Misurato su questa macchina (Node 20.12.2) sui gate di quattro skill:
+ * quattro gate muti. Il node che lancia i gate e' quello di sistema, non quello
+ * di scoop che serve alle build: la guardia deve reggere sul piu' vecchio dei due.
  */
 export function findingsEpiloghi(file) {
   const findings = [];
@@ -158,7 +159,7 @@ export function findingsEpiloghi(file) {
         hint:
           "usa la guardia a **doppio confronto**: `const questo = fileURLToPath(import.meta.url), invocato = resolve(process.argv[1]);` " +
           "poi `if (invocato === questo || realpathSync(invocato) === questo) await main();`, con `realpathSync` dentro un `try` che ricade sul testuale. " +
-          "Doppio perche' il solo confronto testuale e' FALSO quando lo script e' invocato dalla junction `.claude/skills/<skill>/...`: li' `argv[1]` resta il percorso della junction mentre `import.meta.url` e' gia' canonico, e lo script esce 0 muto esattamente come con `import.meta.main` (misurato il 2026-08-04 sui cinque gate, `PILOTA-PRE-2026-08-04.md` §2b)",
+          "Doppio perche' il solo confronto testuale e' FALSO quando lo script e' invocato dalla junction `.claude/skills/<skill>/...`: Node canonicalizza i moduli, quindi `import.meta.url` e' gia' il percorso reale sotto `agenti/`, mentre `resolve(argv[1])` la junction non la scioglie e resta il percorso di `.claude/skills/`. I due lati differiscono, `main()` non gira e lo script esce 0 muto esattamente come con `import.meta.main` — misurato sui cinque gate delle skill, ed e' il canale con cui una chat aperta su un progetto generato vede le skill, cioe' quello che si usa davvero",
       });
     }
   }
@@ -278,10 +279,10 @@ export function skillDaReadme(testo) {
  *      due gli elenchi.
  *
  * PERCHE' IL CRITERIO E' LA TABELLA E NON `scripts/verify.mjs`. Un gate che
- * pretendesse in elenco ogni cartella con un `verify.mjs` dentro sarebbe rosso
- * oggi su `vetrina-crafter`, che e' in costruzione: la regola di casa dice che
- * una skill entra in README e nello script **a gate verde** (CANTIERE.md, giornale
- * del 2026-08-02), quindi quel rosso sarebbe strutturale — e un rosso strutturale
+ * pretendesse in elenco ogni cartella con un `verify.mjs` dentro sarebbe rosso su
+ * ogni skill ancora in costruzione (lo era su `vetrina-crafter` quando questa
+ * regola e' nata): la regola di casa dice che una skill entra in README e nello
+ * script **a gate verde**, quindi quel rosso sarebbe strutturale — e uno strutturale
  * insegna a scavalcare i rossi veri (DECISIONI.md §16, CANTIERE.md D9). Il
  * segnale giusto e' la riga 🟢: e' il momento in cui il repo dichiara la skill
  * finita, ed e' proprio quello che il commento di `installa-skill.ps1` chiede

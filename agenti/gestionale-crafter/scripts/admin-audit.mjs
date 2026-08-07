@@ -276,9 +276,9 @@ function stampa(doc, progetto) {
 // invocato da `.claude/skills/<skill>/...`, `resolve(argv[1])` restituisce il
 // percorso della junction mentre `import.meta.url` e' gia' canonico — il
 // confronto secco era falso e questo guscio usciva 0 muto, cioe' di nuovo
-// «nessun bloccante» (misurato il 2026-08-04 sui cinque gate, P.4-pre
-// `PILOTA-PRE-2026-08-04.md` §2b, e su questo stesso file nell'istruttoria di
-// P.0-igiene-2). `realpathSync` scioglie la junction; se solleva si ricade sul
+// «nessun bloccante» — misurato il 2026-08-04 su tutti e cinque i gate della
+// casa, e su questo stesso file nell'istruttoria dello stesso giorno.
+// `realpathSync` scioglie la junction; se solleva si ricade sul
 // confronto testuale: mai un errore che ammutolisce.
 if (process.argv[1]) {
   const questoModulo = fileURLToPath(import.meta.url);

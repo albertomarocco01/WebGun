@@ -143,6 +143,17 @@ node <regia>/.claude/skills/<skill>/scripts/verify.mjs [--url http://127.0.0.1:<
 Il gate dev'essere **verde** prima dell'handoff. Nessun handoff è valido senza scan pulito
 **oppure** residuo scritto in `docs/DEBITO-TECNICO.md` del progetto.
 
+Due regole di contabilità, che sembrano pignoleria finché non costano una giornata:
+
+- **un conteggio di semgrep senza il ruleset non è confrontabile con un altro.** `--config=auto`
+  scarica un ruleset intero e alza rilievi che `p/javascript`+`p/secrets` non alza. Chi scrive
+  «2 rilievi» scrive anche con quale `--config`, o il giro dopo quel numero non si riproduce e si
+  passa il pomeriggio a cercare una regressione che non c'è.
+- **rinnovare un certificato è l'ultimo atto del pacchetto.** Un handoff scaduto si rinnova
+  *rilanciando il suo gate*, mai cambiando la data; e lo si rinnova dopo l'**ultimo** commit di
+  codice, perché qualunque commit successivo sotto `src/` o `supabase/` fa scadere di nuovo tutto
+  quello che sta a monte. Rinnovato a metà pacchetto, un certificato resta vero per poche ore.
+
 ## 5. Provare senza un cliente
 
 Due modi, e servono a cose diverse:
@@ -178,24 +189,58 @@ cd agenti/<skill> && npm test        # 1 434 test in tutto, più 46 della regia
 
 Ognuna è costata un pomeriggio a qualcuno. Sono scritte qui perché non lo costino due volte.
 
-**Node: l'interprete non è il PATH.** Un gate che chiama uno strumento esterno con `npx` eredita
+**Node: l'interprete non è il PATH, e le catene sono due.** Un gate che chiama uno strumento esterno con `npx` eredita
 il node del `PATH`, non quello che lo ha avviato. Per Lighthouse serve:
 
 ```bash
 export PATH="$HOME/scoop/apps/nodejs-lts/current:$PATH"
 ```
 
+Sono **due catene che non si toccano**: la *build* e `npm start` di un progetto generato
+compilano e pretendono Node ≥22; i *gate* non compilano — fanno richieste HTTP e lanciano
+strumenti — quindi girano col node del `PATH` anche quando non è quello della build. Il vincolo
+duro delle 22 è di `@supabase/realtime-js`, non di Next: sotto quella soglia `npm install` si
+ferma con `EBADENGINE` e la build muore con *«native WebSocket not found»*, perché le pagine
+statiche chiamano il client Supabase **durante** `next build`.
+
+**Lanciare uno strumento esterno su Windows.** `where npx` elenca **prima** lo script senza
+estensione — quello per Git Bash, che `spawnSync` senza shell non sa eseguire — e **poi** lo shim
+`.cmd`. Si prende la prima riga che finisce in `.exe`, `.cmd`, `.bat` o `.com`, mai la prima e
+basta: altrimenti il passo fallisce col dettaglio vuoto su una macchina dove lo strumento
+funziona benissimo, e la diagnosi dice «strumento assente» dove lo strumento c'è. Gli argomenti
+si passano come **vettore**: uno con spazi che arriva a `npx.cmd` via `cmd /c` fa collassare il
+virgolettato e produce l'errore fuorviante `"C:\Program" non è riconosciuto` — la difesa è non
+passare argomenti con spazi, non virgolettare meglio. E la redirezione `>` di PowerShell scrive
+**UTF-16**: per i redirect si usa Git Bash, o `Out-File -Encoding utf8`.
+
 **Il processo che muore dopo aver parlato.** Su Windows con Node 24.19 capita che un gate esca
 `3221226505` (`0xC0000409`) **dopo** aver stampato il verdetto: il `--json` è integro, il codice
 d'uscita no. Chi consuma un gate legge `doc.ok`, mai il solo codice d'uscita.
 
-**Le porte.** WinNAT riserva l'intervallo **57464-57963** e Windows usa 49152-65535 per le porte
-dinamiche: le porte dei banchi si scelgono **sotto 49152**. E la porta di un progetto si
-*guarda*, non si suppone — `Get-NetTCPConnection -LocalPort <porta> -State Listen`: su questa
-macchina la porta che un contratto dichiarava era occupata dal sito di un'altra azienda.
+**Le porte, e perché non se ne memorizza mai l'elenco.** Gli intervalli che WinNAT si riserva
+**si spostano fra un riavvio e l'altro**: su questa macchina la catena `57464-57963` c'era un
+giorno e il giorno dopo era sparita, rimpiazzata da `50962-51461` e `61185-61284`. Prima di
+scegliere una porta si guarda, non si ricorda:
+
+```powershell
+netsh interface ipv4 show excludedportrange protocol=tcp
+```
+
+Una porta riservata **non risulta occupata**: né `Test-NetConnection` né `Get-NetTCPConnection
+-State Listen` vedono le esclusioni, perché guardano chi *ascolta* e non chi ha *prenotato*. Chi
+la usa se ne accorge da Docker, che la respinge con *«a socket in a way forbidden by its access
+permissions»* — cioè «porta **vietata**», non «porta occupata». E siccome l'intervallo dinamico
+di Windows è 49152-65535, dove Hyper-V può riprendersi qualunque porta a ogni riavvio, le porte
+dei banchi e dei progetti si scelgono **sotto 49152**: la regola vale più di qualunque elenco.
+Anche lì la porta si *guarda*, non si suppone (`Get-NetTCPConnection -LocalPort <porta> -State
+Listen`): su questa macchina la porta che un contratto dichiarava era occupata dal sito di
+un'altra azienda.
 
 **Un solo stack Supabase alla volta.** Con 16 GB, tre stack accesi insieme saturano la memoria e
-Windows uccide le finestre dell'IDE. `npx supabase stop` prima di accenderne un altro.
+Windows uccide le finestre dell'IDE. `npx supabase stop` prima di accenderne un altro. Il tetto è
+in `%USERPROFILE%\.wslconfig`: WSL a **5 GB** con `autoMemoryReclaim=gradual`, perché senza
+teneva 3 GB anche a container fermi e non li restituiva mai. Se un giorno `supabase start` muore
+per memoria, il tetto si alza **lì**, consapevolmente — il file non si toglie.
 
 **Le junction.** `.claude/skills/` è fatta di junction verso `agenti/`. Spostare o rinominare una
 cartella che ne contiene le **attraversa**: copia il contenuto puntato e lo **cancella
@@ -212,7 +257,28 @@ Get-ChildItem -Recurse -Force -Directory | Where-Object LinkType
 git commit -F - -- <percorsi>
 ```
 
-Mai `-A`, mai `-a`, mai `git stash` mentre altri lavorano.
+Mai `-A`, mai `-a`, mai `git stash` mentre altri lavorano. E si committa **presto**: un commit per
+punto chiuso appena l'esito c'è, con un WIP se la corsa si ferma a metà. Una chat che finisce con
+il lavoro solo nell'albero non lascia niente, e succede: in una sola giornata due chat su tre sono
+morte così, e quel lavoro l'ha salvato la verifica di chi dirigeva, non chi l'aveva fatto.
+
+**Riscrivere la storia.** Se un segreto è finito nella storia di git non basta toglierlo da HEAD:
+si riscrive con `git filter-repo` (`pip install git-filter-repo`), e le trappole sono tre.
+
+- **L'ordine è: prima il segreto esce da HEAD, poi si riscrivono i blob.** Al contrario si
+  riscrive una storia che il commit successivo rimette dentro.
+- `--replace-text` **non applica le espressioni nell'ordine del file**: applica prima tutte le
+  letterali e poi le regex. Usando **solo** righe `regex:` l'ordine torna a essere quello scritto.
+- **Il testo di sostituzione può essere un bloccante nuovo.** Un `***RIMOSSO***` messo dentro
+  `crypt('…')` lascia in piedi esattamente la forma che il rilevatore di segreti cerca: si
+  sostituisce rompendo la **forma**, non solo il valore.
+
+`--replace-text` non tocca i **messaggi** di commit — per quelli serve `--replace-message`, e i
+messaggi nominano il segreto più spesso di quanto si creda. Prima di qualunque riscrittura si fa
+un bundle di **tutta** la storia (`git bundle create <file>.bundle --all`), perché `filter-repo`
+vuole `--force` su un repo che non è un clone appena fatto e da lì non si torna indietro. Ultima:
+il verbale che racconta la riscrittura **non deve contenere il segreto** — si toglie da una storia
+per metterlo in un'altra, ed è già successo.
 
 ## 7. Se qualcosa va storto
 
@@ -222,5 +288,6 @@ Mai `-A`, mai `-a`, mai `git stash` mentre altri lavorano.
 | una skill non compare in Claude Code | rilancia `installa-skill.ps1` e **riavvia** Claude Code |
 | il gate di una skill dice *mancante* | manca uno strumento: l'elenco è al §1 |
 | un gate misura l'app sbagliata | i gate confrontano il `BUILD_ID`: hai ricostruito dopo l'ultimo commit? |
+| `tsc` fallisce citando file che **non esistono più** | i tipi di rotta sotto `.next/types/` sono *stato*, non output: sopravvivono alla cancellazione di una rotta. `rm -rf .next/types .next/dev/types && npm run build`, poi il gate. L'errore cita un modulo mancante e sembra una migrazione che manca a monte: non lo è |
 | gli handoff risultano «più vecchi del codice» | qualunque commit sotto `src/`, `supabase/`, `package.json` o `next.config.*` fa scadere gli handoff a monte: si rilanciano i loro gate, **non si ridatano** |
 | un file di documentazione citato non esiste | è stato archiviato: vedi [ARCHIVIO.md](ARCHIVIO.md) |

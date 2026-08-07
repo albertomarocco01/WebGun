@@ -169,6 +169,8 @@ select relname, relacl from pg_class
 
 `scripts/rls-audit.mjs` lo controlla (regola 7) e produce un **`block`**: per ogni tabella con RLS e policy confronta i ruoli e i comandi delle policy con `has_any_column_privilege`, e segnala sia il caso «nessun privilegio CRUD» sia quello «le policy promettono `update`, il ruolo ha solo `select`». La prova è interamente nel catalogo, senza euristiche. Se il client non deve raggiungerla, la risposta giusta non è il `grant` — è **spostarla in uno schema non esposto**.
 
+**Il `hint` di PostgREST aiuta solo sulle tabelle.** Su un `42501` di **tabella** il campo `hint` della risposta nomina il privilegio mancante e il debug dura un minuto. Sugli endpoint **RPC** (`/rest/v1/rpc/<nome>`) è **sempre `null`**: chi debugga i permessi di una funzione esposta non ha quell'indizio e deve andarsi a leggere il `proacl` della funzione nel catalogo. È una politica di PostgREST, non una riga di schema: non c'è niente da correggere, c'è da saperlo.
+
 ### Il `truncate` che la RLS non filtra
 
 Vale la pena saperlo prima di lasciare un privilegio ereditato dov'è: **la RLS non si applica a `TRUNCATE`**. Misurato il 2026-08-03 su uno schema con `force row level security` attiva su tutte le tabelle e i privilegi di default dell'immagine (`anon = Dxtm`):
@@ -401,3 +403,12 @@ set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001"}';
 select is_empty('select * from orders where user_id <> ''00000000-0000-0000-0000-000000000001''');
 ```
 I test vivono in `supabase/tests/` e girano con `supabase test db`. Una policy senza test è un'ipotesi.
+
+**I dati del test se li fa il test.** Un file pgTAP che pesca account e righe **dal seed** prova anche il seed: il giorno che il seed cambia, il test diventa rosso parlando d'altro — è già costato 22 sottotest rossi su quattro file, tutti per una dipendenza che non avrebbero dovuto avere. Il banco di prova condiviso si scrive una volta e si include con `\ir`, dentro la transazione del test e annullato dal `rollback` finale. Due dettagli misurati, non dedotti:
+
+- **il banco sta dentro `supabase/tests/`**, perché `supabase test db` monta nel contenitore quella cartella e basta: con il file un livello più su, `\ir` risponde `No such file or directory` e il file di test esce `3`;
+- **l'estensione non è `.sql`** (per esempio `.psql`), perché ogni `.sql` di quella cartella verrebbe eseguito come test a sé (`No plan found in TAP output`) e perché il passo `pgtap` del gate conta i `.sql` di primo livello per decidere se i test esistono.
+
+Se il banco contiene una password, sia l'hash di un valore casuale coniato lì: un banco non deve essere la seconda copia di una credenziale.
+
+**Quello che pgTAP non può falsificare.** Gira in **una sessione**, dentro una transazione: un invariante su un **insieme** di righe non si rompe lì nemmeno quando è falso. Serve un test a due connessioni — vedi `modellazione.md` §Invarianti su un insieme di righe.

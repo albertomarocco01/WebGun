@@ -296,8 +296,8 @@ function main() {
 // invocato da `.claude/skills/<skill>/...`, `resolve(argv[1])` restituisce il
 // percorso della junction mentre `import.meta.url` e' gia' canonico — il
 // confronto secco era falso e questo guscio usciva 0 muto (misurato il
-// 2026-08-04 sui cinque gate, P.4-pre `PILOTA-PRE-2026-08-04.md` §2b, e su
-// questo stesso file nell'istruttoria di P.0-igiene-2). `realpathSync` scioglie
+// 2026-08-04 sui cinque gate di questa casa, e su questo stesso file
+// nell'istruttoria di P.0-igiene-2). `realpathSync` scioglie
 // la junction; se solleva si ricade sul confronto testuale: mai un errore che
 // ammutolisce.
 if (process.argv[1]) {

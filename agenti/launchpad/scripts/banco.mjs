@@ -2,14 +2,14 @@
 /**
  * banco.mjs — ricostruisce da zero il banco di prova del gate di Launchpad.
  *
- * PERCHE' ESISTE. Il verbale di costruzione (`COSTRUZIONE-2026-08-06.md` §1,
- * §5.2, §8) dichiara un gemello pulito che chiude **VERDE 9/9** e dice che «si
- * ricostruisce con `banco.mjs`». Il collaudo del 2026-08-06 ha cercato quel
- * file e **non esiste in nessun percorso del repository**: viveva nello
- * scratchpad di quella sessione, che e' sparito con la sessione. L'affermazione
- * centrale del pacchetto — *zero falsi positivi su un progetto corretto* — non
- * era quindi riproducibile da nessuno, ed e' esattamente cio' che la §25 di
- * `DECISIONI.md` chiama un ricordo invece di una prova.
+ * PERCHE' ESISTE. Chi ha costruito questa skill dichiaro' un gemello pulito che
+ * chiude **VERDE 9/9** e scrisse che «si ricostruisce con `banco.mjs`». Il
+ * collaudo del 2026-08-06 ando' a cercare quel file e **non esisteva in nessun
+ * percorso del repository**: viveva nello scratchpad di quella sessione, che e'
+ * sparito con la sessione. L'affermazione centrale del pacchetto — *zero falsi
+ * positivi su un progetto corretto* — non era quindi riproducibile da nessuno,
+ * ed e' esattamente cio' che la §25 di `DECISIONI.md` chiama un ricordo invece
+ * di una prova.
  *
  * Questo script chiude quel buco per il banco del collaudo, e per il prossimo.
  *

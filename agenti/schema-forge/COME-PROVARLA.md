@@ -7,8 +7,9 @@ durante i collaudi del 25-26 luglio 2026 e le due tornate di correzioni del
 l'altra, sono riportate **entrambe con la loro data**: il §2.4 è lo stato di
 oggi, il §4 è quello che c'era prima e perché è cambiato.
 
-Riferimenti: `README.md` (manuale), `STATO.md` (cosa è aperto),
-`COLLAUDO-2026-07-26.md` (il verbale che spiega perché un gate verde non basta).
+Riferimenti: `README.md` (manuale), `STATO.md` (cosa è aperto — compreso
+l'elenco di ciò che **un gate verde non dimostra**, che è la ragione per cui il
+§4 di questa guida esiste).
 
 ---
 
@@ -111,8 +112,10 @@ cd "agenti/schema-forge"
 npm test          # equivale a: node --test "scripts/**/*.test.mjs"
 ```
 
-**156** test verdi (rimisurati il 2026-08-06; questa riga ha detto `132` fino ad
-allora, mentre `STATO.md` era già a 156), zero dipendenze runtime, nessun Docker. Verificano le **regole**
+**228** test verdi (rimisurati il 2026-08-07; la batteria è passata per
+`156 → 186 → 216 → 228` fra il 6 e il 7 agosto, e questa riga è rimasta
+indietro due volte: **rimisurala, non copiarla**), zero dipendenze runtime,
+nessun Docker. Verificano le **regole**
 dell'audit e del diagramma come funzioni pure. Se vuoi capire cosa becca l'audit
 RLS senza montare niente, questo è il punto d'ingresso.
 
@@ -129,7 +132,8 @@ supabase init
 Poi **due modifiche obbligatorie** a `supabase/config.toml`:
 
 ```toml
-# 1. porte 57xxx: sulla 54322 c'è quasi sempre lo stack di un altro progetto
+# 1. porte tue: sulla 54322 c'è quasi sempre lo stack di un altro progetto
+#    (banco-prova-vetcare usa 57321-57329; per un banco NUOVO leggi qui sotto)
 [api]
 port = 57321
 [db]
@@ -142,6 +146,20 @@ port = 57324
 # 2. senza questo, `supabase db reset` fallisce con un 502
 [analytics]
 enabled = false
+```
+
+**Come si sceglie una porta su questa macchina.** Windows riserva intervalli
+interi (WinNAT) dentro l'intervallo dinamico 49152-65535, e **quegli intervalli
+si spostano fra un riavvio e l'altro**: sono stati misurati 57464-57963 un
+giorno e 50000-50059 / 50962-51461 / 61185-61284 il giorno dopo. Una porta
+riservata non risulta occupata — `Test-NetConnection` e
+`Get-NetTCPConnection -State Listen` non vedono le esclusioni — e Docker
+fallisce con *«a socket in a way forbidden by its access permissions»*, che
+sembra un problema di permessi e non lo è. Quindi: **porte sotto 49152**, e nel
+dubbio si guarda prima, non si memorizza un intervallo.
+
+```powershell
+netsh interface ipv4 show excludedportrange protocol=tcp
 ```
 
 Poi:
@@ -488,7 +506,8 @@ di questo banco:
 | `psql` non trovato | non è nel PATH | `%USERPROFILE%\scoop\apps\postgresql\current\bin` |
 | `sqlfluff`/`squawk` non trovati | non nel PATH | `%APPDATA%\Python\Python314\Scripts` |
 | `db reset` fallisce con 502 | analytics acceso | `[analytics] enabled = false` |
-| audit su tabelle sconosciute | porta 54322 = altro progetto | porte 57xxx nel banco, `--db-url` a mano |
+| audit su tabelle sconosciute | porta 54322 = altro progetto | una porta tua nel banco, `--db-url` a mano |
+| Docker: «a socket in a way forbidden by its access permissions» | porta dentro un intervallo riservato da WinNAT (si spostano a ogni riavvio) | porte **sotto 49152**; `netsh interface ipv4 show excludedportrange protocol=tcp` |
 | `node --test scripts/` non trova nulla | su Node ≥ 24 il percorso è un glob | `node --test "scripts/**/*.test.mjs"` |
 | `semgrep`/`gitleaks` | **non installati** | i loro passi valgono `MANCANTE`, mai `pass` |
 
@@ -500,7 +519,7 @@ di questo banco:
 # test degli script, senza database
 cd agenti/schema-forge && npm test
 
-# banco: dopo supabase init + porte 57xxx + [analytics] enabled = false
+# banco: dopo supabase init + porte proprie (<49152) + [analytics] enabled = false
 supabase start
 
 # il gate

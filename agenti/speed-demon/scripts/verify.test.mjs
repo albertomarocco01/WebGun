@@ -89,8 +89,8 @@ test("il sorgente del gate non contiene `import.meta.main`", () => {
 // percorso ma non scioglie una junction, mentre `import.meta.url` e' gia'
 // canonico (Node canonicalizza i moduli che carica). Guardia falsa, `main()` mai
 // chiamata, gate uscito 0 SENZA STAMPARE UNA RIGA — su tutti e cinque i gate
-// (`PILOTA-PRE-2026-08-04.md` §2b). Ed e' proprio il canale con cui una chat
-// aperta sul repo di un progetto generato vede la skill.
+// che esistevano allora, misurato il 2026-08-04. Ed e' proprio il canale con
+// cui una chat aperta sul repo di un progetto generato vede la skill.
 //
 // Perche' gli altri due non lo vedono, e non per come sono scritti:
 //  - lo STATICO vieta il token `import.meta.main`, e questo difetto non contiene

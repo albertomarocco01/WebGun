@@ -175,7 +175,7 @@ test("il sorgente del gate non contiene `import.meta.main`", () => {
 // percorso ma non scioglie una junction, mentre `import.meta.url` e' gia'
 // canonico (Node canonicalizza i moduli che carica). Guardia falsa, `main()` mai
 // chiamata, gate uscito 0 SENZA STAMPARE UNA RIGA — tutti e cinque i gate della
-// casa (`PILOTA-PRE-2026-08-04.md` §2b). Ed e' proprio il canale con cui una chat
+// casa insieme, misurato. Ed e' proprio il canale con cui una chat
 // aperta sul repo di un progetto generato vede la skill. Questo gate lo pagherebbe
 // di nuovo due volte: `speed-demon` lo lancia come sottoprocesso, e da un gate
 // muto ricava «non ha prodotto JSON leggibile».

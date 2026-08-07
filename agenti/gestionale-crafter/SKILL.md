@@ -112,7 +112,14 @@ Sta qui in evidenza perche' e' la lezione che questo repo ha gia' pagato una vol
 - **L'accessibilita' verificata e' quella che `jsx-a11y` sa vedere**: etichette, ruoli, alternative testuali. L'ordine di tabulazione e la comprensibilita' di un messaggio d'errore restano lavoro umano.
 - **Nessun passo di questo gate guarda il database di produzione**: legge il catalogo del progetto locale. Un `grant` diverso in produzione e' un altro mondo.
 
-Dopo un gate verde, sulla superficie critica, si lancia il tribunale:
+Le quattro domande da fare **a mano** dopo un verde — nate ognuna da un difetto vero dei banchi di collaudo, e nessuna coperta da un'euristica:
+
+- Quale vista e' aperta a un ruolo che non dovrebbe aprirla?
+- Quale colonna scritta da un modulo cambia **chi e'** chi la scrive?
+- Quale azione server e' raggiungibile senza passare da nessuna pagina?
+- Se togliessi la RLS, quante di queste rotte perderebbero dati?
+
+Poi, sulla superficie critica, si lancia il tribunale:
 
 ```
 /code-inquisition src/modules/admin src/app/admin --focus security --depth 1 --council 3

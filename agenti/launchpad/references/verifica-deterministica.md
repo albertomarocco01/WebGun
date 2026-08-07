@@ -613,10 +613,12 @@ esistesse è il caso vero, e lo prende `segreti`.
 ## 7. Trappole di piattaforma, da rispettare nel codice
 
 - **L'epilogo a doppio confronto.** `resolve(argv[1])` **e** `realpathSync`, con
-  `try` e ricaduta testuale. Dalla junction `.claude/skills/launchpad/…` il
-  confronto secco è falso e lo script esce **0 muto** — cioè un verde. Otto
-  script di questa casa lo hanno fatto per davvero (`IGIENE2-JUNCTION-2026-08-04.md`),
-  e il gate della regia oggi lo verifica.
+  `try` e ricaduta testuale. Dalla junction `.claude/skills/launchpad/…`
+  `argv[1]` resta il percorso della junction mentre `import.meta.url` è già
+  canonico: il confronto secco è falso, `main()` non viene mai chiamata e lo
+  script esce **0 muto** — cioè un verde. Non è un'ipotesi: il 2026-08-04 otto
+  script di questa casa lo facevano davvero, ed è per questo che il gate della
+  regia oggi lo verifica.
 - **`import.meta.main` non si usa:** è arrivato in Node 24, su Node 20 vale
   `undefined`, il corpo non gira e il processo esce 0 senza stampare niente.
 - **`spawnSync` senza `shell` non consulta `PATHEXT`:** uno shim `.cmd` (`npx`,

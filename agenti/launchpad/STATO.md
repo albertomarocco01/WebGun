@@ -1,235 +1,230 @@
-# Stato — Launchpad
+# STATO — launchpad
 
-- **Stato attuale:** **costruito, collaudato e con le tre decisioni della
-  direzione eseguite** (P.5 P0+P1+P2+P3, 2026-08-06). SKILL.md completo, gate a
-  **nove passi** con `--json`, **167 test** sugli script (erano 104 alla
-  consegna, 148 al collaudo, 162 dopo P.5-P3), quattro reference, due template e
-  un generatore di banco. Il collaudo avversario in chat vergine (P2) **e' stato
-  fatto** ed e' costato **26 difetti**, di cui **nove falsi verdi con gravita' di
-  blocco**; prima c'era stato un tribunale a tre periti, 32 rilievi. P.5-P3 ha
-  eseguito **D20** e **D23** e chiuso una classe di difetto nei messaggi in
-  **sette punti**.
-  **Nessun deploy è mai stato eseguito da questa skill.** Vedi §Cosa non è mai
-  stato provato.
-- **`banco.mjs` stampava un elenco a cui mancava una premessa** (P.7f,
-  2026-08-07). La direzione ha rigenerato il banco da zero seguendo **soltanto**
-  quell'elenco — che è esattamente ciò che l'elenco chiede di fare — e
-  `npm run build` è caduta con exit 1 e `Error: supabaseUrl is required.` sul
-  prerender di `/prenota`. Le due `NEXT_PUBLIC_*` che servono erano scritte in
-  `docs/deploy.md` e in `.env.example`: due file che il banco **produce**, e che
-  chi segue l'elenco non ha ancora aperto. Ora c'è un **passo 0** stampato prima
-  del passo che ci casca, con valori dichiaratamente finti (`.invalid`, RFC
-  2606), e `banco.mjs` **non scrive nessun `.env.local`** — un file di
-  configurazione comparso in silenzio è la classe di difetto che questa skill
-  misura negli altri. Cinque test nuovi (`scripts/banco.test.mjs`) tengono
-  l'**output stampato**, non il sorgente: eseguono lo script vero e guardano il
-  suo `stdout`. Riprova: secondo banco rigenerato da zero seguendo solo le
-  istruzioni nuove → **VERDE 9/9**.
-- **Il semgrep del collaudo è RIPRODOTTO, e la voce non è più «non misurato»**
-  (P.7f, 2026-08-07). Il collaudo P2 dichiarava **2 rilievi
-  `detect-non-literal-regexp`**; P.5-P3 ne aveva ottenuti **0** e l'aveva
-  dichiarato onestamente non riprodotto. La differenza è il ruleset, e ora ha
-  un nome. **Elenco esatto di ciò che è stato lanciato oggi, dalla cartella
-  della skill, con semgrep 1.172.0:**
+**A che punto è:** gate costruito, sabotato, processato e collaudato in chat
+vergine — ma **nessun deploy è mai stato eseguito**, da nessuno, su nessun
+provider.
+**Proprietario:** Alberto Marocco.
+**Ultima misura:** 2026-08-07 — batteria **167 test, 0 falliti**; gate contro il
+pilota `cavia` (`C:/Users/Utente/Desktop/cavia`) senza `--url`: **ROSSO, 3
+falliti e 1 verifica mancante su 9 passi**. I tre rossi: `catena-gate` (dopo la
+rinomina del progetto i nove handoff sono più vecchi dell'ultimo commit di
+codice), `runbook-firmato` (segnaposto del template al posto della firma),
+`contratto-uscita` (l'handoff nasce con la pubblicazione).
 
-  | Ruleset | Regole | File | Rilievi |
-  |---|---|---|---|
-  | `semgrep --config=auto scripts` | 200 | 13 | **2** — `gate-lib.mjs:705`, `impronta.mjs:210`, entrambi `detect-non-literal-regexp` |
-  | `semgrep --config=p/nodejs scripts` | 36 | 12 | 0 |
-  | `semgrep --config=p/javascript --config=p/security-audit --config=p/eslint-plugin-security scripts` (i tre di P.5-P3) | 83 | 13 | 0 |
+## Cosa fa
 
-  La regola `javascript.lang.security.audit.detect-non-literal-regexp` **non è
-  in nessuno dei quattro pacchetti nominati**: la tira dentro solo `auto`. Un
-  conteggio di semgrep senza il ruleset accanto non è confrontabile con niente,
-  ed è il motivo per cui due chat oneste hanno misurato numeri diversi sullo
-  stesso codice.
+Decide se un sito Web Gun **si può pubblicare**, e fa firmare a un umano *cosa*
+va online: non è un deployer con un cancello davanti, è **il cancello**, e il
+deploy è ciò che succede quando si apre. Legge i verdetti degli agenti a monte,
+misura ciò che il deploy porterebbe con sé (segreti, variabili, runtime,
+impronta) e scrive `docs/deploy.md`, il runbook che un umano firma. Le quattro
+leggi:
 
-  **Le due esenzioni reggono, e una aveva un numero sbagliato.**
-  `impronta.mjs:210`: `nome` viene dal gruppo di cattura `([A-Za-z_$][\w$]*)`
-  due righe sopra — un identificatore JavaScript, nessun metacarattere
-  possibile. Regge. `gate-lib.mjs:705` (`riga1`): `etichetta` arriva solo da
-  chiamanti letterali, la funzione **non è esportata** e nessun test la chiama,
-  quindi l'elenco dei chiamanti è completo e chiuso — ma sono **otto**, e il
-  commento dell'esenzione ne dichiarava **sette**. L'esenzione regge, il suo
-  conteggio no: corretto, con la data.
-- **Il gate è più severo di ieri, in tre modi**, e chi rilancia deve saperlo:
-  la firma **per delega** su `docs/deploy.md` è un `block` (D20); un verdetto
-  dentro una **citazione** non conta per `catena-gate` (D23 §1); una voce del
-  registro del debito senza la riga `Blocca il deploy: sì | no` vale
-  **MANCANTE** (D23 §2). Un gate che comincia a rifiutare un progetto che prima
-  accettava è il sistema che funziona.
-- **I due difetti che vale la pena sapere prima degli altri**, e nessuno dei due
-  era nel gate: il **rimedio che questa skill scrive** nel `next.config.ts` del
-  cliente **non compilava** sotto `strict`, e faceva nascere un artefatto che
-  dichiarava **l'identita' di un altro repository** quando il progetto stava
-  dentro un repository che non lo tracciava. Il terzo: il gate aveva un **rosso
-  strutturale contro se stesso** — la riga che launchpad scrive faceva scadere
-  tutti i certificati a monte.
-- **Proprietario:** Alberto
-- **Dipendenze:**
-  - **A monte:** tutti e cinque gli agenti costruttori (schema-forge,
-    vetrina-crafter, gestionale-crafter, flow-sentinel, speed-demon) più
-    cyber-shield e site-doctor quando esisteranno. La condizione che due di loro
-    hanno posto **prima che questo agente esistesse** — *non si pubblica su gate
-    rosso* (`flow-sentinel/STATO.md`, `speed-demon/STATO.md`) — è diventata la
-    **Legge n°1**.
-    Il legame con **site-doctor** è un **contratto letto da file**, non una
-    dipendenza di codice: se il certificato di idoneità non c'è, il passo è
-    MANCANTE — non `PASS`, e non un errore.
-  - **A valle:** demoniac (video demo sul sito online, opzionale).
+1. **Non si pubblica su gate rosso**, di nessun agente a monte né del proprio —
+   legge scritta da flow-sentinel e speed-demon prima che questo agente
+   esistesse.
+2. **La pubblicazione la autorizza un umano, sul contenuto**: dominio, commit,
+   variabili, cosa diventa pubblico, come si torna indietro. E **questa firma
+   non si delega** (D20): `docs/deploy.md` non descrive un lavoro fatto, lo
+   **autorizza**. *Si delega la firma su un verbale, non su un mandato.*
+3. **Nel pacchetto che parte non viaggia nessun segreto**, né in HEAD né nella
+   storia (diff, messaggi di commit e di tag); la chiave `service_role` non
+   entra mai in un progetto generato.
+4. **Ciò che va online resta dimostrabile dopo**: l'impronta si **deriva** dal
+   commit, non si registra.
 
-## Cosa fa, in una riga
+Non misura il sito — niente Chrome, Playwright o database: quei verdetti li
+**legge** — e non aggiusta il lavoro degli altri. L'unica riga di codice altrui
+che tocca è `generateBuildId` in `next.config.ts`, con `impronta --scrivi`.
 
-Non pubblica: **decide se si può pubblicare**, e fa firmare a un umano cosa va
-online. Il deploy è ciò che succede quando il cancello si apre.
+## Il gate
 
-## Il gate — nove passi
+Nove passi con `id` stabili, uscita `0` verde / `1` rosso / `2` errore, contratto
+`--json` versione 1. **L'ordine della tabella è il gate.**
 
-| # | `id` | misura o legge? |
-|---|---|---|
-| 1 | `radice-pulita` | **misura** |
-| 2 | `catena-gate` | **legge** il verdetto, **misura** la freschezza |
-| 3 | `debito-bloccante` | **legge** il registro, **misura** la corrispondenza col runbook |
-| 4 | `segreti` | **misura** |
-| 5 | `ambiente` | **misura** |
-| 6 | `runtime-riproducibile` | **misura** |
-| 7 | `impronta-artefatto` | **misura** |
-| 8 | `runbook-firmato` | **misura** la forma, **legge** il contenuto |
-| 9 | `contratto-uscita` | **misura** |
+| passo | cosa prova |
+|---|---|
+| 1 `radice-pulita` | si pubblica **un commit**, non un working tree: albero pulito, HEAD non sfasato col remoto |
+| 2 `catena-gate` | nessun gate a monte ha detto di no, e nessun handoff è più vecchio del codice che certifica. **Un verdetto scritto dentro una citazione non conta** (D23 §1): costo accettato e dichiarato — un verdetto legittimo messo in citazione diventa un rosso, e il messaggio dice come si toglie. La §19 generale, che vive in cinque gate e nel passo 9, **non** è toccata |
+| 3 `debito-bloccante` | ogni voce che dichiara `Blocca il deploy: sì` ha risposta **per numero** nel runbook |
+| 4 `segreti` | nessun segreto nei file tracciati, nuovi, ignorati **e nella storia** |
+| 5 `ambiente` | ogni variabile che il codice spedito legge è dichiarata, nessun valore vero committato |
+| 6 `runtime-riproducibile` | `engines.node` ≥ di quanto pretende ogni dipendenza installata; lockfile presente e tracciato |
+| 7 `impronta-artefatto` | l'impronta è **derivata dal commit**, e l'app servita la porta |
+| 8 `runbook-firmato` | `docs/deploy.md` esiste, senza segnaposto, firmato da un umano con data ≥ artefatto |
+| 9 `contratto-uscita` | la riga `Gate:` dell'handoff dice il vero su **questa** esecuzione |
 
-La tabella completa — cosa resta indimostrato passo per passo — è in
-`references/verifica-deterministica.md` §2. È la sezione da leggere per prima:
-è la differenza fra un certificato e una promessa.
+**Cinque passi misurano; tre misurano la forma di una dichiarazione altrui; uno
+— `catena-gate` — legge e data.** Quale è quale, e cosa resta indimostrato passo
+per passo, sta in `references/verifica-deterministica.md` §2: è la differenza
+fra un certificato e una promessa.
 
-## Piano P0 → P3
+Si lancia **dalla radice del progetto generato**:
 
-| Fase | Cosa | Stato |
-|---|---|---|
-| **P0** — progettazione | il gate scritto **prima** del flusso: nove passi, premessa e MANCANTE, contratto `--json`, otto falsi verdi possibili, passi scartati col perché | **fatta** — `references/verifica-deterministica.md`, 2026-08-06 |
-| **P0b** — la sosta di metà pacchetto | rilettura della progettazione con una domanda sola: *quale passo potrebbe essere verde su un deploy che non si deve fare?* | **fatta** — sei risposte, tutte diventate regole (§8 della reference). Una era un difetto che sarebbe stato spedito |
-| **P1** — costruzione | `verify.mjs` + tre librerie pure + due gusci; 105 test; 4 reference; 2 template | **fatta** — 2026-08-06 |
-| **P1b** — sabotaggio | un difetto per classe, e il rosso misurato | **fatta** — gemello pulito VERDE 9/9, **36 classi, 36 rosse, 0 non prese** |
-| **P1c** — tribunale (`/code-inquisition`, council di 3) | tre periti in isolamento, modelli diversi, posture avversarie distinte | **fatto** — **32 rilievi, 32 chiusi**, ognuno col suo test di regressione. Il più grave: il rimedio che questa skill prescrive **rompeva la build del cliente** su un `next.config.mjs` |
-| **P2** — collaudo avversario, in chat vergine | il gate è il contratto sotto esame; il verbale di costruzione è un'affermazione da verificare | **fatto** — 2026-08-06, `COLLAUDO-2026-08-06.md`. **26 difetti, 26 chiusi**, ognuno con la sua misura prima/dopo e il suo test. Banco nuovo (studio dentistico) costruito dai soli documenti: **VERDE 9/9**, e ricostruibile con `scripts/banco.mjs`. **Quattro** affermazioni del verbale di costruzione non si riproducono: 105 test erano 104, «5 warning» erano 8, «0 cloni» erano 4, e `banco.mjs` non esisteva. Le 36 classi di sabotaggio invece **reggono**: 31 rilanciate, 31 rosse sul passo giusto |
-| **P3** — le tre decisioni della direzione, eseguite | D20 (la delega non copre ciò che autorizza), D23 §1 (la citazione non è un verdetto), D23 §2 (il registro dichiara con una riga di forma fissa), più la classe «il messaggio stampa una data e la regola confronta un istante» | **fatto** — 2026-08-06, `P5-P3-2026-08-06.md`. Batteria 148 → **162**. Banco **VERDE 9/9 due volte**, su due cartelle rigenerate dallo script. La misura non prevista: il gate **vecchio** davanti al registro **appena migrato** del pilota legge **45 bloccanti su 56**, quello nuovo ne legge **10** — una correzione a monte senza la sua metà a valle peggiora invece di lasciare uguale |
-| **P4** — il primo deploy vero | **lo autorizza Alberto di persona.** È l'unica cosa che questa skill non ha potuto provare, ed è il suo mestiere | **da fare** |
+```bash
+npm run build && npm run start -- -p 3100
+node <skill>/scripts/verify.mjs --url http://127.0.0.1:3100 [--json]
+```
 
-## Cosa un gate verde NON prova
+Senza `--url` il passo 7 è **MANCANTE**, non `pass`: il gate non indovina un
+`localhost:3000`, perché è così che si misura l'app di un altro progetto e si
+stampa verde. Uno strumento assente vale MANCANTE, e un gate rosso per verifiche
+mancanti resta rosso.
 
-La riga che va letta due volte, e che ha un posto d'onore nello `SKILL.md`:
+## Come si prova
 
-> **Un gate verde non prova che il sito sia pronto per il suo pubblico. Prova
-> che è pronto per il trasporto.**
+Dalla cartella della skill (`agenti/launchpad`):
 
-Questo gate misura il *pacchetto* e il *viaggio*: che parta il commit giusto,
-che non porti segreti, che si ricostruisca uguale altrove, che si possa
-dimostrare cosa è arrivato e tornare indietro. Non guarda **niente** di ciò che
-il sito fa: non una pagina, non un flusso, non una query, non un numero. Quei
-verdetti li dànno i quattro gate a monte, e questo agente li **legge**.
+```bash
+npm test        # 167 test, 0 falliti — misurato il 2026-08-07
+```
 
-L'elenco completo è in `SKILL.md` §Cosa un gate verde NON prova. Le tre voci che
-pesano di più:
+Se `npm` non è nel PATH:
+`"/c/Program Files/nodejs/node.exe" "/c/Program Files/nodejs/node_modules/npm/bin/npm-cli.js" test`
 
-- **che i gate a monte fossero verdi davvero.** `catena-gate` legge una riga
-  scritta da chi l'ha eseguito, e ne misura solo la scadenza. Rilanciarli da qui
-  è stato **valutato e scartato**, coi tre motivi in
-  `references/verifica-deterministica.md` §6;
-- **che non ci siano segreti.** Prova che non ce ne sono *delle sei famiglie di
-  contenuto e delle due regole sul nome*, nei file letti — tracciati, nuovi,
-  ignorati, e nella storia (diff **e** messaggi di commit e di tag). Un segreto
-  codificato due volte, spezzato su due righe o dentro un binario vero passa;
-- **che il file letto sia quello che parte.** Ogni passo apre il file **sul
-  disco**, non il blob del commit: a rendere le due cose la stessa è
-  `radice-pulita`, ed è il motivo per cui quel passo non è un preliminare
-  cortese;
-- **che il rollback funzioni.** Il gate legge una procedura scritta. Che
-  funzioni si scopre la prima volta che serve.
+Il banco di prova **si rigenera da zero, non si ricorda**:
 
-## Cosa non è mai stato provato — l'elenco onesto
+```bash
+node scripts/banco.mjs --dove <cartella> --porta 3182
+# lo script stampa il passo 0 (le due NEXT_PUBLIC_*), poi npm install e impronta --scrivi
+node scripts/banco.mjs --contratti --dove <cartella> --porta 3182
+# poi npm run build, npm run start, e infine il gate con --url
+```
+
+`banco.mjs` **non scrive nessun `.env.local`**: le due `NEXT_PUBLIC_*` che
+servono a `npm run build` le stampa come **passo 0**, con valori dichiaratamente
+finti (dominio `.invalid`, RFC 2606) — un file di configurazione comparso in
+silenzio è la classe di difetto che questa skill misura negli altri. `npm
+install`, `npm run build` e l'avvio dell'app **non li fa**: li stampa, perché un
+banco che finge di averli fatti sarebbe la stessa cosa. Chiude **VERDE 9/9**.
+
+Trappole della macchina, da non riscoprire:
+
+- porte **sotto 49152**: gli intervalli riservati da WinNAT **si spostano fra un
+  riavvio e l'altro** (`57464-57963` un giorno, `50000-50059` / `50962-51461` /
+  `61185-61284` il giorno dopo), quindi non si memorizzano — si rilancia `netsh
+  interface ipv4 show excludedportrange protocol=tcp` prima di scegliere.
+  `Test-NetConnection` non lo dice: guarda chi ascolta, non chi ha prenotato;
+- `node --test` col glob vuole Node 21+: i file di test si elencano per esteso
+  in `package.json`;
+- `import.meta.main` **non si usa** (Node 24; su Node 20 vale `undefined`, il
+  corpo non gira e il processo esce **0 muto**, cioè verde). E l'epilogo di ogni
+  script fa il **doppio confronto** `resolve(argv[1])` + `realpathSync` con
+  ricaduta testuale: dalla junction `.claude/skills/…` il confronto secco è
+  falso e lo script esce 0 senza stampare niente;
+- `spawnSync` senza `shell` non consulta `PATHEXT`: uno shim `.cmd` risulta
+  `ENOENT`. Si risolve con `where`/`which` prendendo la prima riga
+  **eseguibile** — non con `shell: true`, che concatena gli argomenti;
+- **un conteggio di `semgrep` senza il ruleset accanto non è confrontabile con
+  niente**: `--config=auto` (200 regole) alza 2 `detect-non-literal-regexp`
+  (`gate-lib.mjs`, `impronta.mjs`, entrambi esentati per iscritto); `p/nodejs`,
+  `p/javascript`, `p/security-audit` e `p/eslint-plugin-security` ne alzano
+  **zero** — quella regola la tira dentro solo `auto`.
+
+## Cosa NON è mai stato provato
 
 **Nessun deploy è stato eseguito.** Non un account creato, non un repository
 collegato, non un dominio comprato, non un record DNS toccato, non un centesimo
-speso. È la §6 applicata al mestiere che è l'unico irreversibile della pipeline,
-ed era una condizione esplicita del mandato di P.5.
-
-Di conseguenza **non sono mai stati esercitati contro il mondo**:
+speso. Non sono mai stati esercitati contro il mondo:
 
 1. il comando `pubblica` — esiste come procedura, non è mai stato eseguito;
-2. la procedura di rollback, su nessuno dei due provider;
-3. `verifica-pubblicato` **contro un dominio vero** (è stato esercitato contro
-   una build di produzione servita in locale: prova il **meccanismo**, non la
-   pubblicazione);
-4. il comportamento di `generateBuildId` **sulla macchina di un provider** —
-   cioè la premessa su cui poggia tutta la Legge n°4;
-5. che `engines.node` venga rispettato da un provider (non lo impone nessuno
-   senza `engine-strict`);
+2. la procedura di **rollback**, su nessuno dei due provider: il gate legge una
+   procedura scritta, e che funzioni si scopre la prima volta che serve;
+3. `verifica-pubblicato` **contro un dominio vero** — esercitato solo contro una
+   build di produzione servita in locale, quindi prova il **meccanismo**, non la
+   pubblicazione;
+4. `generateBuildId` **sulla macchina di un provider**, cioè la premessa della
+   Legge n°4. In locale regge nei due casi che i provider usano davvero (clone
+   `--depth 1` con `.git`; `.git` assente con `VERCEL_GIT_COMMIT_SHA` /
+   `CF_PAGES_COMMIT_SHA`) e cadeva nel terzo — `.git` assente, nessuna
+   variabile, dentro **un altro** repository: nasceva un artefatto che
+   dichiarava l'identità di un repository diverso. Corretto. Che i provider
+   impostino davvero quelle variabili è **documentato, non misurato**;
+5. che `engines.node` venga rispettato da un provider: non lo impone nessuno
+   senza `engine-strict`. Il gate misura che sia **dichiarato e coerente**;
 6. il certificato SSL, la propagazione DNS, la coerenza fra apex e `www`;
 7. il costo vero di una pubblicazione.
 
-Sono il mandato del collaudo di P.5, ed è giusto che ci vada un umano.
+**E nove `pass` su nove non provano:**
 
-## Non usabile su un progetto cliente
+> Un gate verde non prova che il sito sia pronto per il suo pubblico. Prova che
+> è pronto per il **trasporto**.
 
-Resta **un** motivo, ed è quello che conta:
+- **che i gate a monte fossero verdi davvero.** `catena-gate` legge una riga
+  scritta da chi l'ha eseguito e ne misura solo la freschezza. Rilanciarli da
+  qui è stato **valutato e scartato** (reference §6);
+- **che non ci siano segreti**: solo che non ce ne sono *delle sei famiglie di
+  contenuto e delle due regole sul nome*. Un segreto codificato due volte,
+  spezzato su due righe, dentro un'immagine o in un documento binario passa;
+- **che il file letto sia quello che parte.** Ogni passo apre il file **sul
+  disco**, non il blob del commit: a rendere le due cose la stessa è
+  `radice-pulita`, ed è perché quel passo è `block` e non un avviso cortese;
+- **l'età dell'artefatto**: promessa nella specifica e mai implementata (rilievo
+  VER-14 del tribunale), perché l'`mtime` non sopravvive a una copia della
+  cartella. Chi costruisce con l'albero sporco e poi lo pulisce ha un `.next/`
+  che nessun commit contiene, e il gate non lo vede;
+- **che il remoto esista ancora.** `origin/main` è una copia locale: col remoto
+  puntato su un percorso inesistente il passo chiude `pass` con zero rilievi. Il
+  runbook prescrive un `git fetch` prima del gate;
+- **che il dominio dichiarato sia quello del cliente**, né **che le variabili
+  abbiano i valori giusti**: il gate sa che `NEXT_PUBLIC_SITO_URL` non è
+  `127.0.0.1` e non è `http://`, non sa se è il dominio del cliente. Un valore
+  plausibile e sbagliato passa, portandosi dietro `canonical`, Open Graph,
+  `sitemap.xml` e `robots.txt`, prerenderizzati **una volta sola**;
+- **le dipendenze transitive annidate** (`node_modules/a/node_modules/b`) non
+  entrano nel confronto di `engines`;
+- **il contenuto** degli handoff e del runbook: se ne misura forma, freschezza e
+  coerenza dei verdetti, non la verità. Il registro del debito resta verde **per
+  dichiarazione** — la riga di forma fissa sposta la soglia da «so leggere la
+  prosa» a «hai dichiarato», non da «leggo» a «misuro»;
+- **che il gate sia giusto su un progetto che non ha costruito lui.** I banchi li
+  genera `banco.mjs`, scritto da chi ha costruito la skill: provano che il gate
+  riconosce ciò che **quello script** considera corretto. L'unico progetto
+  estraneo che questo gate abbia mai visto è `cavia`, e lì è rosso — per motivi
+  quasi tutti di altri;
+- **che pubblicare sia una buona idea.** Nessuna misura risponde: per questo
+  l'ultima parola non è del gate.
 
-**Il primo deploy non è ancora avvenuto.** Tutto ciò che sta qui sopra è
-misurato su due banchi e su un pilota che **non si deve pubblicare**. Fra «il
-gate rifiuta correttamente» e «il deploy riesce» c'è esattamente lo spazio dove
-vivono i guasti di questa fase.
+**Non è usabile su un progetto cliente**, per un motivo solo: il primo deploy
+non è ancora avvenuto. Fra «il gate rifiuta correttamente» e «il deploy riesce»
+c'è esattamente lo spazio dove vivono i guasti di questa fase.
 
-Il secondo motivo — *il collaudo avversario indipendente non è stato fatto* — è
-caduto il 2026-08-06, e ha confermato la regola della casa per la sesta volta su
-sei: il collaudo ha trovato qualcosa, e **gli strumenti statici erano tutti
-verdi**.
+## Debito aperto
 
-## Proposte a monte
-
-Cose che questo agente ha **misurato** e che non può chiudere da solo.
-
-| A chi | Cosa | Perché |
+| cosa | perché resta | chi lo chiude |
 |---|---|---|
-| **schema-forge** | il template del seed produca **due file distinti** fin dall'inizio: `seed di riferimento` (ogni ambiente) e `seed di sviluppo` (mai in produzione), col secondo che porta già la riga `-- launchpad-consentito: credenziale-sql — …` | il pilota ci è arrivato **a un passo dal deploy** (debito n°27) e ha dovuto separarli in P.4g. Nascere separati costa una riga; separarli dopo costa un debito che blocca la pubblicazione |
-| **schema-forge** | dichiarare `engines.node` in `package.json` alla nascita del progetto, derivandolo dal massimo di ciò che le dipendenze pretendono | il pilota è arrivato a P.5 senza (debito n°32), e **il sito non si costruiva** su Node 20. Il gate lo misura, ma misurarlo dopo è tardi |
-| **schema-forge** | il template di `docs/DEBITO-TECNICO.md` porti la riga di forma fissa **`Blocca il deploy: sì \| no`** dentro la riga di ogni voce aperta (D23 §2). Forma completa in `references/verifica-deterministica.md` §3.3 | il registro lo genera lui, non launchpad. Finché il template non la porta, **ogni progetto nuovo nasce con un registro che il gate dichiara MANCANTE** — e il gate lo dice per nome nel testo che stampa. Sul pilota la migrazione è stata fatta a mano, nella stessa ondata (D18 §3) |
-| **vetrina-crafter** e **gestionale-crafter** | scrivere `generateBuildId` derivato dal commit già nello scaffold | è la sola prova d'identità che sopravvive alla ricostruzione del provider, e oggi il progetto generato non ce l'ha |
-| **tutti e cinque** | l'handoff **si ridata** quando il codice cambia dopo | sul pilota, al 2026-08-06, **quattro handoff su cinque** sono più vecchi dell'ultimo commit di codice: i certificati ci sono e sono scaduti |
-| **cyber-shield** (🔵) | la limitazione di frequenza. Il pilota la dichiara come prescrizione di deploy in **due** voci (n°4 e n°17) | non è materia di questa skill, e finché cyber-shield non esiste resta una riga nel runbook invece che una difesa |
+| **Il primo deploy vero** | è il mestiere di questa skill e l'unica cosa che non ha potuto provare; una pubblicazione non si annulla | **Alberto**, di persona |
+| Firma umana su `docs/deploy.md` di `cavia` | c'è ancora il segnaposto del template. Non è un difetto: è la riga che aspetta una persona, e la D20 ha tolto l'unica scorciatoia | **Alberto**, di persona |
+| `docs/handoff/<n>-launchpad.md` in `cavia` | scriverlo prima di una pubblicazione vera sarebbe il certificato di un lavoro non fatto | launchpad, alla pubblicazione |
+| **schema-forge** — il template di `docs/DEBITO-TECNICO.md` porti `Blocca il deploy: sì \| no` in ogni voce aperta (D23 §2; forma in reference §3.3) | finché non la porta, **ogni progetto nuovo nasce con un registro che il gate dichiara MANCANTE**, e lo dice per nome. Sul pilota migrato a mano. *Verificato il 2026-08-07: il template non ce l'ha* | schema-forge |
+| **schema-forge** — il seed nasca in due file, `riferimento` (ogni ambiente) e `sviluppo` (mai in produzione), col secondo che porta già `-- launchpad-consentito: credenziale-sql — …` | il pilota ci è arrivato a un passo dal deploy e ha dovuto separarli sotto scadenza. Nascere separati costa una riga | schema-forge |
+| **schema-forge** — `engines.node` dichiarato alla nascita, dal massimo che le dipendenze pretendono | il pilota è arrivato all'ultimo miglio senza, e **il sito non si costruiva** su Node 20: il gate lo misura, ma lì è tardi | schema-forge |
+| **vetrina-crafter** e **gestionale-crafter** — `generateBuildId` derivato dal commit già nello scaffold | è la sola prova d'identità che sopravvive alla ricostruzione del provider. *Verificato il 2026-08-07: non c'è in nessuno dei due* | i due crafter |
+| **i cinque costruttori** — l'handoff si riconferma **rilanciando il gate**, non ridatando | un pacchetto che tocca `src/` o `supabase/` fa scadere **tutti** gli handoff a monte in un colpo. Rimisurato il 2026-08-07 su `cavia`: dopo la rinomina, **nove su nove** scaduti | i cinque costruttori |
+| **cyber-shield** (non esiste) — la limitazione di frequenza | il pilota la dichiara come prescrizione di deploy in due voci: finché cyber-shield non esiste resta una riga nel runbook invece che una difesa | cyber-shield |
+| `[issue] .env.e2e.local` in `cavia`, 3 rilievi | **ignorato da git**: non è storia, non si riscrive, e parte solo con un deploy da CLI — il runbook dichiara `Modo di deploy: git` | dichiarato, non chiuso |
+| `[issue] generateBuildId non solleva` quando il commit non è risolvibile, in `cavia` | a registro nel debito del pilota, invariato | il pilota |
 
-## Proposte a valle
+## Com'è andata (in breve)
 
-| A chi | Cosa |
-|---|---|
-| **demoniac** | l'handoff di launchpad dichiara dominio, commit e impronta: è da lì che si sa quale versione del sito sta riprendendo il video |
-| **chi mantiene** | `docs/deploy.md` è l'unico documento del progetto scritto perché una persona che non c'era sappia **rifare** e **disfare**. La firma **si rinnova** a ogni pubblicazione: una firma più vecchia dell'ultimo commit ha autorizzato un altro contenuto. E **non si delega** (D20): su questo file il gate rifiuta la forma `per delega di …` |
+Costruita il 2026-08-06 **col gate scritto prima del flusso**, con una sosta a
+metà su una domanda sola — *quale passo potrebbe essere verde su un deploy che
+non si deve fare?*: sei risposte, tutte diventate regole, una era un difetto che
+sarebbe stato spedito. Sabotaggio: **36 classi, 36 rosse, 0 non prese**, col
+gemello pulito VERDE 9/9. Tribunale a tre periti: **32 rilievi, 32 chiusi**; il
+più grave era che il rimedio prescritto da questa skill **rompeva la build del
+cliente**, non compilando sotto `strict`. Collaudo avversario in chat vergine:
+**26 difetti, 26 chiusi**, di cui **nove falsi verdi con gravità di blocco**, e
+gli strumenti statici erano tutti verdi. Lo stesso collaudo ha riverificato il
+verbale di costruzione: **quattro** affermazioni non si riproducevano — 105 test
+erano 104, «5 warning» erano 8, «0 cloni» erano 4, e `banco.mjs` **non
+esisteva**, viveva nello scratchpad di quella sessione. Poi le tre decisioni
+della direzione (D20, D23 §1, D23 §2), con una misura non prevista: il gate
+**vecchio** davanti al registro **appena migrato** leggeva 45 bloccanti su 56,
+quello nuovo 10 — una correzione a monte senza la sua metà a valle peggiora
+invece di lasciare uguale.
 
-## Le tre decisioni che restavano alla direzione — **decise ed eseguite**
-
-Misurate dal collaudo, decise dalla direzione la notte del 2026-08-06 (D20 e
-D23 del `CANTIERE.md`), eseguite in P.5-P3. Per esteso in
-`P5-P3-2026-08-06.md`, col prima e il dopo di ognuna.
-
-1. **La firma per delega** su `docs/deploy.md` → **`block`** (D20). *Si può
-   delegare la firma su un verbale, non su un mandato:* la D14 vale sui
-   documenti che descrivono un lavoro già fatto, e questo **autorizza**. La
-   delega resta valida ovunque altrove, e un test lo tiene stretto.
-2. **La §19 e la citazione** → per il solo `catena-gate`, un verdetto dentro una
-   citazione **non conta** (D23 §1). La §19 generale, che vive in cinque gate e
-   nel passo 9, non è stata toccata. Costo accettato e dichiarato: un verdetto
-   legittimo scritto in citazione diventa un rosso, e il messaggio dice come si
-   toglie.
-3. **Il registro del debito con la riga `Blocca il deploy: sì | no`** (D23 §2).
-   L'assenza vale **MANCANTE per quella voce**; la prosa resta come `warn` che
-   nomina le voci da migrare e non decide più. **Il template è di schema-forge**
-   — vedi §Proposte a monte.
-
-## Verbali
-
-- `COSTRUZIONE-2026-08-06.md` — progettazione e costruzione (P.5, P0+P1).
-- `COLLAUDO-2026-08-06.md` — collaudo avversario indipendente (P.5, P2):
-  26 difetti misurati e chiusi, l'audit delle affermazioni del verbale di
-  costruzione, le tensioni con la `SKILL.md`.
-- `P5-P3-2026-08-06.md` — le tre decisioni della direzione eseguite (P.5, P3):
-  D20, D23 §1 e §2 col prima e il dopo di ognuna; i **sette** messaggi che
-  stampavano un valore più grossolano di quello che la regola aveva
-  confrontato; il banco **VERDE 9/9 due volte**; e la sezione «Cosa resta
-  MANCANTE, col suo nome».
+La batteria è passata da 104 alla consegna a **167** oggi. Sul pilota, il
+2026-08-07 con l'app viva e la storia ripulita da una credenziale (`segreti` da
+**10 bloccanti a zero**), il gate chiudeva **ROSSO 2**; rilanciato oggi dopo la
+rinomina in `cavia` è **ROSSO 3**, e il terzo è `catena-gate`.

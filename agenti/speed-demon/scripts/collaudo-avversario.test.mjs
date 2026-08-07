@@ -2,10 +2,15 @@
  * collaudo-avversario.test.mjs — le regressioni del collaudo del 2026-07-30.
  *
  * Ogni test qui sotto e' un difetto MISURATO su `banco-prova-immobiliare`
- * prima di essere corretto: il verbale con le esecuzioni e' in
- * `COLLAUDO-AVVERSARIO-2026-07-30.md`. Stanno in un file a parte perche' hanno
- * una provenienza comune, e chi un giorno vorra' sapere «perche' questa regola
- * esiste» trova qui la risposta invece di doverla dedurre.
+ * prima di essere corretto: diciassette in tutto — dodici falsi verdi, quattro
+ * rifiuti indebiti, e uno che misurava col profilo sbagliato in silenzio. Sei
+ * di quei diciassette erano gia' scritti nelle references della skill senza
+ * che il codice li implementasse: e' la ragione per cui qui una regola nuova
+ * nasce insieme al suo test. Stanno in un file a parte perche' hanno una
+ * provenienza comune, e chi un giorno vorra' sapere «perche' questa regola
+ * esiste» trova qui la risposta invece di doverla dedurre; il bilancio del
+ * collaudo e' in `STATO.md` §«Com'e' andata (in breve)», il verbale con le
+ * esecuzioni e' archiviato il 2026-08-07 (`ARCHIVIO.md`).
  *
  * Vale la regola della casa anche qui: per ogni regola il caso in cui SCATTA e
  * quello in cui NON deve scattare. Il secondo e' quello che conta.

@@ -128,8 +128,8 @@ describe("il banco copre ogni passo che dichiara di provare", () => {
 //    quel token non lo contiene — la riga colpevole era la forma «giusta»;
 //  - il JUNCTION invoca il guscio attraverso una junction vera. E' l'unico che
 //    vede il difetto di P.0-igiene-2: li' `argv[1]` resta il percorso della
-//    junction mentre `import.meta.url` e' gia' canonico, e il confronto secco
-//    era falso (`PILOTA-PRE-2026-08-04.md` §2b).
+//    junction mentre `import.meta.url` e' gia' canonico, il confronto secco era
+//    falso, e il gate usciva 0 senza stampare una riga.
 
 const GUSCI = [
   { file: "verify.mjs", chi: "il gate" },

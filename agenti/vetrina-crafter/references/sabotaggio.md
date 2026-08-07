@@ -13,7 +13,7 @@ col sabotaggio.
 > doveva succedere. **Il sabotaggio ha trovato tre difetti del gate**, tutti
 > chiusi con un test: sono le righe in grassetto.
 >
-> **AGGIORNAMENTO 2026-08-04 (collaudo P2, `COLLAUDO-2026-08-04.md`).** Le classi
+> **AGGIORNAMENTO 2026-08-04 (collaudo avversario P2).** Le classi
 > sono state ripassate su un secondo banco (`banco-prova-valscura`, rifugio
 > alpino: 9 pagine, 13 slot, modulo pubblico di prenotazione) e ne sono usciti
 > **otto difetti** oltre ai sei della prima meta'. **Tre delle sei classi

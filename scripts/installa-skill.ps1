@@ -38,9 +38,9 @@ $ErrorActionPreference = "Stop"
 # `gestionale-crafter` e' entrato in elenco il 2026-07-28, quando ha smesso di
 # essere uno scaffold: SKILL.md completo, quattro reference, gate a 7 passi con
 # 105 test, due collaudi su banchi reali.
-# `flow-sentinel` e' entrato lo stesso giorno: costruito e collaudato in modo
-# indipendente (108 test al 2026-07-30), verbali nel suo COSTRUZIONE-2026-07-28.md,
-# COLLAUDO-2026-07-28.md e COLLAUDO-P3-2026-07-30.md.
+# `flow-sentinel` e' entrato lo stesso giorno: costruito e collaudato in chat
+# separate (108 test al 2026-07-30), con un collaudo avversario e un primo
+# consumatore reale alle spalle. Stato corrente in agenti/flow-sentinel/STATO.md.
 # `speed-demon` e' entrato il 2026-07-30, e per due giorni e' stato il caso di
 # scuola del difetto che questo file deve evitare: HOWTORUN.md e README.md
 # dichiaravano «junction come le altre, da scripts/installa-skill.ps1» mentre
@@ -52,14 +52,15 @@ $ErrorActionPreference = "Stop"
 # chiuso VERDE 10/10 su `banco-prova-controtempo` — un sito vero, sopra uno schema
 # prodotto eseguendo schema-forge. Costruita e sabotata lo stesso giorno: 122 test,
 # 7 comandi su 7 esercitati, 22 classi di sabotaggio, tre difetti del gate trovati
-# e chiusi. Verbale: agenti/vetrina-crafter/COSTRUZIONE-2026-08-03.md.
+# e chiusi. Stato corrente in agenti/vetrina-crafter/STATO.md.
 # `launchpad` e' entrato il 2026-08-06, quando il suo gate a nove passi ha chiuso
-# VERDE 9/9 sul gemello pulito e ROSSO — coi motivi giusti — sul pilota
-# `fornodoro`, che non si deve pubblicare. 87 test, 36 classi di sabotaggio
-# tutte rosse. Verbale: agenti/launchpad/COSTRUZIONE-2026-08-06.md.
-# Attenzione a cosa questo NON dice: nessun deploy e' mai stato eseguito da
-# questa skill, e il collaudo avversario non e' stato fatto. Si installa perche'
-# il gate gira e rifiuta; non perche' abbia gia' pubblicato qualcosa.
+# VERDE 9/9 sul gemello pulito e ROSSO — coi motivi giusti — sul pilota `cavia`,
+# che non si deve pubblicare. 87 test alla nascita, 36 classi di sabotaggio tutte
+# rosse; poi il collaudo avversario in chat vergine. Stato corrente in
+# agenti/launchpad/STATO.md.
+# Attenzione a cosa questo NON dice: NESSUN DEPLOY e' mai stato eseguito da
+# questa skill, su nessun provider. Si installa perche' il gate gira e rifiuta;
+# non perche' abbia gia' pubblicato qualcosa.
 $skill = @("schema-forge", "gestionale-crafter", "vetrina-crafter", "flow-sentinel", "speed-demon", "launchpad", "site-doctor", "code-inquisition")
 
 # code-maniac NON e' in elenco di proposito: il README lo dichiara uno SNAPSHOT

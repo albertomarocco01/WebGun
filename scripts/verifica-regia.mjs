@@ -374,9 +374,10 @@ function main() {
 // sarebbe il primo a doverlo dichiarare.
 // E il confronto e' doppio perche' una junction non e' il suo bersaglio:
 // invocato da `.claude/skills/<skill>/...`, `resolve(argv[1])` restituisce il
-// percorso della junction mentre `import.meta.url` e' gia' canonico — il
-// confronto secco era falso e i cinque gate delle skill uscivano 0 muti
-// (misurato il 2026-08-04, P.4-pre, `PILOTA-PRE-2026-08-04.md` §2b).
+// percorso della junction, mentre Node canonicalizza i moduli e `import.meta.url`
+// e' gia' il percorso reale sotto `agenti/` — il confronto secco era falso e i
+// cinque gate delle skill uscivano 0 muti proprio sul canale con cui una chat
+// aperta su un progetto generato li invoca (misurato, non dedotto).
 // A `scripts/` della regia nessuna junction punta, e quindi qui la forma non
 // corregge niente: e' allineata perche' e' quella che l'`hint` di
 // `epiloghi-vivi` prescrive due file piu' in la', e chi prescrive una forma la

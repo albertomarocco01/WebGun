@@ -230,6 +230,43 @@ Nell'ordine, e l'ordine conta:
    ruotato. Un segreto ruotato e non scritto è un segreto che qualcuno
    rimetterà.
 
+### 5.1 Riscrivere la storia, se si decide di farlo
+
+Fatto una volta sola in questa casa, sul pilota, e queste sono le cose che sono
+costate: si scrivono qui perché la seconda volta non si ripaghino.
+
+- **Prima un bundle di tutta la storia, fuori dal repository.** `git bundle
+  create <fuori>/<progetto>-storia-pre-riscrittura-<data>.bundle --all`, poi
+  `git bundle verify` — deve dire *«records a complete history»*. Il bundle
+  **contiene il segreto**, ed è il suo mestiere: sta fuori dal repository e non
+  si consegna a nessuno.
+- **L'ordine è: prima si toglie il segreto da HEAD con un commit normale, poi
+  si riscrivono i blob.** Riscrivere prima lascia HEAD da rifare a mano sopra
+  una storia già cambiata.
+- **`git-filter-repo --replace-text` non applica le espressioni nell'ordine del
+  file:** applica prima **tutte** le letterali, poi le regex. Chi ha bisogno di
+  un ordine resti in **una sola famiglia** — solo `regex:`.
+- **Il testo di sostituzione può essere un bloccante nuovo.** Un `***RIMOSSO***`
+  infilato dentro `crypt('…')` è ancora «password in chiaro dentro `crypt`» per
+  la famiglia `credenziale-sql`, che a differenza di quella degli URL **non
+  chiama `eSegnaposto`**. Il rimedio non è un segnaposto migliore: è **rompere
+  la forma** che la famiglia cerca (p. es. sostituire anche la parentesi, così
+  che quel che resta non sia più una stringa letterale dentro `crypt`). Per gli
+  URL invece l'autorità **elisa** (`…@`) è assolta per iscritto, i tre asterischi
+  no.
+- **I messaggi di commit vogliono un file a parte:** `--replace-text` non li
+  tocca, serve `--replace-message`. Lì la sostituzione si scrive in prosa — «la
+  password nota» — perché un segnaposto in mezzo a una frase non si legge.
+- **Verifiche subito dopo**, tutte e cinque: commit prima/dopo uguali (nessuno
+  perso né svuotato), il segreto cercato su tutti i blob (`git rev-list --all` ×
+  `git grep -l`) e su tutti i messaggi, le date conservate, i file ignorati
+  sopravvissuti. Poi si rilancia `segreti` con lo stesso comando di prima.
+- **Il verbale che racconta la riscrittura può contenere il segreto.** È già
+  successo: incollare l'uscita di un gate, o l'espressione di sostituzione, in
+  un documento di un altro repository tracciato vuol dire togliere il segreto da
+  una storia e metterlo in un'altra. I valori si **elidono a mano** e si rilancia
+  il gate sul documento, invece di rileggerlo.
+
 E il caso del pilota, che vale come esempio perché è vero: il seed dichiara due
 account con `password123` **e va bene così in locale** — senza, nessuno
 potrebbe provare il gestionale, e la batteria E2E ci conia le sessioni. Quello

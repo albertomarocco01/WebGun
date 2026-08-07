@@ -534,8 +534,7 @@ test("un `errors` che non e' una lista non diventa quattro errori del runner", (
 // La forma e' quella VERA, catturata il 2026-07-28 da `npx playwright test
 // --reporter=json` sul banco `palestra` con le sei spec marcate `test.skip`:
 // una suite per file, `tests[].status = "skipped"` e `results[].status` uguale.
-// Un frammento inventato avrebbe provato la fixture, non la regola (§4.3 del
-// verbale di costruzione).
+// Un frammento inventato avrebbe provato la fixture, non la regola.
 const REPORT_TUTTI_SALTATI = {
   errors: [],
   suites: [
@@ -575,7 +574,7 @@ test("una batteria tutta rossa ha eseguito: e' un difetto trovato, non una verif
 // Le spec qui sotto hanno la forma vera del reporter JSON di Playwright — una
 // suite per file, `tests[].status`, `results[].status`, e l'annotazione `skip`
 // con la motivazione scritta — perche' un frammento inventato proverebbe la
-// fixture, non la regola (§4.3 del verbale di costruzione).
+// fixture, non la regola.
 
 const specSaltata = (id) => ({
   title: `${id} — in attesa del seed @flusso:${id}`, ok: true, tags: [],

@@ -650,9 +650,11 @@ async function main() {
 // E il confronto e' doppio perche' una junction non e' il suo bersaglio:
 // invocato da `.claude/skills/<skill>/...`, `resolve(argv[1])` restituisce il
 // percorso della junction mentre `import.meta.url` e' gia' canonico — il
-// confronto secco era falso e il gate usciva 0 muto (misurato il 2026-08-04,
-// P.4-pre, PILOTA-PRE-2026-08-04.md §2b). `realpathSync` scioglie la junction;
-// se solleva si ricade sul confronto testuale: mai un errore che ammutolisce.
+// confronto secco era falso e il gate usciva 0 muto: misurato il 2026-08-04 su
+// tutti e cinque i gate di allora, ed e' il canale con cui una chat aperta sul
+// repo di un progetto generato vede la skill. `realpathSync` scioglie la
+// junction; se solleva si ricade sul confronto testuale: mai un errore che
+// ammutolisce.
 if (process.argv[1]) {
   const questoModulo = fileURLToPath(import.meta.url);
   const invocato = resolve(process.argv[1]);

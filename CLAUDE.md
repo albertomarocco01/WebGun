@@ -1,5 +1,10 @@
 # CLAUDE.md — Contratto operativo Web Gun
 
+**Questo file sono le regole che ogni agente deve rispettare.** Se cerchi altro:
+[README.md](README.md) cos'è Web Gun · [COME-SI-USA.md](COME-SI-USA.md) come si lancia ·
+[ROADMAP.md](ROADMAP.md) cosa manca · [DECISIONI.md](DECISIONI.md) perché una scelta è stata
+fatta così · [CANTIERE.md](CANTIERE.md) le decisioni della direzione lavori.
+
 ## Contesto in 3 righe
 
 Web Gun è una pipeline di agenti specializzati che produce siti web professionali a partire da un prompt.

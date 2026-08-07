@@ -361,9 +361,10 @@ export function findingsCertificato(cert) {
 /**
  * La regola della Legge n°1, resa falsificabile.
  *
- * Il difetto che chiude: `PILOTA-2026-08-06.md` §4 — l'Open Graph assegnato a
- * speed-demon **e** a site-doctor nello stesso handoff, con site-doctor che non
- * esisteva; favicon `404` per tre anelli. Qui:
+ * Il difetto che chiude (per esteso in `references/perimetro.md` §Il difetto da
+ * cui nasce questa skill): l'Open Graph assegnato a speed-demon **e** a
+ * site-doctor nello stesso handoff, con site-doctor che non esisteva; favicon
+ * `404` per tre anelli. Qui:
  *
  *   - voce assente dalla tabella           → block (l'elenco e' nel codice)
  *   - due proprietari diversi              → block (E' IL DIFETTO)

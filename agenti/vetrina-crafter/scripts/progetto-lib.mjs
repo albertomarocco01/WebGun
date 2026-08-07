@@ -451,9 +451,11 @@ function findingsSlotDichiarati(contratto, idPagine) {
 /**
  * La firma e' piu' vecchia dello schema?
  *
- * E' il controllo che il §7 del `COLLAUDO-EVOLVE-2026-07-30.md` di Flow Sentinel
- * lascia aperto — «ora e' nella procedura, ma nessuno script lo fa» — risolto
- * senza git, confrontando due file dello stesso progetto.
+ * E' il buco che Flow Sentinel ha lasciato aperto collaudando il proprio
+ * `evolve`: la' il controllo della data e' finito nella PROCEDURA e nessuno
+ * script lo esegue, perche' la strada immaginata era `git log` e si ferma
+ * davanti a un progetto senza git. Qui e' risolto senza git, confrontando due
+ * date dichiarate in due file dello stesso progetto.
  * FALSO POSITIVO DICHIARATO: un handoff riscritto per un refuso invecchia una
  * firma che era buona. E' un `issue`, non un `block`, proprio per questo.
  */

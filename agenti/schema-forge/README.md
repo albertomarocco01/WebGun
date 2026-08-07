@@ -4,9 +4,9 @@
 
 Agente Web Gun per lo **schema dati** dei progetti generati (Postgres/Supabase). È il primo agente costruttore della pipeline: Gestionale Crafter e AI Specialist costruiscono sopra ciò che decide qui — **Fly UI no, perché non esiste** (`DECISIONI.md` §21).
 
-**Stato:** v1.5 — collaudata su database reale e nel comportamento. **144 test** sugli script, gate a **9 passi**, ESLint 0 errori 0 warning, `knip` pulito. `jscpd` riporta **2 cloni**, entrambi dichiarati (§7).
+**Stato:** v1.5 — collaudata su database reale e nel comportamento. **228 test** sugli script (misurati il 2026-08-07), gate a **9 passi**, ESLint 0 errori 0 warning, `knip` pulito. `jscpd` riporta **3 cloni**, tutti dichiarati (§7).
 
-> **Non ancora usabile su un progetto cliente**, ma il gate ha smesso di mentire. Il collaudo indipendente del 2026-07-26 aveva riprodotto **16 difetti su 17** — cinque Critical — su uno schema che il gate dichiarava **VERDE 8/8** (i passi erano otto). Dal 2026-07-27 quello stesso schema chiude **ROSSO**: l'audit blocca l'auto-promozione via colonna, segnala la macchina a stati aggirabile in `insert`, e **pretende un test pgTAP che attacchi ogni policy di scrittura** — scritti quei test, due asserzioni su 23 falliscono, e sono esattamente i due Critical. Resta vero che l'audit guarda la **forma** delle policy: la semantica la dimostrano i test negativi, e quelli li scrive l'agente. Dettagli in `STATO.md`, verbali in `COLLAUDO-2026-07-25.md` e `COLLAUDO-2026-07-26.md`.
+> **Non ancora usabile su un progetto cliente**, ma il gate ha smesso di mentire. Il collaudo indipendente del 2026-07-26 aveva riprodotto **16 difetti su 17** — cinque Critical — su uno schema che il gate dichiarava **VERDE 8/8** (i passi erano otto). Dal 2026-07-27 quello stesso schema chiude **ROSSO**: l'audit blocca l'auto-promozione via colonna, segnala la macchina a stati aggirabile in `insert`, e **pretende un test pgTAP che attacchi ogni policy di scrittura** — scritti quei test, due asserzioni su 23 falliscono, e sono esattamente i due Critical. Resta vero che l'audit guarda la **forma** delle policy: la semantica la dimostrano i test negativi, e quelli li scrive l'agente. Dettagli in `STATO.md`.
 
 ---
 
@@ -159,11 +159,11 @@ Attenzione al default: lanciati **a mano**, `rls-audit.mjs` ed `erd.mjs` puntano
 | `verify.mjs` | il gate — una funzione per passo, `main()` è solo l'elenco delle chiamate |
 | `rls-audit.mjs` · `erd.mjs` | **gusci**: solo I/O (psql, stampa) |
 | `audit-lib.mjs` · `erd-lib.mjs` | **le regole**, funzioni pure senza I/O |
-| `*.test.mjs` | 132 test, runner nativo, zero dipendenze |
+| `*.test.mjs` | 228 test, runner nativo, zero dipendenze |
 
 Le regole stanno nelle lib per un motivo: tre bug (CRLF di psql, cast booleano `'true'`/`'t'`, parsing per riga che mandava in crash l'audit sulle policy con sottoquery) hanno tenuto spente delle regole senza che nulla lo segnalasse, perché non c'era modo di eseguirle senza un database. **Una regola nuova si aggiunge nella lib, col suo test.**
 
-**I due cloni che `jscpd` riporta, e perché restano.** `righeDaPsql` è identica in `audit-lib.mjs` ed `erd-lib.mjs` (8 righe); la gestione dell'errore di `psql` è identica in `erd.mjs` e `rls-audit.mjs` (11 righe, cambia solo il messaggio). Estrarle in un terzo modulo accoppierebbe due librerie tenute indipendenti apposta, per otto righe: la duplicazione è una **decisione**, non una svista. `jscpd` esce comunque `0` — non c'è soglia configurata — quindi non ferma niente: è scritto qui perché uno strumento che segnala qualcosa non deve essere raccontato come «pulito».
+**I tre cloni che `jscpd` riporta, e perché restano** (rimisurati il 2026-08-07: 3 cloni, 22 righe duplicate, 0,56%). Due stanno fra `audit-lib.mjs` ed `erd-lib.mjs` — `righeDaPsql` (8 righe) e la normalizzazione che la segue (6 righe); il terzo è la gestione dell'errore di `psql`, identica in `erd.mjs` e `rls-audit.mjs` (8 righe, cambia solo il messaggio). Estrarli in un terzo modulo accoppierebbe due librerie tenute indipendenti apposta, per una ventina di righe: la duplicazione è una **decisione**, non una svista. `jscpd` esce comunque `0` — non c'è soglia configurata — quindi non ferma niente: è scritto qui perché uno strumento che segnala qualcosa non deve essere raccontato come «pulito».
 
 ## 8. Cosa consegna
 
@@ -220,6 +220,6 @@ Scritto qui perché un gate verde non deve essere letto come «schema sicuro»:
 | `references/migrazioni.md` | immutabilità, expand-contract, distruttivo autorizzato e gate |
 | `references/verifica-deterministica.md` | la batteria, l'ordine, cosa blocca |
 | `references/pattern-ecommerce.md` | modello di riferimento e-commerce, listini, ordini |
-| `STATO.md` | stato, collaudi, decisioni prese, cosa resta aperto |
-| `COLLAUDO-2026-07-25.md` | verbale del collaudo del comportamento |
-| `COLLAUDO-2026-07-26.md` | verbale del collaudo indipendente: dominio non e-commerce, attacchi agli script, `/code-inquisition` |
+| `STATO.md` | stato, collaudi, decisioni prese, cosa resta aperto — **compresa la cronologia dei collaudi**, che prima stava nei verbali |
+
+I verbali dei singoli collaudi (25 e 26 luglio, i piloti, le tornate di correzione) non stanno più nella cartella: ciò che se ne doveva ricordare è stato portato dentro `STATO.md` e le `references/`. Per recuperarli dalla storia di git, `ARCHIVIO.md` nella radice della regia.

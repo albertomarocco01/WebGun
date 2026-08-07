@@ -1,10 +1,11 @@
 /**
  * eseguibili.mjs — Chi decide QUALE binario esegue il gate.
  *
- * PERCHE' ESISTE UN MODULO APPOSTA. Il 2026-08-06 il tribunale
- * (`INQUISIZIONE-GATE-2026-08-06.md` § C1, `executed-confirmed`) ha misurato che
- * i quattro gate storici lasciavano scegliere al progetto AUDITATO quale
- * eseguibile lanciare. I gate si lanciano dalla radice del progetto generato —
+ * PERCHE' ESISTE UN MODULO APPOSTA. Il 2026-08-06 il tribunale sui quattro gate
+ * storici (rilievo C1, `executed-confirmed`; verbale archiviato il 2026-08-07:
+ * `ARCHIVIO.md`) ha misurato che quei gate lasciavano scegliere al progetto
+ * AUDITATO quale eseguibile lanciare.
+ * I gate si lanciano dalla radice del progetto generato —
  * lo prescrive il `CLAUDE.md` — e sia `where` sia `spawnSync` col nome nudo
  * cercano PRIMA nella directory corrente. Un `supabase.cmd` piantato nella
  * radice portava a casa `db-reset`, `db-lint` e `db-advisors`; un finto `node`

@@ -51,7 +51,7 @@ Se qualcosa ti sembra richiedere un'eccezione a una di queste otto, **fermati e 
 | launchpad | 9 | si può pubblicare? segreti, impronta, verdetti a monte, runbook firmato da un umano |
 | site-doctor | 9 | conformità: informativa, dati raccolti, cosa si archivia nel browser, a11y dell'HTML servito |
 
-**Il pilota**: `C:\Users\Utente\Desktop\fornodoro`, pizzeria «Forno d'Oro». Next.js App Router + TypeScript + Tailwind + Supabase. Supabase su 7621/7622, app di produzione su **3621**. Costruito da cinque agenti in catena (handoff `07 → 08 → 10 → 12 → 13`). **Mai pubblicato.**
+**Il pilota**: `C:\Users\Utente\Desktop\cavia` (si chiamava `fornodoro` fino alla rinomina del 2026-08-07), pizzeria «Forno d'Oro». Next.js App Router + TypeScript + Tailwind + Supabase. Supabase su 7621/7622, app di produzione su **3621**. Costruito da cinque agenti in catena (handoff `07 → 08 → 10 → 12 → 13`). **Mai pubblicato**, e per decisione `CANTIERE.md` D27 non si pubblicherà: ha fatto il suo mestiere di banco. Stack e app sono **spenti** — si riaccendono con `npx supabase start` + `npx next start -p 3621` da quella cartella.
 
 **Dove siamo, in percentuale onesta**: ~65%. Le sette skill sono ~90% (esistono, collaudate, con residui); il filo su un progetto vero ~85% ma con zero pubblicazioni; **l'ingresso della pipeline è a 0%** — Brief Smith, Preventivo Smith e Prompt Smith non esistono, quindi oggi la pipeline non parte da un cliente, parte da Alberto.
 
@@ -61,7 +61,7 @@ Se qualcosa ti sembra richiedere un'eccezione a una di queste otto, **fermati e 
 
 ## 3. Le regole di casa che non si ridiscutono
 
-Fonte unica: **`CANTIERE.md`** (decisioni D1-D24, pacchetti, giornale) e **`DECISIONI.md`**. In caso di scarto fra la tua memoria e il repo, **vince il repo**. Le più operative:
+Fonte unica: **`CANTIERE.md`** (le decisioni numerate) e **`DECISIONI.md`**. Il **giornale di cantiere** e la tabella dei pacchetti non stanno più lì: D28 li ha tolti il 2026-08-07 e l'ultima versione che li contiene è il commit `f4b625a` (`git show f4b625a:CANTIERE.md`, vedi `ARCHIVIO.md`). In caso di scarto fra la tua memoria e il repo, **vince il repo**. Le più operative:
 
 - **MANCANTE ≠ PASS** (`DECISIONI.md` §18). Uno strumento assente, un controllo saltato, una premessa mai misurata si dichiarano **mancanti**. Un gate rosso per verifiche mancanti resta rosso. Questa è la regola madre: quasi tutti i difetti gravi trovati in questo cantiere sono sue violazioni travestite.
 - **La forma ricorrente dei difetti non è «il gate calcola male», è «il gate si lascia convincere»**: una regola non scatta, il passo resta verde, e il dettaglio stampa un numero che si legge come copertura avvenuta (`azioni server: 1`, `13 file di spec`). Quando leggi un dettaglio verde, chiediti sempre: **quanti oggetti ha davvero esaminato?**
@@ -107,16 +107,16 @@ git worktree remove --force "<scratch>/nome"
 
 ## 5. Cosa sta girando adesso — la terza ondata
 
-Emessa il **2026-08-06 (notte)**, commit `8d60687`. Quattro chat parallele, tutte **Opus 5 · high**. Solo P.4i usa Docker.
+Emessa il **2026-08-06 (notte)**, commit `8d60687`. Quattro chat parallele, tutte **Opus 5 · high**. Solo P.4i usava Docker. **Tutte e quattro sono rientrate**, e i loro mandati sono stati archiviati con la potatura del 2026-08-07 (`ARCHIVIO.md`); questa tabella resta come **forma** di un'ondata, non come lavoro in corso.
 
-| # | Mandato | Perimetro | Cosa deve tornare |
-|---|---|---|---|
-| **P.7e** | `prompts/P7e-il-parser-e-i-trentuno.md` | le quattro skill storiche | **n°50** riprodotto e chiuso (il gate del gestionale è rosso su ogni progetto Next di questa casa), l'audit di **ogni scanner scritto a mano** con un test ostile ciascuno, il contrasto letto per audit e non per categoria, i 31 MEDIUM/LOW |
-| **P.5-P3** | `agenti/launchpad/prompts/P5-P3-le-tre-decisioni.md` | `agenti/launchpad/**` | le decisioni D20 e D23 eseguite, il messaggio che stampa una data e confronta un istante, `banco.mjs` VERDE 9/9 due volte |
-| **P.6-P3** | `agenti/site-doctor/prompts/P6-P3-le-deleghe-e-la-scadenza.md` | `agenti/site-doctor/**` | il tribunale sul codice cambiato **come primo atto**, le cinque voci prese in carico (D21), `--scadenza` con default **misurato** |
-| **P.4i** | `prompts/P4i-il-certificato-e-la-colonna.md` | `fornodoro/**` (ha lo stack) | il primo **certificato di conformità** del pilota, le ~50 voci del registro migrate alla colonna fissa, n°27 scritta secondo D24, i certificati ridatati per ultimi. **E2E 22/22** è il vincolo che batte tutti |
+| # | Perimetro | Cosa doveva tornare |
+|---|---|---|
+| **P.7e** | le quattro skill storiche | **n°50** riprodotto e chiuso (il gate del gestionale era rosso su ogni progetto Next di questa casa), l'audit di **ogni scanner scritto a mano** con un test ostile ciascuno, il contrasto letto per audit e non per categoria, i 31 MEDIUM/LOW |
+| **P.5-P3** | `agenti/launchpad/**` | le decisioni D20 e D23 eseguite, il messaggio che stampa una data e confronta un istante, `banco.mjs` VERDE 9/9 due volte |
+| **P.6-P3** | `agenti/site-doctor/**` | il tribunale sul codice cambiato **come primo atto**, le cinque voci prese in carico (D21), `--scadenza` con default **misurato** |
+| **P.4i** | il pilota (ha lo stack) | il primo **certificato di conformità** del pilota, le ~50 voci del registro migrate alla colonna fissa, n°27 scritta secondo D24, i certificati ridatati per ultimi. **E2E 22/22** era il vincolo che batteva tutti |
 
-**Due chat si toccano di proposito** (P.5-P3 scrive il gate che legge la colonna, P.4i migra il registro che la prende). È governato da **D18 §3**: ogni misura cita il commit della regia con cui è stata fatta, e un rosso nuovo da un gate più severo **si segnala invece di nasconderlo**.
+**Due chat si toccavano di proposito** (P.5-P3 scriveva il gate che legge la colonna, P.4i migrava il registro che la prende). È governato da **D18 §3**: ogni misura cita il commit della regia con cui è stata fatta, e un rosso nuovo da un gate più severo **si segnala invece di nasconderlo**. Lo stato corrente di ogni skill non si legge qui: sta in `agenti/<skill>/STATO.md`.
 
 ### Le misure di riferimento, da cui parti
 
@@ -136,7 +136,7 @@ Sono il tuo pavimento: un numero sotto questi è una regressione da spiegare.
 2. **Audit dei perimetri**: per ogni commit dell'ondata, quali cartelle di primo livello tocca. Un commit che ne attraversa due senza mandato è un rilievo (è successo: `ab978cd`).
 3. **Verifica le accuse che ti passano.** Una chat che dice «il numero del costruttore era sbagliato» va controllata come tutte le altre: il 2026-08-06 una di queste accuse era falsa.
 4. **Decidi ciò che ti escalano**, e scrivi la decisione in `CANTIERE.md` con la sua motivazione e la misura che l'ha forzata.
-5. **Chiudi le righe della terza ondata** con il record di consegna, aggiungi le decisioni nuove, scrivi la voce di giornale (data + cosa hai misurato + cosa hai deciso + cosa hai sbagliato).
+5. **Chiudi le righe dell'ondata** con il record di consegna e aggiungi le decisioni nuove in `CANTIERE.md`. (Fino al 2026-08-07 si scriveva anche una voce di **giornale** — data + cosa hai misurato + cosa hai deciso + cosa hai sbagliato; D28 ha tolto il giornale da `CANTIERE.md`, quindi oggi ciò che vale oltre l'ondata va in una **decisione** o nello `STATO.md` della skill, non in una cronaca.)
 6. **Emetti l'ondata successiva** se serve, con lo stesso schema: perimetri disgiunti, criteri falsificabili, modello ed effort, la regola del commit con pathspec.
 7. **Committa** con `git add -- <percorsi>` e `git commit -F - -- <percorsi>`.
 8. **Aggiorna la memoria** (`MEMORY.md` + i file in `memory/`) solo per ciò che vale oltre questa conversazione.
@@ -144,7 +144,7 @@ Sono il tuo pavimento: un numero sotto questi è una regressione da spiegare.
 
 ```
 wt -d "C:\Users\Utente\Desktop\WebGun" pwsh -NoExit -Command "claude --dangerously-skip-permissions"
-wt -d "C:\Users\Utente\Desktop\fornodoro" pwsh -NoExit -Command "claude --dangerously-skip-permissions"
+wt -d "C:\Users\Utente\Desktop\cavia" pwsh -NoExit -Command "claude --dangerously-skip-permissions"
 ```
 
 ---
@@ -161,7 +161,7 @@ wt -d "C:\Users\Utente\Desktop\fornodoro" pwsh -NoExit -Command "claude --danger
 **Cose che restano al cantiere, in ordine di valore:**
 
 1. **La terna d'ingresso** — Brief Smith, Preventivo Smith, **Prompt Smith**. È il 35% che manca ed è il pezzo che trasforma Web Gun da «catena che Alberto guida» a «pipeline che parte da un prompt». Prompt Smith è il più importante dei tre: è il cancello.
-2. `HOWTORUN.md` dichiara ancora **site-doctor e launchpad come 🔵 da creare**: è vecchio di due righe, e il gate della regia non lo guarda (guarda `README.md` e `installa-skill.ps1`). Minuteria, ma è documentazione che mente.
+2. `HOWTORUN.md` **non è guardato dal gate della regia** (che guarda `README.md` e `installa-skill.ps1`): le sue due righe che davano site-doctor e launchpad per «da creare» sono state corrette a mano il 2026-08-07, ma niente impedisce che rimarcisca. Chi tocca una skill controlla anche lì.
 3. Il debito residuo delle sette skill e le ~50 voci del pilota.
 4. Gli agenti opzionali: Fly UI, AI Specialist, Cyber Shield.
 
@@ -184,7 +184,7 @@ La forma che funziona, misurata su otto pacchetti:
 
 ## 9. Il primo passo, adesso
 
-Leggi in quest'ordine: `CANTIERE.md` (le decisioni D14 e D17-D24, la tabella «Terza ondata», l'ultima voce del giornale), `DECISIONI.md` §6 §18 §19 §25, `CLAUDE.md`. Poi `git log --oneline -25` in entrambi i repo.
+Leggi in quest'ordine: `CANTIERE.md` (le decisioni D14, D17-D24 e D27-D28), `DECISIONI.md` §6 §18 §19 §25, `CLAUDE.md`, `ARCHIVIO.md` (cosa è stato tolto il 2026-08-07 e come si ripesca). Poi `git log --oneline -25` in entrambi i repo, e lo `STATO.md` di ogni skill che ti interessa: è lì che vive lo stato corrente, non nei verbali.
 
 Poi verifica lo stato della macchina — app sulla 3621, stack Supabase acceso, alberi puliti — e **di' ad Alberto dove sei, in tre righe, prima di fare qualunque altra cosa**.
 

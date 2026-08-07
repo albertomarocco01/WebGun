@@ -43,8 +43,8 @@ test("la versione del contratto `--json` e il default della storia sono dichiara
  * codice d'uscita crede di aver visto un verde. E il solo confronto testuale e'
  * FALSO quando lo script e' invocato dalla junction `.claude/skills/…`, dove
  * `argv[1]` resta il percorso della junction mentre `import.meta.url` e' gia'
- * canonico: stesso identico sintomo, uscita 0 muta. Otto script di questa casa
- * lo hanno fatto per davvero (IGIENE2-JUNCTION-2026-08-04.md).
+ * canonico: stesso identico sintomo, uscita 0 muta. Non e' un'ipotesi: il
+ * 2026-08-04 otto script di questa casa lo facevano davvero.
  */
 for (const nome of ["verify.mjs", "segreti.mjs", "impronta.mjs"]) {
   test(`${nome}: epilogo a doppio confronto, e nessun \`import.meta.main\``, () => {

@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Audit delle affermazioni: rilancia le 25 classi di sabotaggio DEL COSTRUTTORE
-// contro il gate corretto dal collaudo, e confronta con le uscite incollate in
-// `COSTRUZIONE-2026-08-06.md` §6.2.
+// contro il gate corretto dal collaudo. L'atteso, riga per riga, sta in
+// `references/sabotaggio.md` §Le venticinque classi: il banco conforme VERDE,
+// e ogni classe ROSSA sul passo che dichiara di sorvegliarla. Una riga che si
+// discosta e' un'affermazione del costruttore che oggi non regge piu'.
 //
 // La premessa si misura come nel mio giro: il banco che risponde dev'essere
 // quello che ho acceso io.

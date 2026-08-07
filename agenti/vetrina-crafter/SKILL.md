@@ -26,7 +26,7 @@ Stack di riferimento: **Next.js (App Router) + TypeScript + Tailwind + Supabase*
 ## Regole non negoziabili
 
 - **La vetrina non crea tabelle, non scrive migrazioni, non tocca la RLS.** Una tabella che manca, una colonna che manca, una policy che non lascia leggere all'anonimo: sono **richieste a schema-forge**, e restano scritte nell'handoff finché non sono chiuse.
-- **Un dato che non deve essere pubblico non si nasconde in pagina: si chiede la policy.** Filtrare nel componente lascia il dato nell'HTML servito e nel payload RSC — in questa casa è già stato misurato che «il rifiuto deciso dal browser» arriva dopo che il contenuto è stato consegnato (flow-sentinel, `COLLAUDO-2026-07-28.md` §4.1). Se un anonimo non deve vederlo, non deve **riceverlo**.
+- **Un dato che non deve essere pubblico non si nasconde in pagina: si chiede la policy.** Filtrare nel componente lascia il dato nell'HTML servito e nel payload RSC — in questa casa è già stato misurato che «il rifiuto deciso dal browser» arriva **dopo** che il contenuto è stato consegnato: un controllo di ruolo spostato dal server al browser serve la pagina riservata con stato 200 e corpo completo, e solo dopo rimanda altrove; chi legge la risposta ha già tutto, e un test che *aspetta* il redirect gira sulla pagina lecita e la trova pulita. Se un anonimo non deve vederlo, non deve **riceverlo**.
 - **Nessuna chiave di servizio nel sito pubblico.** `service_role` scavalca ogni policy; su una superficie interamente anonima è la differenza fra un catalogo e un'esportazione dell'anagrafica. Il client Supabase si costruisce **solo** nei moduli dichiarati in `vetrina.config.json`.
 - **I componenti si importano solo dalla cucitura `src/components/ui/`.** Se serve una primitiva nuova, nasce lì. E la cucitura non importa logica di dominio né il client dei dati: se lo facesse, sostituirla un giorno vorrebbe dire riscrivere anche il resto.
 - **Le pagine compongono soltanto.** Query e trasformazioni stanno in `src/modules/<dominio>/`, dipendenze in una direzione (UI → logica → dati), come prescrive `CLAUDE.md`.
@@ -141,7 +141,7 @@ Dieci passi sono più dei sette di gestionale-crafter, flow-sentinel e speed-dem
 
 ## `evolve` — quando lo schema o gli slot cambiano
 
-Scritto guardando cosa ha imparato flow-sentinel collaudando il proprio `evolve` (`COLLAUDO-EVOLVE-2026-07-30.md`): la lezione è che i casi sono più di quelli che vengono in mente, e che **il più frequente è quello cieco**.
+Scritto guardando cosa ha imparato flow-sentinel collaudando il proprio `evolve`: la lezione è che i casi sono più di quelli che vengono in mente, e che **il più frequente è quello cieco**.
 
 **Prima di tutto, la data.** Se `Confermato da:` è più vecchia dell'ultimo handoff di schema-forge, l'elenco delle pagine è un'opinione datata e va detto prima di ogni altra cosa. Qui, a differenza di flow-sentinel, il controllo è **anche** nel gate (passo 1, `issue`) — perché lì la difesa era la procedura, e nessuno script la eseguiva.
 
