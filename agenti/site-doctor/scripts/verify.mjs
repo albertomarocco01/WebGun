@@ -229,7 +229,24 @@ const leggiSeCe = (relativo) => {
  * altro repo.
  */
 const leggiDentroIlProgetto = (relativo) => {
-  const pieno = resolve(PROGETTO, String(relativo ?? ""));
+  const chiesto = String(relativo ?? "");
+  // I due punti, prima di qualunque risoluzione. Su NTFS `file.md:ombra` e'
+  // un **flusso di dati alternativo** dello stesso file: il tribunale del
+  // 2026-08-07 l'ha usato per far leggere al gate un testo che chi apre il
+  // documento in Explorer o in un editor NON vede. La riga
+  // `| canonical | speed-demon | docs/handoff/altro.md:ombra | delegato |`
+  // faceva passare la voce mentre il file visibile non la nominava affatto —
+  // controllo negativo misurato: senza `:ombra` la stessa riga dava `block`.
+  //
+  // I tre guard qui sotto non possono vederlo, e non e' colpa loro: per il
+  // filesystem lo stream E' lo stesso file. `existsSync` e' vero, `isFile()` e'
+  // vero, e `realpathSync` restituisce lo stesso percorso — non c'e' nessun
+  // collegamento da sciogliere. E' la classe della junction (`ed2d2dc`) da una
+  // porta che il rimedio della junction non poteva chiudere.
+  //
+  // Nessun percorso legittimo dentro un progetto ha bisogno di un due punti.
+  if (chiesto.includes(":")) return null;
+  const pieno = resolve(PROGETTO, chiesto);
   const radice = resolve(PROGETTO);
   if (pieno !== radice && !pieno.startsWith(radice + sep)) return null;
   if (!existsSync(pieno) || !statSync(pieno).isFile()) return null;
@@ -1042,14 +1059,28 @@ const PASSI = [
     nome: "contratto d'uscita (handoff)",
     async esegui() {
       const trovato = trovaHandoff();
-      const percorso = typeof trovato === "string" ? trovato : trovato?.percorso ?? null;
+      const percorso = trovato?.percorso ?? null;
       const testo = percorso ? leggiSeCe(percorso) : null;
       const findings = contrattoUscita(percorso ?? `${HANDOFF_DIR}/<n>-site-doctor.md`, testo, verdettoDa(steps));
-      if (trovato && typeof trovato !== "string" && trovato.ambigui) {
+      if (trovato?.ambigui) {
         findings.push({
           severity: "block",
           object: HANDOFF_DIR,
           message: `${trovato.ambigui.length} handoff con lo stesso numero (${trovato.ambigui.join(", ")}): non c'e' un «ultimo», e chi viene dopo non sa quale ho letto`,
+        });
+      }
+      // Un file che nomina questa skill e non ha la forma `<n>-site-doctor.md`
+      // non si indovina e non si ignora: si dice. Ignorarlo e' come il gate
+      // arrivava a chiudere OK citando un handoff vecchio mentre quello nuovo,
+      // scritto con un separatore diverso, non veniva letto da nessuno.
+      if (trovato?.estranei?.length) {
+        findings.push({
+          severity: "block",
+          object: HANDOFF_DIR,
+          message:
+            `${trovato.estranei.length} file nominano questa skill senza avere la forma ` +
+            `\`<numero>-site-doctor.md\` (${trovato.estranei.join(", ")}): rinominali, oppure ` +
+            `il piu' recente non verra' mai letto e nessuno se ne accorgera'`,
         });
       }
       return record(this.id, this.nome, statoDaFindings(findings), findings.length === 0 ? `${percorso}` : dettaglioFindings(findings));
@@ -1178,15 +1209,32 @@ function percorsoInternoConQuery(href, base) {
 function trovaHandoff() {
   const dir = join(PROGETTO, HANDOFF_DIR);
   if (!existsSync(dir)) return null;
-  const nomi = readdirSync(dir).filter((n) => /-site-doctor\.md$/.test(n));
-  if (nomi.length === 0) return null;
+  const tutti = readdirSync(dir).filter((n) => /\.md$/i.test(n));
+  const nomi = tutti.filter((n) => /-site-doctor\.md$/i.test(n));
+  // Scoprire e riconoscere sono due cose. La regexp stretta faceva le due
+  // insieme, e cosi' un file che si chiama `10_site-doctor.md` non entrava
+  // NEMMENO nell'elenco: il gate chiudeva OK citando `9-site-doctor.md` come
+  // «l'ultimo» e non leggeva mai quello vero (tribunale P.6-P4, riprodotto
+  // end-to-end). E' la classe di `ed2d2dc` — «l'ultimo handoff era il nono per
+  // sempre» — riaperta dal SEPARATORE invece che dall'ordinamento: quella
+  // correzione guardava come si ordina, non come si scopre.
+  //
+  // Ora tutto cio' che nomina questa skill viene scoperto; cio' che non ha la
+  // forma `<numero>-site-doctor.md` non viene indovinato, viene DETTO.
+  const estranei = tutti.filter((n) => !nomi.includes(n) && /site[-_. ]?doctor/i.test(n));
+  if (nomi.length === 0) {
+    return estranei.length > 0 ? { percorso: null, estranei, ambigui: null } : null;
+  }
   const numerati = nomi.map((n) => ({ nome: n, numero: /^(\d+)-/.exec(n) ? Number(/^(\d+)-/.exec(n)[1]) : null }));
   const senzaNumero = numerati.filter((x) => x.numero === null);
   const conNumero = numerati.filter((x) => x.numero !== null).sort((a, b) => a.numero - b.numero);
-  if (conNumero.length === 0) return `${HANDOFF_DIR}/${senzaNumero.sort((a, b) => a.nome.localeCompare(b.nome)).pop().nome}`;
+  if (conNumero.length === 0) {
+    const scelto = senzaNumero.sort((a, b) => a.nome.localeCompare(b.nome)).pop().nome;
+    return { percorso: `${HANDOFF_DIR}/${scelto}`, ambigui: null, estranei };
+  }
   const ultimo = conNumero[conNumero.length - 1];
   const pari = conNumero.filter((x) => x.numero === ultimo.numero);
-  return { percorso: `${HANDOFF_DIR}/${ultimo.nome}`, ambigui: pari.length > 1 ? pari.map((x) => x.nome) : null };
+  return { percorso: `${HANDOFF_DIR}/${ultimo.nome}`, ambigui: pari.length > 1 ? pari.map((x) => x.nome) : null, estranei };
 }
 
 // ------------------------------------------------------------------- verdetto

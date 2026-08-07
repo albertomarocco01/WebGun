@@ -346,6 +346,158 @@ createServer((q,s)=>{ if(q.url.startsWith("/_next/")){s.writeHead(200,{"content-
  * ucciso dal proprio timeout non produce niente: **il MANCANTE peggiore e' un
  * silenzio che nessuno ha scritto.**
  */
+describe("tribunale P.6-P4 — il perimetro del progetto, provato eseguendolo", () => {
+  const GATE = fileURLToPath(new URL("./verify.mjs", import.meta.url));
+  const attendi = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const BANCO = `const {createServer}=require("http");
+createServer((q,s)=>{ s.writeHead(200,{"content-type":"text/html; charset=utf-8"});
+ s.end('<!DOCTYPE html><html lang="it"><head><title>T</title></head><body><main><h1>T</h1><p>BANCOP6P401</p></main></body></html>'); }).listen(__PORTA__,"127.0.0.1");`;
+
+  const accendi = async (dir, porta) => {
+    const file = join(dir, "banco-di-prova.cjs");
+    writeFileSync(file, BANCO.replace("__PORTA__", String(porta)), "utf8");
+    const proc = spawn(process.execPath, [file], { stdio: "ignore" });
+    for (let i = 0; i < 80; i += 1) {
+      try {
+        const r = await fetch(`http://127.0.0.1:${porta}/__vivo`, { signal: AbortSignal.timeout(400) });
+        if (r.status) return { proc, url: `http://127.0.0.1:${porta}` };
+      } catch {
+        /* non ancora */
+      }
+      await attendi(150);
+    }
+    proc.kill();
+    throw new Error(`il banco su ${porta} non ha risposto`);
+  };
+
+  const conProgetto = async (file, porta, prova, dopoScrittura = null) => {
+    const dir = mkdtempSync(join(tmpdir(), "sd-p6p4-"));
+    let banco = null;
+    try {
+      for (const [rel, contenuto] of Object.entries(file)) {
+        mkdirSync(dirname(join(dir, rel)), { recursive: true });
+        writeFileSync(join(dir, rel), contenuto, "utf8");
+      }
+      if (dopoScrittura) dopoScrittura(dir);
+      banco = await accendi(dir, porta);
+      const r = spawnSync(process.execPath, [GATE, "--url", banco.url, "--json"], { cwd: dir, encoding: "utf8", timeout: 120000 });
+      let doc;
+      try {
+        doc = JSON.parse(r.stdout);
+      } catch {
+        throw new Error(`il gate non ha prodotto JSON (uscita ${r.status}): ${(r.stdout || r.stderr || "").slice(0, 300)}`);
+      }
+      return await prova(doc, dir);
+    } finally {
+      banco?.proc.kill();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  const stato = (doc, id) => doc.steps.find((s) => s.id === id)?.status;
+  const dettaglio = (doc, id) => doc.steps.find((s) => s.id === id)?.detail ?? "";
+  const BASE = { ".next/BUILD_ID": "BANCOP6P401", "docs/PROGETTO.md": "progetto finto" };
+
+  const CERT = (dove) =>
+    [
+      "# Certificato di idoneita'",
+      "",
+      "Confermato da: Alberto Marocco il 2026-08-07",
+      "",
+      "## Voci di conformita' e proprieta'",
+      "",
+      "| voce | proprietario | dove e dichiarato | esito |",
+      "|---|---|---|---|",
+      `| canonical | speed-demon | ${dove} | delegato |`,
+      "",
+    ].join("\n");
+
+  // ---- il flusso di dati alternativo di NTFS --------------------------------
+  // Il file che un revisore apre in Explorer non nomina la voce; il flusso
+  // nascosto sullo STESSO file si'. I tre guard di `leggiDentroIlProgetto` non
+  // possono vederlo, e non e' colpa loro: per il filesystem lo stream E' quel
+  // file — `existsSync` vero, `isFile()` vero, `realpathSync` identico, nessun
+  // collegamento da sciogliere. E' la classe della junction di `ed2d2dc` da una
+  // porta che il rimedio della junction non poteva chiudere.
+  it("SD-P6P4-1: un flusso di dati alternativo NTFS non entra nel perimetro del progetto", async () => {
+    const conStream = (dir) => {
+      try {
+        writeFileSync(join(dir, "docs/handoff/altro.md:ombra"), "Qui si nomina il canonical, eccome.\n", "utf8");
+      } catch {
+        /* su un filesystem senza ADS il caso non esiste, e l'asserzione resta vera */
+      }
+    };
+    await conProgetto(
+      {
+        ...BASE,
+        "docs/handoff/9-site-doctor.md": "# 9\n\nGate: VERDE\n",
+        "docs/handoff/altro.md": "Questo documento NON nomina quella voce.\n",
+        "docs/conformita.md": CERT("docs/handoff/altro.md:ombra"),
+      },
+      3941,
+      (doc) => {
+        // La voce delegata non deve risultare coperta: il gate non ha il diritto
+        // di leggere un testo che chi firma il documento non vede.
+        assert.equal(stato(doc, "perimetro"), "fail");
+        assert.match(dettaglio(doc, "perimetro"), /canonical/);
+      },
+      conStream,
+    );
+  });
+
+  it("SD-P6P4-2: senza il flusso, la stessa riga si comporta come sempre (controllo negativo)", async () => {
+    await conProgetto(
+      {
+        ...BASE,
+        "docs/handoff/9-site-doctor.md": "# 9\n\nGate: VERDE\n",
+        "docs/handoff/altro.md": "Questo documento NON nomina quella voce.\n",
+        "docs/conformita.md": CERT("docs/handoff/altro.md"),
+      },
+      3942,
+      (doc) => {
+        // Stesso esito, ma per la ragione giusta: il file esiste e non la nomina.
+        assert.equal(stato(doc, "perimetro"), "fail");
+        assert.match(dettaglio(doc, "perimetro"), /canonical/);
+      },
+    );
+  });
+
+  // ---- il separatore che rendeva invisibile l'ultimo handoff ----------------
+  it("SD-P6P4-3: un handoff con un separatore diverso non sparisce in silenzio", async () => {
+    await conProgetto(
+      {
+        ...BASE,
+        "docs/handoff/9-site-doctor.md": "# 9\n\nGate: VERDE\n",
+        "docs/handoff/10_site-doctor.md": "# 10 — il vero ultimo\n\nGate: ROSSO\n",
+      },
+      3943,
+      (doc) => {
+        // Prima: `OK` citando il `9-`, e il `10_` non letto da nessuno.
+        assert.equal(stato(doc, "contratto-uscita"), "fail");
+        assert.match(dettaglio(doc, "contratto-uscita"), /10_site-doctor\.md/);
+      },
+    );
+  });
+
+  it("SD-P6P4-4: i nomi regolari, e quelli di un altro agente, non guadagnano rilievi nuovi", async () => {
+    await conProgetto(
+      {
+        ...BASE,
+        "docs/handoff/9-site-doctor.md": "# 9\n\nGate: ROSSO\n",
+        "docs/handoff/10-site-doctor.md": "# 10\n\nGate: ROSSO\n",
+        "docs/handoff/13-speed-demon.md": "# 13 — di un altro agente\n",
+      },
+      3944,
+      (doc) => {
+        // `13-speed-demon.md` non nomina questa skill: non e' un estraneo.
+        assert.doesNotMatch(dettaglio(doc, "contratto-uscita"), /nominano questa skill/);
+        assert.match(dettaglio(doc, "contratto-uscita"), /10-site-doctor\.md/);
+      },
+    );
+  });
+});
+
 describe("`--scadenza` — il gate finisce sempre, e sempre con un verdetto", () => {
   const GATE = fileURLToPath(new URL("./verify.mjs", import.meta.url));
   const attendi = (ms) => new Promise((r) => setTimeout(r, ms));
