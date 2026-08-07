@@ -66,6 +66,10 @@ export const CLASSI = {
   SUP2: "sitemap che dichiara una pagina che risponde 404",
   SUP3: "pagina raggiungibile solo dopo una catena di due rimandi",
   SUP4: "pagina distinta solo dalla query string",
+  // P.6-P5, dal rilievo piu' grave di P.6-P4 (P7-R2): prima di quel mandato
+  // questa classe usciva VERDE con uscita 0 — l'iframe era invisibile alla
+  // camminata e i suoi campi non esistevano per nessun passo.
+  SUP5: "pagina che raccoglie IBAN e codice fiscale, raggiungibile solo da <iframe src>",
   // ─── falsi verdi dell'informativa ───
   INF1: "collegamento all'informativa presente ma display:none",
   INF2: "collegamento all'informativa verso un 404",
@@ -1405,6 +1409,34 @@ export const SABOTAGGI = {
       res.end("<!DOCTYPE html><html lang=\"it\"><head><title>404</title></head><body><main><h1>Non trovata</h1></main></body></html>");
       return true;
     },
+  },
+  /**
+   * Il sito del perito della superficie (P7-R2): una pagina che raccoglie IBAN
+   * e codice fiscale, raggiungibile SOLO via `<iframe src>`, senza rimando
+   * all'informativa e non dichiarata nel certificato. Prima di P.6-P5 il gate
+   * usciva VERDE con uscita 0: la camminata leggeva solo gli `<a href>`.
+   * Atteso ora: `dati-raccolti` FAIL (raccoglie e non rimanda a nessuna
+   * informativa, campi non dichiarati), piu' perimetro e contratto-uscita.
+   */
+  SUP5: {
+    rotta: ({ percorso, res }) => {
+      if (percorso !== "/patrimonio") return false;
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(`<!DOCTYPE html><html lang="it"><head><title>Situazione patrimoniale</title></head><body><main>
+      <h1>Situazione patrimoniale</h1>
+      <form action="/patrimonio" method="post">
+        <label for="p1">IBAN</label><input id="p1" name="iban" type="text">
+        <label for="p2">Codice fiscale</label><input id="p2" name="codice_fiscale" type="text">
+        <button type="submit">Invia</button>
+      </form>
+      </main></body></html>`);
+      return true;
+    },
+    corpo: ({ ext, percorso, corpo }) =>
+      ext !== ".html" || percorso !== "/contatti"
+        ? undefined
+        : dentroMain(corpo, `      <h2>Situazione patrimoniale</h2>
+      <iframe title="Situazione patrimoniale" src="/patrimonio" width="600" height="400"></iframe>`),
   },
   SUP3: {
     rotta: ({ percorso, res, porta }) => {

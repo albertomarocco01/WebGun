@@ -166,6 +166,17 @@ ${ha(sab, "G") ? 'export function ricorda(v){ sessionStorage.setItem("banco:ulti
 `;
 
 // ------------------------------------------------------------- i documenti
+/**
+ * Il certificato del banco era un reperto PRE-D21, e l'ha scoperto il primo
+ * giro vero di `giro-costruttore.mjs` (P.6-P5): delegava a speed-demon le
+ * cinque voci che dal 2026-08-06 questo gate misura da se', e il banco
+ * CONFORME usciva ROSSO su `perimetro` («delegata a speed-demon, ma questo
+ * gate la MISURA») e a cascata su `contratto-uscita`. Il gate aveva ragione:
+ * era il banco a essere fermo a un'era precedente — «verificato solo per
+ * lettura» non aveva verificato questo. Le cinque voci sono ora di
+ * site-doctor, e i sabotaggi P e S si sono spostati di conseguenza senza
+ * perdere la classe che provano.
+ */
 const RIGHE_VOCI = (sab) => {
   const righe = [
     ["informativa-privacy", "site-doctor", "—", "conforme"],
@@ -176,20 +187,25 @@ const RIGHE_VOCI = (sab) => {
     ["lingua-hreflang", "site-doctor", "—", ha(sab, "V", "W") ? "non conforme" : "non applicabile"],
     ["contrasti", "speed-demon", "docs/handoff/13-speed-demon.md", "delegato"],
     ["canonical", "speed-demon", "docs/handoff/13-speed-demon.md", "delegato"],
-    ["sitemap", "speed-demon", "docs/handoff/13-speed-demon.md", "delegato"],
-    ["robots", "speed-demon", "docs/handoff/13-speed-demon.md", "delegato"],
+    ["sitemap", "site-doctor", "—", "conforme"],
+    ["robots", "site-doctor", "—", "conforme"],
     ["noindex-private", "speed-demon", "docs/handoff/13-speed-demon.md", "delegato"],
-    ["open-graph", "speed-demon", "docs/handoff/13-speed-demon.md", "delegato"],
-    ["favicon", "speed-demon", "docs/handoff/13-speed-demon.md", "delegato"],
-    ["dati-strutturati", "speed-demon", "docs/handoff/13-speed-demon.md", "delegato"],
+    ["open-graph", "site-doctor", "—", "conforme"],
+    ["favicon", "site-doctor", "—", "conforme"],
+    ["dati-strutturati", "site-doctor", "—", "conforme"],
     ["accessibilita-admin", "gestionale-crafter", "docs/handoff/10-gestionale-crafter.md", "delegato"],
     ["antispam", "—", "—", "scoperto"],
   ];
   let scelte = righe;
-  if (ha(sab, "P")) scelte = [...righe, ["open-graph", "site-doctor", "—", "conforme"]];
+  // P: il difetto dell'Open Graph nella sua forma ORIGINALE (PILOTA §4) — la
+  // voce assegnata a site-doctor E a speed-demon nello stesso documento.
+  if (ha(sab, "P")) scelte = [...righe, ["open-graph", "speed-demon", "docs/handoff/13-speed-demon.md", "delegato"]];
   if (ha(sab, "Q")) scelte = righe.filter(([v]) => v !== "favicon");
   if (ha(sab, "R")) scelte = righe.map((r) => (r[0] === "canonical" ? [r[0], r[1], "docs/handoff/99-inesistente.md", r[3]] : r));
-  if (ha(sab, "S")) scelte = righe.map((r) => (r[0] === "open-graph" ? [r[0], r[1], "docs/handoff/10-gestionale-crafter.md", r[3]] : r));
+  // S: una voce DELEGATA che cita un file che esiste e non la nomina. Dopo D21
+  // l'open-graph e' mio (il `dove` delle voci mie non si legge): la classe si
+  // prova sul canonical, che resta delegato.
+  if (ha(sab, "S")) scelte = righe.map((r) => (r[0] === "canonical" ? [r[0], r[1], "docs/handoff/10-gestionale-crafter.md", r[3]] : r));
   return scelte.map((r) => `| ${r.join(" | ")} |`).join("\n");
 };
 
