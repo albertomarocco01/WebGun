@@ -1476,3 +1476,52 @@ describe("tribunale P.6-P4 — un riferimento di carattere che non nomina un car
     assert.equal(attributi('<p data-x="a&#1114112;b">')["data-x"], "a�b");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tribunale P.6-P4 — il perito dell'indicizzazione, sul verso opposto: non un
+// falso verde, un falso ROSSO su un sito costruito a regola d'arte.
+describe("tribunale P.6-P4 — le lingue dichiarate con la regione", () => {
+  // Un sito bilingue REALE e corretto: `lang` giusto, hreflang reciproci in
+  // entrambe le direzioni, `x-default` presente su tutte e due.
+  const ALT = [
+    { hreflang: "it", percorso: "/it", interno: true },
+    { hreflang: "en", percorso: "/en", interno: true },
+    { hreflang: "x-default", percorso: "/it", interno: true },
+  ];
+  const PAGINE = [
+    { percorso: "/it", lang: "it-IT", hreflang: ALT },
+    { percorso: "/en", lang: "en-US", hreflang: ALT },
+  ];
+  const PERCORSI = ["/it", "/en"];
+
+  it("`it-IT, en-US` nel certificato non boccia un sito che dichiara `lang=\"it-IT\"`", () => {
+    // E' la forma BCP47 con la regione — quella che questo stesso file
+    // raccomanda negli esempi degli hreflang, e che `leggiCertificato` mette
+    // in minuscolo senza togliere la regione: `["it-it","en-us"]`.
+    const e = esitoLingua({ pagine: PAGINE, lingueDichiarate: ["it-it", "en-us"], percorsi: PERCORSI });
+    assert.deepEqual(e.findings.filter((f) => f.severity === "block"), []);
+    assert.notEqual(e.stato, "fail");
+  });
+
+  it("la forma senza regione continua a funzionare come prima", () => {
+    const e = esitoLingua({ pagine: PAGINE, lingueDichiarate: ["it", "en"], percorsi: PERCORSI });
+    assert.deepEqual(e.findings.filter((f) => f.severity === "block"), []);
+  });
+
+  it("una lingua NON dichiarata resta un bloccante: la regola non si e' allentata", () => {
+    const e = esitoLingua({ pagine: PAGINE, lingueDichiarate: ["it-it", "de-de"], percorsi: PERCORSI });
+    const blocchi = e.findings.filter((f) => f.severity === "block");
+    assert.equal(blocchi.length, 1);
+    assert.equal(blocchi[0].object, "/en");
+    assert.match(blocchi[0].message, /en-US/);
+  });
+
+  it("`it-IT, it-CH` sono due varianti di UNA lingua, non un sito multilingua", () => {
+    // Senza questa correzione il conteggio diceva «due lingue», il sito
+    // diventava multilingua, e una pagina sola senza hreflang prendeva un
+    // `block` — un altro falso rosso su un sito monolingua corretto.
+    const soloIt = [{ percorso: "/", lang: "it-IT", hreflang: [] }];
+    const e = esitoLingua({ pagine: soloIt, lingueDichiarate: ["it-it", "it-ch"], percorsi: ["/"] });
+    assert.deepEqual(e.findings.filter((f) => f.severity === "block"), []);
+  });
+});

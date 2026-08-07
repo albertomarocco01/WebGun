@@ -1882,11 +1882,21 @@ export function esitoLingua({ pagine, lingueDichiarate, percorsi }) {
   const langMisurati = new Set(pagine.map((p) => (p.lang ?? "").trim().toLowerCase().split("-")[0]).filter(Boolean));
   const daRotte = lingueDaRotte(percorsi);
   const conHreflang = pagine.filter((p) => p.hreflang.length > 0);
+  // Il confronto era asimmetrico: il lato MISURATO veniva spogliato della
+  // regione (`it-IT` -> `it`), il lato DICHIARATO no. `leggiCertificato` mette
+  // in minuscolo e basta, quindi `Lingue dichiarate: it-IT, en-US` diventava
+  // `["it-it","en-us"]` e non combaciava mai con `it`. Un sito bilingue
+  // costruito a regola d'arte — `lang` corretto, hreflang reciproci in
+  // entrambe le direzioni, `x-default` presente — prendeva un `block` PER
+  // PAGINA, e la forma con la regione e' proprio quella che questo file
+  // raccomanda negli esempi degli hreflang. Falso rosso su un sito conforme:
+  // per la §8 di questa casa e' il difetto che insegna a scavalcare il gate.
+  const dichiarate = lingueDichiarate.map((l) => String(l).toLowerCase().split("-")[0]);
 
   for (const p of pagine) {
     if (!p.lang) {
       findings.push({ severity: "block", object: p.percorso, message: "nessun `lang` su <html>" });
-    } else if (lingueDichiarate.length > 0 && !lingueDichiarate.includes(p.lang.toLowerCase().split("-")[0])) {
+    } else if (dichiarate.length > 0 && !dichiarate.includes(p.lang.toLowerCase().split("-")[0])) {
       findings.push({
         severity: "block",
         object: p.percorso,
@@ -1895,7 +1905,10 @@ export function esitoLingua({ pagine, lingueDichiarate, percorsi }) {
     }
   }
 
-  const multilingua = langMisurati.size > 1 || daRotte.length > 1 || lingueDichiarate.length > 1;
+  // Anche il conteggio va sulla lingua primaria: `it-IT, it-CH` sono due
+  // varianti di UNA lingua, non due lingue, e farebbero scattare la modalita'
+  // multilingua su un sito che non lo e'.
+  const multilingua = langMisurati.size > 1 || daRotte.length > 1 || new Set(dichiarate).size > 1;
   const premessa =
     `lingue misurate sull'HTML servito di ${pagine.length} pagine: ${[...langMisurati].join(", ") || "nessuna"}` +
     ` · rotte per lingua trovate nella superficie: ${daRotte.length > 0 ? daRotte.join(", ") : "nessuna"}` +
