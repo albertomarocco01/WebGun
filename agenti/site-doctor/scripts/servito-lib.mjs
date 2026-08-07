@@ -473,9 +473,35 @@ function sciogliEntita(valore) {
   if (!valore.includes("&")) return valore;
   const nominate = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
   return valore
-    .replace(/&#x([0-9a-f]{1,6});?/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
-    .replace(/&#(\d{1,7});?/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&#x([0-9a-f]{1,6});?/gi, (_, h) => daPuntoDiCodice(parseInt(h, 16)))
+    .replace(/&#(\d{1,7});?/g, (_, d) => daPuntoDiCodice(Number(d)))
     .replace(/&([a-z]+);/gi, (tutto, n) => nominate[n.toLowerCase()] ?? tutto);
+}
+
+/**
+ * Un riferimento di carattere che non nomina un carattere.
+ *
+ * Le due classi qui sopra ammettono sei cifre esadecimali (fino a `0xFFFFFF`) e
+ * sette decimali (fino a 9 999 999), ma `String.fromCodePoint` lancia
+ * `RangeError` sopra `0x10FFFF`. Un `&#1114112;` dentro un `title`, un `alt` o
+ * un `data-*` di una pagina qualunque faceva quindi **morire il gate intero**:
+ * `attributi` e' chiamata su ogni tag di ogni pagina da `tagNascosto` e da
+ * `terziDi`, l'eccezione risaliva fino al `catch` di `main`, e uscivano
+ * quattordici passi `skipped` e un'uscita 2. Dieci caratteri per azzerare la
+ * misura — la stessa classe che il commento di `ID_PIU_LUNGO` dichiara chiusa
+ * («non e' un rallentamento: e' un crash deterministico»), riaperta altrove
+ * nello stesso file con un innesco piu' economico.
+ *
+ * Si sostituisce, non si cattura: un `try/catch` intorno al `replace` lo farebbe
+ * fallire PER INTERO e il valore resterebbe non decodificato, cioe' riaprirebbe
+ * il difetto per cui `sciogliEntita` esiste (`type="&#101;mail"` che sfuggiva a
+ * `dati-raccolti`). `U+FFFD` e' cio' che mette il tokenizer HTML, e vale anche
+ * per i surrogati solitari e per lo zero, che non sono caratteri leciti.
+ */
+function daPuntoDiCodice(punto) {
+  if (!Number.isInteger(punto) || punto <= 0 || punto > 0x10ffff) return "�";
+  if (punto >= 0xd800 && punto <= 0xdfff) return "�";
+  return String.fromCodePoint(punto);
 }
 
 /**

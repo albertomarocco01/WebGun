@@ -1424,3 +1424,55 @@ describe("D21 — le cinque voci che ora si misurano", () => {
     });
   });
 });
+
+// --------------------------------------------------------------------------
+// Tribunale P.6-P4 — otto periti sulle ~900 righe che P.6-P3 aveva scritto.
+// Il primo rilievo del perito del parser, e il piu' economico di tutti: dieci
+// caratteri in un attributo qualunque per azzerare quattordici passi.
+describe("tribunale P.6-P4 — un riferimento di carattere che non nomina un carattere", () => {
+  // La forma d'input vera: un attributo di una pagina servita, non una chiamata
+  // alla funzione interna che lo scioglie.
+  const pagina = (valore) =>
+    `<!doctype html><html lang="it"><head><title>Listino</title></head>` +
+    `<body><main><h1>Listino</h1><p data-nota="${valore}">prezzo</p>` +
+    `<script src="https://cdn.terzo.test/t.js"></script></main></body></html>`;
+
+  const OSTILI = [
+    ["&#1114112;", "decimale appena oltre l'ultimo punto di codice"],
+    ["&#x110000;", "esadecimale appena oltre"],
+    ["&#9999999;", "sette cifre decimali, il massimo che la classe ammette"],
+    ["&#xFFFFFF;", "sei cifre esadecimali, il massimo che la classe ammette"],
+    ["&#0;", "lo zero, che non e' un carattere lecito"],
+    ["&#xD800;", "un surrogato solitario"],
+  ];
+
+  for (const [ostile, perche] of OSTILI) {
+    it(`${ostile} (${perche}) non fa morire chi legge il documento`, () => {
+      const html = pagina(ostile);
+      // Le tre porte da cui l'eccezione risaliva fino al `catch` di `main`.
+      assert.doesNotThrow(() => attributi(`<p data-nota="${ostile}">`));
+      assert.doesNotThrow(() => regioniNascoste(senzaScript(html)));
+      assert.doesNotThrow(() => terziDi(html, "https://sito.test/"));
+    });
+  }
+
+  it("il terzo si continua a vedere: il documento non viene perso per strada", () => {
+    const origini = terziDi(pagina("&#1114112;"), "https://sito.test/").map((t) => t.origine);
+    assert.deepEqual(origini, ["https://cdn.terzo.test"]);
+  });
+
+  it("i riferimenti LECITI continuano a sciogliersi: e' il difetto per cui la funzione esiste", () => {
+    // `type="&#101;mail"` sfuggiva a `dati-raccolti`: un try/catch intorno al
+    // `replace` lo riaprirebbe, perche' farebbe fallire la sostituzione INTERA.
+    assert.equal(attributi('<input type="&#101;mail">').type, "email");
+    assert.equal(attributi('<input autocomplete="t&#101;l">').autocomplete, "tel");
+    assert.equal(attributi('<a href="/pri&#118;acy">').href, "/privacy");
+    // e un carattere fuori dal piano base resta se stesso
+    assert.equal(attributi('<p data-x="&#x1F600;">')["data-x"], "\u{1F600}");
+  });
+
+  it("il valore illecito diventa il carattere di sostituzione, non sparisce e non resta grezzo", () => {
+    assert.equal(attributi('<p data-x="&#1114112;">')["data-x"], "�");
+    assert.equal(attributi('<p data-x="a&#1114112;b">')["data-x"], "a�b");
+  });
+});
