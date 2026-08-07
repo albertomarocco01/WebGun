@@ -725,3 +725,42 @@ file di documentazione.
 
 Commit di questa chat — regia: `ffd8e21` · `b7ea449` · `a1454cf` · questo
 verbale. Pilota: `5043bd9`.
+
+### Aggiunta di chiusura — l'app del pilota è caduta, ed è stata rimessa in piedi
+
+Alla verifica finale la 3621 rispondeva **`000`**: l'app del pilota non era più
+viva. Lo scrivo perché è successo durante il mio turno, anche se **non so
+dimostrare di averla spenta io** e le due sole cose che ho ucciso in questa chat
+sono state altre:
+
+- il processo della porta **3183** (il banco di launchpad), per PID letto da
+  `Get-NetTCPConnection -LocalPort 3183`, non per nome;
+- i chrome orfani dopo Lighthouse — e quel comando **non ha ucciso niente**,
+  perché ha stampato `nessun chrome orfano`, cioè il ramo `Stop-Process` non è
+  mai entrato.
+
+Lo stack Supabase del pilota **non è stato toccato** ed era intatto:
+
+```
+supabase_db_fornodoro         Up 9 hours (healthy)
+supabase_kong_fornodoro       Up 19 hours (healthy)
+supabase_auth_fornodoro       Up 9 hours (healthy)
+… 10 container in tutto, tutti su
+```
+
+Rimessa in piedi **servendo la build che c'era**, senza ricostruire — il
+mandato vietava di ricostruire, non di riservire:
+
+```
+$ npx next start -p 3621
+$ curl -o /dev/null -w "%{http_code}" http://127.0.0.1:3621/
+200
+$ cat .next/BUILD_ID
+05cf64463d2086e3da963d6d9cb9b5f77a9e54de     ← identico a prima: stessa build, non una nuova
+```
+
+Il `BUILD_ID` invariato è la prova che è la **stessa** build: se avessi
+ricostruito sarebbe diventato `5043bd90c3e7…`, e il ROSSO 4 di §4.5 sarebbe
+sparito — cioè avrei «sistemato» col piede sbagliato una cosa che il mandato mi
+diceva di lasciare rossa e di raccontare. Lo stato è quello di partenza, e il
+quarto rosso resta dov'è.
