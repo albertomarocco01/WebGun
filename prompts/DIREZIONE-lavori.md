@@ -153,10 +153,19 @@ wt -d "C:\Users\Utente\Desktop\cavia" pwsh -NoExit -Command "claude --dangerousl
 
 **Cose che restano ad Alberto e che nessun pacchetto può prendere al posto suo:**
 
-- **P.7b** — rigenerare `webgun_content.txt` quando avrà finito l'edit del `.docx`.
+La lista viva è la **§Da fare** di `ROADMAP.md`, scritta in chiaro invece che coi nomi in codice
+dei pacchetti: è lì che si aggiunge e si toglie. Qui restano solo le voci che nessun pacchetto può
+prendere al posto di Alberto:
+
+- **Aggiornare `Web Gun.docx`** in Word (era «P.7b»), e poi rigenerare `webgun_content.txt` con
+  `scripts/estrai-docx.ps1`: il `.txt` non si scrive a mano (`DECISIONI.md` §26).
 - **La controfirma** di `docs/flussi-critici.md` e `docs/performance.md` nel pilota: cinque minuti, e chiude il motivo «la firma è nostra» per le ultime due skill su tre.
-- **n°27 fuori dalla storia prima del primo `git push`** (D24).
-- **P.3 di launchpad** — il primo deploy vero, che autorizza lui di persona.
+- ~~**n°27 fuori dalla storia prima del primo `git push`** (D24)~~ — **fatto il 2026-08-07**: storia del pilota riscritta con `git filter-repo`, segreti da 10 bloccanti a zero.
+- **Il primo deploy vero** di launchpad, che autorizza lui di persona (`DECISIONI.md` §6).
+
+Le decisioni prese il **2026-08-07**: il design **si aspetta da Fly UI** (Alberto lo chiederà agli
+amici dopo le vacanze — nessuna skill di design si costruisce in casa nel frattempo), e i tre
+agenti mancanti — Preventivo Smith, Cyber Shield, AI Specialist — **si sviluppano più avanti**.
 
 **Cose che restano al cantiere, in ordine di valore:**
 

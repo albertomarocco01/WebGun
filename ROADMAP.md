@@ -11,6 +11,21 @@ Aggiornato al **2026-08-07**.
 
 ---
 
+## Da fare — la lista, in ordine
+
+Le prime tre sono decisioni già prese dal committente il **2026-08-07**: sono qui perché la lista
+dica anche cosa *non* si sta facendo, e perché.
+
+| # | Cosa | Di chi | Stato |
+|---|---|---|---|
+| 1 | **Aggiornare il documento madre `Web Gun.docx`** in Word: oggi dà *Site Doctor* e *Launchpad* per «da creare», ma sono finiti e collaudati da giorni; e il posto 8 (*Fly UI*) va allineato alla realtà. Poi si rigenera la copia di testo con `powershell -ExecutionPolicy Bypass -File scripts/estrai-docx.ps1` e si committano i due file **insieme** — il `.txt` non si scrive a mano (`DECISIONI.md` §26) | **Alberto** | aperta |
+| 2 | **Il design** | Alberto | **si aspetta Fly UI.** Deciso il 2026-08-07: lo chiederà agli amici dopo le vacanze. Fino ad allora i componenti restano scritti a mano dietro `src/components/ui/` (`DECISIONI.md` §21), e nessun agente del design si costruisce in casa |
+| 3 | **I tre agenti che mancano** — Preventivo Smith, Cyber Shield, AI Specialist | Alberto | **rimandati.** Deciso il 2026-08-07: si sviluppano più avanti. Cosa serve a ciascuno è scritto sotto |
+| 4 | Il **debito trasversale** alle skill (tre voci) | direzione | aperto, sotto |
+| 5 | Il **debito di ciascuna skill** | direzione | aperto, in `agenti/<nome>/STATO.md` §Debito |
+
+---
+
 ## In una riga
 
 **Otto agenti sono operativi**, sette costruiti in casa con un gate deterministico ciascuno e uno

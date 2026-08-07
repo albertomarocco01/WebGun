@@ -93,8 +93,16 @@ git show f4b625a:CANTIERE.md
 | **`d9c62b2`, `47ceb20`, `a315c78`** | i primi difetti trovati dal collaudo avversario di vetrina-crafter, uno per commit |
 | **`a1ee045`** | la firma della progettazione P0 di vetrina-crafter — l'atto con cui un umano ha accettato l'impianto delle pagine pubbliche |
 
-Attenzione: **`banco-prova-controtempo` e `banco-prova-valscura` non stanno in nessun commit.**
-Sono gitignorati e vivono solo sul disco: se qualcuno li cancella non c'è niente da ripescare.
+**`banco-prova-controtempo` e `banco-prova-valscura` non esistono più.** Erano gitignorati e non
+stavano in nessun commit — prove riproducibili su una macchina sola, cioè ricordi — e il committente
+li ha fatti eliminare il 2026-08-07 (`CANTIERE.md` **D29**, 897 MB liberati insieme a
+`banco-prova-collaudo-sd`). **Non sono ripescabili**, e si sapeva prima di cancellarli: è la §25
+applicata fino in fondo. Il banco di vetrina-crafter (`controtempo`) e quello di site-doctor
+(`collaudo-sd`) si ricostruiscono dagli script — `node agenti/<skill>/scripts/banco.mjs` — che è
+esattamente il motivo per cui la D25 aveva imposto di tracciare lo *script* e non la cartella.
+
+Resta **`banco-prova-vetcare/`**, che è tracciato: non era deprecato, è il caso di prova permanente
+di uno schema difettoso per schema-forge, ed è rosso apposta.
 
 ### Due file sul Desktop che nessun repo dichiara più
 
